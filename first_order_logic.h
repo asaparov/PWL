@@ -162,9 +162,74 @@ inline bool print(tptp_token_type type, Stream& stream) {
 enum class tptp_lexer_state {
 	DEFAULT,
 	IDENTIFIER,
+};
+
+bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char symbol) {
+	switch (symbol) {
+	case ',':
+		return emit_token(tokens, start, start + 1, tptp_token_type::COMMA);
+	case ':':
+		return emit_token(tokens, start, start + 1, tptp_token_type::COLON);
+	case '(':
+		return emit_token(tokens, start, start + 1, tptp_token_type::LPAREN);
+	case ')':
+		return emit_token(tokens, start, start + 1, tptp_token_type::RPAREN);
+	case '[':
+		return emit_token(tokens, start, start + 1, tptp_token_type::LBRACKET);
+	case ']':
+		return emit_token(tokens, start, start + 1, tptp_token_type::RBRACKET);
+	case '&':
+		return emit_token(tokens, start, start + 1, tptp_token_type::AND);
+	case '|':
+		return emit_token(tokens, start, start + 1, tptp_token_type::OR);
+	case '~':
+		return emit_token(tokens, start, start + 1, tptp_token_type::NOT);
+	case '!':
+		return emit_token(tokens, start, start + 1, tptp_token_type::FOR_ALL);
+	case '?':
+		return emit_token(tokens, start, start + 1, tptp_token_type::EXISTS);
+	default:
+		fprintf(stderr, "tptp_emit_symbol ERROR: Unexpected symbol.\n");
+		return false;
+	}
 }
 
-bool datalog_lex(array<tptp_token>& tokens, FILE* input) {
+inline bool tptp_lex_symbol(array<tptp_token>& tokens, FILE* input, int next, position& current)
+{
+	if (next == ',' || next == ':' || next == '(' || next == ')'
+	 || next == '[' || next == ']' || next == '&' || next == '|'
+	 || next == '~' || next == '!' || next == '?')
+	{
+		return tptp_emit_symbol(tokens, current, next);
+	} else if (next == '=') {
+		next = fgetc(input);
+		if (next != '>') {
+			read_error("Expected '>' after '='", current);
+			return false;
+		} if (!emit_token(tokens, current, current + 2, tptp_token_type::IF_THEN))
+			return false;
+		current.column++;
+	} else if (next == '<') {
+		next = fgetc(input);
+		if (next != '=') {
+			read_error("Expected '=' after '<'", current);
+			return false;
+		}
+		next = fgetc(input);
+		if (next != '>') {
+			read_error("Expected '>' after '='", current);
+			return false;
+		} if (!emit_token(tokens, current, current + 3, tptp_token_type::IF_THEN))
+			return false;
+		current.column += 2;
+	} else {
+		fprintf(stderr, "tptp_lex_symbol ERROR: Unrecognized symbol.\n");
+		return false;
+	}
+	return true;
+}
+
+bool tptp_lex(array<tptp_token>& tokens, FILE* input) {
 	position start = position(1, 1);
 	position current = position(1, 1);
 	tptp_lexer_state state = tptp_lexer_state::DEFAULT;
@@ -177,10 +242,11 @@ bool datalog_lex(array<tptp_token>& tokens, FILE* input) {
 		case tptp_lexer_state::IDENTIFIER:
 			if (next == ',' || next == ':' || next == '(' || next == ')'
 			 || next == '[' || next == ']' || next == '&' || next == '|'
-			 || next == '~')
+			 || next == '~' || next == '!' || next == '?' || next == '='
+			 || next == '<')
 			{
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER)
-				 || !tptp_emit_symbol(tokens, current, next))
+				 || !tptp_lex_symbol(tokens, input, next, current))
 					return false;
 				state = tptp_lexer_state::DEFAULT;
 				token.clear();
@@ -198,18 +264,11 @@ bool datalog_lex(array<tptp_token>& tokens, FILE* input) {
 		case tptp_lexer_state::DEFAULT:
 			if (next == ',' || next == ':' || next == '(' || next == ')'
 			 || next == '[' || next == ']' || next == '&' || next == '|'
-			 || next == '~')
+			 || next == '~' || next == '!' || next == '?' || next == '='
+			 || next == '<')
 			{
-				if (!tptp_emit_symbol(tokens, current, next))
+				if (!tptp_lex_symbol(tokens, input, next, current))
 					return false;
-			} else if (next == '\\') {
-				next = fgetc(input);
-				if (next != '+') {
-					read_error("Expected '+'", current);
-					return false;
-				} if (!emit_token(tokens, current, current + 1, DATALOG_TOKEN_SLASH_PLUS))
-					return false;
-				current.column++;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
 			} else {
@@ -229,10 +288,16 @@ bool datalog_lex(array<tptp_token>& tokens, FILE* input) {
 		next = fgetc(input);
 	}
 
-	if (state == tptp_lexer_state::IDENTIFIER) {
-		return emit_token(tokens, token, start, current, tptp_lexer_state::IDENTIFIER);
-	}
+	if (state == tptp_lexer_state::IDENTIFIER)
+		return emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER);
 	return true;
 }
+
+
+/**
+ * Recursive-descent parser for first-order logic formulas in TPTP-like format.
+ */
+
+
 
 #endif /* FIRST_ORDER_LOGIC_H_ */
