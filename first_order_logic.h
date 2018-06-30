@@ -18,9 +18,9 @@ using namespace core;
 struct fol_formula;
 
 enum class fol_term_type {
+	NONE,
 	VARIABLE,
-	CONSTANT,
-	NONE
+	CONSTANT
 };
 
 struct fol_term {
@@ -49,95 +49,39 @@ struct fol_atom {
 	fol_term arg1;
 	fol_term arg2;
 
-	static inline void free(fol_and_formula& formula) { }
+	static inline void free(fol_atom& formula) { }
 };
 
-struct fol_and_formula {
-	fol_formula* left;
-	fol_formula* right;
-
-	static inline void free(fol_and_formula& formula) {
-		core::free(*formula.left);
-		if (formula.left->reference_count == 0)
-			core::free(formula.left);
-
-		core::free(*formula.right);
-		if (formula.right->reference_count == 0)
-			core::free(formula.right);
-	}
-};
-
-struct fol_or_formula {
-	fol_formula* left;
-	fol_formula* right;
-
-	static inline void free(fol_or_formula& formula) {
-		core::free(*formula.left);
-		if (formula.left->reference_count == 0)
-			core::free(formula.left);
-
-		core::free(*formula.right);
-		if (formula.right->reference_count == 0)
-			core::free(formula.right);
-	}
-};
-
-struct fol_if_then_formula {
-	fol_formula* antecedent;
-	fol_formula* consequent;
-
-	static inline void free(fol_if_then_formula& formula) {
-		core::free(*formula.antecedent);
-		if (formula.antecedent->reference_count == 0)
-			core::free(formula.antecedent);
-
-		core::free(*formula.consequent);
-		if (formula.consequent->reference_count == 0)
-			core::free(formula.consequent);
-	}
-};
-
-struct fol_iff_formula {
-	fol_formula* left;
-	fol_formula* right;
-
-	static inline void free(fol_iff_formula& formula) {
-		core::free(*formula.left);
-		if (formula.left->reference_count == 0)
-			core::free(formula.left);
-
-		core::free(*formula.right);
-		if (formula.right->reference_count == 0)
-			core::free(formula.right);
-	}
-};
-
-struct fol_not_formula {
+struct fol_unary_formula {
 	fol_formula* operand;
 
-	static inline void free(fol_not_formula& formula) {
+	static inline void free(fol_unary_formula& formula) {
 		core::free(*formula.operand);
 		if (formula.operand->reference_count == 0)
 			core::free(formula.operand);
 	}
 };
 
-struct fol_for_all_formula {
-	unsigned int variable;
-	fol_formula* operand;
+struct fol_binary_formula {
+	fol_formula* left;
+	fol_formula* right;
 
-	static inline void free(fol_for_all_formula& formula) {
-		core::free(*formula.operand);
-		if (formula.operand->reference_count == 0)
-			core::free(formula.operand);
+	static inline void free(fol_binary_formula& formula) {
+		core::free(*formula.left);
+		if (formula.left->reference_count == 0)
+			core::free(formula.left);
+
+		core::free(*formula.right);
+		if (formula.right->reference_count == 0)
+			core::free(formula.right);
 	}
 };
 
-struct fol_exists_formula {
+struct fol_quantifier {
 	unsigned int variable;
 	fol_formula* operand;
 
-	static inline void free(fol_exists_formula& formula) {
+	static inline void free(fol_quantifier& formula) {
 		core::free(*formula.operand);
 		if (formula.operand->reference_count == 0)
 			core::free(formula.operand);
@@ -149,13 +93,9 @@ struct fol_formula {
 	unsigned int reference_count;
 	union {
 		fol_atom atom;
-		fol_and_formula conj;
-		fol_or_formula disj;
-		fol_if_then_formula if_then;
-		fol_iff_formula iff;
-		fol_for_all_formula for_all;
-		fol_exists_formula exists;
-		fol_formula* negation;
+		fol_unary_formula unary;
+		fol_binary_formula binary;
+		fol_quantifier quantifier;
 	};
 
 	static inline void free(fol_formula& formula) {
@@ -164,20 +104,16 @@ struct fol_formula {
 			switch (formula.type) {
 			case fol_formula_type::ATOM:
 				core::free(formula.atom); break;
-			case fol_formula_type::AND:
-				core::free(formula.conj); break;
-			case fol_formula_type::OR:
-				core::free(formula.disj); break;
-			case fol_formula_type::IF_THEN:
-				core::free(formula.if_then); break;
-			case fol_formula_type::IFF:
-				core::free(formula.iff); break;
-			case fol_formula_type::FOR_ALL:
-				core::free(formula.for_all); break;
-			case fol_formula_type::EXISTS:
-				core::free(formula.exists); break;
 			case fol_formula_type::NOT:
-				core::free(formula.negation); break;
+				core::free(formula.unary); break;
+			case fol_formula_type::AND:
+			case fol_formula_type::OR:
+			case fol_formula_type::IF_THEN:
+			case fol_formula_type::IFF:
+				core::free(formula.binary); break;
+			case fol_formula_type::FOR_ALL:
+			case fol_formula_type::EXISTS:
+				core::free(formula.quantifier); break;
 			}
 			fprintf(stderr, "fol_formula.free ERROR: Unrecognized fol_formula_type.\n");
 		}
@@ -389,7 +325,7 @@ bool tptp_interpret_argument_list(
 	const array<tptp_token>& tokens,
 	unsigned int& index,
 	hash_map<string, unsigned int>& names,
-	hash_map<string, unsigned int>& variables,
+	array_map<string, unsigned int>& variables,
 	array<fol_term>& terms)
 {
 	if (!expect_token(tokens, index, tptp_token_type::LPAREN,
@@ -436,8 +372,7 @@ bool tptp_interpret_variable_list(
 	const array<tptp_token>& tokens,
 	unsigned int& index,
 	hash_map<string, unsigned int>& names,
-	hash_map<string, unsigned int>& variables,
-	array<unsigned int>& var_list)
+	array_map<string, unsigned int>& variables)
 {
 	if (!expect_token(tokens, index, tptp_token_type::LBRACKET, "left bracket for list of quantified variables"))
 		return false;
@@ -446,15 +381,18 @@ bool tptp_interpret_variable_list(
 	while (true) {
 		if (!expect_token(tokens, index, tptp_token_type::IDENTIFIER, "variable in list of quantified variables"))
 			return false;
-		unsigned int var;
 		if (names.table.contains(tokens[index].text)) {
 			fprintf(stderr, "WARNING at %d:%d: Variable '", tokens[index].start.line, tokens[index].start.column);
 			print(tokens[index].text, stderr); print("' shadows previously declared identifier.\n", stderr);
-		} if (variables.table.contains(tokens[index].text)) {
+		} if (variables.contains(tokens[index].text)) {
 			read_error("Variable redeclared", tokens[index].start);
-		} if (!get_token(tokens[index].text, var, variables) || var_list.add(var)) {
+			return false;
+		} if (!variables.ensure_capacity(variables.size + 1)) {
 			return false;
 		}
+		variables.keys[variables.size] = tokens[index].text;
+		variables.values[variables.size] = variables.size + 1;
+		variables.size++;
 		index++;
 
 		if (index >= tokens.length) {
@@ -471,11 +409,55 @@ bool tptp_interpret_variable_list(
 	}
 }
 
+template<fol_formula_type QuantifierType>
+bool tptp_interpret_quantifier(
+	const array<tptp_token>& tokens,
+	unsigned int& index, fol_formula& formula,
+	hash_map<string, unsigned int>& names,
+	array_map<string, unsigned int>& variables)
+{
+	unsigned int old_variable_count = variables.size;
+	if (!tptp_interpret_variable_list(tokens, index, names, variables)
+	 || !expect_token(tokens, index, tptp_token_type::COLON, "colon for quantified formula"))
+		return false;
+	index++;
+
+	fol_formula* operand = (fol_formula*) malloc(sizeof(fol_formula));
+	operand->reference_count = 1;
+	if (!tptp_interpret_unary_formula(tokens, index, *operand, names, variables)) {
+		free(operand); return false;
+	}
+
+	fol_formula* inner = operand;
+	for (unsigned int i = variables.size - 1; i > old_variable_count; i--) {
+		fol_formula* quantified = (fol_formula*) malloc(sizeof(fol_formula));
+		if (quantified == NULL) {
+			fprintf(stderr, "tptp_interpret_unary_formula ERROR: Out of memory.\n");
+			free(*inner); free(inner);
+		}
+		quantified->quantifier.variable = variables.values[i];
+		quantified->quantifier.operand = inner;
+		quantified->type = QuantifierType;
+		quantified->reference_count = 1;
+		inner = quantified;
+	}
+
+	formula.quantifier.variable = variables.values[old_variable_count];
+	formula.quantifier.operand = inner;
+	formula.type = QuantifierType;
+	formula.reference_count = 1;
+
+	for (unsigned int i = old_variable_count; i < variables.size; i++)
+		free(variables.keys[i]);
+	variables.size = old_variable_count;
+	return true;
+}
+
 bool tptp_interpret_unary_formula(
 	const array<tptp_token>& tokens,
 	unsigned int& index, fol_formula& formula,
 	hash_map<string, unsigned int>& names,
-	hash_map<string, unsigned int>& variables)
+	array_map<string, unsigned int>& variables)
 {
 	if (index >= tokens.length) {
 		fprintf(stderr, "ERROR: Unexpected end of input.\n");
@@ -491,12 +473,12 @@ bool tptp_interpret_unary_formula(
 		}
 
 		formula.type = fol_formula_type::NOT;
-		formula.negation = operand;
+		formula.unary.operand = operand;
 
 	} else if (tokens[index].type == tptp_token_type::LPAREN) {
-		/* these are just grouping parenthesis of the form (U) */
+		/* these are just grouping parenthesis of the form (F) */
 		index++;
-		if (!tptp_interpret_unary_formula(tokens, index, formula, names, variables)) {
+		if (!tptp_interpret(tokens, index, formula, names, variables)) {
 			return false;
 		} if (!expect_token(tokens, index, tptp_token_type::RPAREN, "closing parenthesis")) {
 			free(formula); return false;
@@ -506,75 +488,22 @@ bool tptp_interpret_unary_formula(
 	} else if (tokens[index].type == tptp_token_type::FOR_ALL) {
 		/* this is a universal quantifier of the form ![v_1,...,v_n]:U */
 		index++;
-		array<unsigned int> var_list = array<unsigned int>(4);
-		if (!tptp_interpret_variable_list(tokens, index, names, variables, var_list)
-		 || !expect_token(tokens, index, tptp_token_type::COLON, "colon for univerally-quantified formula"))
+		if (!tptp_interpret_quantifier<fol_formula_type::FOR_ALL>(tokens, index, formula, names, variables))
 			return false;
-		index++;
-
-		fol_formula* operand = (fol_formula*) malloc(sizeof(fol_formula));
-		operand->reference_count = 1;
-		if (!tptp_interpret_unary_formula(tokens, index, *operand, names, variables)) {
-			free(operand); return false;
-		}
-
-		fol_formula* inner = operand;
-		for (unsigned int i = var_list.length - 1; i > 0; i--) {
-			fol_formula* quantified = (fol_formula*) malloc(sizeof(fol_formula));
-			if (quantified == NULL) {
-				fprintf(stderr, "tptp_interpret_unary_formula ERROR: Out of memory.\n");
-				free(*inner); free(inner);
-			}
-			quantified->for_all.variable = var_list[i];
-			quantified->for_all.operand = inner;
-			quantified->type = fol_formula_type::FOR_ALL;
-			quantified->reference_count = 1;
-			inner = quantified;
-		}
-
-		formula.for_all.variable = var_list[0];
-		formula.for_all.operand = inner;
-		formula.type = fol_formula_type::FOR_ALL;
-		formula.reference_count = 1;
 
 	} else if (tokens[index].type == tptp_token_type::EXISTS) {
 		/* this is an existential quantifier of the form ?[v_1,...,v_n]:U */
 		index++;
-		array<unsigned int> var_list = array<unsigned int>(4);
-		if (!tptp_interpret_variable_list(tokens, index, names, variables, var_list)
-		 || !expect_token(tokens, index, tptp_token_type::COLON, "colon for existentially-quantified formula"))
+		if (!tptp_interpret_quantifier<fol_formula_type::EXISTS>(tokens, index, formula, names, variables))
 			return false;
-		index++;
-
-		fol_formula* operand = (fol_formula*) malloc(sizeof(fol_formula));
-		operand->reference_count = 1;
-		if (!tptp_interpret_unary_formula(tokens, index, *operand, names, variables)) {
-			free(operand); return false;
-		}
-
-		fol_formula* inner = operand;
-		for (unsigned int i = var_list.length - 1; i > 0; i--) {
-			fol_formula* quantified = (fol_formula*) malloc(sizeof(fol_formula));
-			if (quantified == NULL) {
-				fprintf(stderr, "tptp_interpret_unary_formula ERROR: Out of memory.\n");
-				free(*inner); free(inner);
-			}
-			quantified->exists.variable = var_list[i];
-			quantified->exists.operand = inner;
-			quantified->type = fol_formula_type::EXISTS;
-			quantified->reference_count = 1;
-			inner = quantified;
-		}
-
-		formula.exists.variable = var_list[0];
-		formula.exists.operand = inner;
-		formula.type = fol_formula_type::EXISTS;
-		formula.reference_count = 1;
 
 	} else if (tokens[index].type == tptp_token_type::IDENTIFIER) {
 		/* this is an atomic formula of the form P(T_1,...,T_n) */
 		unsigned int predicate;
-		if (!get_token(tokens[index].text, predicate, names))
+		if (variables.contains(tokens[index].text)) {
+			fprintf(stderr, "WARNING at %d:%d: Predicate '", tokens[index].start.line, tokens[index].start.column);
+			print(tokens[index].text, stderr); print("' is also a variable.\n", stderr);
+		} if (!get_token(tokens[index].text, predicate, names))
 			return false;
 		index++;
 
@@ -604,13 +533,109 @@ bool tptp_interpret_unary_formula(
 	return true;
 }
 
+template<fol_formula_type OperatorType>
+inline bool tptp_interpret_binary_formula(
+	const array<tptp_token>& tokens,
+	unsigned int& index, fol_formula& formula,
+	hash_map<string, unsigned int>& names,
+	array_map<string, unsigned int>& variables,
+	fol_formula* left)
+{
+	fol_formula* right = (fol_formula*) malloc(sizeof(fol_formula));
+	if (right == NULL) {
+		fprintf(stderr, "tptp_interpret_binary_formula ERROR: Out of memory.\n");
+		free(*left); free(left); return false;
+	} else if (!tptp_interpret_unary_formula(tokens, index, *right, names, variables)) {
+		free(*left); free(left); free(right); return false;
+	}
+
+	formula.binary.left = left;
+	formula.binary.right = right;
+	formula.type = OperatorType;
+	formula.reference_count = 1;
+	return true;
+}
+
+template<fol_formula_type OperatorType>
+bool tptp_interpret_binary_sequence(
+	const array<tptp_token>& tokens,
+	unsigned int& index, fol_formula& formula,
+	hash_map<string, unsigned int>& names,
+	array_map<string, unsigned int>& variables,
+	fol_formula* left)
+{
+	while (true) {
+		fol_formula* next = (fol_formula*) malloc(sizeof(fol_formula));
+		if (next == NULL) {
+			fprintf(stderr, "tptp_interpret_binary_sequence ERROR: Out of memory.\n");
+			free(*left); free(left); return false;
+		} else if (!tptp_interpret_unary_formula(tokens, index, *next, names, variables)) {
+			free(*left); free(left); free(next); return false;
+		}
+
+		if (index < tokens.length && tokens[index].type == OperatorType) {
+			index++;
+			fol_formula* parent = (fol_formula*) malloc(sizeof(fol_formula));
+			if (parent == NULL) {
+				fprintf(stderr, "tptp_interpret_binary_sequence ERROR: Out of memory.\n");
+				free(*left); free(left); free(*next); free(next); return false;
+			}
+
+			parent->binary.left = left;
+			parent->binary.right = next;
+			parent->type = OperatorType;
+			parent->reference_count = 1;
+			left = parent;
+		} else {
+			formula.binary.left = left;
+			formula.binary.right = next;
+			formula.type = OperatorType;
+			formula.reference_count = 1;
+			return true;
+		}
+	}
+}
+
 bool tptp_interpret(
 	const array<tptp_token>& tokens,
 	unsigned int& index, fol_formula& formula,
-	hash_map<string, unsigned int>& names)
+	hash_map<string, unsigned int>& names,
+	array_map<string, unsigned int>& variables)
 {
-	fol_formula left;
+	fol_formula* left = (fol_formula*) malloc(sizeof(fol_formula));
+	if (left == NULL) {
+		fprintf(stderr, "tptp_interpret ERROR: Out of memory.\n");
+		return false;
+	} if (!tptp_interpret_unary_formula(tokens, index, *left, names, variables)) {
+		return false;
+	}
 
+	if (index >= tokens.length) {
+		return true;
+	} else if (tokens[index].type == tptp_token_type::AND) {
+		index++;
+		if (!tptp_interpret_binary_sequence<fol_formula_type::AND>(tokens, index, formula, names, variables, left))
+			return false;
+
+	} else if (tokens[index].type == tptp_token_type::OR) {
+		index++;
+		if (!tptp_interpret_binary_sequence<fol_formula_type::OR>(tokens, index, formula, names, variables, left))
+			return false;
+
+	} else if (tokens[index].type == tptp_token_type::IF_THEN) {
+		index++;
+		if (!tptp_interpret_binary_formula<fol_formula_type::IF_THEN>(tokens, index, formula, names, variables, left))
+			return false;
+
+	} else if (tokens[index].type == tptp_token_type::IFF) {
+		index++;
+		if (!tptp_interpret_binary_formula<fol_formula_type::IFF>(tokens, index, formula, names, variables, left))
+			return false;
+	} else {
+		read_error();
+		return false;
+	}
+	return true;
 }
 
 #endif /* FIRST_ORDER_LOGIC_H_ */
