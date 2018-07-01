@@ -45,19 +45,19 @@ void cleanup(
 	}
 }
 
+#include <locale.h>
+
 int main(int argc, const char** argv)
 {
-	const char* formulas_src = "has_color(frog,green)\n"
-		"![X]:(frog(X)=>green(X))\n"
-		"\t![X]: (  frog( X)  =>\t green (  X\t) )\n"
-		"![X,Y]:((cat(X) & dog(Y))=> ~like(X,Y)) | ?[Z]:((((~frog(Z)))))\n";
-	memory_stream in = memory_stream(formulas_src, strlen(formulas_src));
+	setlocale(LC_CTYPE, "en_US.UTF-8");
+	FILE* in = open_file("logical_forms.txt", "r");
 
 	array<fol_formula*> formulas = array<fol_formula*>(16);
 	hash_map<string, unsigned int> names = hash_map<string, unsigned int>(1024);
 	if (!read_formulas(formulas, in, names)) {
-		cleanup(names, formulas); return EXIT_FAILURE;
+		fclose(in); cleanup(names, formulas); return EXIT_FAILURE;
 	}
+	fclose(in);
 
 	const string** name_ids = invert(names);
 	string_map_scribe printer = { name_ids, names.table.size + 1 };

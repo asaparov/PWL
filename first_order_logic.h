@@ -376,6 +376,18 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	return true;
 }
 
+inline bool append_to_token(
+	array<char>& token, wint_t next, std::mbstate_t& shift)
+{
+	if (!token.ensure_capacity(token.length + MB_CUR_MAX))
+		return false;
+	size_t written = wcrtomb(token.data + token.length, next, &shift);
+	if (written == static_cast<std::size_t>(-1))
+		return false;
+	token.length += written;
+	return true;
+}
+
 template<typename Stream>
 bool tptp_lex(array<tptp_token>& tokens, Stream& input) {
 	position start = position(1, 1);
@@ -383,6 +395,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input) {
 	tptp_lexer_state state = tptp_lexer_state::DEFAULT;
 	array<char> token = array<char>(1024);
 
+	std::mbstate_t shift = {0};
 	wint_t next = fgetwc(input);
 	bool new_line = false;
 	while (next != WEOF) {
@@ -397,15 +410,15 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input) {
 				 || !tptp_lex_symbol(tokens, input, next, current))
 					return false;
 				state = tptp_lexer_state::DEFAULT;
-				token.clear();
+				token.clear(); shift = {0};
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
 					return false;
 				state = tptp_lexer_state::DEFAULT;
-				token.clear();
+				token.clear(); shift = {0};
 				new_line = (next == '\n');
 			} else {
-				if (!token.add(next)) return false;
+				if (!append_to_token(token, next, shift)) return false;
 			}
 			break;
 
@@ -420,7 +433,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input) {
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
 			} else {
-				if (!token.add(next)) return false;
+				if (!append_to_token(token, next, shift)) return false;
 				state = tptp_lexer_state::IDENTIFIER;
 				start = current;
 			}
