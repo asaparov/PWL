@@ -2,4 +2,6 @@
 has_color(frog,green)
 ![X]:(frog(X)=>green(X))
 	![X]: (  frog( X)  =>	 green (  X	) )
-![X,Y]:((cat漢字(X) & dog(Y))=> ~like(X,Y)) | ?[Z]:((((~frog(Z)))))
+
+![X,Y]:((cat漢字(X) & dog(Y))=> ~
+	ᚠᚢᚦᚨᚱᚲ(X,Y)) | ?[ᚠ]:((((~frog(ᚠ)))))

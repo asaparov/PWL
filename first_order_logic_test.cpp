@@ -1,5 +1,7 @@
 #include "first_order_logic.h"
 
+#include <locale.h>
+
 using namespace core;
 
 template<typename Stream>
@@ -44,8 +46,6 @@ void cleanup(
 		free(*formula); free(formula);
 	}
 }
-
-#include <locale.h>
 
 int main(int argc, const char** argv)
 {
