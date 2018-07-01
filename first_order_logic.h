@@ -31,6 +31,26 @@ struct fol_term {
 	};
 };
 
+template<typename Stream>
+inline bool print_variable(unsigned int variable, Stream& out) {
+	return print('$', out) + print(variable, out);
+}
+
+template<typename Stream, typename... Printer>
+bool print(const fol_term& term, Stream& out, Printer&&... printer) {
+	switch (term.type) {
+	case fol_term_type::VARIABLE:
+		return print_variable(term.variable, out);
+	case fol_term_type::CONSTANT:
+		return print(term.constant, out, std::forward<Printer>(printer)...);
+	case fol_term_type::NONE:
+		break;
+	}
+
+	fprintf(stderr, "print ERROR: Unexpected fol_term_type.\n");
+	return false;
+}
+
 enum class fol_formula_type {
 	ATOM,
 
@@ -49,43 +69,36 @@ struct fol_atom {
 	fol_term arg1;
 	fol_term arg2;
 
+	static inline void move(const fol_atom& src, fol_atom& dst) {
+		dst.predicate = src.predicate;
+		dst.arg1 = src.arg1;
+		dst.arg2 = src.arg2;
+	}
+
 	static inline void free(fol_atom& formula) { }
 };
 
 struct fol_unary_formula {
 	fol_formula* operand;
 
-	static inline void free(fol_unary_formula& formula) {
-		core::free(*formula.operand);
-		if (formula.operand->reference_count == 0)
-			core::free(formula.operand);
-	}
+	static inline void move(const fol_unary_formula& src, fol_unary_formula& dst);
+	static inline void free(fol_unary_formula& formula);
 };
 
 struct fol_binary_formula {
 	fol_formula* left;
 	fol_formula* right;
 
-	static inline void free(fol_binary_formula& formula) {
-		core::free(*formula.left);
-		if (formula.left->reference_count == 0)
-			core::free(formula.left);
-
-		core::free(*formula.right);
-		if (formula.right->reference_count == 0)
-			core::free(formula.right);
-	}
+	static inline void move(const fol_binary_formula& src, fol_binary_formula& dst);
+	static inline void free(fol_binary_formula& formula);
 };
 
 struct fol_quantifier {
 	unsigned int variable;
 	fol_formula* operand;
 
-	static inline void free(fol_quantifier& formula) {
-		core::free(*formula.operand);
-		if (formula.operand->reference_count == 0)
-			core::free(formula.operand);
-	}
+	static inline void move(const fol_quantifier& src, fol_quantifier& dst);
+	static inline void free(fol_quantifier& formula);
 };
 
 struct fol_formula {
@@ -98,27 +111,137 @@ struct fol_formula {
 		fol_quantifier quantifier;
 	};
 
-	static inline void free(fol_formula& formula) {
-		formula.reference_count--;
-		if (formula.reference_count == 0) {
-			switch (formula.type) {
-			case fol_formula_type::ATOM:
-				core::free(formula.atom); break;
-			case fol_formula_type::NOT:
-				core::free(formula.unary); break;
-			case fol_formula_type::AND:
-			case fol_formula_type::OR:
-			case fol_formula_type::IF_THEN:
-			case fol_formula_type::IFF:
-				core::free(formula.binary); break;
-			case fol_formula_type::FOR_ALL:
-			case fol_formula_type::EXISTS:
-				core::free(formula.quantifier); break;
-			}
-			fprintf(stderr, "fol_formula.free ERROR: Unrecognized fol_formula_type.\n");
-		}
-	}
+	static inline void move(const fol_formula& src, fol_formula& dst);
+	static inline void free(fol_formula& formula);
 };
+
+inline void fol_formula::move(const fol_formula& src, fol_formula& dst) {
+	dst.type = src.type;
+	dst.reference_count = src.reference_count;
+	switch (src.type) {
+	case fol_formula_type::ATOM:
+		core::move(src.atom, dst.atom); return;
+	case fol_formula_type::NOT:
+		core::move(src.unary, dst.unary); return;
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+		core::move(src.binary, dst.binary); return;
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		core::move(src.quantifier, dst.quantifier); return;
+	}
+	fprintf(stderr, "fol_formula.move ERROR: Unrecognized fol_formula_type.\n");
+}
+
+inline void fol_unary_formula::move(const fol_unary_formula& src, fol_unary_formula& dst) {
+	dst.operand = src.operand;
+}
+
+inline void fol_binary_formula::move(const fol_binary_formula& src, fol_binary_formula& dst) {
+	dst.left = src.left;
+	dst.right = src.right;
+}
+
+inline void fol_quantifier::move(const fol_quantifier& src, fol_quantifier& dst) {
+	dst.variable = src.variable;
+	dst.operand = src.operand;
+}
+
+inline void fol_formula::free(fol_formula& formula) {
+	formula.reference_count--;
+	if (formula.reference_count == 0) {
+		switch (formula.type) {
+		case fol_formula_type::ATOM:
+			core::free(formula.atom); return;
+		case fol_formula_type::NOT:
+			core::free(formula.unary); return;
+		case fol_formula_type::AND:
+		case fol_formula_type::OR:
+		case fol_formula_type::IF_THEN:
+		case fol_formula_type::IFF:
+			core::free(formula.binary); return;
+		case fol_formula_type::FOR_ALL:
+		case fol_formula_type::EXISTS:
+			core::free(formula.quantifier); return;
+		}
+		fprintf(stderr, "fol_formula.free ERROR: Unrecognized fol_formula_type.\n");
+	}
+}
+
+inline void fol_unary_formula::free(fol_unary_formula& formula) {
+	core::free(*formula.operand);
+	if (formula.operand->reference_count == 0)
+		core::free(formula.operand);
+}
+
+inline void fol_binary_formula::free(fol_binary_formula& formula) {
+	core::free(*formula.left);
+	if (formula.left->reference_count == 0)
+		core::free(formula.left);
+
+	core::free(*formula.right);
+	if (formula.right->reference_count == 0)
+		core::free(formula.right);
+}
+
+inline void fol_quantifier::free(fol_quantifier& formula) {
+	core::free(*formula.operand);
+	if (formula.operand->reference_count == 0)
+		core::free(formula.operand);
+}
+
+template<typename Stream, typename... Printer>
+bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
+{
+	switch (formula.type) {
+	case fol_formula_type::ATOM:
+		if (!print(formula.atom.predicate, out, std::forward<Printer>(printer)...) || !print('(', out))
+			return false;
+
+		if (formula.atom.arg1.type != fol_term_type::NONE) {
+			if (!print(formula.atom.arg1, out, std::forward<Printer>(printer)...))
+				return false;
+			if (formula.atom.arg2.type != fol_term_type::NONE) {
+				if (!print(',', out) || !print(formula.atom.arg2, out, std::forward<Printer>(printer)...))
+					return false;
+			}
+		}
+
+		return print(')', out);
+
+	case fol_formula_type::NOT:
+		return print('~', out) && print(*formula.unary.operand, out, std::forward<Printer>(printer)...);
+
+	case fol_formula_type::AND:
+		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
+			&& print(" & ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+
+	case fol_formula_type::OR:
+		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
+			&& print(" | ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+
+	case fol_formula_type::IF_THEN:
+		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
+			&& print(" => ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+
+	case fol_formula_type::IFF:
+		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
+			&& print(" <=> ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+
+	case fol_formula_type::FOR_ALL:
+		return print("![", out) && print_variable(formula.quantifier.variable, out) && print("]:", out)
+			&& print(*formula.quantifier.operand, out, std::forward<Printer>(printer)...);
+
+	case fol_formula_type::EXISTS:
+		return print("?[", out) && print_variable(formula.quantifier.variable, out) && print("]:", out)
+			&& print(*formula.quantifier.operand, out, std::forward<Printer>(printer)...);
+	}
+
+	fprintf(stderr, "print ERROR: Unrecognized fol_formula_type.\n");
+	return false;
+}
 
 
 /**
@@ -217,7 +340,8 @@ bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char sym
 	}
 }
 
-inline bool tptp_lex_symbol(array<tptp_token>& tokens, FILE* input, int next, position& current)
+template<typename Stream>
+inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t next, position& current)
 {
 	if (next == ',' || next == ':' || next == '(' || next == ')'
 	 || next == '[' || next == ']' || next == '&' || next == '|'
@@ -225,7 +349,7 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, FILE* input, int next, po
 	{
 		return tptp_emit_symbol(tokens, current, next);
 	} else if (next == '=') {
-		next = fgetc(input);
+		next = fgetwc(input);
 		if (next != '>') {
 			read_error("Expected '>' after '='", current);
 			return false;
@@ -233,12 +357,12 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, FILE* input, int next, po
 			return false;
 		current.column++;
 	} else if (next == '<') {
-		next = fgetc(input);
+		next = fgetwc(input);
 		if (next != '=') {
 			read_error("Expected '=' after '<'", current);
 			return false;
 		}
-		next = fgetc(input);
+		next = fgetwc(input);
 		if (next != '>') {
 			read_error("Expected '>' after '='", current);
 			return false;
@@ -252,15 +376,16 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, FILE* input, int next, po
 	return true;
 }
 
-bool tptp_lex(array<tptp_token>& tokens, FILE* input) {
+template<typename Stream>
+bool tptp_lex(array<tptp_token>& tokens, Stream& input) {
 	position start = position(1, 1);
 	position current = position(1, 1);
 	tptp_lexer_state state = tptp_lexer_state::DEFAULT;
 	array<char> token = array<char>(1024);
 
-	int prev = 0, next = fgetc(input);
+	wint_t next = fgetwc(input);
 	bool new_line = false;
-	while (next != -1) {
+	while (next != WEOF) {
 		switch (state) {
 		case tptp_lexer_state::IDENTIFIER:
 			if (next == ',' || next == ':' || next == '(' || next == ')'
@@ -307,8 +432,7 @@ bool tptp_lex(array<tptp_token>& tokens, FILE* input) {
 			current.column = 1;
 			new_line = false;
 		} else current.column++;
-		prev = next;
-		next = fgetc(input);
+		next = fgetwc(input);
 	}
 
 	if (state == tptp_lexer_state::IDENTIFIER)
@@ -320,6 +444,17 @@ bool tptp_lex(array<tptp_token>& tokens, FILE* input) {
 /**
  * Recursive-descent parser for first-order logic formulas in TPTP-like format.
  */
+
+bool tptp_interpret_unary_formula(
+	const array<tptp_token>&,
+	unsigned int&, fol_formula&,
+	hash_map<string, unsigned int>&,
+	array_map<string, unsigned int>&);
+bool tptp_interpret(
+	const array<tptp_token>&,
+	unsigned int&, fol_formula&,
+	hash_map<string, unsigned int>&,
+	array_map<string, unsigned int>&);
 
 bool tptp_interpret_argument_list(
 	const array<tptp_token>& tokens,
@@ -334,7 +469,7 @@ bool tptp_interpret_argument_list(
 	index++;
 
 	while (true) {
-		if (terms.ensure_capacity(terms.length + 1)
+		if (!terms.ensure_capacity(terms.length + 1)
 		 || !expect_token(tokens, index, tptp_token_type::IDENTIFIER,
 				"identifier in list of arguments in atomic formula"))
 			return false;
@@ -472,8 +607,9 @@ bool tptp_interpret_unary_formula(
 			free(operand); return false;
 		}
 
-		formula.type = fol_formula_type::NOT;
 		formula.unary.operand = operand;
+		formula.type = fol_formula_type::NOT;
+		formula.reference_count = 1;
 
 	} else if (tokens[index].type == tptp_token_type::LPAREN) {
 		/* these are just grouping parenthesis of the form (F) */
@@ -525,6 +661,7 @@ bool tptp_interpret_unary_formula(
 		}
 		formula.atom.predicate = predicate;
 		formula.type = fol_formula_type::ATOM;
+		formula.reference_count = 1;
 
 	} else {
 		read_error("Unexpected symbol. Expected a unary formula", tokens[index].start);
@@ -556,6 +693,10 @@ inline bool tptp_interpret_binary_formula(
 	return true;
 }
 
+template<fol_formula_type OperatorType> struct tptp_operator_type { };
+template<> struct tptp_operator_type<fol_formula_type::AND> { static constexpr tptp_token_type type = tptp_token_type::AND; };
+template<> struct tptp_operator_type<fol_formula_type::OR> { static constexpr tptp_token_type type = tptp_token_type::OR; };
+
 template<fol_formula_type OperatorType>
 bool tptp_interpret_binary_sequence(
 	const array<tptp_token>& tokens,
@@ -573,7 +714,7 @@ bool tptp_interpret_binary_sequence(
 			free(*left); free(left); free(next); return false;
 		}
 
-		if (index < tokens.length && tokens[index].type == OperatorType) {
+		if (index < tokens.length && tokens[index].type == tptp_operator_type<OperatorType>::type) {
 			index++;
 			fol_formula* parent = (fol_formula*) malloc(sizeof(fol_formula));
 			if (parent == NULL) {
@@ -611,6 +752,7 @@ bool tptp_interpret(
 	}
 
 	if (index >= tokens.length) {
+		move(*left, formula); free(left);
 		return true;
 	} else if (tokens[index].type == tptp_token_type::AND) {
 		index++;
@@ -632,8 +774,7 @@ bool tptp_interpret(
 		if (!tptp_interpret_binary_formula<fol_formula_type::IFF>(tokens, index, formula, names, variables, left))
 			return false;
 	} else {
-		read_error();
-		return false;
+		move(*left, formula); free(left);
 	}
 	return true;
 }
