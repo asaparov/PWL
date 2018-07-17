@@ -1,4 +1,11 @@
-Cat: Cats are carnivorous mammals.
-Mammal: Mammals are animals with mammaries.
-Animal: Animals are multicellular organisms.
-Organism: An organism is any living thing.
+![x]:(type(x,organism) => ?[c]:(type(c,is_living) & arg1(c,x)) & type(x,object))
+![x]:(type(x,animal) => ?[c]:(type(c,is_multicellular) & arg1(c,x)) & type(x,organism))
+![x]:(type(x,mammal) => type(x,vertebrate) & type(x,animal))
+![x]:(type(x,mammal) => ?[h]:(type(h,has) & arg1(h,x) & ?[f]:(type(f,fur) & arg2(h,f))) | ?[h]:(type(h,has) & arg1(h,x) & ?[f]:(type(f,hair) & arg2(h,f))))
+![x]:(type(x,cat) => ?[c]:(type(c,is_carnivorous) & arg1(c,x)) & type(x,animal))
+type(bob,cat)
+type(sam,cat)
+type(kate,cat)
+type(bob,mammal)
+type(sam,mammal)
+type(kate,mammal)
