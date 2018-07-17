@@ -1,0 +1,4 @@
+Cat: Cats are carnivorous mammals.
+Mammal: Mammals are animals with mammaries.
+Animal: Animals are multicellular organisms.
+Organism: An organism is any living thing.
