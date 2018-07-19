@@ -9,6 +9,7 @@
 #define FIRST_ORDER_LOGIC_H_
 
 #include <core/lex.h>
+#include <cstdint>
 
 using namespace core;
 
@@ -190,6 +191,117 @@ inline void fol_quantifier::free(fol_quantifier& formula) {
 	core::free(*formula.operand);
 	if (formula.operand->reference_count == 0)
 		core::free(formula.operand);
+}
+
+struct canonlicalizer { };
+
+int_fast8_t compare(
+		const fol_formula&,
+		const fol_formula&,
+		const canonlicalizer&);
+
+inline int_fast8_t compare(
+		const fol_term& first,
+		const fol_term& second,
+		const canonlicalizer& sorter)
+{
+	if (first.type < second.type) return -1;
+	else if (first.type > second.type) return 1;
+	switch (first.type) {
+	case fol_term_type::CONSTANT:
+		if (first.constant < second.constant) return -1;
+		else if (first.constant > second.constant) return 1;
+		else return 0;
+	case fol_term_type::VARIABLE:
+		/* TODO: how do we compare variables? */
+		return -1;
+	case fol_term_type::NONE:
+		return 0;
+	}
+	fprintf(stderr, "compare ERROR: Unrecognized fol_term_type.\n");
+	exit(EXIT_FAILURE);
+}
+
+inline int_fast8_t compare(
+		const fol_atom& first,
+		const fol_atom& second,
+		const canonlicalizer& sorter)
+{
+	if (first.predicate < second.predicate) return -1;
+	else if (first.predicate > second.predicate) return 1;
+
+	int_fast8_t result = compare(first.arg1, second.arg1, sorter);
+	if (result != 0) return result;
+
+	return compare(first.arg2, second.arg2, sorter);
+}
+
+inline int_fast8_t compare(
+		const fol_unary_formula& first,
+		const fol_unary_formula& second,
+		const canonlicalizer& sorter)
+{
+	return compare(*first.operand, *second.operand, sorter);
+}
+
+inline int_fast8_t compare(
+		const fol_binary_formula& first,
+		const fol_binary_formula& second,
+		const canonlicalizer& sorter)
+{
+	int_fast8_t result = compare(*first.left, *second.left, sorter);
+	if (result != 0) return result;
+	return compare(*first.right, *second.right, sorter);
+}
+
+inline int_fast8_t compare(
+		const fol_quantifier& first,
+		const fol_quantifier& second,
+		const canonlicalizer& sorter)
+{
+	/* TODO: how do we compare variables? */
+	return compare(*first.operand, *second.operand, sorter);
+}
+
+int_fast8_t compare(
+		const fol_formula& first,
+		const fol_formula& second,
+		const canonlicalizer& sorter)
+{
+	if (first.type < second.type) return true;
+	else if (first.type > second.type) return false;
+	switch (first.type) {
+	case fol_formula_type::ATOM:
+		return compare(first.atom, second.atom, sorter);
+	case fol_formula_type::NOT:
+		return compare(first.unary, second.unary, sorter);
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+		return compare(first.binary, second.binary, sorter);
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		return compare(first.quantifier, second.quantifier, sorter);
+	}
+	fprintf(stderr, "compare ERROR: Unrecognized fol_formula_type.\n");
+	exit(EXIT_FAILURE);
+}
+
+bool less_than(
+		const fol_formula& first,
+		const fol_formula& second,
+		const canonlicalizer& sorter)
+{
+	return compare(first, second, sorter) < 0;
+}
+
+bool compute_maximal_scope(const fol_formula& src, const fol_formula* root_scope)
+{
+	switch (src.type) {
+	case fol_formula_type::ATOM:
+		
+	}
 }
 
 template<typename Stream, typename... Printer>
