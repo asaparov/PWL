@@ -320,12 +320,130 @@ struct fol_scope {
 	};
 };
 
+template<fol_formula_type ScopeType>
+inline fol_formula* canonicalize_scope(array<fol_formula*>& scope)
+{
+	sort(scope, canonicalizer());
+
+	/* remove duplicate elements */
+	unsigned int dst_index = 0;
+	for (unsigned int i = 1; i < scope.length; i++) {
+		if (scope[dst_index] != scope[i]) {
+			scope[++dst_index] = scope[i];
+		} else {
+			free(*scope[i]);
+			free(scope[i]);
+		}
+	}
+	scope.length = dst_index + 1;
+
+	fol_formula* inner = scope.last();
+	inner->reference_count++;
+	for (unsigned int i = scope.length - 1; i > 0; i--) {
+		fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+		if (new_formula == NULL) {
+			fprintf(stderr, "compute_maximal_scopes: Out of memory.\n");
+			free(*inner); if (inner->reference_count == 0) free(inner);
+			return NULL;
+		}
+		new_formula->type = ScopeType;
+		new_formula->binary.left = scope[i - 1];
+		new_formula->binary.right = inner;
+		new_formula->binary.left->reference_count++;
+		/* the reference count of 'inner' is incremented and decremented simultaneously here, so we don't change it */
+		inner = new_formula;
+	}
+
+	return inner;
+}
+
+template<fol_formula_type ScopeType>
+inline bool new_commutative_scope(const fol_formula& src)
+{
+	fol_scope new_scope;
+	new_scope.type = ScopeType;
+	if (!array_init(new_scope.commutative.children, 8))
+		return false;
+	if (!compute_maximal_scopes<false>(*src.binary.left, new_scope)
+	 || !compute_maximal_scopes<false>(*src.binary.right, new_scope))
+		return false;
+
+	/* construct the canonicalized node */
+	if (new_scope.commutative.children.length > 1) {
+		fol_formula* canonicalized = canonicalize_scope(new_scope.commutative.children);
+		if (canonicalized == NULL) return false;
+
+		/* TODO: move 'canonicalized' to the appropriate ancestor scope */
+
+	} else {
+		/* TODO: what do we do if there is less than 2 operands? is this even possible? */
+	}
+	return true;
+}
+
+template<fol_formula_type ScopeType>
+inline bool new_noncommutative_scope(const fol_formula& src)
+{
+	fol_scope new_scope;
+	new_scope.type = ScopeType;
+	if (!array_init(new_scope.noncommutative.left, 8))
+		return false;
+	if (!array_init(new_scope.noncommutative.right, 8)) {
+		free(new_scope.noncommutative.left); return false;
+	}
+	if (!compute_maximal_scopes<true>(*src.binary.left, new_scope)
+	 || !compute_maximal_scopes<false>(*src.binary.right, new_scope))
+		return false;
+
+	/* construct the canonicalized node */
+	fol_formula* canonicalized_left;
+	if (new_scope.noncommutative.left.length > 1) {
+		canonicalized_left = canonicalize_scope<fol_formula_type::AND>(new_scope.noncommutative.left);
+		if (canonicalized_left == NULL) return false;
+	} else if (new_scope.noncommutative.left.length == 1) {
+		canonicalized_left = new_scope.noncommutative.left[0];
+		canonicalized_left->reference_count++;
+	} else {
+		/* TODO: can new_scope.noncommutative.left be empty? */
+	}
+
+	fol_formula* canonicalized_right;
+	if (new_scope.noncommutative.right.length > 1) {
+		canonicalized_right = canonicalize_scope<fol_formula_type::OR>(new_scope.noncommutative.right);
+		if (canonicalized_right == NULL) {
+			free(*canonicalized_left);
+			if (canonicalized_left->reference_count == 0)
+				free(canonicalized_left);
+			return false;
+		}
+	} else if (new_scope.noncommutative.right.length == 1) {
+		canonicalized_right = new_scope.noncommutative.right[0];
+		canonicalized_right->reference_count++;
+	} else {
+		/* TODO: can new_scope.noncommutative.right be empty? */
+	}
+
+	fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
+	if (canonicalized == NULL) {
+		fprintf(stderr, "new_noncommutative_scope ERROR: Out of memory.\n");
+		free(*canonicalized_left); free(*canonicalized_right);
+		if (canonicalized_left->reference_count == 0) free(canonicalized_left);
+		if (canonicalized_right->reference_count == 0) free(canonicalized_right);
+		return false;
+	}
+	canonicalized->type = ScopeType;
+	canonicalized->binary.left = canonicalized_left;
+	canonicalized->binary.right = canonicalized_right;
+
+	/* TODO: move 'canonicalized' to the appropriate ancestor scope */
+
+	return true;
+}
+
 template<bool AntecedentScope>
 bool compute_maximal_scopes(const fol_formula& src, fol_scope& scope)
 {
 	switch (src.type) {
-	case fol_formula_type::ATOM:
-
 	case fol_formula_type::AND:
 		if (scope.type == fol_formula_type::AND) {
 			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
@@ -334,61 +452,38 @@ bool compute_maximal_scopes(const fol_formula& src, fol_scope& scope)
 			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
 				&& compute_maximal_scopes<AntecedentScope>(*src.binary.right, scope);
 		} else {
-			fol_scope new_scope;
-			new_scope.type = fol_formula_type::AND;
-			if (!array_init(new_scope.commutative.children, 8))
-				return false;
-			if (!compute_maximal_scopes<false>(*src.binary.left, new_scope)
-			 || !compute_maximal_scopes<false>(*src.binary.right, new_scope))
-				return false;
-
-			/* construct the canonicalized AND node */
-			if (new_scope.commutative.children.length > 1) {
-				sort(new_scope.commutative.children, canonicalizer());
-
-				/* remove duplicate elements */
-				unsigned int dst_index = 0;
-				for (unsigned int i = 1; i < new_scope.commutative.children.length; i++) {
-					if (new_scope.commutative.children[dst_index] != new_scope.commutative.children[i]) {
-						new_scope.commutative.children[++dst_index] = new_scope.commutative.children[i];
-					} else {
-						free(*new_scope.commutative.children[i]);
-						free(new_scope.commutative.children[i]);
-					}
-				}
-				new_scope.commutative.children.length = dst_index + 1;
-
-				fol_formula* inner = new_scope.commutative.children.last();
-				inner->reference_count++;
-				for (unsigned int i = new_scope.commutative.children.length - 1; i > 0; i--) {
-					fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-					if (new_formula == NULL) {
-						fprintf(stderr, "compute_maximal_scopes: Out of memory.\n");
-						free(*inner); if (inner->reference_count == 0) free(inner);
-						return false;
-					}
-					new_formula->type = fol_formula_type::AND;
-					new_formula->binary.left = new_scope.commutative.children[i - 1];
-					new_formula->binary.right = inner;
-					new_formula->binary.left->reference_count++;
-					/* the reference count of 'inner' is incremented and decremented simultaneously here, so we don't change it */
-					inner = new_formula;
-				}
-
-				/* TODO: move 'inner' to the appropriate ancestor scope */
-
-			} else {
-				/* TODO: what do we do if there is less than 2 conjuncts? is this even possible? */
-			}
+			return new_commutative_scope<fol_formula_type::AND>(src);
 		}
 
 	case fol_formula_type::OR:
 		if (scope.type == fol_formula_type::OR) {
 			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
 				&& compute_maximal_scopes<AntecedentScope>(*src.binary.right, scope);
-		} else if (scope.type == fol_formula_type::IF_THEN && !AntecedentScope) {
-			
+		} else {
+			return new_commutative_scope<fol_formula_type::OR>(src);
 		}
+
+	case fol_formula_type::IF_THEN:
+		if (scope.type == fol_formula_type::IF_THEN && !AntecedentScope) {
+			return compute_maximal_scopes<true>(*src.binary.left, scope)
+				&& compute_maximal_scopes<false>(*src.binary.right, scope);
+		} else {
+			return new_noncommutative_scope<fol_formula_type::IF_THEN>(src);
+		}
+
+	case fol_formula_type::IFF:
+		if (scope.type == fol_formula_type::IFF) {
+			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
+				&& compute_maximal_scopes<AntecedentScope>(*src.binary.right, scope);
+		} else {
+			return new_commutative_scope<fol_formula_type::IFF>(src);
+		}
+
+	case fol_formula_type::NOT:
+
+
+	case fol_formula_type::ATOM:
+
 	}
 }
 
