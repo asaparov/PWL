@@ -296,11 +296,190 @@ bool less_than(
 	return compare(first, second, sorter) < 0;
 }
 
-bool compute_maximal_scope(const fol_formula& src, const fol_formula* root_scope)
+struct fol_commutative_scope {
+	array<const fol_formula*> children;
+};
+
+struct fol_noncommutative_scope {
+	array<const fol_formula*> left;
+	array<const fol_formula*> right;
+};
+
+struct fol_quantifier_scope {
+	const fol_formula* operand;
+	unsigned int variable;
+};
+
+struct fol_scope {
+	fol_formula_type type;
+	union {
+		const fol_formula* unary;
+		fol_commutative_scope commutative;
+		fol_noncommutative_scope noncommutative;
+		fol_quantifier_scope quantifier;
+	};
+};
+
+template<bool AntecedentScope>
+bool compute_maximal_scopes(const fol_formula& src, fol_scope& scope)
 {
 	switch (src.type) {
 	case fol_formula_type::ATOM:
-		
+
+	case fol_formula_type::AND:
+		if (scope.type == fol_formula_type::AND) {
+			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
+				&& compute_maximal_scopes<AntecedentScope>(*src.binary.right, scope);
+		} else if (scope.type == fol_formula_type::IF_THEN && AntecedentScope) {
+			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
+				&& compute_maximal_scopes<AntecedentScope>(*src.binary.right, scope);
+		} else {
+			fol_scope new_scope;
+			new_scope.type = fol_formula_type::AND;
+			if (!array_init(new_scope.commutative.children, 8))
+				return false;
+			if (!compute_maximal_scopes<false>(*src.binary.left, new_scope)
+			 || !compute_maximal_scopes<false>(*src.binary.right, new_scope))
+				return false;
+
+			/* construct the canonicalized AND node */
+			if (new_scope.commutative.children.length > 1) {
+				sort(new_scope.commutative.children, canonicalizer());
+
+				/* remove duplicate elements */
+				unsigned int dst_index = 0;
+				for (unsigned int i = 1; i < new_scope.commutative.children.length; i++) {
+					if (new_scope.commutative.children[dst_index] != new_scope.commutative.children[i]) {
+						new_scope.commutative.children[++dst_index] = new_scope.commutative.children[i];
+					} else {
+						free(*new_scope.commutative.children[i]);
+						free(new_scope.commutative.children[i]);
+					}
+				}
+				new_scope.commutative.children.length = dst_index + 1;
+
+				fol_formula* inner = new_scope.commutative.children.last();
+				inner->reference_count++;
+				for (unsigned int i = new_scope.commutative.children.length - 1; i > 0; i--) {
+					fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+					if (new_formula == NULL) {
+						fprintf(stderr, "compute_maximal_scopes: Out of memory.\n");
+						free(*inner); if (inner->reference_count == 0) free(inner);
+						return false;
+					}
+					new_formula->type = fol_formula_type::AND;
+					new_formula->binary.left = new_scope.commutative.children[i - 1];
+					new_formula->binary.right = inner;
+					new_formula->binary.left->reference_count++;
+					/* the reference count of 'inner' is incremented and decremented simultaneously here, so we don't change it */
+					inner = new_formula;
+				}
+
+				/* TODO: move 'inner' to the appropriate ancestor scope */
+
+			} else {
+				/* TODO: what do we do if there is less than 2 conjuncts? is this even possible? */
+			}
+		}
+
+	case fol_formula_type::OR:
+		if (scope.type == fol_formula_type::OR) {
+			return compute_maximal_scopes<AntecedentScope>(*src.binary.left, scope)
+				&& compute_maximal_scopes<AntecedentScope>(*src.binary.right, scope);
+		} else if (scope.type == fol_formula_type::IF_THEN && !AntecedentScope) {
+			
+		}
+	}
+}
+
+struct scope_set {
+	const fol_scope* and_scope;
+	const fol_scope* or_scope;
+	const fol_scope* if_then_scope;
+	const fol_scope* iff_scope;
+	array<const fol_scope*> quantifier_scopes;
+
+	scope_set() : and_scope(0), or_scope(0), if_then_scope(0), iff_scope(0), quantifier_scopes(16) { }
+};
+
+inline bool get_variables(const fol_atom& atom, array<unsigned int>& variables)
+{
+	if (atom.arg1.type == fol_term_type::VARIABLE && !variables.add(atom.arg1.variable))
+		return false;
+	if (atom.arg2.type == fol_term_type::VARIABLE && !variables.add(atom.arg2.variable))
+		return false;
+	return true;
+}
+
+inline bool is_literal(const fol_formula* current, array<unsigned int>& variables)
+{
+	while (true) {
+		if (current->type == fol_formula_type::ATOM) {
+			return get_variables(current->atom, variables);
+		} else if (current->type != fol_formula_type::NOT) {
+			return false;
+		}
+		current = current->unary.operand;
+	}
+}
+
+unsigned int get_highest_scope(const scope_set& scopes) {
+	for (unsigned int i = indices.quantifier_scopes.length; i > 0; i--) {
+		unsigned int quantifier_index = indices.quantifier_scopes[i];
+		if (quantifier_index < indices.and_scope)
+			return indices.and_scope;
+		unsigned int quantified_variable = scopes.keys[quantifier_index]->quantifier.variable;
+		if (first_var == quantified_variable || second_var == quantified_variable)
+			return quantifier_index;
+	}
+}
+
+inline bool compute_maximal_scope_not(
+		const fol_formula& src, scope_set& scopes,
+		array<unsigned int>& variables,
+		fol_formula_type parent_operator, bool is_left)
+{
+	scope_set child_scopes;
+	if (!compute_maximal_scope(*src.unary.operand, child_scopes, variables, fol_formula_type::NOT, true))
+		return false;
+}
+
+bool compute_maximal_scopes(
+		const fol_formula& src, scope_set& maximal_scopes,
+		fol_scope& scope, array<unsigned int>& variables,
+		fol_formula_type parent_operator, bool is_left)
+{
+	unsigned int first_var = 0;
+	unsigned int second_var = 0;
+	switch (src.type) {
+	case fol_formula_type::ATOM:
+		/* get the variables of this formula */
+		if (!get_variables(src.atom, variables))
+			return false;
+		scope.type = fol_
+
+	case fol_formula_type::NOT:
+		/* NOT blocks all movement */
+
+	case fol_formula_type::AND:
+		if (parent_operator == fol_formula_type::IF_THEN && is_left) {
+			scopes.and_scope = scopes.if_then_scope;
+		} else if (parent_operator != fol_formula_type::AND
+				&& parent_operator != fol_formula_type::FOR_ALL
+				&& parent_operator != fol_formula_type::EXISTS)
+		{
+			/* cannot move AND any further up beyond this node, so add it as a scope */
+			scopes.and_scope = &src;
+		}
+	
+	case fol_formula_type::OR:
+
+	case fol_formula_type::IF_THEN:
+
+	case fol_formula_type::IFF:
+
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
 	}
 }
 
