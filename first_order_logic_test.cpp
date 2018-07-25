@@ -47,15 +47,19 @@ void cleanup(
 	}
 }
 
-int main(int argc, const char** argv)
+bool fol_test_simple(const char* filename = "logical_forms.txt")
 {
 	setlocale(LC_CTYPE, "en_US.UTF-8");
-	FILE* in = open_file("logical_forms.txt", "r");
+	FILE* in = open_file(filename, "r");
+	if (in == NULL) {
+		fprintf(stderr, "ERROR: Unable to open '%s' for reading.\n", filename);
+		return false;
+	}
 
 	array<fol_formula*> formulas = array<fol_formula*>(16);
 	hash_map<string, unsigned int> names = hash_map<string, unsigned int>(1024);
 	if (!read_formulas(formulas, in, names)) {
-		fclose(in); cleanup(names, formulas); return EXIT_FAILURE;
+		fclose(in); cleanup(names, formulas); return false;
 	}
 	fclose(in);
 
@@ -65,5 +69,40 @@ int main(int argc, const char** argv)
 		print(*formula, stderr, printer); print('\n', stderr);
 	}
 	cleanup(names, formulas); free(name_ids);
-	return EXIT_SUCCESS;
+	return true;
+}
+
+bool fol_test_canonicalization(const char* filename = "canonicalization_test.txt")
+{
+	setlocale(LC_CTYPE, "en_US.UTF-8");
+	FILE* in = open_file(filename, "r");
+	if (in == NULL) {
+		fprintf(stderr, "ERROR: Unable to open '%s' for reading.\n", filename);
+		return false;
+	}
+
+	array<fol_formula*> formulas = array<fol_formula*>(16);
+	hash_map<string, unsigned int> names = hash_map<string, unsigned int>(1024);
+	if (!read_formulas(formulas, in, names)) {
+		fclose(in); cleanup(names, formulas); return false;
+	}
+	fclose(in);
+
+	if (formulas.length % 2 != 0) {
+		fprintf(stderr, "ERROR: The canonicalization test requires an even number of input formulas.\n");
+		cleanup(names, formulas); return false;
+	}
+
+	const string** name_ids = invert(names);
+	string_map_scribe printer = { name_ids, names.table.size + 1 };
+	for (const fol_formula* formula : formulas) {
+		print(*formula, stderr, printer); print('\n', stderr);
+	}
+	cleanup(names, formulas); free(name_ids);
+	return true;
+}
+
+int main(int argc, const char** argv)
+{
+
 }

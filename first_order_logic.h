@@ -62,7 +62,10 @@ enum class fol_formula_type {
 	NOT,
 
 	FOR_ALL,
-	EXISTS
+	EXISTS,
+
+	TRUE,
+	FALSE
 };
 
 struct fol_atom {
@@ -112,9 +115,17 @@ struct fol_formula {
 		fol_quantifier quantifier;
 	};
 
+	fol_formula(fol_formula_type type) : type(type) { }
+	~fol_formula() { free_helper(); }
+
 	static inline void move(const fol_formula& src, fol_formula& dst);
-	static inline void free(fol_formula& formula);
+	static inline void free(fol_formula& formula) { formula.free_helper(); }
+
+	void free_helper();
 };
+
+thread_local fol_formula FOL_TRUE(fol_formula_type::TRUE);
+thread_local fol_formula FOL_FALSE(fol_formula_type::FALSE);
 
 inline void fol_formula::move(const fol_formula& src, fol_formula& dst) {
 	dst.type = src.type;
@@ -132,6 +143,9 @@ inline void fol_formula::move(const fol_formula& src, fol_formula& dst) {
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		core::move(src.quantifier, dst.quantifier); return;
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return;
 	}
 	fprintf(stderr, "fol_formula.move ERROR: Unrecognized fol_formula_type.\n");
 }
@@ -150,24 +164,27 @@ inline void fol_quantifier::move(const fol_quantifier& src, fol_quantifier& dst)
 	dst.operand = src.operand;
 }
 
-inline void fol_formula::free(fol_formula& formula) {
-	formula.reference_count--;
-	if (formula.reference_count == 0) {
-		switch (formula.type) {
+inline void fol_formula::free_helper() {
+	reference_count--;
+	if (reference_count == 0) {
+		switch (type) {
 		case fol_formula_type::ATOM:
-			core::free(formula.atom); return;
+			core::free(atom); return;
 		case fol_formula_type::NOT:
-			core::free(formula.unary); return;
+			core::free(unary); return;
 		case fol_formula_type::AND:
 		case fol_formula_type::OR:
 		case fol_formula_type::IF_THEN:
 		case fol_formula_type::IFF:
-			core::free(formula.binary); return;
+			core::free(binary); return;
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
-			core::free(formula.quantifier); return;
+			core::free(quantifier); return;
+		case fol_formula_type::TRUE:
+		case fol_formula_type::FALSE:
+			return;
 		}
-		fprintf(stderr, "fol_formula.free ERROR: Unrecognized fol_formula_type.\n");
+		fprintf(stderr, "fol_formula.free_helper ERROR: Unrecognized fol_formula_type.\n");
 	}
 }
 
@@ -283,6 +300,9 @@ int_fast8_t compare(
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		return compare(first.quantifier, second.quantifier, sorter);
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return 0;
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized fol_formula_type.\n");
 	exit(EXIT_FAILURE);
@@ -355,6 +375,9 @@ private:
 		case fol_formula_type::NOT:
 		case fol_formula_type::ATOM:
 			unary = NULL; return true;
+		case fol_formula_type::TRUE:
+		case fol_formula_type::FALSE:
+			return true;
 		}
 		fprintf(stderr, "fol_scope.init_helper ERROR: Unrecognized fol_formula_type.\n");
 		return false;
@@ -365,18 +388,21 @@ private:
 		case fol_formula_type::AND:
 		case fol_formula_type::OR:
 		case fol_formula_type::IFF:
-			commutative.~fol_commutative_scope();
+			commutative.~fol_commutative_scope(); return true;
 		case fol_formula_type::IF_THEN:
-			noncommutative.~fol_noncommutative_scope();
+			noncommutative.~fol_noncommutative_scope(); return true;
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
-			quantifier.~fol_quantifier_scope();
+			quantifier.~fol_quantifier_scope(); return true;
 		case fol_formula_type::NOT:
 		case fol_formula_type::ATOM:
 			/* TODO: can unary be null here? */
 			core::free(*unary);
 			if (unary->reference_count == 0)
 				core::free(unary);
+		case fol_formula_type::TRUE:
+		case fol_formula_type::FALSE:
+			return true;
 		}
 		fprintf(stderr, "fol_scope.free_helper ERROR: Unrecognized fol_formula_type.\n");
 		exit(EXIT_FAILURE);
@@ -637,7 +663,11 @@ bool move_to_highest_scope(
 	case fol_formula_type::EXISTS:
 		scope.quantifier.operand = formula;
 		return true;
+	case fol_formula_type::ATOM:
+		break;
 	}
+	fprintf(stderr, "move_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
+	return false;
 }
 
 template<fol_formula_type ScopeType>
@@ -678,20 +708,118 @@ inline fol_formula* canonicalize_scope(array<fol_formula*>& scope)
 	return inner;
 }
 
+inline void free_formulas(array<fol_formula*>& formulas) {
+	for (fol_formula* operand : formulas) {
+		free(*operand); free(operand);
+	}
+}
+
+template<bool IsRoot>
+inline bool move_true(fol_scope& scope) {
+	if (IsRoot) {
+		scope.unary = &FOL_TRUE;
+		return true;
+	}
+
+	switch (scope.type) {
+	case fol_formula_type::AND:
+		return true;
+	case fol_formula_type::OR:
+		free_formulas(scope.commutative.children);
+		scope.commutative.children.length = 1;
+		scope.commutative.children[0] = &FOL_TRUE;
+		scope.variables.clear();
+		break;
+	case fol_formula_type::IF_THEN:
+		if (!scope.noncommutative.is_left) {
+			free_formulas(scope.noncommutative.right);
+			scope.noncommutative.right.length = 1;
+			scope.noncommutative.right[0] = &FOL_TRUE;
+			scope.variables.clear();
+		}
+		return true;
+	case fol_formula_type::IFF:
+		return true;
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		scope.quantifier.operand = &FOL_TRUE;
+	case fol_formula_type::ATOM:
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		break;
+	}
+	fprintf(stderr, "move_true ERROR: Unexpected fol_formula_type.\n");
+	return false;
+}
+
+template<bool IsRoot>
+inline bool move_false(fol_scope& scope) {
+	if (IsRoot) {
+		scope.unary = &FOL_FALSE;
+		return true;
+	}
+
+	switch (scope.type) {
+	case fol_formula_type::AND:
+		free_formulas(scope.commutative.children);
+		scope.commutative.children.length = 1;
+		scope.commutative.children[0] = &FOL_FALSE;
+		scope.variables.clear();
+		break;
+	case fol_formula_type::OR:
+		return true;
+	case fol_formula_type::IF_THEN:
+		if (scope.noncommutative.is_left) {
+			free_formulas(scope.noncommutative.left);
+			scope.noncommutative.left.length = 1;
+			scope.noncommutative.left[0] = &FOL_FALSE;
+			scope.variables.clear();
+		}
+		return true;
+	case fol_formula_type::IFF:
+		if (!scope.commutative.children.add(&FOL_FALSE)) return false;
+		swap(scope.commutative.children.first(), scope.commutative.children.last());
+		return true;
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		scope.quantifier.operand = &FOL_FALSE;
+	case fol_formula_type::ATOM:
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		break;
+	}
+	fprintf(stderr, "move_false ERROR: Unexpected fol_formula_type.\n");
+	return false;
+}
+
 template<bool IsRoot, fol_formula_type ScopeType>
 inline bool process_commutative_scope(fol_scope& scope)
 {
+	if (scope.commutative.children.length > 0 && scope.commutative.children[0] == FOL_TRUE) {
+		
+	}
+
 	/* construct the canonicalized node */
 	if (scope.commutative.children.length > 1) {
 		fol_formula* canonicalized = canonicalize_scope<ScopeType>(scope.commutative.children);
 		if (canonicalized == NULL) return false;
 
 		/* move `canonicalized` to the appropriate ancestor scope */
-		if (!move_to_highest_scope<IsRoot>(*scope.parent, canonicalized, scope.variables))
-			return false;
+		return move_to_highest_scope<IsRoot>(*scope.parent, canonicalized, scope.variables);
 
+	} else if (scope.commutative.children.length == 1) {
+		/* simply remove the singleton from here so we don't have to increment the reference count */
+		scope.commutative.children.length--;
+		return move_to_highest_scope<IsRoot>(*scope.parent, scope.commutative.children[0], scope.variables);
 	} else {
-		/* TODO: what do we do if there is less than 2 operands? is this even possible? */
+		if (ScopeType == fol_formula_type::AND) {
+			return move_true<IsRoot>(*scope.parent);
+		} else if (ScopeType == fol_formula_type::OR) {
+			return move_false<IsRoot>(*scope.parent);
+		} else {
+			fprintf(stderr, "process_commutative_scope ERROR: Unexpected fol_formula_type.\n");
+			return false;
+		}
 	}
 }
 
@@ -705,9 +833,8 @@ inline bool process_noncommutative_scope(fol_scope& scope)
 		if (canonicalized_left == NULL) return false;
 	} else if (scope.noncommutative.left.length == 1) {
 		canonicalized_left = scope.noncommutative.left[0];
-		canonicalized_left->reference_count++;
 	} else {
-		/* TODO: can scope.noncommutative.left be empty? */
+		canonicalized_left = FOL_TRUE;
 	}
 
 	fol_formula* canonicalized_right;
@@ -721,17 +848,44 @@ inline bool process_noncommutative_scope(fol_scope& scope)
 		}
 	} else if (scope.noncommutative.right.length == 1) {
 		canonicalized_right = scope.noncommutative.right[0];
-		canonicalized_right->reference_count++;
 	} else {
-		/* TODO: can scope.noncommutative.right be empty? */
+		canonicalized_right = FOL_FALSE;
+	}
+
+	/* first consider special cases */
+	if (canonicalized_left == FOL_TRUE) {
+		if (canonicalized_right == FOL_FALSE) {
+			return move_false<IsRoot>(*scope.parent);
+		} else {
+			return move_to_highest_scope<IsRoot>(*scope.parent, canonicalized_left, scope.variables);
+		}
+	} else if (canonicalized_right == FOL_FALSE) {
+		fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
+		if (canonicalized == NULL) {
+			fprintf(stderr, "process_noncommutative_scope ERROR: Out of memory.\n");
+			free(*canonicalized_left); free(canonicalized_left);
+			return false;
+		}
+		canonicalized->type = fol_formula_type::NOT;
+		canonicalized->reference_count = 1;
+		canonicalized->unary = canonicalized_left;
+
+		/* move `canonicalized` to the appropriate ancestor scope */
+		return move_to_highest_scope<IsRoot>(*scope.parent, canonicalized, scope.variables);
+	}
+
+	/* check if we have the case A => A */
+	if (*canonicalized_left == *canonicalized_right) {
+		free(*canonicalized_left); free(canonicalized_left);
+		free(*canonicalized_right); free(canonicalized_right);
+		return move_true<IsRoot>(*scope.parent);
 	}
 
 	fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
 	if (canonicalized == NULL) {
 		fprintf(stderr, "process_noncommutative_scope ERROR: Out of memory.\n");
 		free(*canonicalized_left); free(*canonicalized_right);
-		if (canonicalized_left->reference_count == 0) free(canonicalized_left);
-		if (canonicalized_right->reference_count == 0) free(canonicalized_right);
+		free(canonicalized_left); free(canonicalized_right);
 		return false;
 	}
 	canonicalized->type = ScopeType;
@@ -981,6 +1135,11 @@ bool canonicalize(const fol_formula& src, fol_scope& scope,
 	}
 	fprintf(stderr, "canonicalize ERROR: Unrecognized fol_formula_type.\n");
 	return false;
+}
+
+inline bool canonicalize(const fol_formula& src, fol_formula*& out)
+{
+	fol_scope scope();
 }
 
 template<typename Stream, typename... Printer>
