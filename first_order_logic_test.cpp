@@ -95,8 +95,20 @@ bool fol_test_canonicalization(const char* filename = "canonicalization_test.txt
 
 	const string** name_ids = invert(names);
 	string_map_scribe printer = { name_ids, names.table.size + 1 };
-	for (const fol_formula* formula : formulas) {
-		print(*formula, stderr, printer); print('\n', stderr);
+	for (unsigned int i = 0; i < formulas.length; i += 2) {
+		fol_formula* canonicalized = canonicalize(*formulas[i]);
+		if (canonicalized == NULL) {
+			fprintf(stderr, "ERROR: Unable to canonicalize example %u.\n", i / 2);
+			continue;
+		} else if (*canonicalized != *formulas[i + 1]) {
+			fprintf(stderr, "ERROR: The canonicalized form of example %u does not match the expected output.\n", i / 2);
+			print("  Original form: ", stderr); print(*formulas[i], stderr, printer); print('\n', stderr);
+			print("  Canonicalized: ", stderr); print(*canonicalized, stderr, printer); print('\n', stderr);
+			print("  Expected form: ", stderr); print(*formulas[i + 1], stderr, printer); print('\n', stderr);
+		}
+		free(*canonicalized);
+		if (canonicalized->reference_count == 0)
+			free(canonicalized);
 	}
 	cleanup(names, formulas); free(name_ids);
 	return true;
@@ -104,5 +116,5 @@ bool fol_test_canonicalization(const char* filename = "canonicalization_test.txt
 
 int main(int argc, const char** argv)
 {
-
+	fol_test_canonicalization();
 }

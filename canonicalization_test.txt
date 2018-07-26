@@ -1,0 +1,10 @@
+f(a) & g(a)				f(a) & g(a)
+f(a) & f(a)				f(a)
+f(a) & g(a) & h(a)		f(a) & g(a) & h(a)
+g(a) & (f(a) & h(a))	f(a) & g(a) & h(a)
+f(a) => f(a)			T
+f(a) | (h(a) | g(a))	f(a) | g(a) | h(a)
+![X]:(f(a) & f(X))		f(a) & ![X]:f(X)
+?[X]:(f(X) | f(a))		f(a) | ?[X]:f(X)
+![X]:(g(b) & f(a))		f(a) & g(b)
+?[X]:(f(a) => f(X))		f(a) => ?[X]:f(X)
