@@ -69,6 +69,7 @@ bool fol_test_simple(const char* filename = "logical_forms.txt")
 		print(*formula, stderr, printer); print('\n', stderr);
 	}
 	cleanup(names, formulas); free(name_ids);
+	print("fol_test_simple: Test complete.\n", stdout); fflush(stdout);
 	return true;
 }
 
@@ -111,6 +112,7 @@ bool fol_test_canonicalization(const char* filename = "canonicalization_test.txt
 			free(canonicalized);
 	}
 	cleanup(names, formulas); free(name_ids);
+	print("fol_test_canonicalization: Test complete.\n", stdout); fflush(stdout);
 	return true;
 }
 

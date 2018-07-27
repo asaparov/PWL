@@ -15,7 +15,6 @@ using namespace core;
 
 
 /* forward declarations */
-
 struct fol_formula;
 bool operator == (const fol_formula&, const fol_formula&);
 bool operator == (const fol_formula&, const fol_formula&);
@@ -444,6 +443,98 @@ bool less_than(
 	return compare(*first, *second, sorter) < 0;
 }
 
+inline bool relabel_variables(fol_term& term,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	unsigned int index;
+	switch (term.type) {
+	case fol_term_type::CONSTANT:
+	case fol_term_type::NONE:
+		return true;
+	case fol_term_type::VARIABLE:
+		index = variable_map.index_of(term.variable);
+		if (index < variable_map.size) {
+			term.variable = variable_map.values[index];
+			return true;
+		} else {
+			fprintf(stderr, "relabel_variables ERROR: Undefined variable.\n");
+			return false;
+		}
+	}
+	fprintf(stderr, "relabel_variables ERROR: Unrecognized fol_term_type.\n");
+	return false;
+}
+
+
+/* forward declarations */
+bool relabel_variables(fol_formula&, array_map<unsigned int, unsigned int>&);
+
+
+inline bool new_variable(unsigned int src, unsigned int& dst,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	if (!variable_map.ensure_capacity(variable_map.size + 1))
+		return false;
+	unsigned int index = variable_map.index_of(src);
+	if (index < variable_map.size) {
+		fprintf(stderr, "new_variable ERROR: Multiple declaration of variable %u.\n", src);
+		return false;
+	}
+	variable_map.keys[index] = src;
+	dst = variable_map.size + 1;
+	variable_map.values[index] = dst;
+	variable_map.size++;
+	return true;
+}
+
+inline bool relabel_variables(fol_atom& atom,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	return relabel_variables(atom.arg1, variable_map)
+		&& relabel_variables(atom.arg2, variable_map);
+}
+
+inline bool relabel_variables(fol_quantifier& quantifier,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	if (!new_variable(quantifier.variable, quantifier.variable, variable_map)
+	 || !relabel_variables(*quantifier.operand, variable_map))
+		return false;
+
+	variable_map.size--;
+	return true;
+}
+
+bool relabel_variables(fol_formula& formula,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	switch (formula.type) {
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+		return relabel_variables(*formula.binary.left, variable_map)
+			&& relabel_variables(*formula.binary.right, variable_map);
+	case fol_formula_type::NOT:
+		return relabel_variables(*formula.unary.operand, variable_map);
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		return relabel_variables(formula.quantifier, variable_map);
+	case fol_formula_type::ATOM:
+		return relabel_variables(formula.atom, variable_map);
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return true;
+	}
+	fprintf(stderr, "relabel_variables ERROR: Unrecognized fol_formula_type.\n");
+	return false;
+}
+
+inline bool relabel_variables(fol_formula& formula) {
+	array_map<unsigned int, unsigned int> variable_map(16);
+	return relabel_variables(formula, variable_map);
+}
+
 struct fol_commutative_scope {
 	array<fol_formula*> children;
 
@@ -578,6 +669,7 @@ inline bool move_to_scope(
 		} else if (!init(*new_scope, scope->parent, ExpectedScopeType)) {
 			free(new_scope); return false;
 		}
+		new_scope->noncommutative.is_left = DescendantIsInAntecedent;
 		scope->parent = new_scope;
 		scope = new_scope;
 	}
@@ -587,7 +679,6 @@ inline bool move_to_scope(
 	case fol_formula_type::IFF:
 		return move_to_scope(formula, variables, scope->commutative.children, scope->variables);
 	case fol_formula_type::IF_THEN:
-		scope->noncommutative.is_left = DescendantIsInAntecedent;
 		if (MoveToAntecedent)
 			return move_to_scope(formula, variables, scope->noncommutative.left, scope->variables);
 		else return move_to_scope(formula, variables, scope->noncommutative.right, scope->variables);
@@ -603,7 +694,6 @@ inline bool move_to_scope(
 
 
 /* forward declarations */
-
 bool move_or_to_highest_scope(fol_scope&, fol_formula*, const array<unsigned int>&);
 bool canonicalize(const fol_formula&, fol_scope&, array_map<unsigned int, unsigned int>&);
 
@@ -811,8 +901,13 @@ bool move_to_highest_scope(
 }
 
 template<fol_formula_type ScopeType>
-inline fol_formula* canonicalize_scope(array<fol_formula*>& scope)
+inline fol_formula* canonicalize_scope(array<fol_formula*>& scope,
+		array_map<unsigned int, unsigned int>& variable_map)
 {
+	for (fol_formula* operand : scope)
+		if (!relabel_variables(*operand, variable_map))
+			return NULL;
+
 	sort(scope, canonicalizer());
 
 	/* remove duplicate elements */
@@ -865,7 +960,7 @@ inline bool move_true(fol_scope& scope)
 		scope.commutative.children.length = 1;
 		scope.commutative.children[0] = &FOL_TRUE;
 		scope.variables.clear();
-		break;
+		return true;
 	case fol_formula_type::IF_THEN:
 		if (!scope.noncommutative.is_left) {
 			free_formulas(scope.noncommutative.right);
@@ -901,7 +996,7 @@ inline bool move_false(fol_scope& scope)
 		scope.commutative.children.length = 1;
 		scope.commutative.children[0] = &FOL_FALSE;
 		scope.variables.clear();
-		break;
+		return true;
 	case fol_formula_type::OR:
 		return true;
 	case fol_formula_type::IF_THEN:
@@ -938,7 +1033,8 @@ inline bool move_false(fol_scope& scope)
 }
 
 template<fol_formula_type ScopeType>
-inline bool process_commutative_scope(fol_scope& scope)
+inline bool process_commutative_scope(fol_scope& scope,
+		array_map<unsigned int, unsigned int>& variable_map)
 {
 	static_assert(ScopeType == fol_formula_type::AND
 			   || ScopeType == fol_formula_type::OR
@@ -976,16 +1072,20 @@ inline bool process_commutative_scope(fol_scope& scope)
 
 	/* construct the canonicalized node */
 	if (scope.commutative.children.length > 1) {
-		fol_formula* canonicalized = canonicalize_scope<ScopeType>(scope.commutative.children);
+		fol_formula* canonicalized = canonicalize_scope<ScopeType>(scope.commutative.children, variable_map);
 		if (canonicalized == NULL) return false;
 
 		/* move `canonicalized` to the appropriate ancestor scope */
 		return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
 
 	} else if (scope.commutative.children.length == 1) {
-		/* simply remove the singleton from here so we don't have to increment the reference count */
-		scope.commutative.children.length--;
-		return move_to_highest_scope(*scope.parent, scope.commutative.children[0], scope.variables);
+		fol_formula* singleton = scope.commutative.children[0];
+		switch (singleton->type) {
+		case fol_formula_type::AND:
+		case fol_formula_type::OR:
+		case fol_formula_type::IFF:
+		}
+		return move_to_highest_scope(*scope.parent, singleton, scope.variables);
 	} else {
 		if (ScopeType == fol_formula_type::AND) {
 			return move_true(*scope.parent);
@@ -999,12 +1099,13 @@ inline bool process_commutative_scope(fol_scope& scope)
 }
 
 template<fol_formula_type ScopeType>
-inline bool process_noncommutative_scope(fol_scope& scope)
+inline bool process_noncommutative_scope(fol_scope& scope,
+		array_map<unsigned int, unsigned int>& variable_map)
 {
 	/* construct the canonicalized node */
 	fol_formula* canonicalized_left;
 	if (scope.noncommutative.left.length > 1) {
-		canonicalized_left = canonicalize_scope<fol_formula_type::AND>(scope.noncommutative.left);
+		canonicalized_left = canonicalize_scope<fol_formula_type::AND>(scope.noncommutative.left, variable_map);
 		if (canonicalized_left == NULL) return false;
 	} else if (scope.noncommutative.left.length == 1) {
 		canonicalized_left = scope.noncommutative.left[0];
@@ -1014,7 +1115,7 @@ inline bool process_noncommutative_scope(fol_scope& scope)
 
 	fol_formula* canonicalized_right;
 	if (scope.noncommutative.right.length > 1) {
-		canonicalized_right = canonicalize_scope<fol_formula_type::OR>(scope.noncommutative.right);
+		canonicalized_right = canonicalize_scope<fol_formula_type::OR>(scope.noncommutative.right, variable_map);
 		if (canonicalized_right == NULL) {
 			free(*canonicalized_left);
 			if (canonicalized_left->reference_count == 0)
@@ -1032,7 +1133,7 @@ inline bool process_noncommutative_scope(fol_scope& scope)
 		if (canonicalized_right == &FOL_FALSE) {
 			return move_false(*scope.parent);
 		} else {
-			return move_to_highest_scope(*scope.parent, canonicalized_left, scope.variables);
+			return move_to_highest_scope(*scope.parent, canonicalized_right, scope.variables);
 		}
 	} else if (canonicalized_right == &FOL_FALSE) {
 		fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
@@ -1077,11 +1178,17 @@ inline bool process_negation_scope(fol_scope& scope)
 	/* negation blocks all movement, so new_scope.unary->type cannot be NOT */
 	fol_formula* canonicalized = scope.unary;
 
+	if (canonicalized == &FOL_TRUE)
+		return move_false(*scope.parent);
+	else if (canonicalized == &FOL_FALSE)
+		return move_true(*scope.parent);
+
 	/* move `canonicalized` to the appropriate ancestor scope */
 	return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
 }
 
-inline bool process_intermediate_scopes(fol_scope* parent, fol_scope* end)
+inline bool process_intermediate_scopes(fol_scope* parent, fol_scope* end,
+		array_map<unsigned int, unsigned int>& variable_map)
 {
 	/* process any new scopes that were created by the movement */
 	fol_scope* next;
@@ -1089,16 +1196,16 @@ inline bool process_intermediate_scopes(fol_scope* parent, fol_scope* end)
 	{
 		switch (ancestor->type) {
 		case fol_formula_type::AND:
-			if (!process_commutative_scope<fol_formula_type::AND>(*ancestor)) return false;
+			if (!process_commutative_scope<fol_formula_type::AND>(*ancestor, variable_map)) return false;
 			else continue;
 		case fol_formula_type::OR:
-			if (!process_commutative_scope<fol_formula_type::OR>(*ancestor)) return false;
+			if (!process_commutative_scope<fol_formula_type::OR>(*ancestor, variable_map)) return false;
 			else continue;
 		case fol_formula_type::IFF:
-			if (!process_commutative_scope<fol_formula_type::IFF>(*ancestor)) return false;
+			if (!process_commutative_scope<fol_formula_type::IFF>(*ancestor, variable_map)) return false;
 			else continue;
 		case fol_formula_type::IF_THEN:
-			if (!process_noncommutative_scope<fol_formula_type::IF_THEN>(*ancestor)) return false;
+			if (!process_noncommutative_scope<fol_formula_type::IF_THEN>(*ancestor, variable_map)) return false;
 			else continue;
 		case fol_formula_type::NOT:
 			if (!process_negation_scope(*ancestor)) return false;
@@ -1132,8 +1239,8 @@ inline bool new_commutative_scope(
 	 || !canonicalize(*src.binary.right, new_scope, variable_map))
 		return false;
 
-	return process_commutative_scope<ScopeType>(new_scope)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope);
+	return process_commutative_scope<ScopeType>(new_scope, variable_map)
+		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 }
 
 template<fol_formula_type ScopeType>
@@ -1149,8 +1256,8 @@ inline bool new_noncommutative_scope(
 	new_scope.noncommutative.is_left = false;
 	if (!canonicalize(*src.binary.right, new_scope, variable_map)) return false;
 
-	return process_noncommutative_scope<ScopeType>(new_scope)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope);
+	return process_noncommutative_scope<ScopeType>(new_scope, variable_map)
+		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 }
 
 inline bool canonicalize_negation(
@@ -1163,7 +1270,7 @@ inline bool canonicalize_negation(
 		return false;
 
 	return process_negation_scope(new_scope)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope);
+		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 }
 
 template<fol_formula_type QuantifierType>
@@ -1175,30 +1282,19 @@ inline bool new_quantifier_scope(
 			   || QuantifierType == fol_formula_type::EXISTS,
 			"QuantifierType is not a quantifier.");
 
-	if (!variable_map.ensure_capacity(variable_map.size + 1))
-		return false;
-	unsigned int index = variable_map.index_of(src.quantifier.variable);
-	if (index < variable_map.size) {
-		fprintf(stderr, "new_quantifier_scope ERROR: Multiple declaration of variable %u.\n", src.quantifier.variable);
-		return false;
-	}
-	variable_map.keys[index] = src.quantifier.variable;
-	variable_map.values[index] = variable_map.size + 1;
-	variable_map.size++;
-
 	fol_scope new_scope(&parent_scope, QuantifierType);
-	new_scope.quantifier.variable = variable_map.values[index];
-	if (!canonicalize(*src.quantifier.operand, new_scope, variable_map))
+	if (!new_variable(src.quantifier.variable, new_scope.quantifier.variable, variable_map)
+	 || !canonicalize(*src.quantifier.operand, new_scope, variable_map))
 		return false;
 
-	variable_map.size = index;
+	variable_map.size--;
 
 	if (new_scope.quantifier.operand == &FOL_TRUE) {
 		return move_true(*new_scope.parent)
-			&& process_intermediate_scopes(new_scope.parent, &parent_scope);
+			&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 	} else if (new_scope.quantifier.operand == &FOL_FALSE) {
 		return move_false(*new_scope.parent)
-			&& process_intermediate_scopes(new_scope.parent, &parent_scope);
+			&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 	}
 
 	/* construct the canonicalized node */
@@ -1219,28 +1315,21 @@ inline bool new_quantifier_scope(
 		new_scope.variables.length--;
 	}
 	return move_to_highest_scope(*new_scope.parent, canonicalized, new_scope.variables)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope);
+		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 }
 
-inline bool canonicalize_term(const fol_term& src, fol_term& dst,
-		array_map<unsigned int, unsigned int>& variable_map,
+inline bool canonicalize_term(
+		const fol_term& src, fol_term& dst,
 		array<unsigned int>& variables)
 {
 	dst.type = src.type;
 
-	unsigned int index;
 	switch (src.type) {
 	case fol_term_type::CONSTANT:
 		dst.constant = src.constant; return true;
 	case fol_term_type::VARIABLE:
-		index = variable_map.index_of(src.variable);
-		if (index < variable_map.size) {
-			dst.variable = variable_map.values[index];
-			return variables.add(dst.variable);
-		} else {
-			fprintf(stderr, "canonicalize_term ERROR: Undefined variable.\n");
-			return false;
-		}
+		dst.variable = src.variable;
+		return variables.add(dst.variable);
 	case fol_term_type::NONE:
 		return true;
 	}
@@ -1249,8 +1338,7 @@ inline bool canonicalize_term(const fol_term& src, fol_term& dst,
 }
 
 inline bool canonicalize_atom(
-		const fol_atom& src, fol_scope& parent_scope,
-		array_map<unsigned int, unsigned int>& variable_map)
+		const fol_atom& src, fol_scope& parent_scope)
 {
 	fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
 	if (canonicalized == NULL) {
@@ -1262,8 +1350,8 @@ inline bool canonicalize_atom(
 	canonicalized->reference_count = 1;
 
 	array<unsigned int> variables = array<unsigned int>(2);
-	if (!canonicalize_term(src.arg1, canonicalized->atom.arg1, variable_map, variables)
-	 || !canonicalize_term(src.arg2, canonicalized->atom.arg2, variable_map, variables)) {
+	if (!canonicalize_term(src.arg1, canonicalized->atom.arg1, variables)
+	 || !canonicalize_term(src.arg2, canonicalized->atom.arg2, variables)) {
 		free(canonicalized); return false;
 	}
 	if (variables.length > 1) {
@@ -1275,7 +1363,8 @@ inline bool canonicalize_atom(
 	return move_to_highest_scope(parent_scope, canonicalized, variables);
 }
 
-bool canonicalize(const fol_formula& src, fol_scope& scope,
+bool canonicalize(
+		const fol_formula& src, fol_scope& scope,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	switch (src.type) {
@@ -1331,7 +1420,7 @@ bool canonicalize(const fol_formula& src, fol_scope& scope,
 		return new_quantifier_scope<fol_formula_type::EXISTS>(src, scope, variable_map);
 
 	case fol_formula_type::ATOM:
-		return canonicalize_atom(src.atom, scope, variable_map);
+		return canonicalize_atom(src.atom, scope);
 
 	case fol_formula_type::TRUE:
 		return move_true(scope);
@@ -1349,6 +1438,12 @@ inline fol_formula* canonicalize(const fol_formula& src)
 	array_map<unsigned int, unsigned int> variable_map(16);
 	if (!canonicalize(src, scope, variable_map))
 		return NULL;
+	if (!relabel_variables(*scope.unary)) {
+		free(*scope.unary);
+		if (scope.unary->reference_count == 0)
+			free(scope.unary);
+		return NULL;
+	}
 	return scope.unary;
 }
 
@@ -1475,7 +1570,7 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 		if (next != '>') {
 			read_error("Expected '>' after '='", current);
 			return false;
-		} if (!emit_token(tokens, current, current + 3, tptp_token_type::IF_THEN))
+		} if (!emit_token(tokens, current, current + 3, tptp_token_type::IFF))
 			return false;
 		current.column += 2;
 	} else {
