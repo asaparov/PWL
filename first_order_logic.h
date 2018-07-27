@@ -881,15 +881,13 @@ bool move_to_highest_scope(
 	case fol_formula_type::IFF:
 		return move_iff_to_highest_scope(scope, formula, variables);
 	case fol_formula_type::NOT:
+	case fol_formula_type::ATOM: /* the root has scope type ATOM */
 		scope.unary = formula;
+		move_variables(variables, scope.variables);
 		return true;
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		scope.quantifier.operand = formula;
-		move_variables(variables, scope.variables);
-		return true;
-	case fol_formula_type::ATOM: /* the root has scope type ATOM */
-		scope.unary = formula;
 		move_variables(variables, scope.variables);
 		return true;
 	case fol_formula_type::TRUE:
@@ -1080,12 +1078,12 @@ inline bool process_commutative_scope(fol_scope& scope,
 
 	} else if (scope.commutative.children.length == 1) {
 		fol_formula* singleton = scope.commutative.children[0];
-		switch (singleton->type) {
-		case fol_formula_type::AND:
-		case fol_formula_type::OR:
-		case fol_formula_type::IFF:
-		}
-		return move_to_highest_scope(*scope.parent, singleton, scope.variables);
+		if (!canonicalize(*singleton, *scope.parent, variable_map))
+			return false;
+		free(*singleton);
+		if (singleton->reference_count == 0)
+			free(singleton);
+		return true;
 	} else {
 		if (ScopeType == fol_formula_type::AND) {
 			return move_true(*scope.parent);
@@ -1133,7 +1131,12 @@ inline bool process_noncommutative_scope(fol_scope& scope,
 		if (canonicalized_right == &FOL_FALSE) {
 			return move_false(*scope.parent);
 		} else {
-			return move_to_highest_scope(*scope.parent, canonicalized_right, scope.variables);
+			if (!canonicalize(*canonicalized_right, *scope.parent, variable_map))
+				return false;
+			free(*canonicalized_right);
+			if (canonicalized_right->reference_count == 0)
+				free(canonicalized_right);
+			return true;
 		}
 	} else if (canonicalized_right == &FOL_FALSE) {
 		fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
@@ -1147,7 +1150,12 @@ inline bool process_noncommutative_scope(fol_scope& scope,
 		canonicalized->unary.operand = canonicalized_left;
 
 		/* move `canonicalized` to the appropriate ancestor scope */
-		return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
+		if (!canonicalize(*canonicalized, *scope.parent, variable_map))
+			return false;
+		free(*canonicalized);
+		if (canonicalized->reference_count == 0)
+			free(canonicalized);
+		return true;
 	}
 
 	/* check if we have the case A => A */
@@ -1173,15 +1181,34 @@ inline bool process_noncommutative_scope(fol_scope& scope,
 	return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
 }
 
-inline bool process_negation_scope(fol_scope& scope)
+inline bool process_negation_scope(fol_scope& scope,
+		array_map<unsigned int, unsigned int>& variable_map)
 {
-	/* negation blocks all movement, so new_scope.unary->type cannot be NOT */
-	fol_formula* canonicalized = scope.unary;
-
-	if (canonicalized == &FOL_TRUE)
+	if (scope.unary == &FOL_TRUE)
 		return move_false(*scope.parent);
-	else if (canonicalized == &FOL_FALSE)
+	else if (scope.unary == &FOL_FALSE)
 		return move_true(*scope.parent);
+
+	fol_formula* canonicalized;
+	if (scope.unary->type == fol_formula_type::NOT) {
+		canonicalized = scope.unary->unary.operand;
+		if (!canonicalize(*canonicalized, *scope.parent, variable_map))
+			return false;
+		free(*canonicalized);
+		if (canonicalized->reference_count == 0)
+			free(canonicalized);
+		free(scope.unary);
+		return true;
+	} else {
+		canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
+		if (canonicalized == NULL) {
+			fprintf(stderr, "process_negation_scope ERROR: Out of memory.\n");
+			return false;
+		}
+		canonicalized->unary.operand = scope.unary;
+		canonicalized->type = fol_formula_type::NOT;
+		canonicalized->reference_count = 1;
+	}
 
 	/* move `canonicalized` to the appropriate ancestor scope */
 	return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
@@ -1208,7 +1235,7 @@ inline bool process_intermediate_scopes(fol_scope* parent, fol_scope* end,
 			if (!process_noncommutative_scope<fol_formula_type::IF_THEN>(*ancestor, variable_map)) return false;
 			else continue;
 		case fol_formula_type::NOT:
-			if (!process_negation_scope(*ancestor)) return false;
+			if (!process_negation_scope(*ancestor, variable_map)) return false;
 			else continue;
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
@@ -1269,7 +1296,7 @@ inline bool canonicalize_negation(
 	if (!canonicalize(*src.unary.operand, new_scope, variable_map))
 		return false;
 
-	return process_negation_scope(new_scope)
+	return process_negation_scope(new_scope, variable_map)
 		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 }
 
@@ -1295,6 +1322,16 @@ inline bool new_quantifier_scope(
 	} else if (new_scope.quantifier.operand == &FOL_FALSE) {
 		return move_false(*new_scope.parent)
 			&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
+	}
+
+	if (!new_scope.variables.contains(new_scope.quantifier.variable)) {
+		fol_formula* canonicalized = new_scope.quantifier.operand;
+		if (!canonicalize(*canonicalized, parent_scope, variable_map))
+			return false;
+		free(*canonicalized);
+		if (canonicalized->reference_count == 0)
+			free(canonicalized);
+		return process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
 	}
 
 	/* construct the canonicalized node */
