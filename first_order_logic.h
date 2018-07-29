@@ -535,52 +535,106 @@ inline bool relabel_variables(fol_formula& formula) {
 	return relabel_variables(formula, variable_map);
 }
 
+
+/* forward declarations */
+struct fol_scope;
+
+
+template<unsigned int Depth>
+using fol_scope_child = typename std::conditional<Depth == 0, fol_formula_type*, fol_scope<Depth - 1>>::type;
+
+template<unsigned int Depth>
+using fol_scope_ptr = typename std::conditional<Depth == 0, fol_formula_type*, fol_scope<Depth - 1>*>::type;
+
+template<unsigned int Depth>
 struct fol_commutative_scope {
-	array<fol_formula*> children;
+	array<fol_scope_child<Depth>> children;
 
 	fol_commutative_scope() : children(8) { }
+
+	static inline void move(const fol_commutative_scope& src, fol_commutative_scope& dst) {
+		core::move(src.children, dst.children);
+	}
 };
 
+template<unsigned int Depth>
 struct fol_noncommutative_scope {
-	array<fol_formula*> left;
-	array<fol_formula*> right;
+	array<fol_scope_child<Depth>> left;
+	array<fol_scope_child<Depth>> right;
 	bool is_left;
 
 	fol_noncommutative_scope() : left(8), right(8), is_left(true) { }
+
+	static inline void move(const fol_noncommutative_scope& src, fol_noncommutative_scope& dst) {
+		core::move(src.left, dst.left);
+		core::move(src.right, dst.right);
+		dst.is_left = src.is_left;
+	}
 };
 
+template<unsigned int Depth>
 struct fol_quantifier_scope {
-	fol_formula* operand;
+	fol_scope_ptr<Depth> operand;
 	unsigned int variable;
+
+	static inline void move(const fol_quantifier_scope& src, fol_quantifier_scope& dst) {
+		dst.operand = src.operand;
+		dst.variable = src.variable;
+	}
 };
 
+template<unsigned int Depth>
 struct fol_scope {
-	fol_scope* parent;
 	fol_formula_type type;
 	array<unsigned int> variables;
 	union {
-		fol_formula* unary;
+		fol_atom atom;
+		fol_scope_ptr unary;
 		fol_commutative_scope commutative;
 		fol_noncommutative_scope noncommutative;
 		fol_quantifier_scope quantifier;
 	};
 
-	fol_scope(fol_scope* parent, fol_formula_type type) : variables(8) {
-		if (!init_helper(parent, type))
+	fol_scope() : fol_scope(fol_formula_type::TRUE) { }
+
+	fol_scope(fol_formula_type type) : variables(8) {
+		if (!init_helper(type))
 			exit(EXIT_FAILURE);
 	}
 
 	~fol_scope() { free_helper(); }
 
-	static inline void free(fol_scope& scope) {
+	static inline void move(const fol_scope<Depth>& src, fol_scope<Depth>& dst)
+	{
+		switch (src.type) {
+		case fol_formula_type::AND:
+		case fol_formula_type::OR:
+		case fol_formula_type::IFF:
+			fol_commutative_scope::move(src.commutative, dst.commutative);
+		case fol_formula_type::IF_THEN:
+			fol_commutative_scope::move(src.noncommutative, dst.noncommutative);
+		case fol_formula_type::FOR_ALL:
+		case fol_formula_type::EXISTS:
+			fol_commutative_scope::move(src.quantifier, dst.quantifier);
+		case fol_formula_type::ATOM:
+			fol_atom::move(src.atom, dst.atom);
+		case fol_formula_type::NOT:
+		case fol_formula_type::TRUE:
+		case fol_formula_type::FALSE:
+			return;
+		}
+		fprintf(stderr, "fol_scope.move ERROR: Unrecognized fol_formula_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	static inline void free(fol_scope<Depth>& scope) {
 		scope.free_helper();
 		core::free(scope.variables);
 	}
 
 private:
-	bool init_helper(fol_scope* parent_scope, fol_formula_type scope_type) {
+	bool init_helper(fol_formula_type scope_type) {
 		type = scope_type;
-		parent = parent_scope;
 		switch (type) {
 		case fol_formula_type::AND:
 		case fol_formula_type::OR:
@@ -591,8 +645,9 @@ private:
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
 			new (&quantifier) fol_quantifier_scope(); return true;
-		case fol_formula_type::NOT:
 		case fol_formula_type::ATOM:
+			new (&atom) fol_atom(); return true;
+		case fol_formula_type::NOT:
 		case fol_formula_type::TRUE:
 		case fol_formula_type::FALSE:
 			return true;
@@ -612,8 +667,9 @@ private:
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
 			quantifier.~fol_quantifier_scope(); return true;
-		case fol_formula_type::NOT:
 		case fol_formula_type::ATOM:
+			atom.~fol_atom(); return true;
+		case fol_formula_type::NOT:
 		case fol_formula_type::TRUE:
 		case fol_formula_type::FALSE:
 			return true;
@@ -622,17 +678,137 @@ private:
 		exit(EXIT_FAILURE);
 	}
 
-	friend bool init(fol_scope&, fol_scope*, fol_formula_type);
+	friend bool init(fol_scope<Depth>&, fol_formula_type);
 };
 
-inline bool init(fol_scope& new_scope, fol_scope* parent, fol_formula_type type) {
-	if (!array_init(new_scope.variables, 8)) {
-		return false;
-	} else if (!new_scope.init_helper(parent, type)) {
-		free(new_scope.variables);
-		return false;
+inline fol_formula* scope_to_formula(fol_formula* scope) {
+	return scope;
+}
+
+template<unsigned int Depth>
+inline fol_formula* scope_to_formula(fol_scope<Depth>* scope) {
+	return scope_to_formula(*scope);
+}
+
+template<fol_formula_type ScopeType, unsigned int Depth>
+inline fol_formula* scope_to_formula(array<fol_scope_child<Depth>>& scope)
+{
+	fol_formula* inner = scope.first();
+	for (unsigned int i = 1; i < scope.length; i++) {
+		fol_formula* right = scope_to_formula(scope[i]);
+		if (right == NULL) {
+			free(*inner); if (inner->reference_count == 0); free(inner);
+			return NULL;
+		}
+
+		fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+		if (new_formula == NULL) {
+			fprintf(stderr, "canonicalize_scope: Out of memory.\n");
+			free(*inner); if (inner->reference_count == 0) free(inner);
+			free(*right); if (right->reference_count == 0) free(right);
+			return NULL;
+		}
+		new_formula->type = ScopeType;
+		new_formula->binary.left = inner;
+		new_formula->binary.right = right;
+		new_formula->reference_count = 1;
+		/* the reference count of `inner` is incremented and decremented
+		   simultaneously here, so we don't change it */
+		inner = new_formula;
 	}
-	return true;
+
+	return inner;
+}
+
+template<fol_formula_type QuantifierType, unsigned int Depth>
+inline fol_formula* scope_to_formula(fol_quantifier_scope<Depth>& scope)
+{
+	static_assert(ScopeType == fol_formula_type::FOR_ALL
+			   || ScopeType == fol_formula_type::EXISTS,
+			"ScopeType is not a quantifier.");
+
+	fol_formula* operand = scope_to_formula(scope.operand);
+	if (operand == NULL) return NULL;
+
+	new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+	if (new_formula == NULL) {
+		fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+		return NULL;
+	}
+	new_formula->type = fol_formula_type::FOR_ALL;
+	new_formula->reference_count = 1;
+	new_formula->quantifier.variable = quantifier.variable;
+	new_formula->quantifier.operand = operand;
+	return new_formula;
+}
+
+template<unsigned int Depth>
+inline fol_formula* scope_to_formula(fol_scope<Depth>& scope)
+{
+	fol_formula* new_formula;
+	fol_formula* left; fol_formula* right;
+	switch (scope.type) {
+	case fol_formula_type::AND:
+		return scope_to_formula<fol_formula_type::AND>(scope.commutative.children);
+	case fol_formula_type::OR:
+		return scope_to_formula<fol_formula_type::OR>(scope.commutative.children);
+	case fol_formula_type::IFF:
+		return scope_to_formula<fol_formula_type::IFF>(scope.commutative.children);
+	case fol_formula_type::IF_THEN:
+		left = scope_to_formula<fol_formula_type::AND>(scope.noncommutative.left);
+		if (left == NULL) return NULL;
+		right = scope_to_formula<fol_formula_type::AND>(scope.noncommutative.right);
+		if (right == NULL) {
+			free(*left); if (left->reference_count == 0) free(left);
+			return NULL;
+		}
+
+		new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+		if (new_formula == NULL) {
+			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+			return NULL;
+		}
+		new_formula->type = fol_formula_type::IF_THEN;
+		new_formula->reference_count = 1;
+		new_formula->binary.left = left;
+		new_formula->binary.right = right;
+		return new_formula;
+	case fol_formula_type::NOT:
+		left = scope_to_formula(scope.unary);
+		if (left == NULL) return NULL;
+
+		new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+		if (new_formula == NULL) {
+			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+			return NULL;
+		}
+		new_formula->type = fol_formula_type::NOT;
+		new_formula->reference_count = 1;
+		new_formula->unary.operand = left;
+		return new_formula;
+	case fol_formula_type::FOR_ALL:
+		return scope_to_formula<fol_formula_type::FOR_ALL>(scope.quantifier);
+	case fol_formula_type::EXISTS:
+		return scope_to_formula<fol_formula_type::EXISTS>(scope.quantifier);
+	case fol_formula_type::ATOM:
+		new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+		if (new_formula == NULL) {
+			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+			return NULL;
+		}
+		new_formula->type = fol_formula_type::ATOM;
+		new_formula->reference_count = 1;
+		new_formula->atom = scope.atom;
+		return new_formula;
+	case fol_formula_type::TRUE:
+		FOL_TRUE.reference_count++;
+		return &FOL_TRUE;
+	case fol_formula_type::FALSE:
+		FOL_FALSE.reference_count++;
+		return &FOL_FALSE;
+	}
+	fprintf(stderr, "scope_to_formula ERROR: Unrecognized fol_formula_type.\n");
+	return NULL;
 }
 
 inline void move_variables(
@@ -647,841 +823,135 @@ inline void move_variables(
 	swap(variable_union, scope_variables);
 }
 
-inline bool move_to_scope(
-		fol_formula* formula, const array<unsigned int>& formula_variables,
-		array<fol_formula*>& scope, array<unsigned int>& scope_variables)
+template<unsigned int Depth>
+bool add_to_commutative_scope(fol_scope_child<Depth>& formula, fol_commutative_scope<Depth>& scope)
 {
-	if (!scope.add(formula)) return false;
-	move_variables(formula_variables, scope_variables);
-	return true;
-}
-
-template<fol_formula_type ExpectedScopeType, bool MoveToAntecedent = true, bool DescendantIsInAntecedent = true>
-inline bool move_to_scope(
-		fol_scope* scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	if (scope->type != ExpectedScopeType) {
-		fol_scope* new_scope = (fol_scope*) malloc(sizeof(fol_scope));
-		if (new_scope == NULL) {
-			fprintf(stderr, "move_to_scope ERROR: Out of memory.\n");
-			return false;
-		} else if (!init(*new_scope, scope->parent, ExpectedScopeType)) {
-			free(new_scope); return false;
-		}
-		new_scope->noncommutative.is_left = DescendantIsInAntecedent;
-		scope->parent = new_scope;
-		scope = new_scope;
-	}
-	switch (ExpectedScopeType) {
-	case fol_formula_type::AND:
-	case fol_formula_type::OR:
-	case fol_formula_type::IFF:
-		return move_to_scope(formula, variables, scope->commutative.children, scope->variables);
-	case fol_formula_type::IF_THEN:
-		if (MoveToAntecedent)
-			return move_to_scope(formula, variables, scope->noncommutative.left, scope->variables);
-		else return move_to_scope(formula, variables, scope->noncommutative.right, scope->variables);
-	case fol_formula_type::NOT:
-	case fol_formula_type::EXISTS:
-	case fol_formula_type::FOR_ALL:
-		fprintf(stderr, "move_to_scope ERROR: ExpectedScopeType must be a binary operator.\n");
-		return false;
-	}
-	fprintf(stderr, "move_to_scope ERROR: Unexpected fol_formula_type.\n");
-	return false;
-}
-
-
-/* forward declarations */
-bool move_or_to_highest_scope(fol_scope&, fol_formula*, const array<unsigned int>&);
-bool canonicalize(const fol_formula&, fol_scope&, array_map<unsigned int, unsigned int>&);
-
-
-inline bool move_antecedent_to_highest_scope(
-		fol_scope& scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	fol_scope* prev = &scope;
-	fol_scope* curr = scope.parent;
-	for (;; prev = curr, curr = curr->parent) {
-		switch (curr->type) {
-		case fol_formula_type::IF_THEN:
-			if (!curr->noncommutative.is_left) continue;
-			else if (prev == &scope)
-				return move_to_scope<fol_formula_type::IF_THEN, true, true>(prev, formula, variables);
-			else return move_to_scope<fol_formula_type::IF_THEN, true, false>(prev, formula, variables);
-		case fol_formula_type::FOR_ALL:
-		case fol_formula_type::EXISTS:
-			if (variables.contains(curr->quantifier.variable)) {
-				if (prev == &scope)
-					return move_to_scope<fol_formula_type::IF_THEN, true, true>(prev, formula, variables);
-				else return move_to_scope<fol_formula_type::IF_THEN, true, false>(prev, formula, variables);
-			} else continue;
-		case fol_formula_type::AND:
-		case fol_formula_type::OR:
-		case fol_formula_type::IFF:
-		case fol_formula_type::NOT:
-		case fol_formula_type::ATOM: /* the root has scope type ATOM */
-			if (prev == &scope)
-				return move_to_scope<fol_formula_type::IF_THEN, true, true>(prev, formula, variables);
-			else return move_to_scope<fol_formula_type::IF_THEN, true, false>(prev, formula, variables);
-		case fol_formula_type::TRUE:
-		case fol_formula_type::FALSE:
+	/* add `formula` into the correct (sorted) position in `scope.children` */
+	unsigned int i = 0;
+	for (; i < scope.children.length; i++) {
+		auto result = compare(formula, scope.children[i], canonicalizer());
+		if (result < 0) {
 			break;
-		}
-		fprintf(stderr, "move_antecedent_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
-		return false;
-	}
-}
-
-inline bool move_consequent_to_highest_scope(
-		fol_scope& scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	fol_scope* prev = &scope;
-	fol_scope* curr = scope.parent;
-	for (;; prev = curr, curr = curr->parent) {
-		switch (curr->type) {
-		case fol_formula_type::IF_THEN:
-			if (!curr->noncommutative.is_left) continue;
-			else return move_to_scope<fol_formula_type::IF_THEN, false, false>(prev, formula, variables);
-		case fol_formula_type::FOR_ALL:
-		case fol_formula_type::EXISTS:
-			if (variables.contains(curr->quantifier.variable))
-				return move_to_scope<fol_formula_type::IF_THEN, false, false>(prev, formula, variables);
-			else return move_or_to_highest_scope(*curr, formula, variables);
-		case fol_formula_type::AND:
-		case fol_formula_type::IFF:
-		case fol_formula_type::NOT:
-		case fol_formula_type::ATOM: /* the root has scope type ATOM */
-			return move_to_scope<fol_formula_type::IF_THEN, false, false>(prev, formula, variables);
-		case fol_formula_type::OR:
-			if (curr->parent != NULL
-			 && ((curr->parent->type == fol_formula_type::IF_THEN && !curr->parent->noncommutative.is_left)
-			  || (curr->parent->type == fol_formula_type::FOR_ALL && !variables.contains(curr->parent->quantifier.variable))
-			  || (curr->parent->type == fol_formula_type::EXISTS && !variables.contains(curr->parent->quantifier.variable))))
-				return move_or_to_highest_scope(*curr, formula, variables);
-			else return move_to_scope<fol_formula_type::IF_THEN, false, false>(prev, formula, variables);
-		case fol_formula_type::TRUE:
-		case fol_formula_type::FALSE:
-			break;
-		}
-		fprintf(stderr, "move_consequent_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
-		return false;
-	}
-}
-
-inline bool move_and_to_highest_scope(
-		fol_scope& scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	fol_scope* prev = &scope;
-	fol_scope* curr = scope.parent;
-	for (;; prev = curr, curr = curr->parent) {
-		switch (curr->type) {
-		case fol_formula_type::AND:
-			continue;
-		case fol_formula_type::IF_THEN:
-			if (curr->noncommutative.is_left)
-				return move_antecedent_to_highest_scope(*curr, formula, variables);
-			else return move_to_scope<fol_formula_type::AND>(prev, formula, variables);
-		case fol_formula_type::FOR_ALL:
-		case fol_formula_type::EXISTS:
-			if (variables.contains(curr->quantifier.variable))
-				return move_to_scope<fol_formula_type::AND>(prev, formula, variables);
-			else continue;
-		case fol_formula_type::OR:
-		case fol_formula_type::IFF:
-		case fol_formula_type::NOT:
-		case fol_formula_type::ATOM: /* the root has scope type ATOM */
-			return move_to_scope<fol_formula_type::AND>(prev, formula, variables);
-		case fol_formula_type::TRUE:
-		case fol_formula_type::FALSE:
-			break;
-		}
-		fprintf(stderr, "move_and_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
-		return false;
-	}
-}
-
-inline bool move_or_to_highest_scope(
-		fol_scope& scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	fol_scope* prev = &scope;
-	fol_scope* curr = scope.parent;
-	for (;; prev = curr, curr = curr->parent) {
-		switch (curr->type) {
-		case fol_formula_type::OR:
-			continue;
-		case fol_formula_type::IF_THEN:
-			if (!curr->noncommutative.is_left)
-				return move_consequent_to_highest_scope(*curr, formula, variables);
-			else return move_to_scope<fol_formula_type::OR>(prev, formula, variables);
-		case fol_formula_type::FOR_ALL:
-		case fol_formula_type::EXISTS:
-			if (variables.contains(curr->quantifier.variable))
-				return move_to_scope<fol_formula_type::OR>(prev, formula, variables);
-			else continue;
-		case fol_formula_type::AND:
-		case fol_formula_type::IFF:
-		case fol_formula_type::NOT:
-		case fol_formula_type::ATOM: /* the root has scope type ATOM */
-			return move_to_scope<fol_formula_type::OR>(prev, formula, variables);
-		case fol_formula_type::TRUE:
-		case fol_formula_type::FALSE:
-			break;
-		}
-		fprintf(stderr, "move_or_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
-		return false;
-	}
-}
-
-inline bool move_iff_to_highest_scope(
-		fol_scope& scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	fol_scope* prev = &scope;
-	fol_scope* curr = scope.parent;
-	for (;; prev = curr, curr = curr->parent) {
-		switch (curr->type) {
-		case fol_formula_type::IFF:
-			continue;
-		case fol_formula_type::FOR_ALL:
-		case fol_formula_type::EXISTS:
-		case fol_formula_type::IF_THEN:
-		case fol_formula_type::AND:
-		case fol_formula_type::OR:
-		case fol_formula_type::NOT:
-		case fol_formula_type::ATOM: /* the root has scope type ATOM */
-			return move_to_scope<fol_formula_type::IFF>(prev, formula, variables);
-		case fol_formula_type::TRUE:
-		case fol_formula_type::FALSE:
-			break;
-		}
-		fprintf(stderr, "move_iff_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
-		return false;
-	}
-}
-
-bool move_to_highest_scope(
-		fol_scope& scope, fol_formula* formula,
-		const array<unsigned int>& variables)
-{
-	switch (scope.type) {
-	case fol_formula_type::AND:
-		return move_and_to_highest_scope(scope, formula, variables);
-	case fol_formula_type::OR:
-		return move_or_to_highest_scope(scope, formula, variables);
-	case fol_formula_type::IF_THEN:
-		if (scope.noncommutative.is_left)
-			return move_antecedent_to_highest_scope(scope, formula, variables);
-		else return move_consequent_to_highest_scope(scope, formula, variables);
-	case fol_formula_type::IFF:
-		return move_iff_to_highest_scope(scope, formula, variables);
-	case fol_formula_type::NOT:
-	case fol_formula_type::ATOM: /* the root has scope type ATOM */
-		scope.unary = formula;
-		move_variables(variables, scope.variables);
-		return true;
-	case fol_formula_type::FOR_ALL:
-	case fol_formula_type::EXISTS:
-		scope.quantifier.operand = formula;
-		move_variables(variables, scope.variables);
-		return true;
-	case fol_formula_type::TRUE:
-	case fol_formula_type::FALSE:
-		break;
-	}
-	fprintf(stderr, "move_to_highest_scope ERROR: Unexpected fol_formula_type.\n");
-	return false;
-}
-
-template<fol_formula_type ScopeType>
-inline fol_formula* canonicalize_scope(array<fol_formula*>& scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	for (fol_formula* operand : scope)
-		if (!relabel_variables(*operand, variable_map))
-			return NULL;
-
-	sort(scope, canonicalizer());
-
-	/* remove duplicate elements */
-	unsigned int dst_index = 0;
-	for (unsigned int i = 1; i < scope.length; i++) {
-		if (*scope[dst_index] != *scope[i]) {
-			scope[++dst_index] = scope[i];
-		} else {
-			free(*scope[i]);
-			free(scope[i]);
-		}
-	}
-	scope.length = dst_index + 1;
-
-	fol_formula* inner = scope.first();
-	for (unsigned int i = 1; i < scope.length; i++) {
-		fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-		if (new_formula == NULL) {
-			fprintf(stderr, "canonicalize_scope: Out of memory.\n");
-			free(*inner); if (inner->reference_count == 0) free(inner);
-			return NULL;
-		}
-		new_formula->type = ScopeType;
-		new_formula->binary.left = inner;
-		new_formula->binary.right = scope[i];
-		new_formula->reference_count = 1;
-		/* the reference count of `inner` is incremented and decremented
-		   simultaneously here, so we don't change it */
-		inner = new_formula;
-	}
-
-	return inner;
-}
-
-inline void free_formulas(array<fol_formula*>& formulas) {
-	for (fol_formula* operand : formulas) {
-		free(*operand);
-		if (operand->reference_count == 0)
-			free(operand);
-	}
-}
-
-inline bool move_true(fol_scope& scope)
-{
-	switch (scope.type) {
-	case fol_formula_type::AND:
-		return true;
-	case fol_formula_type::OR:
-		free_formulas(scope.commutative.children);
-		scope.commutative.children.length = 1;
-		scope.commutative.children[0] = &FOL_TRUE;
-		scope.variables.clear();
-		return true;
-	case fol_formula_type::IF_THEN:
-		if (!scope.noncommutative.is_left) {
-			free_formulas(scope.noncommutative.right);
-			scope.noncommutative.right.length = 1;
-			scope.noncommutative.right[0] = &FOL_TRUE;
-			scope.variables.clear();
-		}
-		return true;
-	case fol_formula_type::IFF:
-		return true;
-	case fol_formula_type::NOT:
-		scope.unary = &FOL_TRUE; return true;
-	case fol_formula_type::FOR_ALL:
-	case fol_formula_type::EXISTS:
-		scope.quantifier.operand = &FOL_TRUE; return true;
-	case fol_formula_type::ATOM: /* the root has scope type ATOM */
-		scope.unary = &FOL_TRUE;
-		FOL_TRUE.reference_count++;
-		return true;
-	case fol_formula_type::TRUE:
-	case fol_formula_type::FALSE:
-		break;
-	}
-	fprintf(stderr, "move_true ERROR: Unexpected fol_formula_type.\n");
-	return false;
-}
-
-inline bool move_false(fol_scope& scope)
-{
-	switch (scope.type) {
-	case fol_formula_type::AND:
-		free_formulas(scope.commutative.children);
-		scope.commutative.children.length = 1;
-		scope.commutative.children[0] = &FOL_FALSE;
-		scope.variables.clear();
-		return true;
-	case fol_formula_type::OR:
-		return true;
-	case fol_formula_type::IF_THEN:
-		if (scope.noncommutative.is_left) {
-			free_formulas(scope.noncommutative.left);
-			scope.noncommutative.left.length = 1;
-			scope.noncommutative.left[0] = &FOL_FALSE;
-			scope.variables.clear();
-		}
-		return true;
-	case fol_formula_type::IFF:
-		if (scope.commutative.children.length > 0 && scope.commutative.children[0] == &FOL_FALSE) {
-			scope.commutative.children.remove(0);
-		} else {
-			if (!scope.commutative.children.add(&FOL_FALSE)) return false;
-			swap(scope.commutative.children.first(), scope.commutative.children.last());
-		}
-		return true;
-	case fol_formula_type::NOT:
-		scope.unary = &FOL_FALSE; return true;
-	case fol_formula_type::FOR_ALL:
-	case fol_formula_type::EXISTS:
-		scope.quantifier.operand = &FOL_FALSE; return true;
-	case fol_formula_type::ATOM: /* the root has scope type ATOM */
-		scope.unary = &FOL_FALSE;
-		FOL_FALSE.reference_count++;
-		return true;
-	case fol_formula_type::TRUE:
-	case fol_formula_type::FALSE:
-		break;
-	}
-	fprintf(stderr, "move_false ERROR: Unexpected fol_formula_type.\n");
-	return false;
-}
-
-template<fol_formula_type ScopeType>
-inline bool process_commutative_scope(fol_scope& scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	static_assert(ScopeType == fol_formula_type::AND
-			   || ScopeType == fol_formula_type::OR
-			   || ScopeType == fol_formula_type::IFF,
-			"ScopeType is not a commutative operator.");
-
-	if (scope.commutative.children.length > 0) {
-		if (scope.commutative.children[0] == &FOL_TRUE) {
-#if !defined(NDEBUG)
-			if (ScopeType != fol_formula_type::OR)
-				fprintf(stderr, "process_commutative_scope WARNING: Unexpected operand 'true'.\n");
-#endif
-			return move_true(*scope.parent);
-		} else if (scope.commutative.children[0] == &FOL_FALSE) {
-#if !defined(NDEBUG)
-			if (ScopeType == fol_formula_type::OR)
-				fprintf(stderr, "process_commutative_scope WARNING: Unexpected operand 'true'.\n");
-#endif
-			if (ScopeType == fol_formula_type::AND) {
-				return move_false(*scope.parent);
-			} else if (ScopeType == fol_formula_type::IFF) {
-				scope.commutative.children.remove(0);
-				fol_formula* negation = (fol_formula*) malloc(sizeof(fol_formula));
-				if (negation == NULL) {
-					fprintf(stderr, "process_commutative_scope ERROR: Out of memory.\n");
-					return false;
-				}
-				negation->type = fol_formula_type::NOT;
-				negation->reference_count = 1;
-				negation->unary.operand = scope.commutative.children[0];
-				scope.commutative.children[0] = negation;
-			}
-		}
-	}
-
-	/* construct the canonicalized node */
-	if (scope.commutative.children.length > 1) {
-		fol_formula* canonicalized = canonicalize_scope<ScopeType>(scope.commutative.children, variable_map);
-		if (canonicalized == NULL) return false;
-
-		/* move `canonicalized` to the appropriate ancestor scope */
-		return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
-
-	} else if (scope.commutative.children.length == 1) {
-		fol_formula* singleton = scope.commutative.children[0];
-		if (!canonicalize(*singleton, *scope.parent, variable_map))
-			return false;
-		free(*singleton);
-		if (singleton->reference_count == 0)
-			free(singleton);
-		return true;
-	} else {
-		if (ScopeType == fol_formula_type::AND) {
-			return move_true(*scope.parent);
-		} else if (ScopeType == fol_formula_type::OR) {
-			return move_false(*scope.parent);
-		} else {
-			fprintf(stderr, "process_commutative_scope ERROR: Unexpected fol_formula_type.\n");
-			return false;
-		}
-	}
-}
-
-template<fol_formula_type ScopeType>
-inline bool process_noncommutative_scope(fol_scope& scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	/* construct the canonicalized node */
-	fol_formula* canonicalized_left;
-	if (scope.noncommutative.left.length > 1) {
-		canonicalized_left = canonicalize_scope<fol_formula_type::AND>(scope.noncommutative.left, variable_map);
-		if (canonicalized_left == NULL) return false;
-	} else if (scope.noncommutative.left.length == 1) {
-		canonicalized_left = scope.noncommutative.left[0];
-	} else {
-		canonicalized_left = &FOL_TRUE;
-	}
-
-	fol_formula* canonicalized_right;
-	if (scope.noncommutative.right.length > 1) {
-		canonicalized_right = canonicalize_scope<fol_formula_type::OR>(scope.noncommutative.right, variable_map);
-		if (canonicalized_right == NULL) {
-			free(*canonicalized_left);
-			if (canonicalized_left->reference_count == 0)
-				free(canonicalized_left);
-			return false;
-		}
-	} else if (scope.noncommutative.right.length == 1) {
-		canonicalized_right = scope.noncommutative.right[0];
-	} else {
-		canonicalized_right = &FOL_FALSE;
-	}
-
-	/* first consider special cases */
-	if (canonicalized_left == &FOL_TRUE) {
-		if (canonicalized_right == &FOL_FALSE) {
-			return move_false(*scope.parent);
-		} else {
-			if (!canonicalize(*canonicalized_right, *scope.parent, variable_map))
-				return false;
-			free(*canonicalized_right);
-			if (canonicalized_right->reference_count == 0)
-				free(canonicalized_right);
+		} else if (result == 0) {
+			free(*formula); if (formula->reference_count == 0) free(formula);
 			return true;
 		}
-	} else if (canonicalized_right == &FOL_FALSE) {
-		fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
-		if (canonicalized == NULL) {
-			fprintf(stderr, "process_noncommutative_scope ERROR: Out of memory.\n");
-			free(*canonicalized_left); free(canonicalized_left);
-			return false;
-		}
-		canonicalized->type = fol_formula_type::NOT;
-		canonicalized->reference_count = 1;
-		canonicalized->unary.operand = canonicalized_left;
-
-		/* move `canonicalized` to the appropriate ancestor scope */
-		if (!canonicalize(*canonicalized, *scope.parent, variable_map))
-			return false;
-		free(*canonicalized);
-		if (canonicalized->reference_count == 0)
-			free(canonicalized);
-		return true;
 	}
 
-	/* check if we have the case A => A */
-	if (*canonicalized_left == *canonicalized_right) {
-		free(*canonicalized_left); free(canonicalized_left);
-		free(*canonicalized_right); free(canonicalized_right);
-		return move_true(*scope.parent);
-	}
-
-	fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
-	if (canonicalized == NULL) {
-		fprintf(stderr, "process_noncommutative_scope ERROR: Out of memory.\n");
-		free(*canonicalized_left); free(*canonicalized_right);
-		free(canonicalized_left); free(canonicalized_right);
+	/* `*formula` is unique, so add it at index `i` */
+	if (scope.children.ensure_capacity(scope.children.length + 1))
 		return false;
-	}
-	canonicalized->type = ScopeType;
-	canonicalized->binary.left = canonicalized_left;
-	canonicalized->binary.right = canonicalized_right;
-	canonicalized->reference_count = 1;
-
-	/* move `canonicalized` to the appropriate ancestor scope */
-	return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
+	shift_right(scope.children.data, scope.children.length, i);
+	move(formula, scope.children[i]);
+	scope.children.length++;
+	return true;
 }
 
-inline bool process_negation_scope(fol_scope& scope,
-		array_map<unsigned int, unsigned int>& variable_map)
+template<unsigned int Depth>
+void merge_scopes(array<fol_scope_child<Depth>>& dst,
+	const array<fol_scope_child<Depth>>& first,
+	const array<fol_scope_child<Depth>>& second)
 {
-	if (scope.unary == &FOL_TRUE)
-		return move_false(*scope.parent);
-	else if (scope.unary == &FOL_FALSE)
-		return move_true(*scope.parent);
-
-	fol_formula* canonicalized;
-	if (scope.unary->type == fol_formula_type::NOT) {
-		canonicalized = scope.unary->unary.operand;
-		if (!canonicalize(*canonicalized, *scope.parent, variable_map))
-			return false;
-		free(*canonicalized);
-		if (canonicalized->reference_count == 0)
-			free(canonicalized);
-		free(scope.unary);
-		return true;
-	} else {
-		canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
-		if (canonicalized == NULL) {
-			fprintf(stderr, "process_negation_scope ERROR: Out of memory.\n");
-			return false;
-		}
-		canonicalized->unary.operand = scope.unary;
-		canonicalized->type = fol_formula_type::NOT;
-		canonicalized->reference_count = 1;
-	}
-
-	/* move `canonicalized` to the appropriate ancestor scope */
-	return move_to_highest_scope(*scope.parent, canonicalized, scope.variables);
-}
-
-inline bool process_intermediate_scopes(fol_scope* parent, fol_scope* end,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	/* process any new scopes that were created by the movement */
-	fol_scope* next;
-	for (fol_scope* ancestor = parent; ancestor != end; next = ancestor->parent, free(*ancestor), free(ancestor), ancestor = next)
+	unsigned int i = 0, j = 0;
+	while (i < first.length && j < second.length)
 	{
-		switch (ancestor->type) {
-		case fol_formula_type::AND:
-			if (!process_commutative_scope<fol_formula_type::AND>(*ancestor, variable_map)) return false;
-			else continue;
-		case fol_formula_type::OR:
-			if (!process_commutative_scope<fol_formula_type::OR>(*ancestor, variable_map)) return false;
-			else continue;
-		case fol_formula_type::IFF:
-			if (!process_commutative_scope<fol_formula_type::IFF>(*ancestor, variable_map)) return false;
-			else continue;
-		case fol_formula_type::IF_THEN:
-			if (!process_noncommutative_scope<fol_formula_type::IF_THEN>(*ancestor, variable_map)) return false;
-			else continue;
-		case fol_formula_type::NOT:
-			if (!process_negation_scope(*ancestor, variable_map)) return false;
-			else continue;
-		case fol_formula_type::FOR_ALL:
-		case fol_formula_type::EXISTS:
-			break; /* we never create intermediate quantifier scopes */
-		case fol_formula_type::ATOM:
-		case fol_formula_type::TRUE:
-		case fol_formula_type::FALSE:
-			break;
+		auto result = compare(first[i], second[i], canonicalizer());
+		if (result == 0) {
+			dst[dst.length] = first[i];
+			free(*second[j]); if (second[j]->reference_count == 0) free(second[j]); /* TODO: this needs to be a deep free */
+			dst.length++; i++; j++;
+		} else if (result < 0) {
+			dst[dst.length] = first[i];
+			dst.length++; i++;
+		} else {
+			dst[dst.length] = second[i];
+			dst.length++; j++;
 		}
-		fprintf(stderr, "process_intermediate_scopes ERROR: Unexpected fol_formula_type.\n");
-		do {
-			next = ancestor->parent;
-			free(*ancestor); free(ancestor);
-			ancestor = next;
-		} while (ancestor != end);
+	}
+
+	while (i < first.length) {
+		dst[dst.length] = first[i];
+		dst.length++; i++;
+	} while (j < second.length) {
+		dst[dst.length] = second[j];
+		dst.length++; j++;
+	}
+}
+
+bool canonicalize_commutative(
+		const fol_binary_formula& src, fol_scope& out,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	fol_scope right;
+	if (!canonicalize(*src.left, out, variable_map)
+	 || !canonicalize(*src.right, right, variable_map))
 		return false;
+
+	/* consider the case where `*src.left` and `*src.right` are identical */
+	if (out == right) return true;
+
+	if (out.type == fol_formula_type::AND) {
+		if (right.type == fol_formula_type::AND) {
+			/* merge the two scopes */
+			array<fol_formula*> both = array<fol_formula*>(out.commutative.children.length + right.commutative.children.length);
+			merge_scopes(both, out.commutative.children, right.commutative.children);
+			swap(both, out.commutative.children);
+			move_variables(right.variables, out.variables);
+		} else if (right.type == fol_formula_type::NOT && *right.unary == out) {
+			/* we have the case `A & ~A` */
+			free(*out); free(*right);
+			out.type = fol_formula_type::FALSE;
+		} else {
+			fol_formula* right_formula = scope_to_formula(right);
+			if (right_formula == NULL || !add_to_commutative_scope(right_formula, out.commutative))
+				return false;
+			move_variables(right.variables, out.variables);
+		}
+
+	} else if (out.type == fol_formula_type::NOT && *out.unary == right) {
+		/* we have the case `A & ~A` */
+		free(*out); free(*right);
+		out.type = fol_formula_type::FALSE;
+	} else {
+		fol_formula* left_formula = scope_to_formula(out);
+		if (left_formula == NULL) return false;
+
+		if (right.type == fol_formula_type::AND) {
+			if (!add_to_commutative_scope(left_formula, right.commutative)) return false;
+			move_variables(out.variables, right.variables);
+			swap(right, out);
+		} else {
+			fol_formula* right_formula = scope_to_formula(right);
+			if (right_formula == NULL) {
+				free(*left_formula); if (left_formula->reference_count == 0) free(left_formula);
+				return false;
+			}
+
+			if (!init(out, fol_formula_type::AND)) {
+				free(*left_formula); if (left_formula->reference_count == 0) free(left_formula);
+				free(*right_formula); if (right_formula->reference_count == 0) free(right_formula);
+				return false;
+			} else if (less_than(*left_formula, *right_formula, canonicalizer())) {
+				out.commutative.children[0] = left_formula;
+				out.commutative.children[1] = right_formula;
+			} else {
+				out.commutative.children[0] = right_formula;
+				out.commutative.children[1] = left_formula;
+			}
+			out.commutative.children.length = 2;
+			move_variables(right.variables, out.variables);
+		}
 	}
 	return true;
 }
 
-template<fol_formula_type ScopeType>
-inline bool new_commutative_scope(
-		const fol_formula& src, fol_scope& parent_scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	fol_scope new_scope(&parent_scope, ScopeType);
-	if (!canonicalize(*src.binary.left, new_scope, variable_map)
-	 || !canonicalize(*src.binary.right, new_scope, variable_map))
-		return false;
-
-	return process_commutative_scope<ScopeType>(new_scope, variable_map)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-}
-
-template<fol_formula_type ScopeType>
-inline bool new_noncommutative_scope(
-		const fol_formula& src, fol_scope& parent_scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	static_assert(ScopeType == fol_formula_type::IF_THEN,
-			"ScopeType is not a noncommutative operator.");
-
-	fol_scope new_scope(&parent_scope, ScopeType);
-	if (!canonicalize(*src.binary.left, new_scope, variable_map)) return false;
-	new_scope.noncommutative.is_left = false;
-	if (!canonicalize(*src.binary.right, new_scope, variable_map)) return false;
-
-	return process_noncommutative_scope<ScopeType>(new_scope, variable_map)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-}
-
-inline bool canonicalize_negation(
-		const fol_formula& src, fol_scope& parent_scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	fol_scope new_scope(&parent_scope, fol_formula_type::NOT);
-	/* TODO: do we need to initialize new_scope.unary? */
-	if (!canonicalize(*src.unary.operand, new_scope, variable_map))
-		return false;
-
-	return process_negation_scope(new_scope, variable_map)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-}
-
-template<fol_formula_type QuantifierType>
-inline bool new_quantifier_scope(
-		const fol_formula& src, fol_scope& parent_scope,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	static_assert(QuantifierType == fol_formula_type::FOR_ALL
-			   || QuantifierType == fol_formula_type::EXISTS,
-			"QuantifierType is not a quantifier.");
-
-	fol_scope new_scope(&parent_scope, QuantifierType);
-	if (!new_variable(src.quantifier.variable, new_scope.quantifier.variable, variable_map)
-	 || !canonicalize(*src.quantifier.operand, new_scope, variable_map))
-		return false;
-
-	variable_map.size--;
-
-	if (new_scope.quantifier.operand == &FOL_TRUE) {
-		return move_true(*new_scope.parent)
-			&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-	} else if (new_scope.quantifier.operand == &FOL_FALSE) {
-		return move_false(*new_scope.parent)
-			&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-	}
-
-	if (!new_scope.variables.contains(new_scope.quantifier.variable)) {
-		fol_formula* canonicalized = new_scope.quantifier.operand;
-		if (!canonicalize(*canonicalized, parent_scope, variable_map))
-			return false;
-		free(*canonicalized);
-		if (canonicalized->reference_count == 0)
-			free(canonicalized);
-		return process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-	}
-
-	/* construct the canonicalized node */
-	fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
-	if (canonicalized == NULL) {
-		fprintf(stderr, "new_quantifier_scope ERROR: Out of memory.\n");
-		return false;
-	}
-	canonicalized->type = QuantifierType;
-	canonicalized->quantifier.variable = new_scope.quantifier.variable;
-	canonicalized->quantifier.operand = new_scope.quantifier.operand;
-	canonicalized->reference_count = 1;
-
-	/* move `canonicalized` to the appropriate ancestor scope */
-	unsigned int var_index = new_scope.variables.index_of(new_scope.quantifier.variable);
-	if (var_index < new_scope.variables.length) {
-		shift_left(new_scope.variables.data + var_index, new_scope.variables.length - var_index - 1);
-		new_scope.variables.length--;
-	}
-	return move_to_highest_scope(*new_scope.parent, canonicalized, new_scope.variables)
-		&& process_intermediate_scopes(new_scope.parent, &parent_scope, variable_map);
-}
-
-inline bool canonicalize_term(
-		const fol_term& src, fol_term& dst,
-		array<unsigned int>& variables)
-{
-	dst.type = src.type;
-
-	switch (src.type) {
-	case fol_term_type::CONSTANT:
-		dst.constant = src.constant; return true;
-	case fol_term_type::VARIABLE:
-		dst.variable = src.variable;
-		return variables.add(dst.variable);
-	case fol_term_type::NONE:
-		return true;
-	}
-	fprintf(stderr, "canonicalize_term ERROR: Unrecognized fol_term_type.\n");
-	return false;
-}
-
-inline bool canonicalize_atom(
-		const fol_atom& src, fol_scope& parent_scope)
-{
-	fol_formula* canonicalized = (fol_formula*) malloc(sizeof(fol_formula));
-	if (canonicalized == NULL) {
-		fprintf(stderr, "canonicalize_atom ERROR: Out of memory.\n");
-		return false;
-	}
-	canonicalized->type = fol_formula_type::ATOM;
-	canonicalized->atom.predicate = src.predicate;
-	canonicalized->reference_count = 1;
-
-	array<unsigned int> variables = array<unsigned int>(2);
-	if (!canonicalize_term(src.arg1, canonicalized->atom.arg1, variables)
-	 || !canonicalize_term(src.arg2, canonicalized->atom.arg2, variables)) {
-		free(canonicalized); return false;
-	}
-	if (variables.length > 1) {
-		insertion_sort(variables);
-		unique(variables);
-	}
-
-	/* move `canonicalized` to the appropriate ancestor scope */
-	return move_to_highest_scope(parent_scope, canonicalized, variables);
-}
-
-bool canonicalize(
-		const fol_formula& src, fol_scope& scope,
+bool canonicalize(const fol_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	switch (src.type) {
 	case fol_formula_type::AND:
-		if (scope.type == fol_formula_type::AND) {
-			return canonicalize(*src.binary.left, scope, variable_map)
-				&& canonicalize(*src.binary.right, scope, variable_map);
-		} else if (scope.type == fol_formula_type::IF_THEN && scope.noncommutative.is_left) {
-			return canonicalize(*src.binary.left, scope, variable_map)
-				&& canonicalize(*src.binary.right, scope, variable_map);
-		} else {
-			return new_commutative_scope<fol_formula_type::AND>(src, scope, variable_map);
-		}
-
-	case fol_formula_type::OR:
-		if (scope.type == fol_formula_type::OR) {
-			return canonicalize(*src.binary.left, scope, variable_map)
-				&& canonicalize(*src.binary.right, scope, variable_map);
-		} else {
-			return new_commutative_scope<fol_formula_type::OR>(src, scope, variable_map);
-		}
-
-	case fol_formula_type::IF_THEN:
-		if (scope.type == fol_formula_type::IF_THEN && !scope.noncommutative.is_left) {
-			scope.noncommutative.is_left = true;
-			if (!canonicalize(*src.binary.left, scope, variable_map)) return false;
-			scope.noncommutative.is_left = false;
-			return canonicalize(*src.binary.right, scope, variable_map);
-		} else {
-			return new_noncommutative_scope<fol_formula_type::IF_THEN>(src, scope, variable_map);
-		}
-
-	case fol_formula_type::IFF:
-		if (scope.type == fol_formula_type::IFF) {
-			return canonicalize(*src.binary.left, scope, variable_map)
-				&& canonicalize(*src.binary.right, scope, variable_map);
-		} else {
-			return new_commutative_scope<fol_formula_type::IFF>(src, scope, variable_map);
-		}
-
-	case fol_formula_type::NOT:
-		if (src.unary.operand->type == fol_formula_type::NOT) {
-			/* cancel this negation with the next one */
-			return canonicalize(*src.unary.operand->unary.operand, scope, variable_map);
-		} else {
-			return canonicalize_negation(src, scope, variable_map);
-		}
-
-	case fol_formula_type::FOR_ALL:
-		return new_quantifier_scope<fol_formula_type::FOR_ALL>(src, scope, variable_map);
-
-	case fol_formula_type::EXISTS:
-		return new_quantifier_scope<fol_formula_type::EXISTS>(src, scope, variable_map);
-
-	case fol_formula_type::ATOM:
-		return canonicalize_atom(src.atom, scope);
-
-	case fol_formula_type::TRUE:
-		return move_true(scope);
-
-	case fol_formula_type::FALSE:
-		return move_false(scope);
+		canonicalize(*src.binary.left, 
 	}
-	fprintf(stderr, "canonicalize ERROR: Unrecognized fol_formula_type.\n");
-	return false;
-}
-
-inline fol_formula* canonicalize(const fol_formula& src)
-{
-	fol_scope scope(NULL, fol_formula_type::ATOM);
-	array_map<unsigned int, unsigned int> variable_map(16);
-	if (!canonicalize(src, scope, variable_map))
-		return NULL;
-	if (!relabel_variables(*scope.unary)) {
-		free(*scope.unary);
-		if (scope.unary->reference_count == 0)
-			free(scope.unary);
-		return NULL;
-	}
-	return scope.unary;
 }
 
 
