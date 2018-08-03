@@ -357,8 +357,9 @@ inline int_fast8_t compare(
 		else if (first.constant > second.constant) return 1;
 		else return 0;
 	case fol_term_type::VARIABLE:
-		/* TODO: how do we compare variables? */
-		return -1;
+		if (first.variable < second.variable) return -1;
+		else if (first.variable > second.variable) return 1;
+		else return 0;
 	case fol_term_type::NONE:
 		return 0;
 	}
@@ -403,7 +404,8 @@ inline int_fast8_t compare(
 		const fol_quantifier& second,
 		const canonicalizer& sorter)
 {
-	/* TODO: how do we compare variables? */
+	if (first.variable < second.variable) return -1;
+	else if (first.variable > second.variable) return 1;
 	return compare(*first.operand, *second.operand, sorter);
 }
 
@@ -443,6 +445,11 @@ bool less_than(
 	return compare(*first, *second, sorter) < 0;
 }
 
+
+/* forward declarations */
+bool relabel_variables(fol_formula&, array_map<unsigned int, unsigned int>&);
+
+
 inline bool relabel_variables(fol_term& term,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
@@ -464,11 +471,6 @@ inline bool relabel_variables(fol_term& term,
 	fprintf(stderr, "relabel_variables ERROR: Unrecognized fol_term_type.\n");
 	return false;
 }
-
-
-/* forward declarations */
-bool relabel_variables(fol_formula&, array_map<unsigned int, unsigned int>&);
-
 
 inline bool new_variable(unsigned int src, unsigned int& dst,
 		array_map<unsigned int, unsigned int>& variable_map)
@@ -538,6 +540,10 @@ inline bool relabel_variables(fol_formula& formula) {
 
 /* forward declarations */
 struct fol_scope;
+bool operator == (const fol_scope&, const fol_scope&);
+int_fast8_t compare(const fol_scope&, const fol_scope&, const canonicalizer&);
+void shift_variables(fol_scope&, unsigned int);
+bool canonicalize_scope(const fol_formula&, fol_scope&, array_map<unsigned int, unsigned int>&);
 
 
 struct fol_commutative_scope {
@@ -545,6 +551,11 @@ struct fol_commutative_scope {
 	array<fol_scope> negated;
 
 	fol_commutative_scope() : children(4), negated(4) { }
+
+	~fol_commutative_scope() {
+		for (unsigned int i = 0; i < children.length; i++) free(children[i]);
+		for (unsigned int i = 0; i < negated.length; i++) free(negated[i]);
+	}
 
 	static inline void move(const fol_commutative_scope& src, fol_commutative_scope& dst) {
 		core::move(src.children, dst.children);
@@ -558,6 +569,13 @@ struct fol_noncommutative_scope {
 
 	fol_noncommutative_scope() : left(4), left_negated(4), right(4), right_negated(4) { }
 
+	~fol_noncommutative_scope() {
+		for (unsigned int i = 0; i < left.length; i++) free(left[i]);
+		for (unsigned int i = 0; i < left_negated.length; i++) free(left_negated[i]);
+		for (unsigned int i = 0; i < right.length; i++) free(right[i]);
+		for (unsigned int i = 0; i < right_negated.length; i++) free(right_negated[i]);
+	}
+
 	static inline void move(const fol_noncommutative_scope& src, fol_noncommutative_scope& dst) {
 		core::move(src.left, dst.left);
 		core::move(src.left_negated, dst.left_negated);
@@ -569,6 +587,10 @@ struct fol_noncommutative_scope {
 struct fol_quantifier_scope {
 	fol_scope* operand;
 	unsigned int variable;
+
+	~fol_quantifier_scope() {
+		free(*operand); free(operand);
+	}
 
 	static inline void move(const fol_quantifier_scope& src, fol_quantifier_scope& dst) {
 		dst.operand = src.operand;
@@ -592,23 +614,31 @@ struct fol_scope {
 			exit(EXIT_FAILURE);
 	}
 
+	fol_scope(fol_formula_type type, const array<unsigned int>& src_variables) : variables(src_variables.capacity) {
+		if (!init_helper(type, src_variables))
+			exit(EXIT_FAILURE);
+	}
+
 	~fol_scope() { free_helper(); }
 
-	static inline void move(const fol_scope<Depth>& src, fol_scope<Depth>& dst)
+	static inline void move(const fol_scope& src, fol_scope& dst)
 	{
+		dst.type = src.type;
+		core::move(src.variables, dst.variables);
 		switch (src.type) {
 		case fol_formula_type::AND:
 		case fol_formula_type::OR:
 		case fol_formula_type::IFF:
-			fol_commutative_scope::move(src.commutative, dst.commutative);
+			fol_commutative_scope::move(src.commutative, dst.commutative); return;
 		case fol_formula_type::IF_THEN:
-			fol_commutative_scope::move(src.noncommutative, dst.noncommutative);
+			fol_noncommutative_scope::move(src.noncommutative, dst.noncommutative); return;
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
-			fol_commutative_scope::move(src.quantifier, dst.quantifier);
+			fol_quantifier_scope::move(src.quantifier, dst.quantifier); return;
 		case fol_formula_type::ATOM:
-			fol_atom::move(src.atom, dst.atom);
+			fol_atom::move(src.atom, dst.atom); return;
 		case fol_formula_type::NOT:
+			dst.unary = src.unary; return;
 		case fol_formula_type::TRUE:
 		case fol_formula_type::FALSE:
 			return;
@@ -617,13 +647,20 @@ struct fol_scope {
 		exit(EXIT_FAILURE);
 	}
 
+	static inline void swap(fol_scope& first, fol_scope& second) {
+		char* first_data = (char*) &first;
+		char* second_data = (char*) &second;
+		for (unsigned int i = 0; i < sizeof(fol_scope); i++)
+			core::swap(first_data[i], second_data[i]);
+	}
+
 	static inline void free(fol_scope& scope) {
 		scope.free_helper();
 		core::free(scope.variables);
 	}
 
 private:
-	bool init_helper(fol_formula_type scope_type) {
+	inline bool init_helper(fol_formula_type scope_type) {
 		type = scope_type;
 		switch (type) {
 		case fol_formula_type::AND:
@@ -646,6 +683,13 @@ private:
 		return false;
 	}
 
+	inline bool init_helper(fol_formula_type scope_type, const array<unsigned int>& src_variables) {
+		for (unsigned int i = 0; i < src_variables.length; i++)
+			variables[i] = src_variables[i];
+		variables.length = src_variables.length;
+		return init_helper(scope_type);
+	}
+
 	bool free_helper() {
 		switch (type) {
 		case fol_formula_type::AND:
@@ -660,6 +704,7 @@ private:
 		case fol_formula_type::ATOM:
 			atom.~fol_atom(); return true;
 		case fol_formula_type::NOT:
+			core::free(*unary); core::free(unary); return true;
 		case fol_formula_type::TRUE:
 		case fol_formula_type::FALSE:
 			return true;
@@ -668,8 +713,267 @@ private:
 		exit(EXIT_FAILURE);
 	}
 
-	friend bool init(fol_scope&, fol_formula_type);
+	friend bool init(fol_scope&, fol_formula_type, unsigned int);
+	friend bool init(fol_scope&, fol_formula_type, const array<unsigned int>&);
 };
+
+inline bool init(fol_scope& scope, fol_formula_type type, unsigned int variable_capacity = 8) {
+	if (!array_init(scope.variables, variable_capacity)) {
+		return false;
+	} else if (!scope.init_helper(type)) {
+		free(scope.variables);
+		return false;
+	}
+	return true;
+}
+
+inline bool init(fol_scope& scope, fol_formula_type type,
+		const array<unsigned int>& src_variables)
+{
+	if (!array_init(scope.variables, src_variables.capacity)) {
+		return false;
+	} else if (!scope.init_helper(type, src_variables)) {
+		free(scope.variables);
+		return false;
+	}
+	return true;
+}
+
+inline bool operator != (const fol_scope& first, const fol_scope& second) {
+	return !(first == second);
+}
+
+inline bool operator == (const fol_commutative_scope& first, const fol_commutative_scope& second)
+{
+	if (first.children.length != second.children.length
+	 || first.negated.length != second.negated.length)
+		return false;
+	for (unsigned int i = 0; i < first.children.length; i++)
+		if (first.children[i] != second.children[i]) return false;
+	for (unsigned int i = 0; i < first.negated.length; i++)
+		if (first.negated[i] != second.negated[i]) return false;
+	return true;
+}
+
+inline bool operator == (const fol_noncommutative_scope& first, const fol_noncommutative_scope& second)
+{
+	if (first.left.length != second.left.length || first.left_negated.length != second.left_negated.length
+	 || first.right.length != second.right.length || first.right_negated.length != second.right_negated.length)
+		return false;
+	for (unsigned int i = 0; i < first.left.length; i++)
+		if (first.left[i] != second.left[i]) return false;
+	for (unsigned int i = 0; i < first.left_negated.length; i++)
+		if (first.left_negated[i] != second.left_negated[i]) return false;
+	for (unsigned int i = 0; i < first.right.length; i++)
+		if (first.right[i] != second.right[i]) return false;
+	for (unsigned int i = 0; i < first.right_negated.length; i++)
+		if (first.right_negated[i] != second.right_negated[i]) return false;
+	return true;
+}
+
+inline bool operator == (const fol_quantifier_scope& first, const fol_quantifier_scope& second) {
+	return first.variable == second.variable
+		&& *first.operand == *second.operand;
+}
+
+inline bool operator == (const fol_scope& first, const fol_scope& second)
+{
+	if (first.type != second.type)
+		return false;
+	switch (first.type) {
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		return first.commutative == second.commutative;
+	case fol_formula_type::IF_THEN:
+		return first.noncommutative == second.noncommutative;
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		return first.quantifier == second.quantifier;
+	case fol_formula_type::ATOM:
+		return first.atom == second.atom;
+	case fol_formula_type::NOT:
+		return *first.unary == *second.unary;
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return true;
+	}
+	fprintf(stderr, "operator == ERROR: Unrecognized fol_formula_type when comparing fol_scopes.\n");
+	exit(EXIT_FAILURE);
+}
+
+inline int_fast8_t compare(
+		const fol_commutative_scope& first,
+		const fol_commutative_scope& second,
+		const canonicalizer& sorter)
+{
+	if (first.children.length < second.children.length) return -1;
+	else if (first.children.length > second.children.length) return 1;
+	else if (first.negated.length < second.negated.length) return -1;
+	else if (first.negated.length > second.negated.length) return 1;
+
+	for (unsigned int i = 0; i < first.children.length; i++) {
+		int_fast8_t result = compare(first.children[i], second.children[i], sorter);
+		if (result != 0) return result;
+	} for (unsigned int i = 0; i < first.negated.length; i++) {
+		int_fast8_t result = compare(first.negated[i], second.negated[i], sorter);
+		if (result != 0) return result;
+	}
+	return 0;
+}
+
+inline int_fast8_t compare(
+		const fol_noncommutative_scope& first,
+		const fol_noncommutative_scope& second,
+		const canonicalizer& sorter)
+{
+	if (first.left.length < second.left.length) return -1;
+	else if (first.left.length > second.left.length) return 1;
+	else if (first.left_negated.length < second.left_negated.length) return -1;
+	else if (first.left_negated.length > second.left_negated.length) return 1;
+	else if (first.right.length < second.right.length) return -1;
+	else if (first.right.length > second.right.length) return 1;
+	else if (first.right_negated.length < second.right_negated.length) return -1;
+	else if (first.right_negated.length > second.right_negated.length) return 1;
+
+	for (unsigned int i = 0; i < first.left.length; i++) {
+		int_fast8_t result = compare(first.left[i], second.left[i], sorter);
+		if (result != 0) return result;
+	} for (unsigned int i = 0; i < first.left_negated.length; i++) {
+		int_fast8_t result = compare(first.left_negated[i], second.left_negated[i], sorter);
+		if (result != 0) return result;
+	} for (unsigned int i = 0; i < first.right.length; i++) {
+		int_fast8_t result = compare(first.right[i], second.right[i], sorter);
+		if (result != 0) return result;
+	} for (unsigned int i = 0; i < first.right_negated.length; i++) {
+		int_fast8_t result = compare(first.right_negated[i], second.right_negated[i], sorter);
+		if (result != 0) return result;
+	}
+	return 0;
+}
+
+inline int_fast8_t compare(
+		const fol_quantifier_scope& first,
+		const fol_quantifier_scope& second,
+		const canonicalizer& sorter)
+{
+	if (first.variable < second.variable) return -1;
+	else if (first.variable > second.variable) return 1;
+	return compare(*first.operand, *second.operand, sorter);
+}
+
+int_fast8_t compare(
+		const fol_scope& first,
+		const fol_scope& second,
+		const canonicalizer& sorter)
+{
+	if (first.type < second.type) return -1;
+	else if (first.type > second.type) return 1;
+	switch (first.type) {
+	case fol_formula_type::ATOM:
+		return compare(first.atom, second.atom, sorter);
+	case fol_formula_type::NOT:
+		return compare(*first.unary, *second.unary, sorter);
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		return compare(first.commutative, second.commutative, sorter);
+	case fol_formula_type::IF_THEN:
+		return compare(first.noncommutative, second.noncommutative, sorter);
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		return compare(first.quantifier, second.quantifier, sorter);
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return 0;
+	}
+	fprintf(stderr, "compare ERROR: Unrecognized fol_formula_type when comparing fol_scopes.\n");
+	exit(EXIT_FAILURE);
+}
+
+inline bool less_than(
+		const fol_scope& first,
+		const fol_scope& second,
+		const canonicalizer& sorter)
+{
+	return compare(first, second, sorter) < 0;
+}
+
+inline bool less_than(
+		const fol_scope* first,
+		const fol_scope* second,
+		const canonicalizer& sorter)
+{
+	return less_than(*first, *second, sorter);
+}
+
+inline void shift_variables(fol_term& term, unsigned int removed_variable) {
+	switch (term.type) {
+	case fol_term_type::VARIABLE:
+		if (term.variable > removed_variable)
+			term.variable--;
+		return;
+	case fol_term_type::CONSTANT:
+	case fol_term_type::NONE:
+		return;
+	}
+	fprintf(stderr, "shift_variables ERROR: Unrecognized fol_term_type.\n");
+	exit(EXIT_FAILURE);
+}
+
+inline void shift_variables(fol_atom& atom, unsigned int removed_variable) {
+	shift_variables(atom.arg1, removed_variable);
+	shift_variables(atom.arg2, removed_variable);
+}
+
+inline void shift_variables(fol_commutative_scope& scope, unsigned int removed_variable) {
+	for (fol_scope& child : scope.children)
+		shift_variables(child, removed_variable);
+	for (fol_scope& child : scope.negated)
+		shift_variables(child, removed_variable);
+}
+
+inline void shift_variables(fol_noncommutative_scope& scope, unsigned int removed_variable) {
+	for (fol_scope& child : scope.left)
+		shift_variables(child, removed_variable);
+	for (fol_scope& child : scope.left_negated)
+		shift_variables(child, removed_variable);
+	for (fol_scope& child : scope.right)
+		shift_variables(child, removed_variable);
+	for (fol_scope& child : scope.right_negated)
+		shift_variables(child, removed_variable);
+}
+
+void shift_variables(fol_scope& scope, unsigned int removed_variable) {
+	for (unsigned int i = 0; i < scope.variables.length; i++) {
+		if (scope.variables[i] > removed_variable)
+			scope.variables[i]--;
+	}
+	switch (scope.type) {
+	case fol_formula_type::ATOM:
+		return shift_variables(scope.atom, removed_variable);
+	case fol_formula_type::NOT:
+		return shift_variables(*scope.unary, removed_variable);
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		return shift_variables(scope.commutative, removed_variable);
+	case fol_formula_type::IF_THEN:
+		return shift_variables(scope.noncommutative, removed_variable);
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		if (scope.quantifier.variable > removed_variable)
+			scope.quantifier.variable--;
+		return shift_variables(*scope.quantifier.operand, removed_variable);
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return;
+	}
+	fprintf(stderr, "shift_variables ERROR: Unrecognized fol_formula_type.\n");
+	exit(EXIT_FAILURE);
+}
+
+fol_formula* scope_to_formula(const fol_scope& scope);
 
 template<bool Negated>
 inline fol_formula* scope_to_formula(const fol_scope& scope);
@@ -682,19 +986,19 @@ inline fol_formula* scope_to_formula<false>(const fol_scope& scope) {
 template<>
 inline fol_formula* scope_to_formula<true>(const fol_scope& negated)
 {
-	fol_formula* not = (fol_formula*) malloc(sizeof(fol_formula));
-	if (not == NULL) {
+	fol_formula* negation = (fol_formula*) malloc(sizeof(fol_formula));
+	if (negation == NULL) {
 		fprintf(stderr, "negated_scope_to_formula ERROR: Out of memory.\n");
-		return false;
+		return NULL;
 	}
-	not->type = fol_formula_type::NOT;
-	not->reference_count = 1;
+	negation->type = fol_formula_type::NOT;
+	negation->reference_count = 1;
 
-	not->unary.operand = scope_to_formula(negated);
-	if (not->unary.operand == NULL) {
-		free(not); return NULL;
+	negation->unary.operand = scope_to_formula(negated);
+	if (negation->unary.operand == NULL) {
+		free(negation); return NULL;
 	}
-	return not;
+	return negation;
 }
 
 template<fol_formula_type ScopeType, bool Negated>
@@ -731,40 +1035,40 @@ inline fol_formula* scope_to_formula(const fol_scope* scope,
 
 template<fol_formula_type ScopeType>
 inline fol_formula* scope_to_formula(
-		const array<fol_scope>& scope,
-		const array<fol_scope>& negated)
+		const fol_scope* scope, unsigned int scope_length,
+		const fol_scope* negated, unsigned int negated_length)
 {
-	if (negated.length == 0) {
+	if (scope_length == 0) {
+		fol_formula* first = scope_to_formula<false>(negated[0]);
+		if (first == NULL) return NULL;
+		return scope_to_formula<ScopeType, false>(negated + 1, negated_length - 1, first);
+	} else {
 		fol_formula* first = scope_to_formula<false>(scope[0]);
 		if (first == NULL) return NULL;
-		return scope_to_formula<ScopeType, false>(scope.data + 1, scope.length - 1, first);
-	} else {
-		fol_formula* first = scope_to_formula<true>(negated[0]);
+		first = scope_to_formula<ScopeType, false>(scope + 1, scope_length - 1, first);
 		if (first == NULL) return NULL;
-		first = scope_to_formula<ScopeType, true>(negated.data + 1, negated.length - 1, first);
-		if (first == NULL) return NULL;
-		return scope_to_formula<ScopeType, false>(scope.data, scope.length, first);
+		return scope_to_formula<ScopeType, true>(negated, negated_length, first);
 	}
 }
 
 template<fol_formula_type QuantifierType>
 inline fol_formula* scope_to_formula(const fol_quantifier_scope& scope)
 {
-	static_assert(ScopeType == fol_formula_type::FOR_ALL
-			   || ScopeType == fol_formula_type::EXISTS,
-			"ScopeType is not a quantifier.");
+	static_assert(QuantifierType == fol_formula_type::FOR_ALL
+			   || QuantifierType == fol_formula_type::EXISTS,
+			"QuantifierType is not a quantifier.");
 
 	fol_formula* operand = scope_to_formula(*scope.operand);
 	if (operand == NULL) return NULL;
 
-	new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+	fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
 	if (new_formula == NULL) {
 		fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
 		return NULL;
 	}
-	new_formula->type = fol_formula_type::FOR_ALL;
+	new_formula->type = QuantifierType;
 	new_formula->reference_count = 1;
-	new_formula->quantifier.variable = quantifier.variable;
+	new_formula->quantifier.variable = scope.variable;
 	new_formula->quantifier.operand = operand;
 	return new_formula;
 }
@@ -773,16 +1077,26 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 {
 	fol_formula* new_formula;
 	fol_formula* left; fol_formula* right;
+	bool negated = false;
+
 	switch (scope.type) {
 	case fol_formula_type::AND:
-		return scope_to_formula<fol_formula_type::AND>(scope.commutative.children, scope.commutative.negated);
+		return scope_to_formula<fol_formula_type::AND>(
+				scope.commutative.children.data, scope.commutative.children.length,
+				scope.commutative.negated.data, scope.commutative.negated.length);
 	case fol_formula_type::OR:
-		return scope_to_formula<fol_formula_type::OR>(scope.commutative.children, scope.commutative.negated);
+		return scope_to_formula<fol_formula_type::OR>(
+				scope.commutative.children.data, scope.commutative.children.length,
+				scope.commutative.negated.data, scope.commutative.negated.length);
 	case fol_formula_type::IFF:
-		left = scope_to_formula<fol_formula_type::IFF>(scope.commutative.children, scope.commutative.negated);
+		if (scope.commutative.children.length > 0 && scope.commutative.children.last().type == fol_formula_type::FALSE)
+			negated = true;
+		left = scope_to_formula<fol_formula_type::IFF>(
+				scope.commutative.children.data, scope.commutative.children.length - (negated ? 1 : 0),
+				scope.commutative.negated.data, scope.commutative.negated.length);
 		if (left == NULL) return NULL;
 
-		if (scope.commutative.children.length > 0 && scope.commutative.children.last().type == fol_formula_type::FALSE) {
+		if (negated) {
 			new_formula = (fol_formula*) malloc(sizeof(fol_formula));
 			if (new_formula == NULL) {
 				fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
@@ -791,15 +1105,19 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 			}
 			new_formula->type = fol_formula_type::NOT;
 			new_formula->reference_count = 1;
-			new_formula->unary.opearnd = left;
+			new_formula->unary.operand = left;
 			return new_formula;
 		} else {
 			return left;
 		}
 	case fol_formula_type::IF_THEN:
-		left = scope_to_formula<fol_formula_type::AND>(scope.noncommutative.left, scope.noncommutative.left_negated);
+		left = scope_to_formula<fol_formula_type::AND>(
+				scope.noncommutative.left.data, scope.noncommutative.left.length,
+				scope.noncommutative.left_negated.data, scope.noncommutative.left_negated.length);
 		if (left == NULL) return NULL;
-		right = scope_to_formula<fol_formula_type::AND>(scope.noncommutative.right, scope.noncommutative.right_negated);
+		right = scope_to_formula<fol_formula_type::AND>(
+				scope.noncommutative.right.data, scope.noncommutative.right.length,
+				scope.noncommutative.right_negated.data, scope.noncommutative.right_negated.length);
 		if (right == NULL) {
 			free(*left); if (left->reference_count == 0) free(left);
 			return NULL;
@@ -859,18 +1177,45 @@ inline void move_variables(
 		const array<unsigned int>& formula_variables,
 		array<unsigned int>& scope_variables)
 {
-	array<unsigned int> variable_union = array<unsigned int>(
-			max(scope_variables.capacity, formula_variables.length + scope_variables.length));
+	array<unsigned int> variable_union(max(scope_variables.capacity, formula_variables.length + scope_variables.length));
 	set_union(variable_union.data, variable_union.length,
 			formula_variables.data, formula_variables.length,
 			scope_variables.data, scope_variables.length);
 	swap(variable_union, scope_variables);
 }
 
-inline bool scope_contains(const<fol_scope>& scope, const fol_scope& subscope, unsigned int& index)
+inline void recompute_variables(
+		const array<fol_scope>& children,
+		const array<fol_scope>& negated,
+		array<unsigned int>& variables)
 {
-	for (index = 0; index < scope.children.length; index++) {
-		auto result = compare(subscope, scope.children[index], canonicalizer());
+	variables.clear();
+	for (const fol_scope& child : children)
+		move_variables(child.variables, variables);
+	for (const fol_scope& child : negated)
+		move_variables(child.variables, variables);
+}
+
+inline void recompute_variables(
+		const array<fol_scope>& left, const array<fol_scope>& left_negated,
+		const array<fol_scope>& right, const array<fol_scope>& right_negated,
+		array<unsigned int>& variables)
+{
+	variables.clear();
+	for (const fol_scope& child : left)
+		move_variables(child.variables, variables);
+	for (const fol_scope& child : left_negated)
+		move_variables(child.variables, variables);
+	for (const fol_scope& child : right)
+		move_variables(child.variables, variables);
+	for (const fol_scope& child : right_negated)
+		move_variables(child.variables, variables);
+}
+
+inline bool scope_contains(const fol_scope& subscope, const array<fol_scope>& scope, unsigned int& index)
+{
+	for (index = 0; index < scope.length; index++) {
+		auto result = compare(subscope, scope[index], canonicalizer());
 		if (result < 0) {
 			break;
 		} else if (result == 0) {
@@ -880,75 +1225,31 @@ inline bool scope_contains(const<fol_scope>& scope, const fol_scope& subscope, u
 	return false;
 }
 
-inline bool scope_contains(const<fol_scope>& scope, const fol_scope& subscope) {
+inline bool scope_contains(const fol_scope& subscope, const array<fol_scope>& scope) {
 	unsigned int index;
-	return scope_contains(scope, subscope, index);
-}
-
-template<fol_formula_type Operator, bool Antecedent = true>
-inline void add_true_to_scope(fol_scope& scope)
-{
-	static_assert(Operator == fol_formula_type::AND
-			   || Operator == fol_formula_type::OR
-			   || Operator == fol_formula_type::IF_THEN
-			   || Operator == fol_formula_type::IFF,
-			"Operator is not a binary operator.");
-
-	if (Operator == fol_formula_type::OR) {
-		/* TODO: deep free `scope` */
-		scope.type = fol_formula_type::TRUE;
-	} else if (Operator == fol_formula_type::IF_THEN && !Antecedent) {
-		/* TODO: deep free `scope` */
-		scope.type = fol_formula_type::TRUE;
-	}
-}
-
-/* NOTE: this function assumes `scope.commutative.children` has capacity at
-		 least `scope.commutative.children.length + 1` */
-template<fol_formula_type Operator, bool Antecedent = true>
-inline void add_false_to_scope(fol_scope& scope)
-{
-	static_assert(Operator == fol_formula_type::AND
-			   || Operator == fol_formula_type::OR
-			   || Operator == fol_formula_type::IF_THEN
-			   || Operator == fol_formula_type::IFF,
-			"Operator is not a binary operator.");
-
-	if (Operator == fol_formula_type::AND) {
-		/* TODO: deep free `scope` */
-		scope.type = fol_formula_type::FALSE;
-	} else if (Operator == fol_formula_type::IF_THEN && Antecedent) {
-		/* TODO: deep free `scope` */
-		scope.type = fol_formula_type::TRUE;
-	} else if (Operator == fol_formula_type::IFF) {
-		if (scope.commutative.children.last().type == fol_formula_type::FALSE) {
-			scope.commutative.children.length--;
-		} else {
-			scope.commutative.children.length++;
-			scope.commutative.children.last().type = fol_formula_type::FALSE;
-		}
-	}
+	return scope_contains(subscope, scope, index);
 }
 
 template<fol_formula_type Operator>
-bool add_to_scope(
-		const fol_scope& subscope,
+bool add_to_scope_helper(
+		fol_scope& subscope,
 		array<fol_scope>& children,
 		array<fol_scope>& negated,
-		bool& found_negated)
+		bool& found_negation)
 {
 	unsigned int i;
 	if (scope_contains(subscope, negated, i)) {
-		found_negated = true;
+		found_negation = true;
 		if (Operator == fol_formula_type::IFF) {
 			free(negated[i]);
 			shift_left(negated.data + i, negated.length - i - 1);
 			negated.length--;
 		} else {
+			free(subscope);
 			return true;
 		}
 	}
-	found_negated = false;
+	found_negation = false;
 
 	/* add `subscope` into the correct (sorted) position in `children` */
 	if (scope_contains(subscope, children, i)) {
@@ -958,11 +1259,12 @@ bool add_to_scope(
 			shift_left(children.data + i, children.length - i - 1);
 			children.length--;
 		}
+		free(subscope);
 		return true;
 	}
 
 	/* `subscope` is unique, so insert it at index `i` */
-	if (children.ensure_capacity(children.length + 1))
+	if (!children.ensure_capacity(children.length + 1))
 		return false;
 	shift_right(children.data, children.length, i);
 	move(subscope, children[i]);
@@ -972,18 +1274,19 @@ bool add_to_scope(
 
 template<fol_formula_type Operator>
 bool add_to_scope(
-		const fol_scope& subscope,
+		fol_scope& subscope,
 		array<fol_scope>& children,
 		array<fol_scope>& negated,
-		bool& found_negated)
+		bool& found_negation)
 {
 	/* check if `subscope` is the negation of any operand in `scope.commutative.children` */
 	if (subscope.type == fol_formula_type::NOT) {
-		return add_to_scope<Operator>(*subscope.unary,
-				negated, children, found_negated);
+		if (!add_to_scope_helper<Operator>(*subscope.unary, negated, children, found_negation)) return false;
+		free(subscope.variables);
+		free(subscope.unary);
+		return true;
 	} else {
-		return add_to_scope<Operator>(subscope,
-				children, negated, found_negated);
+		return add_to_scope_helper<Operator>(subscope, children, negated, found_negation);
 	}
 }
 
@@ -994,8 +1297,9 @@ unsigned int intersection_size(
 {
 	static_assert(Operator == fol_formula_type::AND
 			   || Operator == fol_formula_type::OR
+			   || Operator == fol_formula_type::IF_THEN
 			   || Operator == fol_formula_type::IFF,
-			"Operator is not a commutative operator.");
+			"Operator is not a binary operator.");
 
 	unsigned int intersection_count = 0;
 	unsigned int i = 0, j = 0, first_index = 0, second_index = 0;
@@ -1003,22 +1307,22 @@ unsigned int intersection_size(
 	{
 		auto result = compare(first[i], second[j], canonicalizer());
 		if (result == 0) {
-			if (Operator == fol_formula_type::AND) {
-				success = add_false_to_scope<Operator>(scope); return 1;
-			} else if (Operator == fol_formula_type::OR) {
-				success = add_true_to_scope<Operator>(scope); return 1;
+			if (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR || Operator == fol_formula_type::IF_THEN) {
+				return 1;
 			} else if (Operator == fol_formula_type::IFF) {
 				free(first[i]); free(second[j]);
 				i++; j++; intersection_count++;
 			}
 		} else if (result < 0) {
-			move(first[i], first[first_index]);
+			if (Operator == fol_formula_type::IFF) move(first[i], first[first_index]);
 			i++; first_index++;
 		} else {
-			move(second[j], second[second_index]);
+			if (Operator == fol_formula_type::IFF) move(second[j], second[second_index]);
 			j++; second_index++;
 		}
 	}
+
+	if (Operator != fol_formula_type::IFF) return intersection_count;
 
 	while (i < first.length) {
 		move(first[i], first[first_index]);
@@ -1040,8 +1344,9 @@ unsigned int intersection_size(
 {
 	static_assert(Operator == fol_formula_type::AND
 			   || Operator == fol_formula_type::OR
+			   || Operator == fol_formula_type::IF_THEN
 			   || Operator == fol_formula_type::IFF,
-			"Operator is not a commutative operator.");
+			"Operator is not a binary operator.");
 
 	unsigned int intersection_count = 0;
 	unsigned int i = 0, j = 0, first_index = 0, second_index = 0;
@@ -1051,16 +1356,14 @@ unsigned int intersection_size(
 
 		auto result = compare(first[i], second[j], canonicalizer());
 		if (result == 0) {
-			if (Operator == fol_formula_type::AND) {
-				success = add_false_to_scope<Operator>(scope); return 1;
-			} else if (Operator == fol_formula_type::OR) {
-				success = add_true_to_scope<Operator>(scope); return 1;
+			if (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR || Operator == fol_formula_type::IF_THEN) {
+				return 1;
 			} else if (Operator == fol_formula_type::IFF) {
 				free(first[i]); free(second[j]);
 				i++; j++; intersection_count++;
 			}
 		} else if (result < 0) {
-			move(first[i], first[first_index]);
+			if (Operator == fol_formula_type::IFF) move(first[i], first[first_index]);
 			i++; first_index++;
 		} else {
 			move(second[j], second[second_index]);
@@ -1069,7 +1372,7 @@ unsigned int intersection_size(
 	}
 
 	while (i < first.length) {
-		move(first[i], first[first_index]);
+		if (Operator == fol_formula_type::IFF) move(first[i], first[first_index]);
 		i++; first_index++;
 	} while (j < second.length) {
 		if (j == skip_second_index) j++;
@@ -1083,8 +1386,8 @@ unsigned int intersection_size(
 
 template<fol_formula_type Operator>
 void merge_scopes(array<fol_scope>& dst,
-	const array<fol_scope>& first,
-	const array<fol_scope>& second)
+	array<fol_scope>& first,
+	array<fol_scope>& second)
 {
 	static_assert(Operator == fol_formula_type::AND
 			   || Operator == fol_formula_type::OR
@@ -1124,8 +1427,8 @@ void merge_scopes(array<fol_scope>& dst,
 
 template<fol_formula_type Operator>
 void merge_scopes(array<fol_scope>& dst,
-	const array<fol_scope>& first,
-	const array<fol_scope>& second,
+	array<fol_scope>& first,
+	array<fol_scope>& second,
 	unsigned int skip_second_index,
 	unsigned int& new_second_index)
 {
@@ -1170,18 +1473,18 @@ void merge_scopes(array<fol_scope>& dst,
 
 template<fol_formula_type Operator>
 inline void merge_scopes(
-		const array<fol_scope>& src, array<fol_scope>& dst,
-		const array<fol_scope>& src_negated, array<fol_scope>& dst_negated,
+		array<fol_scope>& src, array<fol_scope>& dst,
+		array<fol_scope>& src_negated, array<fol_scope>& dst_negated,
 		bool& found_negation)
 {
-	unsigned int intersection_count = intersection_size(src, dst_negated);
+	unsigned int intersection_count = intersection_size<Operator>(src, dst_negated);
 	if (Operator == fol_formula_type::AND && intersection_count > 0) {
 		found_negation = true; return;
 	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
 		found_negation = true; return;
 	}
 
-	intersection_count += intersection_size(negated, dst);
+	intersection_count += intersection_size<Operator>(src_negated, dst);
 	if (Operator == fol_formula_type::AND && intersection_count > 0) {
 		found_negation = true; return;
 	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
@@ -1192,29 +1495,32 @@ inline void merge_scopes(
 		found_negation = false;
 	}
 
+	if (Operator == fol_formula_type::IFF && src.length == 0 && dst.length == 0)
+		return; /* this happens if the elements of `src` are negations of the elements of `dst` (and vice versa) */
+
 	/* merge the two scopes */
 	array<fol_scope> both = array<fol_scope>(src.length + dst.length);
-	merge_scopes(both, src, dst);
+	merge_scopes<Operator>(both, src, dst);
 	swap(both, dst); both.clear();
 
-	merge_scopes(both, negated, dst_negated);
+	merge_scopes<Operator>(both, src_negated, dst_negated);
 	swap(both, dst_negated);
 }
 
 template<fol_formula_type Operator>
 inline void merge_scopes(
-		const array<fol_scope>& src, array<fol_scope>& dst,
-		const array<fol_scope>& src_negated, array<fol_scope>& dst_negated,
+		array<fol_scope>& src, array<fol_scope>& dst,
+		array<fol_scope>& src_negated, array<fol_scope>& dst_negated,
 		bool& found_negation, unsigned int skip_dst_index, unsigned int& new_dst_index)
 {
-	unsigned int intersection_count = intersection_size(src, dst_negated);
+	unsigned int intersection_count = intersection_size<Operator>(src, dst_negated);
 	if (Operator == fol_formula_type::AND && intersection_count > 0) {
 		found_negation = true; return;
 	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
 		found_negation = true; return;
 	}
 
-	intersection_count += intersection_size(negated, dst, skip_dst_index);
+	intersection_count += intersection_size<Operator>(src_negated, dst, skip_dst_index);
 	if (Operator == fol_formula_type::AND && intersection_count > 0) {
 		found_negation = true; return;
 	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
@@ -1225,32 +1531,59 @@ inline void merge_scopes(
 		found_negation = false;
 	}
 
+	if (Operator == fol_formula_type::IFF && src.length == 0 && dst.length == 0)
+		return; /* this happens if the elements of `src` are negations of the elements of `dst` (and vice versa) */
+
 	/* merge the two scopes */
 	array<fol_scope> both = array<fol_scope>(src.length + dst.length);
-	merge_scopes(both, src, dst, skip_dst_index, new_dst_index);
+	merge_scopes<Operator>(both, src, dst, skip_dst_index, new_dst_index);
 	swap(both, dst); both.clear();
 
-	merge_scopes(both, negated, dst_negated);
+	merge_scopes<Operator>(both, src_negated, dst_negated);
 	swap(both, dst_negated);
 }
 
-bool negate_scope(const fol_scope& src, fol_scope& dst)
+inline bool negate_iff(fol_scope& scope)
 {
-	if (src.type == fol_formula_type::NOT) {
-		move(*src.unary, dst);
-	} else if (src.type == fol_formula_type::IFF) {
-		move(src, dst);
-		if (!dst.commutative.children.ensure_capacity(dst.commutative.children.length + 1))
-			return false;
-		add_false_to_scope<fol_formula_type::IFF>(dst);
+	if (!scope.commutative.children.ensure_capacity(scope.commutative.children.length + 1)) {
+		return false;
+	} else if (scope.commutative.children.last().type == fol_formula_type::FALSE) {
+		free(scope.commutative.children.last());
+		scope.commutative.children.length--;
 	} else {
-		dst.type = fol_formula_type::NOT;
-		dst.unary = (fol_scope*) malloc(sizeof(fol_scope));
-		if (dst.unary == NULL) {
+		if (!init(scope.commutative.children[scope.commutative.children.length], fol_formula_type::FALSE))
+			return false;
+		scope.commutative.children.length++;
+	}
+	return true;
+}
+
+bool negate_scope(fol_scope& scope)
+{
+	if (scope.type == fol_formula_type::TRUE) {
+		scope.type = fol_formula_type::FALSE;
+	} else if (scope.type == fol_formula_type::FALSE) {
+		scope.type = fol_formula_type::TRUE;
+	} else if (scope.type == fol_formula_type::NOT) {
+		fol_scope* operand = scope.unary;
+		free(scope.variables);
+		move(*operand, scope);
+		free(operand);
+	} else if (scope.type == fol_formula_type::IFF) {
+		return negate_iff(scope);
+	} else {
+		fol_scope* operand = (fol_scope*) malloc(sizeof(fol_scope));
+		if (operand == NULL) {
 			fprintf(stderr, "negate_scope ERROR: Out of memory.\n");
 			return false;
 		}
-		move(src, *dst.unary);
+
+		move(scope, *operand);
+		if (!init(scope, fol_formula_type::NOT, operand->variables)) {
+			move(*operand, scope); free(operand);
+			return false;
+		}
+		scope.unary = operand;
 	}
 	return true;
 }
@@ -1265,133 +1598,186 @@ bool canonicalize_commutative_scope(
 			   || Operator == fol_formula_type::IFF,
 			"Operator is not a commutative operator.");
 
-	if (!canonicalize(*src.left, out, variable_map)) return false;
+	if (!canonicalize_scope(*src.left, out, variable_map)) return false;
 
 	fol_scope& right = *((fol_scope*) alloca(sizeof(fol_scope)));
 	if (out.type == fol_formula_type::FALSE) {
 		if (Operator == fol_formula_type::AND) {
 			return true;
 		} else if (Operator == fol_formula_type::OR) {
-			return canonicalize(*src.right, out, variable_map);
+			free(out);
+			return canonicalize_scope(*src.right, out, variable_map);
 		} else if (Operator == fol_formula_type::IFF) {
-			if (!canonicalize(*src.right, right, variable_map)) {
+			free(out);
+			if (!canonicalize_scope(*src.right, out, variable_map))
 				return false;
-			} else if (!negate_scope(right, out)) {
-				free(right);
-				return false;
+			if (!negate_scope(out)) {
+				free(out); return false;
 			}
+			return true;
 		}
 	} else if (out.type == fol_formula_type::TRUE) {
 		if (Operator == fol_formula_type::OR) {
 			return true;
 		} else {
-			return canonicalize(*src.right, right, variable_map);
+			free(out);
+			return canonicalize_scope(*src.right, out, variable_map);
 		}
 	}
 
-	if (!canonicalize(*src.right, right, variable_map))
+	if (!canonicalize_scope(*src.right, right, variable_map))
 		return false;
 
 	if (out == right) {
 		/* consider the case where `*src.left` and `*src.right` are identical */
+		free(right);
 		if (Operator == fol_formula_type::IFF) {
-			free(out); free(right);
-			out.type = fol_formula_type::TRUE;
-		} else {
-			free(right);
+			free(out);
+			return init(out, fol_formula_type::TRUE);
 		}
 	} else if (right.type == fol_formula_type::FALSE) {
+		free(right);
 		if (Operator == fol_formula_type::AND) {
 			free(out);
-			out.type = fol_formula_type::FALSE;
+			return init(out, fol_formula_type::FALSE);
 		} else if (Operator == fol_formula_type::IFF) {
-			if (!negate_scope(out, right)) {
+			if (!negate_scope(out)) {
 				free(out); return false;
 			}
-			move(right, out);
 		}
 	} else if (right.type == fol_formula_type::TRUE) {
+		free(right);
 		if (Operator == fol_formula_type::OR) {
 			free(out);
-			out.type = fol_formula_type::TRUE;
-			return true;
+			return init(out, fol_formula_type::TRUE);
 		}
 	} else if ((out.type == fol_formula_type::NOT && *out.unary == right)
 			|| (right.type == fol_formula_type::NOT && *right.unary == out)) {
 		/* we have the case `A op ~A` */
 		free(right); free(out);
 		if (Operator == fol_formula_type::AND || Operator == fol_formula_type::IFF)
-			out.type = fol_formula_type::FALSE;
+			return init(out, fol_formula_type::FALSE);
 		else if (Operator == fol_formula_type::OR)
-			out.type = fol_formula_type::TRUE;
-		return true;
+			return init(out, fol_formula_type::TRUE);
 	} else if (out.type == Operator) {
 		if (right.type == Operator) {
 			bool found_negation;
 			merge_scopes<Operator>(right.commutative.children, out.commutative.children,
 					right.commutative.negated, out.commutative.negated, found_negation);
-			move_variables(right.variables, out.variables);
 			free(right);
-			if (found_negation) {
+			if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
+				free(out);
+				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
+			} else if (found_negation) {
 				if (Operator == fol_formula_type::AND) {
-					free(out); out.type = fol_formula_type::FALSE;
+					free(out);
+					return init(out, fol_formula_type::FALSE);
 				} else if (Operator == fol_formula_type::OR) {
-					free(out); out.type = fol_formula_type::TRUE;
+					free(out);
+					return init(out, fol_formula_type::TRUE);
 				} else if (Operator == fol_formula_type::IFF) {
-					if (!out.commutative.children.ensure_capacity(out.commutative.children.length + 1)) {
-						free(out); return false;
-					}
-					add_false_to_scope<Operator>(out);
+					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+					return negate_iff(out);
 				}
 			}
+			if (Operator == fol_formula_type::IFF)
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			else move_variables(right.variables, out.variables);
 		} else {
-			bool found_negated;
-			if (!add_to_scope(right, out.commutative.children, out.commutative.negated, found_negated)) {
+			bool found_negation;
+			if (!add_to_scope<Operator>(right, out.commutative.children, out.commutative.negated, found_negation)) {
 				free(out); free(right); return false;
-			} else if (found_negated) {
+			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
+				free(out);
+				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
+			} else if (found_negation) {
 				free(right);
 				if (Operator == fol_formula_type::AND) {
 					free(out); return init(out, fol_formula_type::FALSE);
 				} else if (Operator == fol_formula_type::OR) {
 					free(out); return init(out, fol_formula_type::TRUE);
-				} else {
-					add_false_to_scope<Operator>(out);
+				} else if (Operator == fol_formula_type::IFF) {
+					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+					return negate_iff(out);
 				}
-			} else {
-				move_variables(right.variables, out.variables);
 			}
+			if (Operator == fol_formula_type::IFF)
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			else move_variables(right.variables, out.variables);
 		}
 	} else {
 		if (right.type == Operator) {
-			bool found_negated;
-			if (!add_to_scope(out, right.commutative.children, right.commutative.negated, found_negated)) {
+			bool found_negation;
+			if (!add_to_scope<Operator>(out, right.commutative.children, right.commutative.negated, found_negation)) {
 				free(out); free(right); return false;
-			} else if (found_negated) {
+			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 0 && right.commutative.negated.length == 0) {
+				free(right);
+				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
+			} else if (found_negation) {
 				free(out);
 				if (Operator == fol_formula_type::AND) {
 					free(right); return init(out, fol_formula_type::FALSE);
 				} else if (Operator == fol_formula_type::OR) {
 					free(right); return init(out, fol_formula_type::TRUE);
-				} else {
-					add_false_to_scope<Operator>(right);
+				} else if (Operator == fol_formula_type::IFF) {
+					recompute_variables(right.commutative.children, right.commutative.negated, right.variables);
+					move(right, out);
+					return negate_iff(out);
 				}
 			} else {
-				move_variables(out.variables, right.variables);
+				if (Operator == fol_formula_type::IFF)
+					recompute_variables(right.commutative.children, right.commutative.negated, right.variables);
+				else move_variables(out.variables, right.variables);
+				move(right, out);
 			}
-			move(right, out);
 		} else {
-			fol_scope both = fol_scope(Operator);
-
-			if (less_than(out, right, canonicalizer())) {
-				move(out, both.commutative.children[0]);
-				move(right, both.commutative.children[1]);
-			} else {
-				move(right, out.commutative.children[0]);
-				move(out, out.commutative.children[1]);
+			fol_scope& both = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (!init(both, Operator, out.variables)) {
+				free(out); free(right);
+				return false;
 			}
-			out.commutative.children.length = 2;
-			move_variables(right.variables, out.variables);
-			swap(out, both);
+			move_variables(right.variables, both.variables);
+
+			if (out.type == fol_formula_type::NOT) {
+				if (right.type == fol_formula_type::NOT) {
+					if (less_than(out, right, canonicalizer())) {
+						move(*out.unary, both.commutative.negated[0]);
+						move(*right.unary, both.commutative.negated[1]);
+					} else {
+						move(*right.unary, both.commutative.negated[0]);
+						move(*out.unary, both.commutative.negated[1]);
+					}
+					both.commutative.negated.length = 2;
+					free(right.variables);
+					free(right.unary);
+				} else {
+					move(*out.unary, both.commutative.negated[0]);
+					move(right, both.commutative.children[0]);
+					both.commutative.children.length = 1;
+					both.commutative.negated.length = 1;
+				}
+				free(out.variables);
+				free(out.unary);
+			} else {
+				if (right.type == fol_formula_type::NOT) {
+					move(out, both.commutative.children[0]);
+					move(*right.unary, both.commutative.negated[0]);
+					both.commutative.children.length = 1;
+					both.commutative.negated.length = 1;
+					free(right.variables);
+					free(right.unary);
+				} else {
+					if (less_than(out, right, canonicalizer())) {
+						move(out, both.commutative.children[0]);
+						move(right, both.commutative.children[1]);
+					} else {
+						move(right, both.commutative.children[0]);
+						move(out, both.commutative.children[1]);
+					}
+					both.commutative.children.length = 2;
+				}
+			}
+			move(both, out);
 		}
 	}
 	return true;
@@ -1402,15 +1788,15 @@ bool canonicalize_conditional_scope(
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	fol_scope& left = *((fol_scope*) alloca(sizeof(fol_scope)));
-	if (!canonicalize(*src.left, left, variable_map)) return false;
+	if (!canonicalize_scope(*src.left, left, variable_map)) return false;
 
 	if (left.type == fol_formula_type::FALSE) {
 		return init(out, fol_formula_type::TRUE);
 	} else if (left.type == fol_formula_type::TRUE) {
-		return canonicalize(*src.right, out, variable_map);
+		return canonicalize_scope(*src.right, out, variable_map);
 	}
 
-	if (!canonicalize(*src.right, out, variable_map))
+	if (!canonicalize_scope(*src.right, out, variable_map))
 		return false;
 
 	if (out == left) {
@@ -1418,10 +1804,9 @@ bool canonicalize_conditional_scope(
 		free(out); free(left);
 		return init(out, fol_formula_type::TRUE);
 	} else if (out.type == fol_formula_type::FALSE) {
-		if (!negate_scope(out, left)) {
+		if (!negate_scope(out)) {
 			free(out); return false;
 		}
-		move(left, out);
 	} else if (out.type == fol_formula_type::TRUE) {
 		/* this is a no-op */
 	} else if ((out.type == fol_formula_type::NOT && *out.unary == left)
@@ -1443,7 +1828,7 @@ bool canonicalize_conditional_scope(
 				if (child.type != fol_formula_type::IF_THEN) continue;
 
 				bool found_negation;
-				fol_scope& temp = *((fol_scope) alloca(sizeof(fol_scope)));
+				fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
 				move(child, temp);
 				merge_scopes<fol_formula_type::AND>(temp.noncommutative.left, out.noncommutative.left,
 						temp.noncommutative.left_negated, out.noncommutative.left_negated, found_negation);
@@ -1467,18 +1852,18 @@ bool canonicalize_conditional_scope(
 				i = new_index;
 			}
 		} else if (out.type == fol_formula_type::NOT) {
-			fol_scope temp = fol_scope(fol_formula_type::IF_THEN);
-			if (!temp.variables.append(out.variables.data, out.variables.length)) {
-				free(left); free(out);
+			fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (!init(temp, fol_formula_type::IF_THEN, out.variables)) {
+				free(out); free(left);
 				return false;
 			}
 			move(out, temp.noncommutative.right_negated[0]);
 			temp.noncommutative.right_negated.length++;
 			swap(out, temp);
 		} else if (out.type != fol_formula_type::IF_THEN) {
-			fol_scope temp = fol_scope(fol_formula_type::IF_THEN);
-			if (!temp.variables.append(out.variables.data, out.variables.length)) {
-				free(left); free(out);
+			fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (!init(temp, fol_formula_type::IF_THEN, out.variables)) {
+				free(out); free(left);
 				return false;
 			}
 			move(out, temp.noncommutative.right[0]);
@@ -1500,15 +1885,352 @@ bool canonicalize_conditional_scope(
 			move_variables(left.variables, out.variables);
 			free(left);
 		} else {
-			bool found_negated;
-			if (!add_to_scope(left, out.noncommutative.left, out.noncommutative.left_negated, found_negated)) {
+			bool found_negation;
+			if (!add_to_scope<fol_formula_type::AND>(left, out.noncommutative.left, out.noncommutative.left_negated, found_negation)) {
 				free(out); free(left); return false;
-			} else if (found_negated) {
+			} else if (found_negation) {
 				free(out); free(left);
 				return init(out, fol_formula_type::TRUE);
 			}
 			move_variables(left.variables, out.variables);
 		}
+
+		/* check if antecedent and consequent have any common operands */
+		if (intersection_size<fol_formula_type::IF_THEN>(out.noncommutative.left, out.noncommutative.right) > 0
+		 || intersection_size<fol_formula_type::IF_THEN>(out.noncommutative.left_negated, out.noncommutative.right_negated) > 0)
+		{
+			free(out);
+			return init(out, fol_formula_type::TRUE);
+		}
+	}
+	return true;
+}
+
+inline bool promote_from_quantifier_scope(
+		array<fol_scope>& quantifier_operand,
+		array<fol_scope>& dst,
+		unsigned int quantifier_variable)
+{
+	unsigned int next = 0;
+	for (unsigned int i = 0; i < quantifier_operand.length; i++) {
+		fol_scope& child = quantifier_operand[i];
+		if (!child.variables.contains(quantifier_variable)) {
+			if (!dst.ensure_capacity(dst.length + 1)) {
+				/* finish shifting the remainder of `quantifier_operand` so all
+				   of its elements are valid (and we avoid double freeing, for example) */
+				while (i < quantifier_operand.length) {
+					move(quantifier_operand[i], quantifier_operand[next]);
+					next++; i++;
+				}
+				quantifier_operand.length = next;
+				return false;
+			}
+			shift_variables(child, quantifier_variable);
+			move(child, dst[dst.length]);
+			dst.length++;
+
+		} else {
+			move(quantifier_operand[i], quantifier_operand[next++]);
+		}
+	}
+	quantifier_operand.length = next;
+	return true;
+}
+
+template<fol_formula_type QuantifierType>
+inline bool make_quantifier_scope(fol_scope& out, fol_scope* operand, unsigned int quantifier_variable)
+{
+	if (!init(out, QuantifierType, operand->variables)) return false;
+	out.quantifier.variable = quantifier_variable;
+	out.quantifier.operand = operand;
+
+	unsigned int index = out.variables.index_of(quantifier_variable);
+	if (index < out.variables.length) {
+		shift_left(out.variables.data + index, out.variables.length - index - 1);
+		out.variables.length--;
+	}
+	return true;
+}
+
+template<fol_formula_type QuantifierType>
+bool canonicalize_quantifier_scope(
+		const fol_quantifier& src, fol_scope& out,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	static_assert(QuantifierType == fol_formula_type::FOR_ALL
+			   || QuantifierType == fol_formula_type::EXISTS,
+			"QuantifierType is not a quantifier.");
+
+	unsigned int quantifier_variable;
+	fol_scope* operand = (fol_scope*) malloc(sizeof(fol_scope));
+	if (operand == NULL) {
+		fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
+		return false;
+	} else if (!new_variable(src.variable, quantifier_variable, variable_map)
+			|| !canonicalize_scope(*src.operand, *operand, variable_map))
+	{
+		free(operand); return false;
+	}
+
+	variable_map.size--;
+
+	/* check if the operand has any instances of the quantified variable */
+	if (!operand->variables.contains(quantifier_variable)) {
+		move(*operand, out); free(operand);
+		return true;
+	}
+
+	if (operand->type == fol_formula_type::AND || operand->type == fol_formula_type::OR) {
+		if (!init(out, operand->type)) {
+			free(*operand); free(operand);
+			return false;
+		} else if (!promote_from_quantifier_scope(operand->commutative.children, out.commutative.children, quantifier_variable)) {
+			free(out); free(*operand); free(operand);
+			return false;
+		} else if (!promote_from_quantifier_scope(operand->commutative.negated, out.commutative.negated, quantifier_variable)) {
+			free(out); free(*operand); free(operand);
+			return false;
+		}
+
+		if (operand->commutative.children.length == 0 && operand->commutative.negated.length == 0) {
+			/* we've moved all children out of the quantifier */
+			move_variables(operand->variables, out.variables);
+			free(*operand); free(operand);
+		} else {
+			fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
+			if (quantifier_operand == NULL) {
+				fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
+				free(out); free(*operand); free(operand); return false;
+			}
+
+			if (operand->commutative.children.length == 1 && operand->commutative.negated.length == 0) {
+				move(operand->commutative.children[0], *quantifier_operand);
+				operand->commutative.children.clear();
+				free(*operand); free(operand);
+			} else if (operand->commutative.children.length == 0 && operand->commutative.negated.length == 1) {
+				move(operand->commutative.negated[0], *quantifier_operand);
+				operand->commutative.negated.clear();
+				if (!negate_scope(*quantifier_operand)) {
+					free(*quantifier_operand); free(quantifier_operand);
+					free(out); free(*operand); free(operand);
+					return false;
+				}
+				free(*operand); free(operand);
+			} else {
+				recompute_variables(operand->commutative.children, operand->commutative.negated, operand->variables);
+				move(*operand, *quantifier_operand); free(operand);
+			}
+
+
+			fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
+				free(out); return false;
+			}
+
+			if (out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
+				free(out);
+				move(quantifier, out);
+			} else {
+				bool found_negation;
+				if (out.type == fol_formula_type::AND) {
+					if (!add_to_scope<fol_formula_type::AND>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
+						free(out); free(quantifier); return false;
+					} else if (found_negation) {
+						free(out); free(quantifier); return false;
+						return init(out, fol_formula_type::FALSE);
+					}
+				} else if (out.type == fol_formula_type::OR) {
+					if (!add_to_scope<fol_formula_type::OR>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
+						free(out); free(quantifier);
+					} else if (found_negation) {
+						free(out);
+						return init(out, fol_formula_type::TRUE);
+					}
+				}
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			}
+		}
+
+	} else if (operand->type == fol_formula_type::IF_THEN) {
+		if (!init(out, fol_formula_type::IF_THEN)) {
+			free(*operand); free(operand);
+			return false;
+		} else if (!promote_from_quantifier_scope(operand->noncommutative.left, out.noncommutative.left, quantifier_variable)) {
+			free(out); free(*operand); free(operand);
+			return false;
+		} else if (!promote_from_quantifier_scope(operand->noncommutative.left_negated, out.noncommutative.left_negated, quantifier_variable)) {
+			free(out); free(*operand); free(operand);
+			return false;
+		} else if (!promote_from_quantifier_scope(operand->noncommutative.right, out.noncommutative.right, quantifier_variable)) {
+			free(out); free(*operand); free(operand);
+			return false;
+		} else if (!promote_from_quantifier_scope(operand->noncommutative.right_negated, out.noncommutative.right_negated, quantifier_variable)) {
+			free(out); free(*operand); free(operand);
+			return false;
+		}
+
+		if (operand->noncommutative.left.length == 0 && operand->noncommutative.left_negated.length == 0) {
+			/* we've moved all children out of the antecedent */
+			if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 0) {
+				/* we've moved all children out of the consequent */
+				free(*operand); free(operand);
+			} else {
+				fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
+				if (quantifier_operand == NULL) {
+					fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
+					free(out); free(*operand); free(operand); return false;
+				}
+
+				if (operand->noncommutative.right.length == 1 && operand->noncommutative.right_negated.length == 0) {
+					move(operand->noncommutative.right[0], *quantifier_operand);
+					operand->noncommutative.right.clear();
+					free(*operand); free(operand);
+				} else if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 1) {
+					move(operand->noncommutative.right_negated[0], *quantifier_operand);
+					operand->noncommutative.right_negated.clear();
+					if (!negate_scope(*quantifier_operand)) {
+						free(*quantifier_operand); free(quantifier_operand);
+						free(out); free(*operand); free(operand);
+						return false;
+					}
+					free(*operand); free(operand);
+				} else {
+					if (!init(*quantifier_operand, fol_formula_type::OR)) {
+						fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
+						free(quantifier_operand); free(out); free(*operand); free(operand); return false;
+					}
+					move(operand->noncommutative.right, quantifier_operand->commutative.children);
+					move(operand->noncommutative.right_negated, quantifier_operand->commutative.negated);
+					move(operand->variables, quantifier_operand->variables);
+					recompute_variables(quantifier_operand->commutative.children, quantifier_operand->commutative.negated, quantifier_operand->variables);
+					free(operand);
+				}
+
+				fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+				if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
+					free(out); return false;
+				}
+
+				bool found_negation;
+				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
+					free(out); free(quantifier); return false;
+				} else if (found_negation) {
+					free(out);
+					return init(out, fol_formula_type::TRUE);
+				}
+				recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
+						out.noncommutative.right, out.noncommutative.right_negated, out.variables);
+			}
+		} else {
+			/* the antecedent is non-empty */
+			if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 0) {
+				/* we've moved all children out of the consequent */
+				fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
+				if (quantifier_operand == NULL) {
+					fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
+					free(out); free(*operand); free(operand); return false;
+				}
+
+				if (operand->noncommutative.left.length == 1 && operand->noncommutative.left_negated.length == 0) {
+					move(operand->noncommutative.left[0], *quantifier_operand);
+					operand->noncommutative.left.clear();
+					if (!negate_scope(*quantifier_operand)) {
+						free(*quantifier_operand); free(quantifier_operand);
+						free(out); free(*operand); free(operand);
+						return false;
+					}
+					free(*operand); free(operand);
+				} else if (operand->noncommutative.left.length == 0 && operand->noncommutative.left_negated.length == 1) {
+					move(operand->noncommutative.left_negated[0], *quantifier_operand);
+					operand->noncommutative.left_negated.clear();
+					free(*operand); free(operand);
+				} else {
+					fol_scope* conjunction = (fol_scope*) malloc(sizeof(fol_scope));
+					if (conjunction == NULL) {
+						fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
+						free(quantifier_operand); free(out); free(*operand); free(operand);
+					}
+					conjunction->type = fol_formula_type::AND;
+					move(operand->noncommutative.left, conjunction->commutative.children);
+					move(operand->noncommutative.left_negated, conjunction->commutative.negated);
+					move(operand->variables, conjunction->variables);
+					recompute_variables(conjunction->commutative.children, conjunction->commutative.negated, conjunction->variables);
+					free(operand);
+
+					if (!init(*quantifier_operand, fol_formula_type::NOT)) {
+						free(quantifier_operand); free(out);
+						return false;
+					}
+					quantifier_operand->unary = conjunction;
+					move_variables(conjunction->variables, quantifier_operand->variables);
+				}
+
+				fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+				if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
+					free(out); return false;
+				}
+
+				bool found_negation;
+				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
+					free(out); free(quantifier); return false;
+				} else if (found_negation) {
+					free(out);
+					return init(out, fol_formula_type::TRUE);
+				}
+				recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
+						out.noncommutative.right, out.noncommutative.right_negated, out.variables);
+			} else {
+				fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+				recompute_variables(operand->noncommutative.left, operand->noncommutative.left_negated,
+						operand->noncommutative.right, operand->noncommutative.right_negated, operand->variables);
+				if (!make_quantifier_scope<QuantifierType>(quantifier, operand, quantifier_variable)) {
+					free(out); return false;
+				}
+
+				bool found_negation;
+				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
+					free(out); free(quantifier); return false;
+				} else if (found_negation) {
+					free(out);
+					return init(out, fol_formula_type::TRUE);
+				}
+			}
+
+			if (out.noncommutative.left.length == 0 && out.noncommutative.left_negated.length == 0) {
+				/* the antecendent of the new (parent) conditional is empty, so change the node into a disjunction */
+				if (out.noncommutative.right.length == 1 && out.noncommutative.right_negated.length == 0) {
+					fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+					move(out.noncommutative.right[0], temp);
+					out.noncommutative.right.clear();
+					free(out); move(temp, out);
+				} else if (out.noncommutative.right.length == 0 && out.noncommutative.right_negated.length == 1) {
+					fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+					move(out.noncommutative.right_negated[0], temp);
+					out.noncommutative.right.clear();
+					free(out); move(temp, out);
+					if (!negate_scope(out)) {
+						free(out); return false;
+					}
+				} else {
+					array<fol_scope>& temp = *((array<fol_scope>*) alloca(sizeof(array<fol_scope>)));
+					array<fol_scope>& temp_negated = *((array<fol_scope>*) alloca(sizeof(array<fol_scope>)));
+					free(out.noncommutative.left);
+					free(out.noncommutative.left_negated);
+					move(out.noncommutative.right, temp);
+					move(out.noncommutative.right_negated, temp_negated);
+					out.type = fol_formula_type::OR;
+					move(temp, out.commutative.children);
+					move(temp_negated, out.commutative.negated);
+					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+				}
+			} else {
+				recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
+						out.noncommutative.right, out.noncommutative.right_negated, out.variables);
+			}
+		}
+
+	} else {
+		return make_quantifier_scope<QuantifierType>(out, operand, quantifier_variable);
 	}
 	return true;
 }
@@ -1517,23 +2239,45 @@ inline bool canonicalize_negation_scope(
 		const fol_unary_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
-	fol_scope& temp = *((fol_scope*) malloc(sizeof(fol_scope)));
-	if (!canonicalize(*src.operand, temp, variable_map)) return false;
-	return negate_scope(temp, out);
+	if (!canonicalize_scope(*src.operand, out, variable_map))
+		return false;
+	if (!negate_scope(out)) {
+		free(out); return false;
+	}
+	return true;
 }
 
-inline bool canonicalize_term(
-		const fol_term& src, fol_term& dst,
+inline bool canonicalize_term(const fol_term& src, fol_term& dst,
+		array_map<unsigned int, unsigned int>& variable_map,
 		array<unsigned int>& variables)
 {
 	dst.type = src.type;
 
+	unsigned int index;
 	switch (src.type) {
 	case fol_term_type::CONSTANT:
 		dst.constant = src.constant; return true;
 	case fol_term_type::VARIABLE:
-		dst.variable = src.variable;
-		return variables.add(dst.variable);
+		index = variable_map.index_of(src.variable);
+		if (index < variable_map.size) {
+			dst.variable = variable_map.values[index];
+		} else {
+			fprintf(stderr, "relabel_variables ERROR: Undefined variable.\n");
+			return false;
+		}
+
+		index = linear_search(variables.data, dst.variable, 0, variables.length);
+		if (index == variables.length) {
+			if (!variables.ensure_capacity(variables.length + 1)) return false;
+			variables[variables.length] = dst.variable;
+			variables.length++;
+		} else if (variables[index] != dst.variable) {
+			if (!variables.ensure_capacity(variables.length + 1)) return false;
+			shift_right(variables.data, variables.length, index);
+			variables[index] = dst.variable;
+			variables.length++;
+		}
+		return true;
 	case fol_term_type::NONE:
 		return true;
 	}
@@ -1541,19 +2285,15 @@ inline bool canonicalize_term(
 	return false;
 }
 
-inline bool canonicalize_atom(
-		const fol_atom& src, fol_scope& out)
+inline bool canonicalize_atom(const fol_atom& src, fol_scope& out,
+		array_map<unsigned int, unsigned int>& variable_map)
 {
 	if (!init(out, fol_formula_type::ATOM)) return false;
 
 	out.atom.predicate = src.predicate;
-	if (!canonicalize_term(src.arg1, out.atom.arg1, out.variables)
-	 || !canonicalize_term(src.arg2, out.atom.arg2, out.variables)) {
+	if (!canonicalize_term(src.arg1, out.atom.arg1, variable_map, out.variables)
+	 || !canonicalize_term(src.arg2, out.atom.arg2, variable_map, out.variables)) {
 		return false;
-	}
-	if (out.variables.length > 1) {
-		insertion_sort(out.variables);
-		unique(out.variables);
 	}
 
 	return true;
@@ -1571,14 +2311,14 @@ bool canonicalize_scope(const fol_formula& src, fol_scope& out,
 		return canonicalize_commutative_scope<fol_formula_type::IFF>(src.binary, out, variable_map);
 	case fol_formula_type::IF_THEN:
 		return canonicalize_conditional_scope(src.binary, out, variable_map);
+	case fol_formula_type::FOR_ALL:
+		return canonicalize_quantifier_scope<fol_formula_type::FOR_ALL>(src.quantifier, out, variable_map);
+	case fol_formula_type::EXISTS:
+		return canonicalize_quantifier_scope<fol_formula_type::EXISTS>(src.quantifier, out, variable_map);
 	case fol_formula_type::NOT:
 		return canonicalize_negation_scope(src.unary, out, variable_map);
 	case fol_formula_type::ATOM:
-		return canonicalize_atom(src.atom, out);
-	case fol_formula_type::FOR_ALL:
-		/* TODO: implement this */
-	case fol_formula_type::EXISTS:
-		/* TODO: implement this */
+		return canonicalize_atom(src.atom, out, variable_map);
 	case fol_formula_type::TRUE:
 		return init(out, fol_formula_type::TRUE);
 	case fol_formula_type::FALSE:
@@ -1586,6 +2326,17 @@ bool canonicalize_scope(const fol_formula& src, fol_scope& out,
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized fol_formula_type.\n");
 	return false;
+}
+
+fol_formula* canonicalize(const fol_formula& src)
+{
+	array_map<unsigned int, unsigned int> variable_map(16);
+	fol_scope& scope = *((fol_scope*) alloca(sizeof(fol_scope)));
+	if (!canonicalize_scope(src, scope, variable_map))
+		return NULL;
+	fol_formula* canonicalized = scope_to_formula(scope);
+	free(scope);
+	return canonicalized;
 }
 
 
