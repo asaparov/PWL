@@ -1291,6 +1291,33 @@ bool add_to_scope(
 }
 
 template<fol_formula_type Operator>
+bool add_to_scope(
+		fol_scope& subscope,
+		array<fol_scope>& children,
+		array<fol_scope>& negated,
+		array<unsigned int>& variables,
+		bool& found_negation)
+{
+	/* check if `subscope` is the negation of any operand in `scope.commutative.children` */
+	if (subscope.type == fol_formula_type::NOT) {
+		if (Operator != fol_formula_type::IFF)
+			move_variables(subscope.variables, variables);
+		if (!add_to_scope_helper<Operator>(*subscope.unary, negated, children, found_negation)) return false;
+		if (Operator == fol_formula_type::IFF)
+			recompute_variables(children, negated, variables);
+		free(subscope.variables);
+		free(subscope.unary);
+	} else {
+		if (Operator != fol_formula_type::IFF)
+			move_variables(subscope.variables, variables);
+		if (!add_to_scope_helper<Operator>(subscope, children, negated, found_negation)) return false;
+		if (Operator == fol_formula_type::IFF)
+			recompute_variables(children, negated, variables);
+	}
+	return true;
+}
+
+template<fol_formula_type Operator>
 unsigned int intersection_size(
 	array<fol_scope>& first,
 	array<fol_scope>& second)
@@ -1713,49 +1740,39 @@ bool canonicalize_commutative_scope(
 			else move_variables(right.variables, out.variables);
 		} else {
 			bool found_negation;
-			if (!add_to_scope<Operator>(right, out.commutative.children, out.commutative.negated, found_negation)) {
+			if (!add_to_scope<Operator>(right, out.commutative.children, out.commutative.negated, out.variables, found_negation)) {
 				free(out); free(right); return false;
 			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
 				free(out);
 				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
 			} else if (found_negation) {
-				free(right);
 				if (Operator == fol_formula_type::AND) {
 					free(out); return init(out, fol_formula_type::FALSE);
 				} else if (Operator == fol_formula_type::OR) {
 					free(out); return init(out, fol_formula_type::TRUE);
 				} else if (Operator == fol_formula_type::IFF) {
-					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
 					return negate_iff(out);
 				}
 			}
-			if (Operator == fol_formula_type::IFF)
-				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
-			else move_variables(right.variables, out.variables);
 		}
 	} else {
 		if (right.type == Operator) {
 			bool found_negation;
-			if (!add_to_scope<Operator>(out, right.commutative.children, right.commutative.negated, found_negation)) {
+			if (!add_to_scope<Operator>(out, right.commutative.children, right.commutative.negated, right.variables, found_negation)) {
 				free(out); free(right); return false;
 			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 0 && right.commutative.negated.length == 0) {
 				free(right);
 				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
 			} else if (found_negation) {
-				free(out);
 				if (Operator == fol_formula_type::AND) {
 					free(right); return init(out, fol_formula_type::FALSE);
 				} else if (Operator == fol_formula_type::OR) {
 					free(right); return init(out, fol_formula_type::TRUE);
 				} else if (Operator == fol_formula_type::IFF) {
-					recompute_variables(right.commutative.children, right.commutative.negated, right.variables);
 					move(right, out);
 					return negate_iff(out);
 				}
 			} else {
-				if (Operator == fol_formula_type::IFF)
-					recompute_variables(right.commutative.children, right.commutative.negated, right.variables);
-				else move_variables(out.variables, right.variables);
 				move(right, out);
 			}
 		} else {
@@ -1914,13 +1931,12 @@ bool canonicalize_conditional_scope(
 			free(left);
 		} else {
 			bool found_negation;
-			if (!add_to_scope<fol_formula_type::AND>(left, out.noncommutative.left, out.noncommutative.left_negated, found_negation)) {
+			if (!add_to_scope<fol_formula_type::AND>(left, out.noncommutative.left, out.noncommutative.left_negated, out.variables, found_negation)) {
 				free(out); free(left); return false;
 			} else if (found_negation) {
-				free(out); free(left);
+				free(out);
 				return init(out, fol_formula_type::TRUE);
 			}
-			move_variables(left.variables, out.variables);
 		}
 
 		/* check if antecedent and consequent have any common operands */
@@ -2035,7 +2051,7 @@ bool process_commutative_quantifier_scope(
 		/* removing an operand can allow movement from its children to the
 		   parent, so check if the new operand allows movement */
 		fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
-		if (quantifier_operand->type == fol_formula_type::AND || quantifier_operand->type == fol_formula_type::OR) {
+		if (quantifier_operand->type != out.type && (quantifier_operand->type == fol_formula_type::AND || quantifier_operand->type == fol_formula_type::OR)) {
 			if (!process_commutative_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
 				return false;
 		} else if (quantifier_operand->type == fol_formula_type::IF_THEN) {
@@ -2136,9 +2152,6 @@ bool process_conditional_quantifier_scope(
 			fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
 			if (quantifier_operand->type == fol_formula_type::AND || quantifier_operand->type == fol_formula_type::OR) {
 				if (!process_commutative_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
-					return false;
-			} else if (quantifier_operand->type == fol_formula_type::IF_THEN) {
-				if (!process_conditional_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
 					return false;
 			} else if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
 				free(out); return false;
