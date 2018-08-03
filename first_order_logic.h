@@ -1115,7 +1115,7 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 				scope.noncommutative.left.data, scope.noncommutative.left.length,
 				scope.noncommutative.left_negated.data, scope.noncommutative.left_negated.length);
 		if (left == NULL) return NULL;
-		right = scope_to_formula<fol_formula_type::AND>(
+		right = scope_to_formula<fol_formula_type::OR>(
 				scope.noncommutative.right.data, scope.noncommutative.right.length,
 				scope.noncommutative.right_negated.data, scope.noncommutative.right_negated.length);
 		if (right == NULL) {
@@ -1588,6 +1588,37 @@ bool negate_scope(fol_scope& scope)
 	return true;
 }
 
+inline bool make_negated_iff(fol_scope& out, fol_scope& operand)
+{
+	if (operand.type == fol_formula_type::TRUE) {
+		free(operand);
+		return init(out, fol_formula_type::FALSE);
+	} else if (operand.type == fol_formula_type::FALSE) {
+		free(operand);
+		return init(out, fol_formula_type::TRUE);
+	} else {
+		if (!init(out, fol_formula_type::IFF)) {
+			free(operand); return false;
+		}
+		if (operand.type == fol_formula_type::NOT) {
+			move(*operand.unary, out.commutative.negated[0]);
+			out.commutative.negated.length++;
+			move_variables(operand.variables, out.variables);
+			free(operand.unary);
+			free(operand.variables);
+		} else {
+			move(operand, out.commutative.children[0]);
+			out.commutative.children.length++;
+			move_variables(operand.variables, out.variables);
+		}
+		if (!init(out.commutative.children[out.commutative.children.length], fol_formula_type::FALSE)) {
+			free(out); return false;
+		}
+		out.commutative.children.length++;
+		return true;
+	}
+}
+
 template<fol_formula_type Operator>
 bool canonicalize_commutative_scope(
 		const fol_binary_formula& src, fol_scope& out,
@@ -1609,12 +1640,9 @@ bool canonicalize_commutative_scope(
 			return canonicalize_scope(*src.right, out, variable_map);
 		} else if (Operator == fol_formula_type::IFF) {
 			free(out);
-			if (!canonicalize_scope(*src.right, out, variable_map))
+			if (!canonicalize_scope(*src.right, right, variable_map))
 				return false;
-			if (!negate_scope(out)) {
-				free(out); return false;
-			}
-			return true;
+			return make_negated_iff(out, right);
 		}
 	} else if (out.type == fol_formula_type::TRUE) {
 		if (Operator == fol_formula_type::OR) {
@@ -1641,9 +1669,9 @@ bool canonicalize_commutative_scope(
 			free(out);
 			return init(out, fol_formula_type::FALSE);
 		} else if (Operator == fol_formula_type::IFF) {
-			if (!negate_scope(out)) {
-				free(out); return false;
-			}
+			if (!make_negated_iff(right, out)) return false;
+			move(right, out);
+			return true;
 		}
 	} else if (right.type == fol_formula_type::TRUE) {
 		free(right);
@@ -1952,6 +1980,299 @@ inline bool make_quantifier_scope(fol_scope& out, fol_scope* operand, unsigned i
 	return true;
 }
 
+
+/* forward declarations */
+template<fol_formula_type QuantifierType>
+bool process_conditional_quantifier_scope(fol_scope&, fol_scope*, unsigned int);
+
+
+template<fol_formula_type QuantifierType>
+bool process_commutative_quantifier_scope(
+		fol_scope& out, fol_scope* operand,
+		unsigned int quantifier_variable)
+{
+	if (!init(out, operand->type)) {
+		free(*operand); free(operand);
+		return false;
+	} else if (!promote_from_quantifier_scope(operand->commutative.children, out.commutative.children, quantifier_variable)) {
+		free(out); free(*operand); free(operand);
+		return false;
+	} else if (!promote_from_quantifier_scope(operand->commutative.negated, out.commutative.negated, quantifier_variable)) {
+		free(out); free(*operand); free(operand);
+		return false;
+	}
+
+	if (operand->commutative.children.length == 0 && operand->commutative.negated.length == 0) {
+		/* we've moved all children out of the quantifier */
+		move_variables(operand->variables, out.variables);
+		free(*operand); free(operand);
+	} else {
+		fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
+		if (quantifier_operand == NULL) {
+			fprintf(stderr, "process_commutative_quantifier_scope ERROR: Out of memory.\n");
+			free(out); free(*operand); free(operand); return false;
+		}
+
+		if (operand->commutative.children.length == 1 && operand->commutative.negated.length == 0) {
+			fol_scope& inner_operand = operand->commutative.children[0];
+			move(inner_operand, *quantifier_operand);
+			operand->commutative.children.clear();
+			free(*operand); free(operand);
+		} else if (operand->commutative.children.length == 0 && operand->commutative.negated.length == 1) {
+			move(operand->commutative.negated[0], *quantifier_operand);
+			operand->commutative.negated.clear();
+			if (!negate_scope(*quantifier_operand)) {
+				free(*quantifier_operand); free(quantifier_operand);
+				free(out); free(*operand); free(operand);
+				return false;
+			}
+			free(*operand); free(operand);
+		} else {
+			recompute_variables(operand->commutative.children, operand->commutative.negated, operand->variables);
+			move(*operand, *quantifier_operand); free(operand);
+		}
+
+		/* removing an operand can allow movement from its children to the
+		   parent, so check if the new operand allows movement */
+		fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+		if (quantifier_operand->type == fol_formula_type::AND || quantifier_operand->type == fol_formula_type::OR) {
+			if (!process_commutative_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
+				return false;
+		} else if (quantifier_operand->type == fol_formula_type::IF_THEN) {
+			if (!process_conditional_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
+				return false;
+		} else if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
+			free(out); return false;
+		}
+
+		if (out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
+			free(out);
+			move(quantifier, out);
+		} else {
+			bool found_negation;
+			if (out.type == fol_formula_type::AND) {
+				if (!add_to_scope<fol_formula_type::AND>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
+					free(out); free(quantifier); return false;
+				} else if (found_negation) {
+					free(out); free(quantifier); return false;
+					return init(out, fol_formula_type::FALSE);
+				}
+			} else if (out.type == fol_formula_type::OR) {
+				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
+					free(out); free(quantifier);
+				} else if (found_negation) {
+					free(out);
+					return init(out, fol_formula_type::TRUE);
+				}
+			}
+			recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+		}
+	}
+	return true;
+}
+
+template<fol_formula_type QuantifierType>
+bool process_conditional_quantifier_scope(
+		fol_scope& out, fol_scope* operand,
+		unsigned int quantifier_variable)
+{
+	if (!init(out, fol_formula_type::IF_THEN)) {
+		free(*operand); free(operand);
+		return false;
+	} else if (!promote_from_quantifier_scope(operand->noncommutative.left, out.noncommutative.left, quantifier_variable)) {
+		free(out); free(*operand); free(operand);
+		return false;
+	} else if (!promote_from_quantifier_scope(operand->noncommutative.left_negated, out.noncommutative.left_negated, quantifier_variable)) {
+		free(out); free(*operand); free(operand);
+		return false;
+	} else if (!promote_from_quantifier_scope(operand->noncommutative.right, out.noncommutative.right, quantifier_variable)) {
+		free(out); free(*operand); free(operand);
+		return false;
+	} else if (!promote_from_quantifier_scope(operand->noncommutative.right_negated, out.noncommutative.right_negated, quantifier_variable)) {
+		free(out); free(*operand); free(operand);
+		return false;
+	}
+
+	if (operand->noncommutative.left.length == 0 && operand->noncommutative.left_negated.length == 0) {
+		/* we've moved all children out of the antecedent */
+		if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 0) {
+			/* we've moved all children out of the consequent */
+			free(*operand); free(operand);
+		} else {
+			fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
+			if (quantifier_operand == NULL) {
+				fprintf(stderr, "process_conditional_quantifier_scope ERROR: Out of memory.\n");
+				free(out); free(*operand); free(operand); return false;
+			}
+
+			if (operand->noncommutative.right.length == 1 && operand->noncommutative.right_negated.length == 0) {
+				move(operand->noncommutative.right[0], *quantifier_operand);
+				operand->noncommutative.right.clear();
+				free(*operand); free(operand);
+			} else if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 1) {
+				move(operand->noncommutative.right_negated[0], *quantifier_operand);
+				operand->noncommutative.right_negated.clear();
+				if (!negate_scope(*quantifier_operand)) {
+					free(*quantifier_operand); free(quantifier_operand);
+					free(out); free(*operand); free(operand);
+					return false;
+				}
+				free(*operand); free(operand);
+			} else {
+				if (!init(*quantifier_operand, fol_formula_type::OR)) {
+					fprintf(stderr, "process_conditional_quantifier_scope ERROR: Out of memory.\n");
+					free(quantifier_operand); free(out); free(*operand); free(operand); return false;
+				}
+				move(operand->noncommutative.right, quantifier_operand->commutative.children);
+				move(operand->noncommutative.right_negated, quantifier_operand->commutative.negated);
+				move(operand->variables, quantifier_operand->variables);
+				recompute_variables(quantifier_operand->commutative.children, quantifier_operand->commutative.negated, quantifier_operand->variables);
+				free(operand);
+			}
+
+
+			/* removing an operand can allow movement from its children to the
+			   parent, so check if the new operand allows movement */
+			fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (quantifier_operand->type == fol_formula_type::AND || quantifier_operand->type == fol_formula_type::OR) {
+				if (!process_commutative_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
+					return false;
+			} else if (quantifier_operand->type == fol_formula_type::IF_THEN) {
+				if (!process_conditional_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
+					return false;
+			} else if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
+				free(out); return false;
+			}
+
+			bool found_negation;
+			if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
+				free(out); free(quantifier); return false;
+			} else if (found_negation) {
+				free(out);
+				return init(out, fol_formula_type::TRUE);
+			}
+			recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
+					out.noncommutative.right, out.noncommutative.right_negated, out.variables);
+		}
+	} else {
+		/* the antecedent is non-empty */
+		if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 0) {
+			/* we've moved all children out of the consequent */
+			fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
+			if (quantifier_operand == NULL) {
+				fprintf(stderr, "process_conditional_quantifier_scope ERROR: Out of memory.\n");
+				free(out); free(*operand); free(operand); return false;
+			}
+
+			if (operand->noncommutative.left.length == 1 && operand->noncommutative.left_negated.length == 0) {
+				move(operand->noncommutative.left[0], *quantifier_operand);
+				operand->noncommutative.left.clear();
+				if (!negate_scope(*quantifier_operand)) {
+					free(*quantifier_operand); free(quantifier_operand);
+					free(out); free(*operand); free(operand);
+					return false;
+				}
+				free(*operand); free(operand);
+			} else if (operand->noncommutative.left.length == 0 && operand->noncommutative.left_negated.length == 1) {
+				move(operand->noncommutative.left_negated[0], *quantifier_operand);
+				operand->noncommutative.left_negated.clear();
+				free(*operand); free(operand);
+			} else {
+				fol_scope* conjunction = (fol_scope*) malloc(sizeof(fol_scope));
+				if (conjunction == NULL) {
+					fprintf(stderr, "process_conditional_quantifier_scope ERROR: Out of memory.\n");
+					free(quantifier_operand); free(out); free(*operand); free(operand);
+				}
+				conjunction->type = fol_formula_type::AND;
+				move(operand->noncommutative.left, conjunction->commutative.children);
+				move(operand->noncommutative.left_negated, conjunction->commutative.negated);
+				move(operand->variables, conjunction->variables);
+				recompute_variables(conjunction->commutative.children, conjunction->commutative.negated, conjunction->variables);
+				free(operand);
+
+				if (!init(*quantifier_operand, fol_formula_type::NOT)) {
+					free(quantifier_operand); free(out);
+					return false;
+				}
+				quantifier_operand->unary = conjunction;
+				move_variables(conjunction->variables, quantifier_operand->variables);
+			}
+
+
+			/* removing an operand can allow movement from its children to the
+			   parent, so check if the new operand allows movement */
+			fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (quantifier_operand->type == fol_formula_type::AND || quantifier_operand->type == fol_formula_type::OR) {
+				if (!process_commutative_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
+					return false;
+			} else if (quantifier_operand->type == fol_formula_type::IF_THEN) {
+				if (!process_conditional_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable))
+					return false;
+			} else if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
+				free(out); return false;
+			}
+
+			bool found_negation;
+			if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
+				free(out); free(quantifier); return false;
+			} else if (found_negation) {
+				free(out);
+				return init(out, fol_formula_type::TRUE);
+			}
+			recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
+					out.noncommutative.right, out.noncommutative.right_negated, out.variables);
+		} else {
+			fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
+			recompute_variables(operand->noncommutative.left, operand->noncommutative.left_negated,
+					operand->noncommutative.right, operand->noncommutative.right_negated, operand->variables);
+			if (!make_quantifier_scope<QuantifierType>(quantifier, operand, quantifier_variable)) {
+				free(out); return false;
+			}
+
+			bool found_negation;
+			if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
+				free(out); free(quantifier); return false;
+			} else if (found_negation) {
+				free(out);
+				return init(out, fol_formula_type::TRUE);
+			}
+		}
+
+		if (out.noncommutative.left.length == 0 && out.noncommutative.left_negated.length == 0) {
+			/* the antecendent of the new (parent) conditional is empty, so change the node into a disjunction */
+			if (out.noncommutative.right.length == 1 && out.noncommutative.right_negated.length == 0) {
+				fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+				move(out.noncommutative.right[0], temp);
+				out.noncommutative.right.clear();
+				free(out); move(temp, out);
+			} else if (out.noncommutative.right.length == 0 && out.noncommutative.right_negated.length == 1) {
+				fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+				move(out.noncommutative.right_negated[0], temp);
+				out.noncommutative.right.clear();
+				free(out); move(temp, out);
+				if (!negate_scope(out)) {
+					free(out); return false;
+				}
+			} else {
+				array<fol_scope>& temp = *((array<fol_scope>*) alloca(sizeof(array<fol_scope>)));
+				array<fol_scope>& temp_negated = *((array<fol_scope>*) alloca(sizeof(array<fol_scope>)));
+				free(out.noncommutative.left);
+				free(out.noncommutative.left_negated);
+				move(out.noncommutative.right, temp);
+				move(out.noncommutative.right_negated, temp_negated);
+				out.type = fol_formula_type::OR;
+				move(temp, out.commutative.children);
+				move(temp_negated, out.commutative.negated);
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			}
+		} else {
+			recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
+					out.noncommutative.right, out.noncommutative.right_negated, out.variables);
+		}
+	}
+	return true;
+}
+
 template<fol_formula_type QuantifierType>
 bool canonicalize_quantifier_scope(
 		const fol_quantifier& src, fol_scope& out,
@@ -1981,254 +2302,9 @@ bool canonicalize_quantifier_scope(
 	}
 
 	if (operand->type == fol_formula_type::AND || operand->type == fol_formula_type::OR) {
-		if (!init(out, operand->type)) {
-			free(*operand); free(operand);
-			return false;
-		} else if (!promote_from_quantifier_scope(operand->commutative.children, out.commutative.children, quantifier_variable)) {
-			free(out); free(*operand); free(operand);
-			return false;
-		} else if (!promote_from_quantifier_scope(operand->commutative.negated, out.commutative.negated, quantifier_variable)) {
-			free(out); free(*operand); free(operand);
-			return false;
-		}
-
-		if (operand->commutative.children.length == 0 && operand->commutative.negated.length == 0) {
-			/* we've moved all children out of the quantifier */
-			move_variables(operand->variables, out.variables);
-			free(*operand); free(operand);
-		} else {
-			fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
-			if (quantifier_operand == NULL) {
-				fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
-				free(out); free(*operand); free(operand); return false;
-			}
-
-			if (operand->commutative.children.length == 1 && operand->commutative.negated.length == 0) {
-				move(operand->commutative.children[0], *quantifier_operand);
-				operand->commutative.children.clear();
-				free(*operand); free(operand);
-			} else if (operand->commutative.children.length == 0 && operand->commutative.negated.length == 1) {
-				move(operand->commutative.negated[0], *quantifier_operand);
-				operand->commutative.negated.clear();
-				if (!negate_scope(*quantifier_operand)) {
-					free(*quantifier_operand); free(quantifier_operand);
-					free(out); free(*operand); free(operand);
-					return false;
-				}
-				free(*operand); free(operand);
-			} else {
-				recompute_variables(operand->commutative.children, operand->commutative.negated, operand->variables);
-				move(*operand, *quantifier_operand); free(operand);
-			}
-
-
-			fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
-			if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
-				free(out); return false;
-			}
-
-			if (out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
-				free(out);
-				move(quantifier, out);
-			} else {
-				bool found_negation;
-				if (out.type == fol_formula_type::AND) {
-					if (!add_to_scope<fol_formula_type::AND>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
-						free(out); free(quantifier); return false;
-					} else if (found_negation) {
-						free(out); free(quantifier); return false;
-						return init(out, fol_formula_type::FALSE);
-					}
-				} else if (out.type == fol_formula_type::OR) {
-					if (!add_to_scope<fol_formula_type::OR>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
-						free(out); free(quantifier);
-					} else if (found_negation) {
-						free(out);
-						return init(out, fol_formula_type::TRUE);
-					}
-				}
-				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
-			}
-		}
-
+		return process_commutative_quantifier_scope<QuantifierType>(out, operand, quantifier_variable);
 	} else if (operand->type == fol_formula_type::IF_THEN) {
-		if (!init(out, fol_formula_type::IF_THEN)) {
-			free(*operand); free(operand);
-			return false;
-		} else if (!promote_from_quantifier_scope(operand->noncommutative.left, out.noncommutative.left, quantifier_variable)) {
-			free(out); free(*operand); free(operand);
-			return false;
-		} else if (!promote_from_quantifier_scope(operand->noncommutative.left_negated, out.noncommutative.left_negated, quantifier_variable)) {
-			free(out); free(*operand); free(operand);
-			return false;
-		} else if (!promote_from_quantifier_scope(operand->noncommutative.right, out.noncommutative.right, quantifier_variable)) {
-			free(out); free(*operand); free(operand);
-			return false;
-		} else if (!promote_from_quantifier_scope(operand->noncommutative.right_negated, out.noncommutative.right_negated, quantifier_variable)) {
-			free(out); free(*operand); free(operand);
-			return false;
-		}
-
-		if (operand->noncommutative.left.length == 0 && operand->noncommutative.left_negated.length == 0) {
-			/* we've moved all children out of the antecedent */
-			if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 0) {
-				/* we've moved all children out of the consequent */
-				free(*operand); free(operand);
-			} else {
-				fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
-				if (quantifier_operand == NULL) {
-					fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
-					free(out); free(*operand); free(operand); return false;
-				}
-
-				if (operand->noncommutative.right.length == 1 && operand->noncommutative.right_negated.length == 0) {
-					move(operand->noncommutative.right[0], *quantifier_operand);
-					operand->noncommutative.right.clear();
-					free(*operand); free(operand);
-				} else if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 1) {
-					move(operand->noncommutative.right_negated[0], *quantifier_operand);
-					operand->noncommutative.right_negated.clear();
-					if (!negate_scope(*quantifier_operand)) {
-						free(*quantifier_operand); free(quantifier_operand);
-						free(out); free(*operand); free(operand);
-						return false;
-					}
-					free(*operand); free(operand);
-				} else {
-					if (!init(*quantifier_operand, fol_formula_type::OR)) {
-						fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
-						free(quantifier_operand); free(out); free(*operand); free(operand); return false;
-					}
-					move(operand->noncommutative.right, quantifier_operand->commutative.children);
-					move(operand->noncommutative.right_negated, quantifier_operand->commutative.negated);
-					move(operand->variables, quantifier_operand->variables);
-					recompute_variables(quantifier_operand->commutative.children, quantifier_operand->commutative.negated, quantifier_operand->variables);
-					free(operand);
-				}
-
-				fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
-				if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
-					free(out); return false;
-				}
-
-				bool found_negation;
-				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
-					free(out); free(quantifier); return false;
-				} else if (found_negation) {
-					free(out);
-					return init(out, fol_formula_type::TRUE);
-				}
-				recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
-						out.noncommutative.right, out.noncommutative.right_negated, out.variables);
-			}
-		} else {
-			/* the antecedent is non-empty */
-			if (operand->noncommutative.right.length == 0 && operand->noncommutative.right_negated.length == 0) {
-				/* we've moved all children out of the consequent */
-				fol_scope* quantifier_operand = (fol_scope*) malloc(sizeof(fol_scope));
-				if (quantifier_operand == NULL) {
-					fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
-					free(out); free(*operand); free(operand); return false;
-				}
-
-				if (operand->noncommutative.left.length == 1 && operand->noncommutative.left_negated.length == 0) {
-					move(operand->noncommutative.left[0], *quantifier_operand);
-					operand->noncommutative.left.clear();
-					if (!negate_scope(*quantifier_operand)) {
-						free(*quantifier_operand); free(quantifier_operand);
-						free(out); free(*operand); free(operand);
-						return false;
-					}
-					free(*operand); free(operand);
-				} else if (operand->noncommutative.left.length == 0 && operand->noncommutative.left_negated.length == 1) {
-					move(operand->noncommutative.left_negated[0], *quantifier_operand);
-					operand->noncommutative.left_negated.clear();
-					free(*operand); free(operand);
-				} else {
-					fol_scope* conjunction = (fol_scope*) malloc(sizeof(fol_scope));
-					if (conjunction == NULL) {
-						fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
-						free(quantifier_operand); free(out); free(*operand); free(operand);
-					}
-					conjunction->type = fol_formula_type::AND;
-					move(operand->noncommutative.left, conjunction->commutative.children);
-					move(operand->noncommutative.left_negated, conjunction->commutative.negated);
-					move(operand->variables, conjunction->variables);
-					recompute_variables(conjunction->commutative.children, conjunction->commutative.negated, conjunction->variables);
-					free(operand);
-
-					if (!init(*quantifier_operand, fol_formula_type::NOT)) {
-						free(quantifier_operand); free(out);
-						return false;
-					}
-					quantifier_operand->unary = conjunction;
-					move_variables(conjunction->variables, quantifier_operand->variables);
-				}
-
-				fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
-				if (!make_quantifier_scope<QuantifierType>(quantifier, quantifier_operand, quantifier_variable)) {
-					free(out); return false;
-				}
-
-				bool found_negation;
-				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
-					free(out); free(quantifier); return false;
-				} else if (found_negation) {
-					free(out);
-					return init(out, fol_formula_type::TRUE);
-				}
-				recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
-						out.noncommutative.right, out.noncommutative.right_negated, out.variables);
-			} else {
-				fol_scope& quantifier = *((fol_scope*) alloca(sizeof(fol_scope)));
-				recompute_variables(operand->noncommutative.left, operand->noncommutative.left_negated,
-						operand->noncommutative.right, operand->noncommutative.right_negated, operand->variables);
-				if (!make_quantifier_scope<QuantifierType>(quantifier, operand, quantifier_variable)) {
-					free(out); return false;
-				}
-
-				bool found_negation;
-				if (!add_to_scope<fol_formula_type::OR>(quantifier, out.noncommutative.right, out.noncommutative.right_negated, found_negation)) {
-					free(out); free(quantifier); return false;
-				} else if (found_negation) {
-					free(out);
-					return init(out, fol_formula_type::TRUE);
-				}
-			}
-
-			if (out.noncommutative.left.length == 0 && out.noncommutative.left_negated.length == 0) {
-				/* the antecendent of the new (parent) conditional is empty, so change the node into a disjunction */
-				if (out.noncommutative.right.length == 1 && out.noncommutative.right_negated.length == 0) {
-					fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
-					move(out.noncommutative.right[0], temp);
-					out.noncommutative.right.clear();
-					free(out); move(temp, out);
-				} else if (out.noncommutative.right.length == 0 && out.noncommutative.right_negated.length == 1) {
-					fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
-					move(out.noncommutative.right_negated[0], temp);
-					out.noncommutative.right.clear();
-					free(out); move(temp, out);
-					if (!negate_scope(out)) {
-						free(out); return false;
-					}
-				} else {
-					array<fol_scope>& temp = *((array<fol_scope>*) alloca(sizeof(array<fol_scope>)));
-					array<fol_scope>& temp_negated = *((array<fol_scope>*) alloca(sizeof(array<fol_scope>)));
-					free(out.noncommutative.left);
-					free(out.noncommutative.left_negated);
-					move(out.noncommutative.right, temp);
-					move(out.noncommutative.right_negated, temp_negated);
-					out.type = fol_formula_type::OR;
-					move(temp, out.commutative.children);
-					move(temp_negated, out.commutative.negated);
-					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
-				}
-			} else {
-				recompute_variables(out.noncommutative.left, out.noncommutative.left_negated,
-						out.noncommutative.right, out.noncommutative.right_negated, out.variables);
-			}
-		}
-
+		return process_conditional_quantifier_scope<QuantifierType>(out, operand, quantifier_variable);
 	} else {
 		return make_quantifier_scope<QuantifierType>(out, operand, quantifier_variable);
 	}

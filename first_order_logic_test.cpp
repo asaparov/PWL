@@ -24,6 +24,7 @@ bool read_formulas(
 			free_tokens(tokens); return false;
 		} else if (!tptp_interpret(tokens, index, *formula, names, variables)) {
 			fprintf(stderr, "ERROR: Unable to parse first-order formula.\n");
+			for (auto entry : variables) free(entry.key);
 			free(formula); free_tokens(tokens); return false;
 		} else if (!formulas.add(formula)) {
 			free(*formula); free(formula);
