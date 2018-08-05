@@ -1039,9 +1039,9 @@ inline fol_formula* scope_to_formula(
 		const fol_scope* negated, unsigned int negated_length)
 {
 	if (scope_length == 0) {
-		fol_formula* first = scope_to_formula<false>(negated[0]);
+		fol_formula* first = scope_to_formula<true>(negated[0]);
 		if (first == NULL) return NULL;
-		return scope_to_formula<ScopeType, false>(negated + 1, negated_length - 1, first);
+		return scope_to_formula<ScopeType, true>(negated + 1, negated_length - 1, first);
 	} else {
 		fol_formula* first = scope_to_formula<false>(scope[0]);
 		if (first == NULL) return NULL;
@@ -1244,10 +1244,9 @@ bool add_to_scope_helper(
 			free(negated[i]);
 			shift_left(negated.data + i, negated.length - i - 1);
 			negated.length--;
-		} else {
-			free(subscope);
-			return true;
 		}
+		free(subscope);
+		return true;
 	}
 	found_negation = false;
 
@@ -1285,6 +1284,12 @@ bool add_to_scope(
 		free(subscope.variables);
 		free(subscope.unary);
 		return true;
+	} else if (subscope.type == fol_formula_type::IFF && subscope.commutative.children.length > 0
+			&& subscope.commutative.children.last().type == fol_formula_type::FALSE)
+	{
+		free(subscope.commutative.children.last());
+		subscope.commutative.children.length--;
+		return add_to_scope_helper<Operator>(subscope, negated, children, found_negation);
 	} else {
 		return add_to_scope_helper<Operator>(subscope, children, negated, found_negation);
 	}
@@ -1307,6 +1312,16 @@ bool add_to_scope(
 			recompute_variables(children, negated, variables);
 		free(subscope.variables);
 		free(subscope.unary);
+	} else if (subscope.type == fol_formula_type::IFF && subscope.commutative.children.length > 0
+			&& subscope.commutative.children.last().type == fol_formula_type::FALSE)
+	{
+		free(subscope.commutative.children.last());
+		subscope.commutative.children.length--;
+		if (Operator != fol_formula_type::IFF)
+			move_variables(subscope.variables, variables);
+		if (!add_to_scope_helper<Operator>(subscope, negated, children, found_negation)) return false;
+		if (Operator == fol_formula_type::IFF)
+			recompute_variables(children, negated, variables);
 	} else {
 		if (Operator != fol_formula_type::IFF)
 			move_variables(subscope.variables, variables);
@@ -1379,7 +1394,10 @@ unsigned int intersection_size(
 	unsigned int i = 0, j = 0, first_index = 0, second_index = 0;
 	while (i < first.length && j < second.length)
 	{
-		if (j == skip_second_index) j++;
+		if (j == skip_second_index) {
+			move(second[j], second[second_index]);
+			j++; second_index++; continue;
+		}
 
 		auto result = compare(first[i], second[j], canonicalizer());
 		if (result == 0) {
@@ -1402,7 +1420,6 @@ unsigned int intersection_size(
 		if (Operator == fol_formula_type::IFF) move(first[i], first[first_index]);
 		i++; first_index++;
 	} while (j < second.length) {
-		if (j == skip_second_index) j++;
 		move(second[j], second[second_index]);
 		j++; second_index++;
 	}
@@ -1427,11 +1444,11 @@ void merge_scopes(array<fol_scope>& dst,
 		auto result = compare(first[i], second[j], canonicalizer());
 		if (result == 0) {
 			if (Operator == fol_formula_type::IFF) {
-				free(first[i]); free(second[i]);
+				free(first[i]); free(second[j]);
 				i++; j++;
 			} else {
 				move(first[i], dst[dst.length]);
-				free(second[i]);
+				free(second[j]);
 				dst.length++; i++; j++;
 			}
 		} else if (result < 0) {
@@ -1465,18 +1482,23 @@ void merge_scopes(array<fol_scope>& dst,
 			"Operator is not a commutative operator.");
 
 	unsigned int i = 0, j = 0;
+	new_second_index = skip_second_index;
 	while (i < first.length && j < second.length)
 	{
-		if (j == skip_second_index) { j++; new_second_index = dst.length; }
+		if (j == skip_second_index) {
+			j++;
+			new_second_index = dst.length - 1;
+			if (j == second.length) break;
+		}
 
 		auto result = compare(first[i], second[j], canonicalizer());
 		if (result == 0) {
 			if (Operator == fol_formula_type::IFF) {
-				free(first[i]); free(second[i]);
+				free(first[i]); free(second[j]);
 				i++; j++;
 			} else {
 				move(first[i], dst[dst.length]);
-				free(second[i]);
+				free(second[j]);
 				dst.length++; i++; j++;
 			}
 		} else if (result < 0) {
@@ -1492,7 +1514,11 @@ void merge_scopes(array<fol_scope>& dst,
 		move(first[i], dst[dst.length]);
 		dst.length++; i++;
 	} while (j < second.length) {
-		if (j == skip_second_index) { j++; new_second_index = dst.length; }
+		if (j == skip_second_index) {
+			j++;
+			new_second_index = dst.length - 1;
+			if (j == second.length) break;
+		}
 		move(second[j], dst[dst.length]);
 		dst.length++; j++;
 	}
@@ -1505,16 +1531,16 @@ inline void merge_scopes(
 		bool& found_negation)
 {
 	unsigned int intersection_count = intersection_size<Operator>(src, dst_negated);
-	if (Operator == fol_formula_type::AND && intersection_count > 0) {
-		found_negation = true; return;
-	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
+	if (intersection_count > 0 && (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR)) {
+		for (fol_scope& child : src) free(child);
+		for (fol_scope& child : src_negated) free(child);
 		found_negation = true; return;
 	}
 
 	intersection_count += intersection_size<Operator>(src_negated, dst);
-	if (Operator == fol_formula_type::AND && intersection_count > 0) {
-		found_negation = true; return;
-	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
+	if (intersection_count > 0 && (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR)) {
+		for (fol_scope& child : src) free(child);
+		for (fol_scope& child : src_negated) free(child);
 		found_negation = true; return;
 	} else if (Operator == fol_formula_type::IFF && intersection_count % 2 == 1) {
 		found_negation = true;
@@ -1522,16 +1548,19 @@ inline void merge_scopes(
 		found_negation = false;
 	}
 
-	if (Operator == fol_formula_type::IFF && src.length == 0 && dst.length == 0)
-		return; /* this happens if the elements of `src` are negations of the elements of `dst` (and vice versa) */
+	if (Operator == fol_formula_type::IFF
+	 && src.length == 0 && dst.length == 0
+	 && src_negated.length == 0 && dst_negated.length == 0)
+		return; /* this happens if the elements of `src` are all negations of the elements of `dst` (and vice versa) */
 
 	/* merge the two scopes */
-	array<fol_scope> both = array<fol_scope>(src.length + dst.length);
+	array<fol_scope> both = array<fol_scope>(max((size_t) 1, src.length + dst.length));
 	merge_scopes<Operator>(both, src, dst);
 	swap(both, dst); both.clear();
 
-	merge_scopes<Operator>(both, src_negated, dst_negated);
-	swap(both, dst_negated);
+	array<fol_scope> both_negated = array<fol_scope>(max((size_t) 1, src_negated.length + dst_negated.length));
+	merge_scopes<Operator>(both_negated, src_negated, dst_negated);
+	swap(both_negated, dst_negated);
 }
 
 template<fol_formula_type Operator>
@@ -1541,16 +1570,16 @@ inline void merge_scopes(
 		bool& found_negation, unsigned int skip_dst_index, unsigned int& new_dst_index)
 {
 	unsigned int intersection_count = intersection_size<Operator>(src, dst_negated);
-	if (Operator == fol_formula_type::AND && intersection_count > 0) {
-		found_negation = true; return;
-	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
+	if (intersection_count > 0 && (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR)) {
+		for (fol_scope& child : src) free(child);
+		for (fol_scope& child : src_negated) free(child);
 		found_negation = true; return;
 	}
 
 	intersection_count += intersection_size<Operator>(src_negated, dst, skip_dst_index);
-	if (Operator == fol_formula_type::AND && intersection_count > 0) {
-		found_negation = true; return;
-	} else if (Operator == fol_formula_type::OR && intersection_count > 0) {
+	if (intersection_count > 0 && (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR)) {
+		for (fol_scope& child : src) free(child);
+		for (fol_scope& child : src_negated) free(child);
 		found_negation = true; return;
 	} else if (Operator == fol_formula_type::IFF && intersection_count % 2 == 1) {
 		found_negation = true;
@@ -1558,16 +1587,19 @@ inline void merge_scopes(
 		found_negation = false;
 	}
 
-	if (Operator == fol_formula_type::IFF && src.length == 0 && dst.length == 0)
-		return; /* this happens if the elements of `src` are negations of the elements of `dst` (and vice versa) */
+	if (Operator == fol_formula_type::IFF
+	 && src.length == 0 && dst.length == 0
+	 && src_negated.length == 0 && dst_negated.length == 0)
+		return; /* this happens if the elements of `src` are all negations of the elements of `dst` (and vice versa) */
 
 	/* merge the two scopes */
-	array<fol_scope> both = array<fol_scope>(src.length + dst.length);
+	array<fol_scope> both = array<fol_scope>(max((size_t) 1, src.length + dst.length));
 	merge_scopes<Operator>(both, src, dst, skip_dst_index, new_dst_index);
 	swap(both, dst); both.clear();
 
-	merge_scopes<Operator>(both, src_negated, dst_negated);
-	swap(both, dst_negated);
+	array<fol_scope> both_negated = array<fol_scope>(max((size_t) 1, src_negated.length + dst_negated.length));
+	merge_scopes<Operator>(both_negated, src_negated, dst_negated);
+	swap(both_negated, dst_negated);
 }
 
 inline bool negate_iff(fol_scope& scope)
@@ -1646,6 +1678,37 @@ inline bool make_negated_iff(fol_scope& out, fol_scope& operand)
 	}
 }
 
+inline bool are_negations(fol_scope& left, fol_scope& right) {
+	if ((left.type == fol_formula_type::NOT && *left.unary == right)
+	 || (right.type == fol_formula_type::NOT && *right.unary == left))
+		return true;
+	if (left.type == fol_formula_type::IFF && right.type == fol_formula_type::IFF) {
+		if (left.commutative.children.length > 0 && left.commutative.children.last().type == fol_formula_type::FALSE) {
+			/* `left` is a negated IFF expression */
+			if (right.commutative.children.length > 0 && right.commutative.children.last().type == fol_formula_type::FALSE) {
+				/* `right` is a negated IFF expression */
+				return false;
+			} else {
+				left.commutative.children.length--;
+				bool negated = (left == right);
+				left.commutative.children.length++;
+				return negated;
+			}
+		} else {
+			if (right.commutative.children.length > 0 && right.commutative.children.last().type == fol_formula_type::FALSE) {
+				/* `right` is a negated IFF expression */
+				right.commutative.children.length--;
+				bool negated = (left == right);
+				right.commutative.children.length++;
+				return negated;
+			} else {
+				return false;
+			}
+		}
+	}
+	return false;
+}
+
 template<fol_formula_type Operator>
 bool canonicalize_commutative_scope(
 		const fol_binary_formula& src, fol_scope& out,
@@ -1706,8 +1769,7 @@ bool canonicalize_commutative_scope(
 			free(out);
 			return init(out, fol_formula_type::TRUE);
 		}
-	} else if ((out.type == fol_formula_type::NOT && *out.unary == right)
-			|| (right.type == fol_formula_type::NOT && *right.unary == out)) {
+	} else if (are_negations(out, right)) {
 		/* we have the case `A op ~A` */
 		free(right); free(out);
 		if (Operator == fol_formula_type::AND || Operator == fol_formula_type::IFF)
@@ -1719,7 +1781,12 @@ bool canonicalize_commutative_scope(
 			bool found_negation;
 			merge_scopes<Operator>(right.commutative.children, out.commutative.children,
 					right.commutative.negated, out.commutative.negated, found_negation);
-			free(right);
+			free(right.commutative.children);
+			free(right.commutative.negated);
+			if (Operator == fol_formula_type::IFF)
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			else move_variables(right.variables, out.variables);
+			free(right.variables);
 			if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
 				free(out);
 				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
@@ -1735,9 +1802,6 @@ bool canonicalize_commutative_scope(
 					return negate_iff(out);
 				}
 			}
-			if (Operator == fol_formula_type::IFF)
-				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
-			else move_variables(right.variables, out.variables);
 		} else {
 			bool found_negation;
 			if (!add_to_scope<Operator>(right, out.commutative.children, out.commutative.negated, out.variables, found_negation)) {
@@ -1745,6 +1809,21 @@ bool canonicalize_commutative_scope(
 			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
 				free(out);
 				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
+			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 1 && out.commutative.negated.length == 0) {
+				move(out.commutative.children[0], right);
+				out.commutative.children.clear();
+				free(out); move(right, out);
+				if (found_negation && !negate_scope(out)) {
+					free(out); return false;
+				}
+			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 1) {
+				move(out.commutative.negated[0], right);
+				out.commutative.negated.clear();
+				free(out);
+				if (!found_negation && !negate_scope(right)) {
+					free(right); return false;
+				}
+				move(right, out);
 			} else if (found_negation) {
 				if (Operator == fol_formula_type::AND) {
 					free(out); return init(out, fol_formula_type::FALSE);
@@ -1763,6 +1842,20 @@ bool canonicalize_commutative_scope(
 			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 0 && right.commutative.negated.length == 0) {
 				free(right);
 				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
+			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 1 && right.commutative.negated.length == 0) {
+				move(right.commutative.children[0], out);
+				right.commutative.children.clear();
+				free(right);
+				if (found_negation && !negate_scope(out)) {
+					free(out); return false;
+				}
+			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 0 && right.commutative.negated.length == 1) {
+				move(right.commutative.negated[0], out);
+				right.commutative.negated.clear();
+				free(right);
+				if (!found_negation && !negate_scope(out)) {
+					free(out); return false;
+				}
 			} else if (found_negation) {
 				if (Operator == fol_formula_type::AND) {
 					free(right); return init(out, fol_formula_type::FALSE);
@@ -1784,44 +1877,41 @@ bool canonicalize_commutative_scope(
 			move_variables(right.variables, both.variables);
 
 			if (out.type == fol_formula_type::NOT) {
-				if (right.type == fol_formula_type::NOT) {
-					if (less_than(out, right, canonicalizer())) {
-						move(*out.unary, both.commutative.negated[0]);
-						move(*right.unary, both.commutative.negated[1]);
-					} else {
-						move(*right.unary, both.commutative.negated[0]);
-						move(*out.unary, both.commutative.negated[1]);
-					}
-					both.commutative.negated.length = 2;
-					free(right.variables);
-					free(right.unary);
-				} else {
-					move(*out.unary, both.commutative.negated[0]);
-					move(right, both.commutative.children[0]);
-					both.commutative.children.length = 1;
-					both.commutative.negated.length = 1;
-				}
+				move(*out.unary, both.commutative.negated[both.commutative.negated.length]);
+				both.commutative.negated.length++;
 				free(out.variables);
 				free(out.unary);
+			} else if (out.type == fol_formula_type::IFF && out.commutative.children.length > 0
+					&& out.commutative.children.last().type == fol_formula_type::FALSE)
+			{
+				free(out.commutative.children.last());
+				out.commutative.children.length--;
+				move(out, both.commutative.negated[both.commutative.negated.length]);
+				both.commutative.negated.length++;
 			} else {
-				if (right.type == fol_formula_type::NOT) {
-					move(out, both.commutative.children[0]);
-					move(*right.unary, both.commutative.negated[0]);
-					both.commutative.children.length = 1;
-					both.commutative.negated.length = 1;
-					free(right.variables);
-					free(right.unary);
-				} else {
-					if (less_than(out, right, canonicalizer())) {
-						move(out, both.commutative.children[0]);
-						move(right, both.commutative.children[1]);
-					} else {
-						move(right, both.commutative.children[0]);
-						move(out, both.commutative.children[1]);
-					}
-					both.commutative.children.length = 2;
-				}
+				move(out, both.commutative.children[both.commutative.children.length]);
+				both.commutative.children.length++;
 			}
+			if (right.type == fol_formula_type::NOT) {
+				move(*right.unary, both.commutative.negated[both.commutative.negated.length]);
+				both.commutative.negated.length++;
+				free(right.variables);
+				free(right.unary);
+			} else if (right.type == fol_formula_type::IFF && right.commutative.children.length > 0
+					&& right.commutative.children.last().type == fol_formula_type::FALSE)
+			{
+				free(right.commutative.children.last());
+				right.commutative.children.length--;
+				move(right, both.commutative.negated[both.commutative.negated.length]);
+				both.commutative.negated.length++;
+			} else {
+				move(right, both.commutative.children[both.commutative.children.length]);
+				both.commutative.children.length++;
+			}
+			if (both.commutative.children.length > 1)
+				insertion_sort(both.commutative.children, canonicalizer());
+			if (both.commutative.negated.length > 1)
+				insertion_sort(both.commutative.negated, canonicalizer());
 			move(both, out);
 		}
 	}
@@ -1836,8 +1926,10 @@ bool canonicalize_conditional_scope(
 	if (!canonicalize_scope(*src.left, left, variable_map)) return false;
 
 	if (left.type == fol_formula_type::FALSE) {
+		free(left);
 		return init(out, fol_formula_type::TRUE);
 	} else if (left.type == fol_formula_type::TRUE) {
+		free(left);
 		return canonicalize_scope(*src.right, out, variable_map);
 	}
 
@@ -1849,14 +1941,14 @@ bool canonicalize_conditional_scope(
 		free(out); free(left);
 		return init(out, fol_formula_type::TRUE);
 	} else if (out.type == fol_formula_type::FALSE) {
+		free(out); move(left, out);
 		if (!negate_scope(out)) {
 			free(out); return false;
 		}
 	} else if (out.type == fol_formula_type::TRUE) {
-		/* this is a no-op */
-	} else if ((out.type == fol_formula_type::NOT && *out.unary == left)
-			|| (left.type == fol_formula_type::NOT && *left.unary == out)) {
-		/* we have the case `A => ~A` or `~A => A`, which is also a no-op */
+		free(left); /* this is a no-op */
+	} else if (are_negations(out, left)) {
+		free(left); /* we have the case `A => ~A` or `~A => A`, which is also a no-op */
 	} else {
 		/* first construct the conditional */
 		if (out.type == fol_formula_type::OR) {
@@ -1880,7 +1972,9 @@ bool canonicalize_conditional_scope(
 				temp.noncommutative.left.clear();
 				temp.noncommutative.left_negated.clear();
 				if (found_negation) {
-					free(out); free(left); free(temp);
+					child.noncommutative.left.clear();
+					child.noncommutative.left_negated.clear();
+					free(out); free(left);
 					return init(out, fol_formula_type::TRUE);
 				}
 
@@ -1889,10 +1983,15 @@ bool canonicalize_conditional_scope(
 						temp.noncommutative.right_negated, out.noncommutative.right_negated, found_negation, i, new_index);
 				temp.noncommutative.right.clear();
 				temp.noncommutative.right_negated.clear();
-				free(temp);
 				if (found_negation) {
+					child.noncommutative.left.clear();
+					child.noncommutative.left_negated.clear();
+					child.noncommutative.right.clear();
+					child.noncommutative.right_negated.clear();
 					free(out); free(left);
 					return init(out, fol_formula_type::TRUE);
+				} else {
+					free(temp);
 				}
 				i = new_index;
 			}
@@ -1902,9 +2001,23 @@ bool canonicalize_conditional_scope(
 				free(out); free(left);
 				return false;
 			}
+			move(*out.unary, temp.noncommutative.right_negated[0]);
+			temp.noncommutative.right_negated.length++;
+			free(out.variables); free(out.unary);
+			move(temp, out);
+		} else if (out.type == fol_formula_type::IFF && out.commutative.children.length > 0
+				&& out.commutative.children.last().type == fol_formula_type::FALSE)
+		{
+			fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
+			if (!init(temp, fol_formula_type::IF_THEN, out.variables)) {
+				free(out); free(left);
+				return false;
+			}
+			free(out.commutative.children.last());
+			out.commutative.children.length--;
 			move(out, temp.noncommutative.right_negated[0]);
 			temp.noncommutative.right_negated.length++;
-			swap(out, temp);
+			move(temp, out);
 		} else if (out.type != fol_formula_type::IF_THEN) {
 			fol_scope& temp = *((fol_scope*) alloca(sizeof(fol_scope)));
 			if (!init(temp, fol_formula_type::IF_THEN, out.variables)) {
@@ -1913,7 +2026,7 @@ bool canonicalize_conditional_scope(
 			}
 			move(out, temp.noncommutative.right[0]);
 			temp.noncommutative.right.length++;
-			swap(out, temp);
+			move(temp, out);
 		}
 
 		/* now try merging `left` with the conditional */
@@ -2070,7 +2183,7 @@ bool process_commutative_quantifier_scope(
 				if (!add_to_scope<fol_formula_type::AND>(quantifier, out.commutative.children, out.commutative.negated, found_negation)) {
 					free(out); free(quantifier); return false;
 				} else if (found_negation) {
-					free(out); free(quantifier); return false;
+					free(out);
 					return init(out, fol_formula_type::FALSE);
 				}
 			} else if (out.type == fol_formula_type::OR) {
@@ -2139,11 +2252,11 @@ bool process_conditional_quantifier_scope(
 					fprintf(stderr, "process_conditional_quantifier_scope ERROR: Out of memory.\n");
 					free(quantifier_operand); free(out); free(*operand); free(operand); return false;
 				}
-				move(operand->noncommutative.right, quantifier_operand->commutative.children);
-				move(operand->noncommutative.right_negated, quantifier_operand->commutative.negated);
-				move(operand->variables, quantifier_operand->variables);
+				swap(operand->noncommutative.right, quantifier_operand->commutative.children);
+				swap(operand->noncommutative.right_negated, quantifier_operand->commutative.negated);
+				swap(operand->variables, quantifier_operand->variables);
 				recompute_variables(quantifier_operand->commutative.children, quantifier_operand->commutative.negated, quantifier_operand->variables);
-				free(operand);
+				free(*operand); free(operand);
 			}
 
 
@@ -2201,6 +2314,7 @@ bool process_conditional_quantifier_scope(
 				move(operand->noncommutative.left_negated, conjunction->commutative.negated);
 				move(operand->variables, conjunction->variables);
 				recompute_variables(conjunction->commutative.children, conjunction->commutative.negated, conjunction->variables);
+				free(operand->noncommutative.right); free(operand->noncommutative.right_negated);
 				free(operand);
 
 				if (!init(*quantifier_operand, fol_formula_type::NOT)) {
