@@ -23,15 +23,25 @@ struct article {
 	sentence* sentences;
 	unsigned int sentence_count;
 
-	~article() {
+	~article() { free(); }
+
+	static inline void free(article& a) { a.free(); }
+
+private:
+	inline void free() {
 		for (unsigned int i = 0; i < sentence_count; i++)
-			free(sentences[i]);
-		free(sentences);
+			core::free(sentences[i]);
+		core::free(sentences);
 	}
 };
 
 struct in_memory_article_store {
 	hash_map<unsigned int, article>& articles;
+
+	~in_memory_article_store() {
+		for (auto entry : articles)
+			free(entry.value);
+	}
 };
 
 
@@ -40,12 +50,11 @@ struct in_memory_article_store {
  */
 
 enum class article_token_type {
-	LBRACKET,
-	RBRACKET,
 	PERIOD,
 	COLON,
 	NEWLINE,
-	TOKEN
+	TOKEN,
+	FORMULA
 };
 
 typedef lexical_token<article_token_type> article_token;
@@ -57,6 +66,8 @@ inline bool print(article_token_type type, Stream& stream) {
 		return print('.', stream);
 	case article_token_type::COLON:
 		return print(':', stream);
+	case article_token_type::NEWLINE:
+		return print("NEWLINE", stream);
 	case article_token_type::TOKEN:
 		return print("TOKEN", stream);
 	case article_token_type::FORMULA:
@@ -206,30 +217,30 @@ bool article_interpret_sentence(
 		unsigned int& index, sentence& out,
 		hash_map<string, unsigned int>& names)
 {
-	array<token>& tokens = *((array<token>*) alloca(sizeof(array<tokens>)));
-	if (!array_init(tokens, 16)) return false;
+	array<token>& sentence_tokens = *((array<token>*) alloca(sizeof(array<tokens>)));
+	if (!array_init(sentence_tokens, 16)) return false;
 	while (true) {
 		unsigned int token_id;
-		if (!expect_token(tokens, index, article_token_type::TOKEN, "first token in sentence")
-		 || !get_token(tokens[index], token_id, names) || !tokens.add(token_id))
+		if (!expect_token(tokens, index, article_token_type::TOKEN, "sentence token")
+		 || !get_token(tokens[index], token_id, names) || !sentence_tokens.add({token_id}))
 		{
-			free(tokens); return false;
+			free(sentence_tokens); return false;
 		}
 		index++;
 
 		if (index >= tokens.length) {
 			read_error("Expected a token or period at end of sentence", tokens[index].start);
-			free(tokens); return false;
+			free(sentence_tokens); return false;
 		} else if (tokens[index].type == article_token_type::PERIOD) {
 			index++; break;
 		} else if (tokens[index].type == article_token_type::TOKEN) {
 			read_error("Expected a token or period at end of sentence", tokens[index].start);
-			free(tokens); return false;
+			free(sentence_tokens); return false;
 		}
 	}
 
-	move(tokens.data, out.tokens);
-	move(tokens.length, out.length);
+	move(sentence_tokens.data, out.tokens);
+	move(sentence_tokens.length, out.length);
 	return true;
 }
 
@@ -277,13 +288,89 @@ bool article_interpret(
 		} else if (tokens[index].type == article_token_type::NEWLINE) {
 			index++; break;
 		} else if (tokens[index].type == article_token_type::FORMULA) {
-			/* TODO: parse fol_formula here */
+			/* parse the formula */
+			array<tptp_token> formula_tokens = array<tptp_token>(128);
+			memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
+			in.buffer = tokens[index].text.data;
+			in.length = tokens[index].text.length;
+			in.position = 0; in.shift = {0};
+			if (!tptp_lex(formula_tokens, in)
+			 || !logical_forms.check_size())
+			{
+				read_error("Unable to parse first-order formula (lexical analysis failed)", tokens[index].start);
+				for (sentence& s : sentences) free(s);
+				free(sentences); free_tokens(formula_tokens);
+				return false;
+			}
+
+			unsigned int formula_index = 0;
+			array_map<string, unsigned int> variables = array_map<string, unsigned int>(16);
+			fol_formula* formula = (fol_formula*) malloc(sizeof(fol_formula));
+			if (formula == NULL) {
+				fprintf(stderr, "article_interpret ERROR: Insufficient memory for fol_formula.\n");
+				for (sentence& s : sentences) free(s);
+				free(sentences); free_tokens(formula_tokens);
+				return false;
+			} else if (!tptp_interpret(formula_tokens, formula_index, *formula, names, variables)) {
+				read_error("Unable to parse first-order formula", tokens[index].start);
+				for (auto entry : variables) free(entry.key);
+				for (sentence& s : sentences) free(s);
+				free(sentences); free(formula); free_tokens(formula_tokens);
+				return false;
+			}
+			free_tokens(formula_tokens);
+
+			bool contains; unsigned int bucket;
+			fol_formula*& value = logical_forms.get(sentences.last(), contains, bucket);
+			if (!contains) {
+				value = formula;
+				logical_forms.table.keys[bucket] = sentences.last();
+				logical_forms.table.size++;
+			} else if (*value != *formula) {
+				read_error("A different logical form was previously mapped to this sentence", tokens[index].start);
+				for (sentence& s : sentences) free(s);
+				free(sentences); free(*formula); free(formula);
+				free_tokens(formula_tokens);
+				return false;
+			}
 			index++;
 		}
 	}
 
 	move(sentences.data, article.sentences);
 	move(sentences.length, article.sentence_count);
+	return true;
+}
+
+bool articles_interpret(
+		const array<article_token>& tokens,
+		in_memory_article_store& articles,
+		hash_map<sentence, fol_formula*> logical_forms,
+		hash_map<string, unsigned int>& names)
+{
+	unsigned int index = 0;
+	while (index < tokens.length) {
+		if (!articles.articles.check_size())
+			return false;
+
+		position article_pos = tokens[index].start;
+
+		unsigned int article_name;
+		article& new_article = *((article*) alloca(sizeof(article)));
+		if (!article_interpret(tokens, index, new_article, article_name, logical_forms, names))
+			return false;
+
+		bool contains; unsigned int bucket;
+		article& value = articles.articles.get(article_name, contains, bucket);
+		if (!contains) {
+			move(new_article, value);
+			articles.articles.table.keys[bucket] = article_name;
+			articles.articles.table.size++;
+		} else {
+			read_error("Article name already exists", article_pos);
+			free(value); return false;
+		}
+	}
 	return true;
 }
 

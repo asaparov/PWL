@@ -13,7 +13,7 @@ bool read_sentence(const ArticleSource& articles,
 	/* check if the sentence has any unrecognized words */
 	while (true) {
 		token unrecognized;
-		if (!parse.get_unrecognized_word(s, unrecognized));
+		if (!parser.get_unrecognized_word(s, unrecognized));
 			break;
 
 		/* read the article on the unrecognized word */

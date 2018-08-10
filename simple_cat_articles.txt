@@ -1,11 +1,7 @@
-![x]:(type(x,organism) => ?[c]:(type(c,is_living) & arg1(c,x)) & type(x,object))
-![x]:(type(x,animal) => ?[c]:(type(c,is_multicellular) & arg1(c,x)) & type(x,organism))
-![x]:(type(x,mammal) => type(x,vertebrate) & type(x,animal))
-![x]:(type(x,mammal) => ?[h]:(type(h,has) & arg1(h,x) & ?[f]:(type(f,fur) & arg2(h,f))) | ?[h]:(type(h,has) & arg1(h,x) & ?[f]:(type(f,hair) & arg2(h,f))))
-![x]:(type(x,cat) => ?[c]:(type(c,is_carnivorous) & arg1(c,x)) & type(x,animal))
-type(bob,cat)
-type(sam,cat)
-type(kate,cat)
-type(bob,mammal)
-type(sam,mammal)
-type(kate,mammal)
+organism: An organism is any individual living thing. {![x]:(type(x,organism) => ?[c]:(type(c,is_living) & arg1(c,x)) & type(x,object))}
+animal: An animal is an organism with many cells. {![x]:(type(x,animal) => ?[c]:(type(c,is_multicellular) & arg1(c,x)) & type(x,organism))}
+mammal: A mammal is a vertebrate animal. {![x]:(type(x,mammal) => type(x,vertebrate) & type(x,animal))} They have fur or hair. {![x]:(type(x,mammal) => ?[h]:(type(h,has) & arg1(h,x) & ?[f]:(type(f,fur) & arg2(h,f))) | ?[h]:(type(h,has) & arg1(h,x) & ?[f]:(type(f,hair) & arg2(h,f))))}
+cat: A cat is a carnivorous mammal. {![x]:(type(x,cat) => ?[c]:(type(c,is_carnivorous) & arg1(c,x)) & type(x,animal))}
+bob: Bob is a cat. {type(bob,cat)} Bob is a mammal. {type(bob,mammal)}
+kate: Kate is a cat. {type(kate,cat)} Kate is a mammal. {type(kate,mammal)}
+sam: Sam is a cat. {type(sam,cat)} Sam is a mammal. {type(sam,mammal)}
