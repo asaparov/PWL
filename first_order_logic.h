@@ -331,6 +331,100 @@ bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
 	return false;
 }
 
+inline bool new_fol_formula(fol_formula*& new_formula) {
+	new_formula = (fol_formula*) malloc(sizeof(fol_formula));
+	if (new_formula == NULL) {
+		fprintf(stderr, "new_fol_formula ERROR: Out of memory.\n");
+		return false;
+	}
+	return true;
+}
+
+inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
+	dst_constant = src_constant;
+	return true;
+}
+
+inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate) {
+	dst_predicate = src_predicate;
+	return true;
+}
+
+inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable) {
+	dst_variable = src_variable;
+	return true;
+}
+
+template<typename... Cloner>
+inline bool clone(const fol_term& src, fol_term& dst, Cloner&&... cloner) {
+	dst.type = src.type;
+	switch (src.type) {
+	case fol_term_type::CONSTANT:
+		return clone_constant(src.constant, dst.constant, std::forward<Cloner>(cloner)...);
+	case fol_term_type::VARIABLE:
+		return clone_variable(src.variable, dst.variable, std::forward<Cloner>(cloner)...);
+	case fol_term_type::NONE:
+		return true;
+	}
+	fprintf(stderr, "clone ERROR: Unrecognized fol_term_type.\n");
+	return false;
+}
+
+template<typename... Cloner>
+inline bool clone(const fol_atom& src, fol_atom& dst, Cloner&&... cloner) {
+	return clone_predicate(src.predicate, dst.predicate, std::forward<Cloner>(cloner)...)
+		&& clone(src.arg1, dst.arg1, std::forward<Cloner>(cloner)...)
+		&& clone(src.arg2, dst.arg2, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+bool clone(const fol_formula& src, fol_formula& dst, Cloner&&... cloner)
+{
+	dst.type = src.type;
+	dst.reference_count = 1;
+	switch (src.type) {
+	case fol_formula_type::ATOM:
+		return clone(src.atom, dst.atom, std::forward<Cloner>(cloner)...);
+	case fol_formula_type::NOT:
+		if (!new_fol_formula(dst.unary)) return false;
+		if (!clone(*src.unary, *dst.unary, std::forward<Cloner>(cloner)...)) {
+			free(dst.unary);
+			return false;
+		}
+		return true;
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+		if (!new_fol_formula(dst.binary.left)) {
+			return false;
+		} else if (!new_fol_formula(dst.binary.right)) {
+			free(dst.binary.left); return false;
+		} else if (!clone(*src.binary.left, *dst.binary.left, std::forward<Cloner>(cloner)...)) {
+			free(dst.binary.left); free(dst.binary.right);
+			return false;
+		} else if (!clone(*src.binary.right, *dst.binary.right, std::forward<Cloner>(cloner)...)) {
+			free(*dst.binary.left); free(dst.binary.left);
+			free(dst.binary.right); return false;
+		}
+		return true;
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		if (!clone_variable(src.quantifier.variable, dst.quantifier.variable, std::forward<Cloner>(cloner)...)
+		 || !new_fol_formula(dst.quantifier.operand))
+			return false;
+		if (!clone(*src.quantifier.operand, *dst.quantifier.operand, std::forward<Cloner>(cloner)...)) {
+			free(dst.quantifier.operand); return false;
+		}
+		return true;
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return true;
+	}
+	fprintf(stderr, "clone ERROR: Unrecognized fol_formula_type.\n");
+	return false;
+}
+
 
 /**
  * Below is code for canonicalizing first-order formulas.
@@ -986,11 +1080,8 @@ inline fol_formula* scope_to_formula<false>(const fol_scope& scope) {
 template<>
 inline fol_formula* scope_to_formula<true>(const fol_scope& negated)
 {
-	fol_formula* negation = (fol_formula*) malloc(sizeof(fol_formula));
-	if (negation == NULL) {
-		fprintf(stderr, "negated_scope_to_formula ERROR: Out of memory.\n");
-		return NULL;
-	}
+	fol_formula* negation;
+	if (!new_fol_formula(negation)) return NULL;
 	negation->type = fol_formula_type::NOT;
 	negation->reference_count = 1;
 
@@ -1014,9 +1105,8 @@ inline fol_formula* scope_to_formula(const fol_scope* scope,
 			return NULL;
 		}
 
-		fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-		if (new_formula == NULL) {
-			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+		fol_formula* new_formula;
+		if (!new_fol_formula(new_formula)) {
 			free(*left); if (left->reference_count == 0) free(left);
 			free(*right); if (right->reference_count == 0) free(right);
 			return NULL;
@@ -1061,11 +1151,8 @@ inline fol_formula* scope_to_formula(const fol_quantifier_scope& scope)
 	fol_formula* operand = scope_to_formula(*scope.operand);
 	if (operand == NULL) return NULL;
 
-	fol_formula* new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-	if (new_formula == NULL) {
-		fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
-		return NULL;
-	}
+	fol_formula* new_formula;
+	if (!new_fol_formula(new_formula)) return NULL;
 	new_formula->type = QuantifierType;
 	new_formula->reference_count = 1;
 	new_formula->quantifier.variable = scope.variable;
@@ -1097,9 +1184,7 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 		if (left == NULL) return NULL;
 
 		if (negated) {
-			new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-			if (new_formula == NULL) {
-				fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+			if (!new_fol_formula(new_formula)) {
 				free(*left); if (left->reference_count == 0) free(left);
 				return NULL;
 			}
@@ -1123,9 +1208,7 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 			return NULL;
 		}
 
-		new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-		if (new_formula == NULL) {
-			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+		if (!new_fol_formula(new_formula)) {
 			free(*left); if (left->reference_count == 0) free(left);
 			free(*right); if (right->reference_count == 0) free(right);
 			return NULL;
@@ -1139,11 +1222,7 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 		left = scope_to_formula(*scope.unary);
 		if (left == NULL) return NULL;
 
-		new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-		if (new_formula == NULL) {
-			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
-			return NULL;
-		}
+		if (!new_fol_formula(new_formula)) return NULL;
 		new_formula->type = fol_formula_type::NOT;
 		new_formula->reference_count = 1;
 		new_formula->unary.operand = left;
@@ -1153,8 +1232,7 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 	case fol_formula_type::EXISTS:
 		return scope_to_formula<fol_formula_type::EXISTS>(scope.quantifier);
 	case fol_formula_type::ATOM:
-		new_formula = (fol_formula*) malloc(sizeof(fol_formula));
-		if (new_formula == NULL) {
+		if (!new_fol_formula(new_formula)) {
 			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
 			return NULL;
 		}
@@ -2869,7 +2947,8 @@ bool tptp_interpret_quantifier(
 		return false;
 	index++;
 
-	fol_formula* operand = (fol_formula*) malloc(sizeof(fol_formula));
+	fol_formula* operand;
+	if (!new_fol_formula(operand)) return false;
 	operand->reference_count = 1;
 	if (!tptp_interpret_unary_formula(tokens, index, *operand, names, variables)) {
 		free(operand); return false;
@@ -2877,10 +2956,10 @@ bool tptp_interpret_quantifier(
 
 	fol_formula* inner = operand;
 	for (unsigned int i = variables.size - 1; i > old_variable_count; i--) {
-		fol_formula* quantified = (fol_formula*) malloc(sizeof(fol_formula));
-		if (quantified == NULL) {
-			fprintf(stderr, "tptp_interpret_unary_formula ERROR: Out of memory.\n");
+		fol_formula* quantified;
+		if (!new_fol_formula(quantified)) {
 			free(*inner); free(inner);
+			return false;
 		}
 		quantified->quantifier.variable = variables.values[i];
 		quantified->quantifier.operand = inner;
@@ -2913,7 +2992,8 @@ bool tptp_interpret_unary_formula(
 	} else if (tokens[index].type == tptp_token_type::NOT) {
 		/* this is a negation of the form ~U */
 		index++;
-		fol_formula* operand = (fol_formula*) malloc(sizeof(fol_formula));
+		fol_formula* operand;
+		if (!new_fol_formula(operand)) return false;
 		operand->reference_count = 1;
 		if (!tptp_interpret_unary_formula(tokens, index, *operand, names, variables)) {
 			free(operand); return false;
@@ -3002,9 +3082,8 @@ inline bool tptp_interpret_binary_formula(
 	array_map<string, unsigned int>& variables,
 	fol_formula* left)
 {
-	fol_formula* right = (fol_formula*) malloc(sizeof(fol_formula));
-	if (right == NULL) {
-		fprintf(stderr, "tptp_interpret_binary_formula ERROR: Out of memory.\n");
+	fol_formula* right;
+	if (!new_fol_formula(right)) {
 		free(*left); free(left); return false;
 	} else if (!tptp_interpret_unary_formula(tokens, index, *right, names, variables)) {
 		free(*left); free(left); free(right); return false;
@@ -3030,9 +3109,8 @@ bool tptp_interpret_binary_sequence(
 	fol_formula* left)
 {
 	while (true) {
-		fol_formula* next = (fol_formula*) malloc(sizeof(fol_formula));
-		if (next == NULL) {
-			fprintf(stderr, "tptp_interpret_binary_sequence ERROR: Out of memory.\n");
+		fol_formula* next;
+		if (!new_fol_formula(next)) {
 			free(*left); free(left); return false;
 		} else if (!tptp_interpret_unary_formula(tokens, index, *next, names, variables)) {
 			free(*left); free(left); free(next); return false;
@@ -3040,9 +3118,8 @@ bool tptp_interpret_binary_sequence(
 
 		if (index < tokens.length && tokens[index].type == tptp_operator_type<OperatorType>::type) {
 			index++;
-			fol_formula* parent = (fol_formula*) malloc(sizeof(fol_formula));
-			if (parent == NULL) {
-				fprintf(stderr, "tptp_interpret_binary_sequence ERROR: Out of memory.\n");
+			fol_formula* parent;
+			if (!new_fol_formula(parent)) {
 				free(*left); free(left); free(*next); free(next); return false;
 			}
 
@@ -3067,8 +3144,8 @@ bool tptp_interpret(
 	hash_map<string, unsigned int>& names,
 	array_map<string, unsigned int>& variables)
 {
-	fol_formula* left = (fol_formula*) malloc(sizeof(fol_formula));
-	if (left == NULL) {
+	fol_formula* left;
+	if (!new_fol_formula(left)) {
 		fprintf(stderr, "tptp_interpret ERROR: Out of memory.\n");
 		return false;
 	} if (!tptp_interpret_unary_formula(tokens, index, *left, names, variables)) {
