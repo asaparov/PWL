@@ -38,6 +38,23 @@ inline fol_formula* relabel_constants(const fol_formula* src,
 	return dst;
 }
 
+struct constant_subtracter {
+	array<unsigned int>& constants;
+};
+
+constexpr bool visit_predicate(unsigned int predicate, const constant_subtracter& subtracter) { return true; }
+constexpr bool visit_variable(unsigned int variable, const constant_subtracter& subtracter) { return true; }
+
+template<fol_formula_type Operator>
+constexpr bool visit_operator(const fol_formula_type& formula, const constant_subtracter& subtracter) { return true; }
+
+inline bool visit_constant(unsigned int constant, const constant_subtracter& subtracter) {
+	unsigned int index = subtracter.constants.index_of(constant);
+	if (index < subtracter.constants.length)
+		subtracter.constants.remove(index);
+	return true;
+}
+
 struct fake_parser {
 	hash_map<sentence, fol_formula*> table;
 	array<token> unknown_tokens;
@@ -81,6 +98,37 @@ struct fake_parser {
 		return true;
 	}
 
+	bool is_definition_of(fol_formula* logical_form,
+			unsigned int word, const theory& T, fol_formula*& definition) const
+	{
+		if (logical_form->type == fol_formula_type::ATOM) {
+			if (logical_form->atom.predicate == PREDICATE_TYPE
+			 && logical_form->atom.arg1.type == fol_term_type::CONSTANT
+			 && logical_form->atom.arg1.constant == PREDICATE_UNKNOWN)
+			{
+				definition = logical_form;
+				definition->reference_count++;
+				return true;
+			}
+		} else if (logical_form->type == fol_formula_type::FOR_ALL) {
+			unsigned int variable = logical_form->quantifier.variable;
+			if (logical_form->quantifier.operand->type == fol_formula_type::IF_THEN) {
+				const fol_formula* left = logical_form->quantifier.operand->binary.left;
+				if (left->type == fol_formula_type::ATOM
+				 && left->atom.arg1.type == fol_term_type::VARIABLE
+				 && left->atom.arg1.variable == variable
+				 && left->atom.arg2.type == fol_term_type::CONSTANT
+				 && left->atom.arg2.constant == PREDICATE_UNKNOWN)
+				{
+					definition = logical_form;
+					definition->reference_count++;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	bool add_definition(const sentence& s, const fol_formula* definition)
 	{
 		for (unsigned int i = 0; i < s.length; i++) {
@@ -90,7 +138,8 @@ struct fake_parser {
 		}
 
 		/* TODO: check if `definition` has any constants in `unknown_concepts`; if so, remove them from `unknown_concepts` */
-		return true;
+		constant_subtracter subtracter = {unknown_concepts};
+		return visit(*definition, subtracter);
 	}
 };
 

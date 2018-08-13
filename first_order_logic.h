@@ -340,6 +340,76 @@ inline bool new_fol_formula(fol_formula*& new_formula) {
 	return true;
 }
 
+constexpr bool visit_constant(unsigned int constant) { return true; }
+constexpr bool visit_predicate(unsigned int predicate) { return true; }
+constexpr bool visit_variable(unsigned int variable) { return true; }
+
+template<fol_formula_type Operator>
+constexpr bool visit_operator(const fol_formula_type& formula) { return true; }
+
+template<typename... Visiter>
+inline bool visit(fol_term& term, Visiter&&... visiter) {
+	switch (term.type) {
+	case fol_term_type::CONSTANT:
+		return visit_constant(term.constant, std::forward<Visiter>(visiter)...);
+	case fol_term_type::VARIABLE:
+		return visit_variable(term.variable, std::forward<Visiter>(visiter)...);
+	case fol_term_type::NONE:
+		return true;
+	}
+	fprintf(stderr, "visit ERROR: Unrecognized fol_term_type.\n");
+	return false;
+}
+
+template<typename... Visiter>
+inline bool visit(fol_atom& atom, Visiter&&... visiter) {
+	return visit_predicate(atom.predicate, std::forward<Visiter>(visiter)...)
+		&& visit(atom.arg1, std::forward<Visiter>(visiter)...)
+		&& visit(atom.arg2, std::forward<Visiter>(visiter)...);
+}
+
+template<typename... Visiter>
+bool visit(fol_formula& formula, Visiter&&... visiter)
+{
+	switch (formula.type) {
+	case fol_formula_type::ATOM:
+		return visit(formula.atom, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::NOT:
+		return visit_operator<fol_formula_type::NOT>(formula, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.unary.operand, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::AND:
+		return visit_operator<fol_formula_type::AND>(formula, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::OR:
+		return visit_operator<fol_formula_type::OR>(formula, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::IF_THEN:
+		return visit_operator<fol_formula_type::IF_THEN>(formula, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::IFF:
+		return visit_operator<fol_formula_type::IFF>(formula, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::FOR_ALL:
+		return visit_operator<fol_formula_type::FOR_ALL>(formula, std::forward<Visiter>(visiter)...)
+			&& visit_variable(formula.quantifier.variable, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.quantifier.operand, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::EXISTS:
+		return visit_operator<fol_formula_type::EXISTS>(formula, std::forward<Visiter>(visiter)...)
+			&& visit_variable(formula.quantifier.variable, std::forward<Visiter>(visiter)...)
+			&& visit(*formula.quantifier.operand, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::TRUE:
+		return visit_true(formula, std::forward<Visiter>(visiter)...);
+	case fol_formula_type::FALSE:
+		return visit_false(formula, std::forward<Visiter>(visiter)...);
+	}
+	fprintf(stderr, "visit ERROR: Unrecognized fol_formula_type.\n");
+	return false;
+}
+
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
 	dst_constant = src_constant;
 	return true;
@@ -386,9 +456,9 @@ bool clone(const fol_formula& src, fol_formula& dst, Cloner&&... cloner)
 	case fol_formula_type::ATOM:
 		return clone(src.atom, dst.atom, std::forward<Cloner>(cloner)...);
 	case fol_formula_type::NOT:
-		if (!new_fol_formula(dst.unary)) return false;
-		if (!clone(*src.unary, *dst.unary, std::forward<Cloner>(cloner)...)) {
-			free(dst.unary);
+		if (!new_fol_formula(dst.unary.operand)) return false;
+		if (!clone(*src.unary.operand, *dst.unary.operand, std::forward<Cloner>(cloner)...)) {
+			free(dst.unary.operand);
 			return false;
 		}
 		return true;
@@ -423,6 +493,13 @@ bool clone(const fol_formula& src, fol_formula& dst, Cloner&&... cloner)
 	}
 	fprintf(stderr, "clone ERROR: Unrecognized fol_formula_type.\n");
 	return false;
+}
+
+template<typename... Cloner>
+inline bool clone(const fol_formula* src, fol_formula* dst, Cloner&&... cloner)
+{
+	if (!new_fol_formula(dst)) return false;
+	return clone(*src, *dst, std::forward<Cloner>(cloner)...);
 }
 
 

@@ -35,8 +35,9 @@ bool read_sentence(const ArticleSource& articles,
 		} else if (parse_count > 0 && parser.is_definition_of(logical_forms[0], article_name, T, definition)) {
 			/* this is a definition */
 			free_logical_forms(logical_forms, parse_count);
-			return T.add_definition(definition)
-				&& parser.add_definition(s, definition);
+			bool success = T.add_definition(definition) && parser.add_definition(s, definition);
+			free(*definition); if (definition->reference_count == 0) free(definition);
+			return success;
 		}
 
 		/* find an article in order to learn about the unrecognized word */
