@@ -32,15 +32,23 @@ bool read_sentence(const ArticleSource& articles,
 		fol_formula* definition;
 		if (unrecognized.length == 0) {
 			break;
-		} else if (parse_count > 0 && parser.is_definition_of(logical_forms[0], article_name, T, definition)) {
-			/* this is a definition */
+		} else if (parse_count > 0 && unrecognized.length == 1 && unrecognized[0].id == article_name) {
+			/* this could be a definition so try adding it to the theory */
+			bool success = T.add_formula(logical_forms[0]) && parser.add_definition(s, logical_forms[0]);
 			free_logical_forms(logical_forms, parse_count);
-			bool success = T.add_definition(definition) && parser.add_definition(s, definition);
-			free(*definition); if (definition->reference_count == 0) free(definition);
 			return success;
 		}
 
 		/* find an article in order to learn about the unrecognized word */
+		unsigned int next_article = unrecognized[0].id;
+		if (next_article == article_name) {
+			if (unrecognized.length == 1) {
+				fprintf(stderr, "read_sentence ERROR: Unable to parse definitional sentence.\n");
+				free_logical_forms(logical_forms, parse_count);
+				return false;
+			}
+			next_article = unrecognized[1].id;
+		}
 		if (!read_article(unrecognized[0].id, articles, parser, T)) {
 			free_logical_forms(logical_forms, parse_count);
 			return false;

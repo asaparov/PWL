@@ -33,6 +33,8 @@ struct fol_term {
 	};
 };
 
+fol_term EMPTY_FOL_TERM = {fol_term_type::NONE, 0};
+
 inline bool operator == (const fol_term& first, const fol_term& second) {
 	if (first.type != second.type) return false;
 	switch (first.type) {
@@ -501,6 +503,74 @@ inline bool clone(const fol_formula* src, fol_formula* dst, Cloner&&... cloner)
 	if (!new_fol_formula(dst)) return false;
 	return clone(*src, *dst, std::forward<Cloner>(cloner)...);
 }
+
+
+/**
+ * Functions for easily constructing first-order logic expressions in code.
+ */
+
+
+fol_term make_fol_variable(unsigned int variable) {
+	fol_term term;
+	term.type = fol_term_type::VARIABLE;
+	term.variable = variable;
+	return term;
+}
+
+fol_term make_fol_constant(unsigned int constant) {
+	fol_term term;
+	term.type = fol_term_type::CONSTANT;
+	term.constant = constant;
+	return term;
+}
+
+fol_formula* make_fol_atom(
+		unsigned int predicate,
+		fol_term arg1, fol_term arg2)
+{
+	fol_formula* atom;
+	if (!new_fol_formula(atom)) return NULL;
+	atom->reference_count = 1;
+	atom->type = fol_formula_type::ATOM;
+	atom->atom.predicate = predicate;
+	atom->atom.arg1 = arg1;
+	atom->atom.arg2 = arg2;
+	return atom;
+}
+
+inline fol_formula* make_fol_atom(unsigned int predicate, fol_term arg1) {
+	return make_fol_atom(predicate, arg1, EMPTY_FOL_TERM);
+}
+
+inline fol_formula* make_fol_atom(unsigned int predicate) {
+	return make_fol_atom(predicate, EMPTY_FOL_TERM, EMPTY_FOL_TERM);
+}
+
+template<typename... Args>
+fol_formula* make_fol_and(
+		fol_formula* arg, Args&&... args)
+{
+}
+
+template<typename... Args>
+fol_formula* make_fol_and(
+		fol_formula* arg, Args&&... args)
+{
+	/* TODO: continue here */
+	if (arg == NULL) return NULL;
+
+	fol_formula* atom;
+	if (!new_fol_formula(atom)) return NULL;
+	atom->reference_count = 1;
+	atom->type = fol_formula_type::AND;
+	atom->binary.left = arg;
+	atom->binary.right = make_fol_and(std::forward<Args>(args)...);
+	if (atom->binary.right == NULL) {
+
+	}
+	return atom;
+}
+
 
 
 /**
