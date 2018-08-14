@@ -55,7 +55,7 @@ struct theory {
 				if (canonicalized->atom.arg1.constant == PREDICATE_UNKNOWN) {
 					/* this is a definition of an object */
 					canonicalized->atom.arg1.constant = PREDICATE_COUNT + definitions.length;
-					if (definitions.add(canonicalized.ptr)) return true;
+					if (!definitions.add(canonicalized.ptr)) return false;
 				} else {
 					/* this is a formula of form `type(c,t)` */
 
@@ -66,6 +66,7 @@ struct theory {
 			if (canonicalized->quantifier.operand->type == fol_formula_type::IF_THEN) {
 				const fol_formula* left = canonicalized->quantifier.operand->binary.left;
 				if (left->type == fol_formula_type::ATOM
+				 && left->atom.predicate == PREDICATE_TYPE
 				 && left->atom.arg1.type == fol_term_type::VARIABLE
 				 && left->atom.arg1.variable == variable
 				 && left->atom.arg2.type == fol_term_type::CONSTANT)
@@ -73,32 +74,20 @@ struct theory {
 					if (left->atom.arg2.constant == PREDICATE_UNKNOWN) {
 						/* this is a definition of a type */
 						fol_formula* right = canonicalized->quantifier.operand.binary.right;
-
-
-						fol_formula* operand;
-						if (!new_fol_formula(operand)) return false;
-						operand->reference_count = 1;
-						operand->type = fol_formula_type::IF_THEN;
-						operand->binary.left = new_left;
-						operand->binary.right = right;
 						right->reference_count++;
-
-						fol_formula* definition;
-						if (!new_fol_formula(definition)) {
-							free(operand); return false;
-						}
-						definition->reference_count = 1;
-						definition->type = fol_formula_type::FOR_ALL;
-						definition->quantifier.variable = variable;
-						definition->quantifier.operand = operand;
+						unsigned int new_type = PREDICATE_COUNT + definitions.length;
+						fol_formula* definition = make_fol_for_all(variable, make_fol_iff(make_fol_atom(PREDICATE_TYPE, make_fol_variable(variable), make_fol_constant(new_type)), right));
+						if (definition == NULL || !definitions.add(definition))
+							return false;
 					} else {
 						/* this is a formula of form `![x]:(type(x,t) => f(x))` */
 					}
-					return true;
 				}
 			}
+		} else {
+			
 		}
-		return false;
+		return true;
 	}
 };
 
