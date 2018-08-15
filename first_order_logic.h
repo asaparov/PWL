@@ -546,6 +546,8 @@ inline fol_formula* make_fol_atom(unsigned int predicate) {
 	return make_fol_atom(predicate, EMPTY_FOL_TERM, EMPTY_FOL_TERM);
 }
 
+#include <tuple>
+
 template<unsigned int... I>
 struct static_sequence { };
 
