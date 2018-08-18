@@ -128,7 +128,10 @@ struct fol_quantifier {
 	static inline void free(fol_quantifier& formula);
 };
 
-struct fol_formula {
+struct fol_formula
+{
+	typedef fol_formula_type Type;
+
 	fol_formula_type type;
 	unsigned int reference_count;
 	union {
@@ -141,9 +144,23 @@ struct fol_formula {
 	fol_formula(fol_formula_type type) : type(type), reference_count(1) { }
 	~fol_formula() { free_helper(); }
 
+	static fol_term new_variable(unsigned int variable);
+	static fol_term new_constant(unsigned int constant);
+	static fol_formula* new_atom(unsigned int predicate, fol_term arg1, fol_term arg2);
+	static inline fol_formula* new_atom(unsigned int predicate, fol_term arg1);
+	static inline fol_formula* new_atom(unsigned int predicate);
+	template<typename... Args> static inline fol_formula* new_and(Args&&... args);
+	template<typename... Args> static inline fol_formula* new_or(Args&&... args);
+	template<typename... Args> static inline fol_formula* new_iff(Args&&... args);
+	static fol_formula* new_if_then(fol_formula* first, fol_formula* second);
+	static fol_formula* new_not(fol_formula* operand);
+	static inline fol_formula* new_for_all(unsigned int variable, fol_formula* operand);
+	static inline fol_formula* new_exists(unsigned int variable, fol_formula* operand);
+
 	static inline void move(const fol_formula& src, fol_formula& dst);
 	static inline void free(fol_formula& formula) { formula.free_helper(); }
 
+private:
 	void free_helper();
 };
 
@@ -510,21 +527,21 @@ inline bool clone(const fol_formula* src, fol_formula* dst, Cloner&&... cloner)
  */
 
 
-fol_term make_fol_variable(unsigned int variable) {
+fol_term fol_formula::new_variable(unsigned int variable) {
 	fol_term term;
 	term.type = fol_term_type::VARIABLE;
 	term.variable = variable;
 	return term;
 }
 
-fol_term make_fol_constant(unsigned int constant) {
+fol_term fol_formula::new_constant(unsigned int constant) {
 	fol_term term;
 	term.type = fol_term_type::CONSTANT;
 	term.constant = constant;
 	return term;
 }
 
-fol_formula* make_fol_atom(
+fol_formula* fol_formula::new_atom(
 		unsigned int predicate,
 		fol_term arg1, fol_term arg2)
 {
@@ -538,12 +555,12 @@ fol_formula* make_fol_atom(
 	return atom;
 }
 
-inline fol_formula* make_fol_atom(unsigned int predicate, fol_term arg1) {
-	return make_fol_atom(predicate, arg1, EMPTY_FOL_TERM);
+inline fol_formula* fol_formula::new_atom(unsigned int predicate, fol_term arg1) {
+	return new_atom(predicate, arg1, EMPTY_FOL_TERM);
 }
 
-inline fol_formula* make_fol_atom(unsigned int predicate) {
-	return make_fol_atom(predicate, EMPTY_FOL_TERM, EMPTY_FOL_TERM);
+inline fol_formula* fol_formula::new_atom(unsigned int predicate) {
+	return new_atom(predicate, EMPTY_FOL_TERM, EMPTY_FOL_TERM);
 }
 
 #include <tuple>
@@ -558,7 +575,7 @@ template<unsigned int... I>
 struct reverse_static_sequence<0, I...> : static_sequence<I...> { };
 
 template<fol_formula_type Operator, typename... Args>
-fol_formula* make_fol_binary_helper(fol_formula* arg, Args&&... args)
+fol_formula* new_fol_binary_helper(fol_formula* arg, Args&&... args)
 {
 	if (arg == NULL) return NULL;
 
@@ -567,7 +584,7 @@ fol_formula* make_fol_binary_helper(fol_formula* arg, Args&&... args)
 	formula->reference_count = 1;
 	formula->type = Operator;
 	formula->binary.right = arg;
-	formula->binary.left = make_fol_and_helper(std::forward<Args>(args)...);
+	formula->binary.left = new_fol_and_helper(std::forward<Args>(args)...);
 	if (formula->binary.left == NULL) {
 		free(formula); free(*arg);
 		if (arg->reference_count == 0) free(arg);
@@ -577,34 +594,34 @@ fol_formula* make_fol_binary_helper(fol_formula* arg, Args&&... args)
 }
 
 template<fol_formula_type Operator, typename Tuple, unsigned int... I>
-inline fol_formula* make_fol_binary_helper(Tuple&& args, const static_sequence<I...>& seq)
+inline fol_formula* new_fol_binary_helper(Tuple&& args, const static_sequence<I...>& seq)
 {
-	return make_fol_binary_helper<Operator>(std::get<I>(args)...);
+	return new_fol_binary_helper<Operator>(std::get<I>(args)...);
 }
 
 template<fol_formula_type Operator, typename... Args>
-inline fol_formula* make_fol_binary(Args&&... args)
+inline fol_formula* new_fol_binary(Args&&... args)
 {
 	constexpr auto seq = reverse_static_sequence<sizeof...(Args)>();
-	return make_fol_binary_helper<Operator>(std::forward_as_tuple(args...), seq);
+	return new_fol_binary_helper<Operator>(std::forward_as_tuple(args...), seq);
 }
 
 template<typename... Args>
-inline fol_formula* make_fol_and(Args&&... args) {
-	return make_fol_binary<fol_formula_type::AND>(std::forward<Args>(args)...);
+inline fol_formula* fol_formula::new_and(Args&&... args) {
+	return new_fol_binary<fol_formula_type::AND>(std::forward<Args>(args)...);
 }
 
 template<typename... Args>
-inline fol_formula* make_fol_or(Args&&... args) {
-	return make_fol_binary<fol_formula_type::OR>(std::forward<Args>(args)...);
+inline fol_formula* fol_formula::new_or(Args&&... args) {
+	return new_fol_binary<fol_formula_type::OR>(std::forward<Args>(args)...);
 }
 
 template<typename... Args>
-inline fol_formula* make_fol_iff(Args&&... args) {
-	return make_fol_binary<fol_formula_type::IFF>(std::forward<Args>(args)...);
+inline fol_formula* fol_formula::new_iff(Args&&... args) {
+	return new_fol_binary<fol_formula_type::IFF>(std::forward<Args>(args)...);
 }
 
-fol_formula* make_fol_if_then(fol_formula* first, fol_formula* second)
+fol_formula* fol_formula::new_if_then(fol_formula* first, fol_formula* second)
 {
 	if (first == NULL || second == NULL)
 		return NULL;
@@ -618,7 +635,7 @@ fol_formula* make_fol_if_then(fol_formula* first, fol_formula* second)
 	return formula;
 }
 
-fol_formula* make_fol_not(fol_formula* operand)
+fol_formula* fol_formula::new_not(fol_formula* operand)
 {
 	if (operand == NULL) return NULL;
 
@@ -631,7 +648,7 @@ fol_formula* make_fol_not(fol_formula* operand)
 }
 
 template<fol_formula_type QuantifierType>
-fol_formula* make_fol_quantifier(unsigned int variable, fol_formula* operand)
+fol_formula* new_fol_quantifier(unsigned int variable, fol_formula* operand)
 {
 	if (operand == NULL) return NULL;
 
@@ -644,12 +661,12 @@ fol_formula* make_fol_quantifier(unsigned int variable, fol_formula* operand)
 	return formula;
 }
 
-inline fol_formula* make_fol_for_all(unsigned int variable, fol_formula* operand) {
-	return make_fol_quantifier<fol_formula_type::FOR_ALL>(variable, operand);
+inline fol_formula* fol_formula::new_for_all(unsigned int variable, fol_formula* operand) {
+	return new_fol_quantifier<fol_formula_type::FOR_ALL>(variable, operand);
 }
 
-inline fol_formula* make_fol_exists(unsigned int variable, fol_formula* operand) {
-	return make_fol_quantifier<fol_formula_type::EXISTS>(variable, operand);
+inline fol_formula* fol_formula::new_exists(unsigned int variable, fol_formula* operand) {
+	return new_fol_quantifier<fol_formula_type::EXISTS>(variable, operand);
 }
 
 
