@@ -31,21 +31,50 @@ struct theory
 	typedef typename ProofCalculus::Proof Proof;
 
 	array<Proof*> proofs;
+	array<Formula*> observations;
 
 	bool add_formula(Formula* formula)
 	{
 		Formula* canonicalized = canonicalize(*formula);
-		if (!add_canonicalized_formula(canonicalized)) {
+		if (canonicalized == NULL) {
+			return false;
+		}
+
+		for (unsigned int i = 0; i < observations.length; i++) {
+			if (*observations[i] == *canonicalized) {
+				/* this formula has already been added to the theory */
+				free(*canonicalized);
+				if (canonicalized->reference_count == 0)
+					free(canonicalized);
+				return true;
+			}
+		}
+
+		if (!observations.add(canonicalized)) {
 			free(*canonicalized);
 			if (canonicalized->reference_count == 0)
 				free(canonicalized);
+		}
+
+		Proof* proof = make_proof(canonicalized);
+
+		if (proof == NULL || !proofs.add(proof)) {
+			if (proof != NULL) {
+				free(*proof);
+				if (proof->reference_count == 0)
+					free(proof);
+			}
+			free(*canonicalized);
+			if (canonicalized->reference_count == 0)
+				free(canonicalized);
+			observations.length--;
 			return false;
 		}
 		return true;
 	}
 
 private:
-	bool add_canonicalized_formula(Formula* canonicalized)
+	Proof* make_proof(Formula* canonicalized)
 	{
 		if (canonicalized->type == FormulaType::ATOM) {
 			if (canonicalized->atom.predicate == PREDICATE_TYPE
@@ -54,10 +83,10 @@ private:
 				if (canonicalized->atom.arg1.constant == PREDICATE_UNKNOWN) {
 					/* this is a definition of an object */
 					canonicalized->atom.arg1.constant = PREDICATE_COUNT + definitions.length;
-					return add_axiom(canonicalized);
+					return ProofCalculus::new_axiom(canonicalized);
 				} else {
 					/* this is a formula of form `type(c,t)` */
-					return add_axiom(canonicalized);
+					return ProofCalculus::new_axiom(canonicalized);
 				}
 			}
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
@@ -76,58 +105,55 @@ private:
 
 						/* check the right-hand side is a valid definition */
 						if (!valid_definition(right, variable)) {
-							fprintf(stderr, "add_canonicalized_formula ERROR: This is not a valid type definition.\n");
-							return false;
+							fprintf(stderr, "theory.make_proof ERROR: This is not a valid type definition.\n");
+							return NULL;
 						}
 
 						right->reference_count++;
 						unsigned int new_type = PREDICATE_COUNT + definitions.length;
 						fol_formula* definition = Formula::new_for_all(variable, Formula::new_iff(
 								Formula::new_atom(PREDICATE_TYPE, Formula::new_variable(variable), Formula::new_constant(new_type)), right));
-						if (definition == NULL) return false;
+						if (definition == NULL) return NULL;
 
-						ProofCalculus::new_universal_elimination(ProofCalculus::new_axiom(definition), variable)
+						Proof* proof = ProofCalculus::new_universal_intro(
+							ProofCalculus::new_implication_intro(
+								ProofCalculus::new_biconditional_elim_left(
+									ProofCalculus::new_universal_elim(ProofCalculus::new_axiom(definition), Formula::new_variable(variable)),
+									ProofCalculus::new_axiom(left)),
+								ProofCalculus::new_axiom(left)),
+							Formula::new_variable(variable));
 
 						free(*definition);
 						if (definition->reference_count == 0)
 							free(definition);
+						return proof;
 					} else {
 						/* this is a formula of form `![x]:(type(x,t) => f(x))` */
-						return add_formula_helper(canonicalized);
+						return ProofCalculus::new_axiom(canonicalized);
 					}
+				} else if (left->type == FormulaType::ATOM || left->type == FormulaType::EXISTS) {
+					/* TODO: implement this */
+					fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+					return NULL;
+				} else if (left->type == FormulaType::AND) {
+					/* TODO: implement this */
+					fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+					return NULL;
+				} else {
+					fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
+					return NULL;
 				}
 			}
 		} else if (canonicalized->type == FormulaType::EXISTS) {
-			return add_formula_helper(canonicalized);
+			return ProofCalculus::new_axiom(canonicalized);
 		} else if (canonicalized->type == FormulaType::AND) {
-			return add_canonicalized_formula(canonicalized->binary.left)
-				&& add_canonicalized_formula(canonicalized->binary.right);
+			return ProofCalculus::new_conjunction_intro(
+					make_proof(canonicalized->binary.left),
+					make_proof(canonicalized->binary.right));
 		} else {
-			fprintf(stderr, "theory.add_canonicalized_formula ERROR: Unsupported formula type.\n");
-			return false;
+			fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
+			return NULL;
 		}
-		return true;
-	}
-
-	inline bool add_axiom(Formula* axiom) {
-		Proof* proof = ProofCalculus::new_axiom(axiom);
-		if (proof == NULL) {
-			return false;
-		} else if (!proofs.add(proof)) {
-			free(*proof);
-			if (proof->reference_count == 0)
-				free(proof);
-		}
-		return true;
-	}
-
-	inline bool add_formula_helper(Formula* formula) {
-		for (const Formula* existing : formulas) {
-			if (*existing == *formula) return true;
-		}
-		if (!formulas.add(formula)) return false;
-		formula->reference_count++;
-		return true;
 	}
 
 	inline bool valid_definition(const Formula* right,
