@@ -125,38 +125,90 @@ private:
 };
 
 template<typename Formula>
-Formula* compute_conclusion(const nd_step<Formula>& proof)
+struct proof_state {
+	array<Formula*> assumptions;
+	Formula* formula;
+
+	proof_state() : assumptions(8) { }
+	~proof_state() { free(); }
+
+	static inline void free(proof_state<Formula>& state) {
+		state.free();
+		core::free(state.assumptions);
+	}
+
+private:
+	inline void free() {
+		if (formula != NULL) {
+			core::free(*formula);
+			if (formula->reference_count == 0)
+				core::free(formula);
+		}
+	}
+};
+
+template<typename Formula>
+inline bool init(proof_state<Formula>& state) {
+	state.formula = NULL;
+	return array_init(state.assumptions, 8);
+}
+
+template<typename K, typename Formula>
+inline void free_proof_states(hash_map<K, proof_state<Formula>>& map) {
+	for (auto entry : map)
+		free(entry.value);
+}
+
+template<typename Formula>
+bool check_proof(proof_state<Formula>& out,
+		const nd_step<Formula>& proof, const proof_state<Formula>** operand_states)
 {
 	typedef typename Formula::Type FormulaType;
 
-	Formula* formula; Formula* operand;
+	Formula* formula;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
-		proof.formula->reference_count++;
-		return proof.formula;
+		out.formula = proof.formula;
+		out.formula->reference_count++;
+		return out.assumptions.add(out.formula);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
-		if (proof.operands[0] == NULL || proof.operands[1] == NULL) return NULL;
-		return Formula::new_and(compute_conclusion(*proof.operands[0], *proof.operands[1]));
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL) return false;
+		out.formula = Formula::new_and(operand_states[0]->formula, operand_states[1]->formula);
+		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
-		if (proof.operands[0] == NULL) return NULL;
-		formula = compute_conclusion(*proof.operands[0]);
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		if (operand_states[0]->formula == NULL) return NULL;
+		formula = operand_states[0]->formula;
 		if (formula == NULL) {
 			return NULL;
-		} else if (formula->type != FormulaType) {
+		} else if (formula->type != FormulaType::AND) {
+			fprintf(stderr, "check_proof ERROR: Expected a conjunction.\n");
 			free(*formula);
 			if (formula->reference_count == 0)
 				free(formula);
 			return NULL;
 		}
-		operand = formula->binary.left;
-		operand->reference_count++;
+		if (proof.type == CONJUNCTION_ELIMINATION_LEFT)
+			out.formula = formula->binary.left;
+		if (proof.type == CONJUNCTION_ELIMINATION_RIGHT)
+			out.formula = formula->binary.right;
+		out.formula->reference_count++;
 		free(*formula);
 		if (formula->reference_count == 0)
 			free(formula);
-		return operand;
-	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
 	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		if (operand_states[0]->formula == NULL || proof.operands[1] == NULL
+		 || proof.operands[1]->type != nd_step_type::FORMULA_PARAMETER)
+			return NULL;
+		out.formula = Formula::new_or(operand_states[0]->formula, proof.operands[1]->formula);
+		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
 	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		if (operand_states[0]->formula == NULL || proof.operands[1] == NULL
+		 || proof.operands[1]->type != nd_step_type::FORMULA_PARAMETER)
+			return NULL;
+		out.formula = Formula::new_or(proof.operands[1]->formula, operand_states[0]->formula);
+		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
 	case nd_step_type::DISJUNCTION_ELIMINATION:
 	case nd_step_type::IMPLICATION_INTRODUCTION:
 	case nd_step_type::IMPLICATION_ELIMINATION:
@@ -178,43 +230,84 @@ Formula* compute_conclusion(const nd_step<Formula>& proof)
 }
 
 template<typename Formula>
-struct proof_checker {
-	const nd_step<Formula>* step;
-	Formula* operands[ND_OPERAND_COUNT];
-	array<Formula*> assumptions;
-};
-
-template<typename Formula>
-Formula* compute_conclusion(const nd_step<Formula>& proof)
+Formula* check_proof(const nd_step<Formula>& proof)
 {
 	/* first list the proof steps in reverse topological order */
-	array<const nd_step<Formula>*> first_stack(64);
-	
-
-	array<nd_step<Formula>*> first_stack(32);
-	array<proof_checker> second_stack(32);
-	if (!first_stack.add(&proof)) {
-		fprintf(stderr, "compute_conclusion ERROR: Unable to add root node to first stack.\n");
-		exit(EXIT_FAILURE);
-	}
-
+	array<pair<const nd_step<Formula>*, bool>> first_stack(64);
+	array<const nd_step<Formula>*> topological_order(64);
+	hash_set<const nd_step<Formula>*> visited(128);
+	if (!first_stack.add(&proof)) return NULL;
 	while (first_stack.length > 0) {
-		nd_step<Formula>* node = first_stack.last();
-		if (!second_stack.add(node)) {
-			fprintf(stderr, "compute_conclusion ERROR: Unable to add node to second stack.\n");
-			exit(EXIT_FAILURE);
+		const pair<const nd_step<Formula>*, bool> entry = first_stack.pop();
+		if (entry.value) {
+			if (!topological_order.add(entry.key))
+				return NULL;
+			continue;
 		}
 
-		if (!node->has_subproofs()) continue;
+		if (!visited.add(entry.key)
+		 || !first_stack.add(make_pair(entry.key, true)))
+			return NULL;
+
+		if (!entry.key->has_subproofs()) continue;
 		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
-			if (node->operands[i] == NULL)
+			if (entry.key->operands[i] == NULL
+			 || visited.contains(entry.key->operands[i]))
 				continue;
-			if (!first_stack.add(node->operands[i])) { 
-				fprintf(stderr, "compute_conclusion ERROR: Unable to add node to first stack.\n");
-				exit(EXIT_FAILURE);
+			if (!first_stack.add(make_pair(entry.key->operands[i], false)))
+				return NULL;
+		}
+	}
+
+	hash_map<const nd_step<Formula>*, proof_state<Formula>> proof_states(128);
+	for (const nd_step<Formula>* node : topological_order) {
+		if (!proof_states.check_size()) return NULL;
+
+		bool contains; unsigned int bucket;
+		proof_state<Formula>& state = proof_states.get(node, contains, bucket);
+		if (contains) {
+			fprintf(stderr, "check_proof ERROR: The proof state at this node should be uninitialized.\n");
+			free_proof_states(proof_states); return NULL;
+		} else if (!init(state)) {
+			fprintf(stderr, "check_proof ERROR: Unable to initialize new proof_state.\n");
+			free_proof_states(proof_states); return NULL;
+		}
+		state.table.keys[bucket] = node;
+		state.table.size++;
+
+		/* get the proof states of the operands */
+		proof_state<Formula>* operand_states[ND_OPERAND_COUNT];
+		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+			if (!node->has_subproofs()) {
+				operand_states[i] = NULL;
+				continue;
+			}
+
+			operand_states[i] = &proof_states.get(node->operands[i], contains);
+			if (!contains) {
+				fprintf(stderr, "check_proof ERROR: The proof is not topologically ordered.\n");
+				free_proof_states(proof_states); return NULL;
 			}
 		}
+
+		/* check this proof step */
+		if (!check_proof(state, *node, operand_states)) {
+			free_proof_states(proof_states);
+			return NULL;
+		}
 	}
+
+	/* get the proof state of the last deduction step */
+	bool contains;
+	const proof_state<Formula>& root_state = proof_states.get(&proof, contains);
+	if (!contains) {
+		fprintf(stderr, "check_proof ERROR: Unable to find proof state of root.\n");
+		free_proof_states(proof_states); return NULL;
+	}
+	Formula* formula = root_state.formula;
+	formula->reference_count++;
+	free_proof_states(proof_states);
+	return formula;
 }
 
 template<typename Formula>
@@ -222,18 +315,14 @@ bool check_proof(
 		const nd_step<Formula>& proof,
 		const Formula* expected_conclusion)
 {
-	array<const nd_step<formula>*> stack(64);
-	const nd_step<Formula>* node = &proof;
-	while (stack.length > 0 || node != NULL) {
-		if (node != NULL) {
-			if (!stack.add()) {
-				fprintf(stderr, "check_proof ERROR: Unable to add to stack.\n");
-				exit(EXIT_FAILURE);
-			}
-		}
-
-
-	}
+	Formula* actual_conclusion = check_proof(proof);
+	bool success = (*actual_conclusion != *expected_conclusion)
+	if (!success)
+		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
+	free(*actual_conclusion)
+	if (actual_conclusion->reference_count == 0)
+		free(actual_conclusion);
+	return success;
 }
 
 template<typename Formula>

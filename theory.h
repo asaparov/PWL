@@ -70,6 +70,7 @@ struct theory
 			observations.length--;
 			return false;
 		}
+return check_proof(*proof, canonicalized);
 		return true;
 	}
 
