@@ -110,11 +110,11 @@ private:
 							return NULL;
 						}
 
-						right->reference_count++;
 						unsigned int new_type = PREDICATE_COUNT + definitions.length;
 						fol_formula* definition = Formula::new_for_all(variable, Formula::new_iff(
 								Formula::new_atom(PREDICATE_TYPE, Formula::new_variable(variable), Formula::new_constant(new_type)), right));
 						if (definition == NULL) return NULL;
+						right->reference_count++;
 
 						Proof* proof = ProofCalculus::new_universal_intro(
 							ProofCalculus::new_implication_intro(
@@ -123,10 +123,9 @@ private:
 									ProofCalculus::new_axiom(left)),
 								ProofCalculus::new_axiom(left)),
 							Formula::new_variable(variable));
-
-						free(*definition);
-						if (definition->reference_count == 0)
-							free(definition);
+						if (proof == NULL) {
+							free(*definition); free(definition);
+						}
 						return proof;
 					} else {
 						/* this is a formula of form `![x]:(type(x,t) => f(x))` */

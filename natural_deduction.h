@@ -132,6 +132,17 @@ struct proof_state {
 	proof_state() : assumptions(8) { }
 	~proof_state() { free(); }
 
+	inline unsigned int index_of_assumption(Formula* assumption) const {
+		for (unsigned int i = 0; i < assumptions.length; i++)
+			if (*assumptions[i] == *assumption) return i;
+		return assumptions.length;
+	}
+
+	inline void discharge_assumption(Formula* assumption) {
+		unsigned int index = index_of_assumption(assumption);
+		if (index < assumptions.length) assumptions.remove(index);
+	}
+
 	static inline void free(proof_state<Formula>& state) {
 		state.free();
 		core::free(state.assumptions);
@@ -159,9 +170,64 @@ inline void free_proof_states(hash_map<K, proof_state<Formula>>& map) {
 		free(entry.value);
 }
 
+template<typename T>
+bool set_union(array<T>& dst, const array<T>& first, const T& exclude_first)
+{
+	if (!dst.ensure_capacity(dst.length + first.length))
+		return false;
+	for (unsigned int i = 0; i < first.length; i++) {
+		if (*first[i] == *exclude_first) continue;
+		dst[dst.length] = first[i];
+		dst.length++;
+	}
+	return true;
+}
+
+template<typename T, bool RemoveDuplicates = true>
+bool set_union(array<T>& dst, const array<T>& first, const array<T>& second, const T& exclude_second)
+{
+	if (!dst.ensure_capacity(first.length + second.length))
+		return false;
+
+	unsigned int i = 0, j = 0;
+	while (i < first_length && j < second_length)
+	{
+		if (*exclude_second == *second[j]) { j++; continue; }
+
+		if (first[i] == second[j]) {
+			set_union_helper<RemoveDuplicates>(dst, dst_length, first[i]);
+			i++; j++;
+		} else if (first[i] < second[j]) {
+			set_union_helper<RemoveDuplicates>(dst, dst_length, first[i]);
+			i++;
+		} else {
+			set_union_helper<RemoveDuplicates>(dst, dst_length, second[j]);
+			j++;
+		}
+	}
+
+	while (i < first_length) {
+		set_union_helper<RemoveDuplicates>(dst, dst_length, first[i]);
+		i++;
+	} while (j < second_length) {
+		if (*exclude_second == *second[j]) { j++; continue; }
+		set_union_helper<RemoveDuplicates>(dst, dst_length, second[j]);
+		j++;
+	}
+}
+
+template<typename T>
+bool set_union(array<T>& out, const array<T>& first, const T& exclude_first, const array<T>&&... lists) {
+	if (!set_union(out, lists...)) return false;
+	array<T> temp = array<T>(out.length + first.length);
+	swap(temp, out);
+	return set_union(out, temp, first, exclude_first);
+}
+
 template<typename Formula>
 bool check_proof(proof_state<Formula>& out,
-		const nd_step<Formula>& proof, const proof_state<Formula>** operand_states)
+		const nd_step<Formula>& proof,
+		const proof_state<Formula>** operand_states)
 {
 	typedef typename Formula::Type FormulaType;
 
@@ -174,19 +240,22 @@ bool check_proof(proof_state<Formula>& out,
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL) return false;
 		out.formula = Formula::new_and(operand_states[0]->formula, operand_states[1]->formula);
+		if (out.formula == NULL) return false;
+		operand_states[0]->formula->reference_count++;
+		operand_states[1]->formula->reference_count++;
 		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
-		if (operand_states[0]->formula == NULL) return NULL;
+		if (operand_states[0]->formula == NULL) return false;
 		formula = operand_states[0]->formula;
 		if (formula == NULL) {
-			return NULL;
+			return false;
 		} else if (formula->type != FormulaType::AND) {
 			fprintf(stderr, "check_proof ERROR: Expected a conjunction.\n");
 			free(*formula);
 			if (formula->reference_count == 0)
 				free(formula);
-			return NULL;
+			return false;
 		}
 		if (proof.type == CONJUNCTION_ELIMINATION_LEFT)
 			out.formula = formula->binary.left;
@@ -198,24 +267,76 @@ bool check_proof(proof_state<Formula>& out,
 			free(formula);
 		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
 	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
-		if (operand_states[0]->formula == NULL || proof.operands[1] == NULL
-		 || proof.operands[1]->type != nd_step_type::FORMULA_PARAMETER)
-			return NULL;
-		out.formula = Formula::new_or(operand_states[0]->formula, proof.operands[1]->formula);
-		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
 	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
 		if (operand_states[0]->formula == NULL || proof.operands[1] == NULL
 		 || proof.operands[1]->type != nd_step_type::FORMULA_PARAMETER)
-			return NULL;
-		out.formula = Formula::new_or(proof.operands[1]->formula, operand_states[0]->formula);
+			return false;
+		if (proof.type == nd_step_type::DISJUNCTION_INTRODUCTION_LEFT)
+			out.formula = Formula::new_or(operand_states[0]->formula, proof.operands[1]->formula);
+		if (proof.type == nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT)
+			out.formula = Formula::new_or(proof.operands[1]->formula, operand_states[0]->formula);
+		if (out.formula == NULL) return false;
+		operand_states[0]->formula->reference_count++;
+		operand_states[1]->formula->reference_count++;
 		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
 	case nd_step_type::DISJUNCTION_ELIMINATION:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL || operand_states[2]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::OR || *operand_states[1]->formula != *operand_states[2]->formula)
+			return false;
+		out.formula = operand_states[0]->formula;
+		out.formula.reference_count++;
+		return set_union(out.assumptions, operand_states[0]->assumptions,
+				operand_states[1]->assumptions, operand_states[0]->formula.binary.left,
+				operand_states[2]->assumptions, operand_states[0]->formula.binary.right);
 	case nd_step_type::IMPLICATION_INTRODUCTION:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL || proof.operands[1]->type != nd_step_type::AXIOM)
+			return false;
+		out.formula = Formula::new_if_then(operand_states[1]->formula, operand_states[0]->formula);
+		if (out.formula == NULL) return false;
+		operand_states[0]->formula->reference_count++;
+		operand_states[1]->formula->reference_count++;
+		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->formula);
 	case nd_step_type::IMPLICATION_ELIMINATION:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::IF_THEN
+		 || *operand_states[0]->formula->binary.left != *operand_states[1]->formula)
+			return false;
+		out.formula = operand_states[0]->formula->binary.right;
+		out.formula->reference_count++;
+		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::IF_THEN
+		 || operand_states[1]->formula->type != FormulaType::IF_THEN
+		 || *operand_states[0]->formula->binary.left == *operand_states[1]->formula->binary.right
+		 || *operand_states[0]->formula->binary.right == *operand_states[1]->formula->binary.left)
+			return false;
+		out.formula = Formula::new_iff(operand_states[0]->formula->binary.left, operand_states[0]->formula->binary.right);
+		if (out.formula == NULL) return false;
+		operand_states[0]->formula->binary.left->reference_count++;
+		operand_states[0]->formula->binary.right->reference_count++;
+		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::IFF
+		 || *operand_states[0]->formula->binary.left != *operand_states[1]->formula)
+			return false;
+		out.formula = operand_states[0]->formula->binary.right;
+		out.formula->reference_count++;
+		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::IFF
+		 || *operand_states[0]->formula->binary.right != *operand_states[1]->formula)
+			return false;
+		out.formula = operand_states[0]->formula->binary.left;
+		out.formula->reference_count++;
+		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::PROOF_BY_CONTRADICTION:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::FALSE
+		 || proof.operands[1]->type != nd_proof_type::AXIOM)
+			return false;
 	case nd_step_type::NEGATION_ELIMINATION:
 
 	case nd_step_type::UNIVERSAL_INTRODUCTION:
@@ -226,7 +347,10 @@ bool check_proof(proof_state<Formula>& out,
 	case nd_step_type::ARRAY_PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::FORMULA_PARAMETER:
+		break;
 	}
+	fprintf(stderr, "check_proof ERROR: Unexpected nd_step_type.\n");
+	return false;
 }
 
 template<typename Formula>
@@ -259,6 +383,7 @@ Formula* check_proof(const nd_step<Formula>& proof)
 		}
 	}
 
+	/* process the proof steps in reverse topological order */
 	hash_map<const nd_step<Formula>*, proof_state<Formula>> proof_states(128);
 	for (const nd_step<Formula>* node : topological_order) {
 		if (!proof_states.check_size()) return NULL;

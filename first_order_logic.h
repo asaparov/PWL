@@ -583,13 +583,11 @@ fol_formula* new_fol_binary_helper(fol_formula* arg, Args&&... args)
 	if (!new_fol_formula(formula)) return NULL;
 	formula->reference_count = 1;
 	formula->type = Operator;
-	formula->binary.right = arg;
 	formula->binary.left = new_fol_and_helper(std::forward<Args>(args)...);
 	if (formula->binary.left == NULL) {
-		free(formula); free(*arg);
-		if (arg->reference_count == 0) free(arg);
-		return NULL;
+		free(formula); return NULL;
 	}
+	formula->binary.right = arg;
 	return formula;
 }
 
