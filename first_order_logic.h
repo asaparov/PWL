@@ -22,7 +22,8 @@ bool operator == (const fol_formula&, const fol_formula&);
 enum class fol_term_type {
 	NONE,
 	VARIABLE,
-	CONSTANT
+	CONSTANT,
+	PARAMETER
 };
 
 struct fol_term {
@@ -30,10 +31,11 @@ struct fol_term {
 	union {
 		unsigned int variable;
 		unsigned int constant;
+		unsigned int parameter;
 	};
 };
 
-fol_term EMPTY_FOL_TERM = {fol_term_type::NONE, 0};
+fol_term EMPTY_FOL_TERM = {fol_term_type::NONE, {0}};
 
 inline bool operator == (const fol_term& first, const fol_term& second) {
 	if (first.type != second.type) return false;
@@ -42,6 +44,8 @@ inline bool operator == (const fol_term& first, const fol_term& second) {
 		return first.variable == second.variable;
 	case fol_term_type::CONSTANT:
 		return first.constant == second.constant;
+	case fol_term_type::PARAMETER:
+		return first.parameter == second.parameter;
 	case fol_term_type::NONE:
 		return true;
 	}
@@ -49,9 +53,18 @@ inline bool operator == (const fol_term& first, const fol_term& second) {
 	exit(EXIT_FAILURE);
 }
 
+inline bool operator != (const fol_term& first, const fol_term& second) {
+	return !(first == second);
+}
+
 template<typename Stream>
 inline bool print_variable(unsigned int variable, Stream& out) {
 	return print('$', out) + print(variable, out);
+}
+
+template<typename Stream>
+inline bool print_parameter(unsigned int parameter, Stream& out) {
+	return print('#', out) + print(parameter, out);
 }
 
 template<typename Stream, typename... Printer>
@@ -61,6 +74,8 @@ bool print(const fol_term& term, Stream& out, Printer&&... printer) {
 		return print_variable(term.variable, out);
 	case fol_term_type::CONSTANT:
 		return print(term.constant, out, std::forward<Printer>(printer)...);
+	case fol_term_type::PARAMETER:
+		return print_parameter(term.parameter, out);
 	case fol_term_type::NONE:
 		break;
 	}
@@ -131,6 +146,7 @@ struct fol_quantifier {
 struct fol_formula
 {
 	typedef fol_formula_type Type;
+	typedef fol_term Term;
 
 	fol_formula_type type;
 	unsigned int reference_count;
@@ -146,9 +162,12 @@ struct fol_formula
 
 	static fol_term new_variable(unsigned int variable);
 	static fol_term new_constant(unsigned int constant);
+	static fol_term new_parameter(unsigned int parameter);
 	static fol_formula* new_atom(unsigned int predicate, fol_term arg1, fol_term arg2);
 	static inline fol_formula* new_atom(unsigned int predicate, fol_term arg1);
 	static inline fol_formula* new_atom(unsigned int predicate);
+	static fol_formula* new_true();
+	static fol_formula* new_false();
 	template<typename... Args> static inline fol_formula* new_and(Args&&... args);
 	template<typename... Args> static inline fol_formula* new_or(Args&&... args);
 	template<typename... Args> static inline fol_formula* new_iff(Args&&... args);
@@ -362,17 +381,23 @@ inline bool new_fol_formula(fol_formula*& new_formula) {
 constexpr bool visit_constant(unsigned int constant) { return true; }
 constexpr bool visit_predicate(unsigned int predicate) { return true; }
 constexpr bool visit_variable(unsigned int variable) { return true; }
+constexpr bool visit_parameter(unsigned int parameter) { return true; }
+constexpr bool visit_true(const fol_formula& formula) { return true; }
+constexpr bool visit_false(const fol_formula& formula) { return true; }
 
 template<fol_formula_type Operator>
-constexpr bool visit_operator(const fol_formula_type& formula) { return true; }
+constexpr bool visit_operator(const fol_formula& formula) { return true; }
 
-template<typename... Visiter>
-inline bool visit(fol_term& term, Visiter&&... visiter) {
+template<typename Term, typename... Visiter,
+	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Term>::type>::type, fol_term>::value>::type* = nullptr>
+inline bool visit(Term&& term, Visiter&&... visiter) {
 	switch (term.type) {
 	case fol_term_type::CONSTANT:
 		return visit_constant(term.constant, std::forward<Visiter>(visiter)...);
 	case fol_term_type::VARIABLE:
 		return visit_variable(term.variable, std::forward<Visiter>(visiter)...);
+	case fol_term_type::PARAMETER:
+		return visit_parameter(term.parameter, std::forward<Visiter>(visiter)...);
 	case fol_term_type::NONE:
 		return true;
 	}
@@ -380,15 +405,17 @@ inline bool visit(fol_term& term, Visiter&&... visiter) {
 	return false;
 }
 
-template<typename... Visiter>
-inline bool visit(fol_atom& atom, Visiter&&... visiter) {
+template<typename Atom, typename... Visiter,
+	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Atom>::type>::type, fol_atom>::value>::type* = nullptr>
+inline bool visit(Atom&& atom, Visiter&&... visiter) {
 	return visit_predicate(atom.predicate, std::forward<Visiter>(visiter)...)
 		&& visit(atom.arg1, std::forward<Visiter>(visiter)...)
 		&& visit(atom.arg2, std::forward<Visiter>(visiter)...);
 }
 
-template<typename... Visiter>
-bool visit(fol_formula& formula, Visiter&&... visiter)
+template<typename Formula, typename... Visiter,
+	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Formula>::type>::type, fol_formula>::value>::type* = nullptr>
+bool visit(Formula&& formula, Visiter&&... visiter)
 {
 	switch (formula.type) {
 	case fol_formula_type::ATOM:
@@ -429,6 +456,25 @@ bool visit(fol_formula& formula, Visiter&&... visiter)
 	return false;
 }
 
+struct parameter_comparator {
+	unsigned int parameter;
+};
+
+constexpr bool visit_constant(unsigned int constant, const parameter_comparator& visitor) { return true; }
+constexpr bool visit_predicate(unsigned int predicate, const parameter_comparator& visitor) { return true; }
+constexpr bool visit_variable(unsigned int variable, const parameter_comparator& visitor) { return true; }
+constexpr bool visit_parameter(unsigned int parameter, const parameter_comparator& visitor) { return false; }
+constexpr bool visit_true(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
+constexpr bool visit_false(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
+
+template<fol_formula_type Operator>
+constexpr bool visit_operator(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
+
+inline bool contains_parameter(const fol_formula& src, unsigned int parameter) {
+	parameter_comparator visitor = {parameter};
+	return !visit(src, visitor);
+}
+
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
 	dst_constant = src_constant;
 	return true;
@@ -444,6 +490,11 @@ inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable
 	return true;
 }
 
+inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parameter) {
+	dst_parameter = src_parameter;
+	return true;
+}
+
 template<typename... Cloner>
 inline bool clone(const fol_term& src, fol_term& dst, Cloner&&... cloner) {
 	dst.type = src.type;
@@ -452,6 +503,8 @@ inline bool clone(const fol_term& src, fol_term& dst, Cloner&&... cloner) {
 		return clone_constant(src.constant, dst.constant, std::forward<Cloner>(cloner)...);
 	case fol_term_type::VARIABLE:
 		return clone_variable(src.variable, dst.variable, std::forward<Cloner>(cloner)...);
+	case fol_term_type::PARAMETER:
+		return clone_parameter(src.parameter, dst.parameter, std::forward<Cloner>(cloner)...);
 	case fol_term_type::NONE:
 		return true;
 	}
@@ -521,6 +574,238 @@ inline bool clone(const fol_formula* src, fol_formula* dst, Cloner&&... cloner)
 	return clone(*src, *dst, std::forward<Cloner>(cloner)...);
 }
 
+template<typename... Function>
+inline bool apply_to_terms(const fol_atom& src, fol_atom& dst, Function&&... function)
+{
+	dst.predicate = src.predicate;
+	return apply(src.arg1, dst.arg1, std::forward<Function>(function)...)
+		&& apply(src.arg2, dst.arg2, std::forward<Function>(function)...);
+}
+
+template<typename... Function>
+fol_formula* apply_to_terms(fol_formula& src, Function&&... function)
+{
+	fol_formula* new_formula;
+	fol_formula* left; fol_formula* right;
+	fol_atom atom;
+	switch (src.type) {
+	case fol_formula_type::ATOM:
+		if (!apply_to_terms(src.atom, atom, std::forward<Function>(function)...)) {
+			return NULL;
+		} else if (atom == src.atom) {
+			free(atom);
+			return &src;
+		} else {
+			if (!new_fol_formula(new_formula)) {
+				free(atom); return NULL;
+			}
+			new_formula->atom = atom;
+			new_formula->type = fol_formula_type::ATOM;
+			new_formula->reference_count = 1;
+			return new_formula;
+		}
+	case fol_formula_type::NOT:
+		left = apply_to_terms(*src.unary.operand, std::forward<Function>(function)...);
+		if (left == NULL) {
+			return NULL;
+		} else if (left == src.unary.operand) {
+			return &src;
+		} else {
+			if (!new_fol_formula(new_formula)) {
+				free(*left); if (left->reference_count == 0) free(left);
+				return NULL;
+			}
+			new_formula->unary.operand = left;
+			new_formula->type = fol_formula_type::NOT;
+			new_formula->reference_count = 1;
+			return new_formula;
+		}
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+		left = apply_to_terms(*src.binary.left, std::forward<Function>(function)...);
+		if (left == NULL) return NULL;
+		right = apply_to_terms(*src.binary.right, std::forward<Function>(function)...);
+		if (right == NULL) {
+			free(*left); if (left->reference_count == 0) free(left);
+			return NULL;
+		} else if (left == src.binary.left && right == src.binary.right) {
+			return &src;
+		} else {
+			if (!new_fol_formula(new_formula)) {
+				if (left != src.binary.left) {
+					free(*left); if (left->reference_count == 0) free(left);
+				} if (right != src.binary.right) {
+					free(*right); if (right->reference_count == 0) free(right);
+				}
+				return NULL;
+			}
+			new_formula->binary.left = left;
+			new_formula->binary.right = right;
+			if (left == src.binary.left) left->reference_count++;
+			if (right == src.binary.right) right->reference_count++;
+			new_formula->type = src.type;
+			new_formula->reference_count = 1;
+			return new_formula;
+		}
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		left = apply_to_terms(*src.quantifier.operand, std::forward<Function>(function)...);
+		if (left == NULL) {
+			return NULL;
+		} else if (left == src.quantifier.operand) {
+			return &src;
+		} else {
+			if (!new_fol_formula(new_formula)) {
+				free(*left); if (left->reference_count == 0) free(left);
+				return NULL;
+			}
+			new_formula->quantifier.variable = src.quantifier.variable;
+			new_formula->quantifier.operand = left;
+			new_formula->type = src.type;
+			new_formula->reference_count = 1;
+			return new_formula;
+		}
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return &src;
+	}
+	fprintf(stderr, "apply_to_terms ERROR: Unrecognized fol_formula_type.\n");
+	return NULL;
+}
+
+template<int VariableShift>
+struct term_substituter {
+	fol_term src;
+	fol_term dst;
+};
+
+template<int VariableShift>
+inline bool substitute(const fol_term& src, fol_term& dst, const term_substituter<VariableShift>& substituter) {
+	if (src == substituter.src) {
+		dst = substituter.dst;
+	} else if (src.type == fol_term_type::VARIABLE) {
+		dst.type = src.type;
+		dst.variable = src.variable + VariableShift;
+	} else {
+		dst = src;
+	}
+	return true;
+}
+
+template<int VariableShift>
+inline fol_formula* substitute(const fol_formula& src,
+		const fol_term& src_term, const fol_term& dst_term)
+{
+	const term_substituter<VariableShift> substituter = {src_term, dst_term};
+	fol_formula* formula = substitute(src, substituter);
+	if (formula != &src)
+		formula->reference_count++;
+	return formula;
+}
+
+template<int VariableShift>
+struct index_substituter {
+	fol_term src;
+	fol_term dst;
+	const unsigned int* term_indices;
+	unsigned int term_index_count;
+	unsigned int current_term_index;
+};
+
+template<int VariableShift>
+inline bool substitute(const fol_term& src, fol_term& dst, index_substituter<VariableShift>& substituter)
+{
+	if (substituter.term_index_count > 0 && *substituter.term_indices == substituter.current_term_index) {
+		if (substituter.src.type == fol_term_type::NONE) {
+			substituter.src = src;
+		} else if (substituter.src != src) {
+			/* this term is not identical to other substituted terms, which should not happen */
+			return false;
+		}
+		dst = substituter.dst;
+		substituter.term_indices++;
+		substituter.term_index_count--;
+	}
+	substituter.current_term_index++;
+	return true;
+}
+
+template<int VariableShift>
+inline fol_formula* substitute(
+		const fol_formula& src, const unsigned int* term_indices,
+		unsigned int term_index_count, const fol_term& dst_term)
+{
+	index_substituter<VariableShift> substituter = {EMPTY_FOL_TERM, dst_term, term_indices, term_index_count, 0};
+	fol_formula* formula = substitute(src, substituter);
+	if (formula != &src)
+		formula->reference_count++;
+	return formula;
+}
+
+inline bool unify(
+		const fol_term& first, const fol_term& second,
+		const fol_term& src_term, fol_term& dst_term)
+{
+	if (first == src_term) {
+		if (dst_term.type == fol_term_type::NONE) {
+			dst_term = second;
+		} else if (second != dst_term) {
+			return false;
+		}
+	}
+	return true;
+}
+
+inline bool unify(
+		const fol_atom& first, const fol_atom& second,
+		const fol_term& src_term, fol_term& dst_term)
+{
+	if (first.predicate != second.predicate) return false;
+	return unify(first.arg1, second.arg1, src_term, dst_term)
+		&& unify(first.arg2, second.arg2, src_term, dst_term);
+}
+
+bool unify(
+		const fol_formula& first, const fol_formula& second,
+		const fol_term& src_term, fol_term& dst_term)
+{
+	if (first.type != second.type) return false;
+	switch (first.type) {
+	case fol_formula_type::ATOM:
+		return unify(first.atom, second.atom, src_term, dst_term);
+	case fol_formula_type::NOT:
+		return unify(*first.unary.operand, *second.unary.operand, src_term, dst_term);
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+		return unify(*first.binary.left, *second.binary.left, src_term, dst_term)
+			&& unify(*first.binary.right, *second.binary.right, src_term, dst_term);
+	case fol_formula_type::FOR_ALL:
+	case fol_formula_type::EXISTS:
+		if (first.quantifier.variable != second.quantifier.variable) return false;
+		return unify(*first.quantifier.operand, *second.quantifier.operand, src_term, dst_term);
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return true;
+	}
+	fprintf(stderr, "unify ERROR: Unrecognized fol_formula_type.\n");
+	return false;
+}
+
+bool unifies_parameter(
+		const fol_formula& first, const fol_formula& second,
+		const fol_term& src_term, unsigned int& parameter)
+{
+	fol_term dst = EMPTY_FOL_TERM;
+	if (!unify(first, second, src_term, dst) || dst.type != fol_term_type::PARAMETER)
+		return false;
+	parameter = dst.parameter;
+	return true;
+}
+
 
 /**
  * Functions for easily constructing first-order logic expressions in code.
@@ -538,6 +823,13 @@ fol_term fol_formula::new_constant(unsigned int constant) {
 	fol_term term;
 	term.type = fol_term_type::CONSTANT;
 	term.constant = constant;
+	return term;
+}
+
+fol_term fol_formula::new_parameter(unsigned int parameter) {
+	fol_term term;
+	term.type = fol_term_type::PARAMETER;
+	term.parameter = parameter;
 	return term;
 }
 
@@ -561,6 +853,16 @@ inline fol_formula* fol_formula::new_atom(unsigned int predicate, fol_term arg1)
 
 inline fol_formula* fol_formula::new_atom(unsigned int predicate) {
 	return new_atom(predicate, EMPTY_FOL_TERM, EMPTY_FOL_TERM);
+}
+
+inline fol_formula* fol_formula::new_true() {
+	FOL_TRUE.reference_count++;
+	return &FOL_TRUE;
+}
+
+inline fol_formula* fol_formula::new_false() {
+	FOL_FALSE.reference_count++;
+	return &FOL_FALSE;
 }
 
 #include <tuple>
@@ -697,6 +999,10 @@ inline int_fast8_t compare(
 		if (first.variable < second.variable) return -1;
 		else if (first.variable > second.variable) return 1;
 		else return 0;
+	case fol_term_type::PARAMETER:
+		if (first.parameter < second.parameter) return -1;
+		else if (first.parameter > second.parameter) return 1;
+		else return 0;
 	case fol_term_type::NONE:
 		return 0;
 	}
@@ -793,6 +1099,7 @@ inline bool relabel_variables(fol_term& term,
 	unsigned int index;
 	switch (term.type) {
 	case fol_term_type::CONSTANT:
+	case fol_term_type::PARAMETER:
 	case fol_term_type::NONE:
 		return true;
 	case fol_term_type::VARIABLE:
@@ -1251,6 +1558,7 @@ inline void shift_variables(fol_term& term, unsigned int removed_variable) {
 			term.variable--;
 		return;
 	case fol_term_type::CONSTANT:
+	case fol_term_type::PARAMETER:
 	case fol_term_type::NONE:
 		return;
 	}
@@ -2781,6 +3089,8 @@ inline bool canonicalize_term(const fol_term& src, fol_term& dst,
 	switch (src.type) {
 	case fol_term_type::CONSTANT:
 		dst.constant = src.constant; return true;
+	case fol_term_type::PARAMETER:
+		dst.parameter = src.parameter; return true;
 	case fol_term_type::VARIABLE:
 		index = variable_map.index_of(src.variable);
 		if (index < variable_map.size) {

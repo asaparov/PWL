@@ -8,6 +8,7 @@ using namespace core;
 enum class nd_step_type
 {
 	AXIOM,
+	PARAMETER,
 	ARRAY_PARAMETER,
 	TERM_PARAMETER,
 	FORMULA_PARAMETER,
@@ -44,6 +45,7 @@ struct nd_step
 	union {
 		Term term;
 		Formula* formula;
+		unsigned int parameter;
 		array<unsigned int> parameters;
 
 		nd_step<Formula>* operands[ND_OPERAND_COUNT];
@@ -138,9 +140,10 @@ struct proof_state {
 		return assumptions.length;
 	}
 
-	inline void discharge_assumption(Formula* assumption) {
-		unsigned int index = index_of_assumption(assumption);
-		if (index < assumptions.length) assumptions.remove(index);
+	inline bool assumptions_have_parameter(unsigned int parameter) const {
+		for (const Formula* assumption : assumptions)
+			if (contains_parameter(*assumption, parameter)) return true;
+		return false;
 	}
 
 	static inline void free(proof_state<Formula>& state) {
@@ -171,28 +174,36 @@ inline void free_proof_states(hash_map<K, proof_state<Formula>>& map) {
 }
 
 template<typename T>
-bool set_union(array<T>& dst, const array<T>& first, const T& exclude_first)
+bool pass_hypotheses(array<T>& dst, const array<T>& first) {
+	return dst.append(first.data, first.length);
+}
+
+template<typename T>
+bool pass_hypotheses(array<T>& dst, const array<T>& first, const T& discharge_first)
 {
 	if (!dst.ensure_capacity(dst.length + first.length))
 		return false;
+
+	bool discharged = false;
 	for (unsigned int i = 0; i < first.length; i++) {
-		if (*first[i] == *exclude_first) continue;
+		if (*first[i] == *discharge_first) { discharged = true; continue; }
 		dst[dst.length] = first[i];
 		dst.length++;
 	}
-	return true;
+	return discharged;
 }
 
 template<typename T, bool RemoveDuplicates = true>
-bool set_union(array<T>& dst, const array<T>& first, const array<T>& second, const T& exclude_second)
+bool pass_hypotheses(array<T>& dst, const array<T>& first, const array<T>& second, const T& discharge_second)
 {
 	if (!dst.ensure_capacity(first.length + second.length))
 		return false;
 
+	bool discharged = false;
 	unsigned int i = 0, j = 0;
 	while (i < first_length && j < second_length)
 	{
-		if (*exclude_second == *second[j]) { j++; continue; }
+		if (*discharge_second == *second[j]) { j++; discharged = true; continue; }
 
 		if (first[i] == second[j]) {
 			set_union_helper<RemoveDuplicates>(dst, dst_length, first[i]);
@@ -210,18 +221,39 @@ bool set_union(array<T>& dst, const array<T>& first, const array<T>& second, con
 		set_union_helper<RemoveDuplicates>(dst, dst_length, first[i]);
 		i++;
 	} while (j < second_length) {
-		if (*exclude_second == *second[j]) { j++; continue; }
+		if (*discharge_second == *second[j]) { j++; discharged = true; continue; }
 		set_union_helper<RemoveDuplicates>(dst, dst_length, second[j]);
 		j++;
 	}
+
+	return discharged;
 }
 
 template<typename T>
-bool set_union(array<T>& out, const array<T>& first, const T& exclude_first, const array<T>&&... lists) {
-	if (!set_union(out, lists...)) return false;
+bool pass_hypotheses(array<T>& out, const array<T>& first, const T& discharge_first, const array<T>&&... lists) {
+	if (!pass_hypotheses(out, lists...)) return false;
 	array<T> temp = array<T>(out.length + first.length);
 	swap(temp, out);
-	return set_union(out, temp, first, exclude_first);
+	return pass_hypotheses(out, temp, first, discharge_first);
+}
+
+template<typename Formula>
+bool subtract_unifying_hypotheses(
+	array<Formula*>& dst_hypotheses,
+	const array<Formula*>& hypotheses,
+	const Formula& src, const Formula& C)
+{
+	for (Formula* hypothesis : hypotheses) {
+		unsigned int parameter;
+		if (unifies_parameter(*src.quantifier.operand, *hypothesis, Formula::new_variable(src.quantifier.variable), parameter)) {
+			if (contains_parameter(C, parameter)) {
+				if (!dst_hypotheses.add(hypothesis)) return false;
+			}
+		} else {
+			if (!dst_hypotheses.add(hypothesis)) return false;
+		}
+	}
+	return true;
 }
 
 template<typename Formula>
@@ -231,7 +263,7 @@ bool check_proof(proof_state<Formula>& out,
 {
 	typedef typename Formula::Type FormulaType;
 
-	Formula* formula;
+	Formula* formula; unsigned int parameter;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		out.formula = proof.formula;
@@ -243,7 +275,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
 		if (operand_states[0]->formula == NULL) return false;
@@ -265,7 +297,7 @@ bool check_proof(proof_state<Formula>& out,
 		free(*formula);
 		if (formula->reference_count == 0)
 			free(formula);
-		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
 	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
 		if (operand_states[0]->formula == NULL || proof.operands[1] == NULL
@@ -278,14 +310,14 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
-		return out.assumptions.append(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_ELIMINATION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL || operand_states[2]->formula == NULL
 		 || operand_states[0]->formula->type != FormulaType::OR || *operand_states[1]->formula != *operand_states[2]->formula)
 			return false;
 		out.formula = operand_states[0]->formula;
 		out.formula.reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions,
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions,
 				operand_states[1]->assumptions, operand_states[0]->formula.binary.left,
 				operand_states[2]->assumptions, operand_states[0]->formula.binary.right);
 	case nd_step_type::IMPLICATION_INTRODUCTION:
@@ -295,7 +327,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->formula);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->formula);
 	case nd_step_type::IMPLICATION_ELIMINATION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
 		 || operand_states[0]->formula->type != FormulaType::IF_THEN
@@ -303,7 +335,7 @@ bool check_proof(proof_state<Formula>& out,
 			return false;
 		out.formula = operand_states[0]->formula->binary.right;
 		out.formula->reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_INTRODUCTION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
 		 || operand_states[0]->formula->type != FormulaType::IF_THEN
@@ -315,7 +347,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->binary.left->reference_count++;
 		operand_states[0]->formula->binary.right->reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
 		 || operand_states[0]->formula->type != FormulaType::IFF
@@ -323,7 +355,7 @@ bool check_proof(proof_state<Formula>& out,
 			return false;
 		out.formula = operand_states[0]->formula->binary.right;
 		out.formula->reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
 		 || operand_states[0]->formula->type != FormulaType::IFF
@@ -331,19 +363,73 @@ bool check_proof(proof_state<Formula>& out,
 			return false;
 		out.formula = operand_states[0]->formula->binary.left;
 		out.formula->reference_count++;
-		return set_union(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::PROOF_BY_CONTRADICTION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
 		 || operand_states[0]->formula->type != FormulaType::FALSE
-		 || proof.operands[1]->type != nd_proof_type::AXIOM)
+		 || proof.operands[1]->type != nd_proof_type::axiom
+		 || operand_states[1]->formula->type != FormulaType::NOT)
 			return false;
+		out.formula = proof.operands[1]->formula->unary;
+		out.formula->reference_count++;
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, proof.operands[1]->formula);
 	case nd_step_type::NEGATION_ELIMINATION:
-
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[1]->formula->type != FormulaType::NOT
+		 || *operand_states[0]->formula != *operand_states[1]->formula->unary)
+			return false;
+		out.formula = Formula::new_false();
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::UNIVERSAL_INTRODUCTION:
-	case nd_step_type::UNIVERSAL_ELIMINATION:
-	case nd_step_type::EXISTENTIAL_INTRODUCTION:
-	case nd_step_type::EXISTENTIAL_ELIMINATION:
+		if (operand_states[0]->formula == NULL || proof.operands[1]->type != nd_proof_type::PARAMETER) {
+			return false;
+		} else if (operand_states[0]->assumptions_have_parameter(proof.operands[1]->parameter)) {
+			/* the parameter is not allowed to occur free in the assumptions */
+			return false;
+		}
 
+		formula = substitute<1>(*operand_states[0]->formula, Formula::new_parameter(proof.operands[1]->parameter), Formula::new_variable(1));
+		if (formula == NULL) return false;
+		out.formula = Formula::new_for_all(1, formula);
+		if (out.formula == NULL) {
+			free(*formula); if (formula->reference_count == 0) free(formula);
+			return false;
+		}
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
+	case nd_step_type::UNIVERSAL_ELIMINATION:
+		if (operand_states[0]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::FOR_ALL
+		 || proof.operands[1]->type != nd_proof_type::TERM_PARAMETER)
+			return false;
+		out.formula = substitute<-1>(*operand_states[0]->formula->quantifier.operand,
+				Formula::new_variable(operand_states[0]->formula->quantifier.variable),
+				proof.operands[1]->term);
+		if (out.formula == NULL) return false;
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		if (operand_states[0]->formula == NULL) return false;
+		if (proof.operands[1]->type == nd_proof_type::TERM_PARAMETER) {
+			formula = substitute<1>(*operand_states[0]->formula, proof.operands[1]->term, Formula::new_variable(1));
+		} else if (proof.operands[1]->type == nd_proof_type::ARRAY_PARAMETER) {
+			formula = substitute<1>(*operand_states[0]->formula, proof.operands[1]->parameters.data, proof.operands[1]->parameters.length, Formula::new_variable(1));
+		}
+
+		if (formula == NULL) return false;
+		out.formula = Formula::new_exists(1, formula);
+		if (out.formula == NULL) {
+			free(*formula) if (formula->reference_count == 0) free(formula);
+			return false;
+		}
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
+		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
+		 || operand_states[0]->formula->type != FormulaType::EXISTS)
+			return false;
+		if (!subtract_unifying_hypotheses(out.assumptions, operand_states[1]->assumptions, *operand_states[1]->formula))
+			return false;
+		out.formula = operand_states[1]->formula;
+		out.formula->reference_count++;
+		return true;
 	case nd_step_type::ARRAY_PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::FORMULA_PARAMETER:
@@ -525,12 +611,8 @@ struct natural_deduction
 		return new_binary_step<nd_step_type::NEGATION_ELIMINATION>(proof, negated);
 	}
 
-	static inline Proof* new_universal_intro(Proof* proof, const Term& term) {
-		return new_binary_step<nd_step_type::UNIVERSAL_INTRODUCTION>(proof, new_parameter(term));
-	}
-
-	static inline Proof* new_universal_intro(Proof* proof, const array<unsigned int>& variable_indices) {
-		return new_binary_step<nd_step_type::UNIVERSAL_INTRODUCTION>(proof, new_parameter(variable_indices));
+	static inline Proof* new_universal_intro(Proof* proof, unsigned int parameter) {
+		return new_binary_step<nd_step_type::UNIVERSAL_INTRODUCTION>(proof, new_parameter(parameter));
 	}
 
 	static inline Proof* new_universal_elim(Proof* proof, const Term& term) {
@@ -552,6 +634,15 @@ struct natural_deduction
 private:
 	static inline Proof* new_parameter(Formula* parameter) {
 		new_formula_parameterized_step<nd_step_type::FORMULA_PARAMETER>(parameter);
+	}
+
+	static inline Proof* new_parameter(unsigned int parameter) {
+		nd_step<Formula>* step;
+		if (!new_nd_step(step, nd_step_type::PARAMETER)) return NULL;
+		step->reference_count = 1;
+		step->parameter = parameter;
+		axiom->reference_count++;
+		return step;
 	}
 
 	static inline Proof* new_parameter(const Term& term) {
