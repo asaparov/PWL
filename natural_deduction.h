@@ -439,39 +439,85 @@ bool check_proof(proof_state<Formula>& out,
 	return false;
 }
 
+bool compute_in_degrees(const nd_step<Formula>* proof,
+		hash_map<const nd_step<Formula>*, unsigned int>& in_degrees)
+{
+	array<const nd_step<Formula>*> stack(64);
+	hash_set<const nd_step<Formula>*> visited(128);
+	if (!stack.add(proof))
+		return false;
+	while (stack.length > 0)
+	{
+		const nd_step<Formula>* node = stack.pop();
+		if (!visited.add(node)) return false;
+
+		if (!node->has_subproofs()) continue;
+		if (!in_degrees.check_size(in_degrees.table.size + ND_OPERAND_COUNT + 1))
+			return false;
+
+		bool contains; unsigned int bucket;
+		unsigned int& degree = in_degrees.get(node, contains, bucket);
+		if (!contains) {
+			in_degrees.table.keys[bucket] = node;
+			in_degrees.table.size++;
+			degree = 0;
+		}
+
+		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+			if (node->operands[i] == NULL) continue;
+
+			unsigned int& degree = in_degrees.get(node->operands[i], contains, bucket);
+			if (!contains) {
+				in_degrees.table.keys[bucket] = node->operands[i];
+				in_degrees.table.size++;
+				degree = 1;
+			} else {
+				degree++;
+			}
+
+			if (visited.contains(node->operands[i]))
+				continue;
+			if (!stack.add(node->operands[i]))
+				return NULL;
+		}
+	}
+
+	return true;
+}
+
 template<typename Formula>
 Formula* check_proof(const nd_step<Formula>& proof)
 {
 	/* first list the proof steps in reverse topological order */
-	array<pair<const nd_step<Formula>*, bool>> first_stack(64);
-	array<const nd_step<Formula>*> topological_order(64);
-	hash_set<const nd_step<Formula>*> visited(128);
-	if (!first_stack.add(&proof)) return NULL;
-	while (first_stack.length > 0) {
-		const pair<const nd_step<Formula>*, bool> entry = first_stack.pop();
-		if (entry.value) {
-			if (!topological_order.add(entry.key))
-				return NULL;
-			continue;
-		}
+	hash_map<const nd_step<Formula>*, unsigned int> in_degrees(128);
+	if (!compute_in_degrees(&proof, in_degrees)) return NULL;
 
-		if (!visited.add(entry.key)
-		 || !first_stack.add(make_pair(entry.key, true)))
+	array<const nd_step<Formula>*> stack(32);
+	for (const auto& entry : in_degrees) {
+		if (entry.value == 0 && !stack.add(entry.key))
 			return NULL;
+	}
 
-		if (!entry.key->has_subproofs()) continue;
+	array<const nd_step<Formula>*> topological_order(64);
+	while (stack.length > 0) {
+		const nd_step<Formula>* node = stack.pop();
+		if (!topological_order.add(node)) return NULL;
+
+		if (!node->has_subproofs()) continue;
 		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
-			if (entry.key->operands[i] == NULL
-			 || visited.contains(entry.key->operands[i]))
-				continue;
-			if (!first_stack.add(make_pair(entry.key->operands[i], false)))
-				return NULL;
+			if (node->operands[i] == NULL) continue;
+			unsigned int& degree = in_degrees.get(node->operands[i]);
+			degree--;
+
+			if (degree == 0 && !stack.add(node->operands[i]))
+				return false;
 		}
 	}
 
 	/* process the proof steps in reverse topological order */
 	hash_map<const nd_step<Formula>*, proof_state<Formula>> proof_states(128);
-	for (const nd_step<Formula>* node : topological_order) {
+	for (unsigned int k = topological_order.length; k > 0; k--) {
+		const nd_step<Formula>* node = topological_order[k - 1];
 		if (!proof_states.check_size()) return NULL;
 
 		bool contains; unsigned int bucket;
@@ -724,5 +770,48 @@ private:
 		return step;
 	}
 };
+
+template<typename Formula>
+struct nd_canonicalizer {
+	inline bool operator() (const nd_step<Formula>* first, const nd_step<Formula>* second) {
+		return *first > *second;
+	}
+};
+
+template<typename Formula>
+bool canonicalize(const nd_step<Formula>& proof,
+		array<const nd_step<Formula>*>& canonical_order)
+{
+	hash_map<const nd_step<Formula>*, unsigned int> in_degrees(128);
+	if (!compute_in_degrees(&proof, in_degrees)) return false;
+
+	array<const nd_step<Formula>*> heap(32);
+	for (const auto& entry : in_degrees) {
+		if (entry.value == 0 && !heap.add(entry.key))
+			return false;
+	}
+
+	std::make_heap(heap.begin(), heap.end(), nd_canonicalizer<Formula>());
+	while (heap.length > 0) {
+		std::pop_heap(heap.begin(), heap.end());
+		const nd_step<Formula>* node = heap.pop();
+		if (!canonical_order.add(node)) return false;
+
+		if (!node->has_subproofs()) continue;
+		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+			if (node->operands[i] == NULL) continue;
+			unsigned int& degree = in_degrees.get(node->operands[i]);
+			degree--;
+
+			if (degree == 0) {
+				if (!heap.add(node->operands[i]))
+					return false;
+				std::push_heap(heap.begin(), heap.end());
+			}
+		}
+	}
+
+	return true;
+}
 
 #endif /* NATURAL_DEDUCTION_H_ */
