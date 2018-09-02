@@ -127,6 +127,67 @@ private:
 };
 
 template<typename Formula>
+inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>& second)
+{
+	if (first.type < second.type) return -1;
+	else if (first.type > second.type) return 1;
+
+	int_fast8_t result;
+	switch (first.type) {
+	case TERM_PARAMETER:
+		return compare(first.term, second.term);
+	case ARRAY_PARAMETER:
+		if (first.parameters.length < second.parameters.length) return -1;
+		else if (first.parameters.length > second.parameters.length) return 1;
+		for (unsigned int i = 0; i < first.parameters.length; i++) {
+			if (first.parameters[i] < second.parameters[i]) return -1;
+			else if (first.parameters[i] > second.parameters[i]) return 1;
+		}
+		return 0;
+	case AXIOM:
+	case FORMULA_PARAMETER:
+		return compare(*first.formula, *second.formula);
+	case CONJUNCTION_INTRODUCTION:
+	case CONJUNCTION_ELIMINATION_LEFT:
+	case CONJUNCTION_ELIMINATION_RIGHT:
+	case DISJUNCTION_INTRODUCTION_LEFT:
+	case DISJUNCTION_INTRODUCTION_RIGHT:
+	case DISJUNCTION_ELIMINATION:
+	case IMPLICATION_INTRODUCTION:
+	case IMPLICATION_ELIMINATION:
+	case BICONDITIONAL_INTRODUCTION:
+	case BICONDITIONAL_ELIMINATION_LEFT:
+	case BICONDITIONAL_ELIMINATION_RIGHT:
+	case PROOF_BY_CONTRADICTION:
+	case NEGATION_ELIMINATION:
+	case UNIVERSAL_INTRODUCTION:
+	case UNIVERSAL_ELIMINATION:
+	case EXISTENTIAL_INTRODUCTION:
+	case EXISTENTIAL_ELIMINATION:
+		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+			if (first.operands[i] == NULL) {
+				if (second.operands[i] == NULL)
+					continue;
+				else return -1;
+			} else {
+				if (second.operands[i] == NULL)
+					return 1;
+				result = compare(*first.operands[i], *second.operands[i]);
+				if (result != 0) return result;
+			}
+		}
+		return 0;
+	}
+	fprintf(stderr, "compare ERROR: Unrecognized nd_step_type.\n");
+	exit(EXIT_FAILURE);
+}
+
+template<typename Formula>
+inline bool operator < (const nd_step<Formula>& first, const nd_step<Formula>& second) {
+	return compare(first, second) < 0;
+}
+
+template<typename Formula>
 struct proof_state {
 	array<Formula*> assumptions;
 	Formula* formula;

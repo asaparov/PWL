@@ -976,17 +976,13 @@ inline fol_formula* fol_formula::new_exists(unsigned int variable, fol_formula* 
  */
 
 
-struct canonicalizer { };
-
 int_fast8_t compare(
 		const fol_formula&,
-		const fol_formula&,
-		const canonicalizer&);
+		const fol_formula&);
 
 inline int_fast8_t compare(
 		const fol_term& first,
-		const fol_term& second,
-		const canonicalizer& sorter)
+		const fol_term& second)
 {
 	if (first.type < second.type) return -1;
 	else if (first.type > second.type) return 1;
@@ -1012,66 +1008,61 @@ inline int_fast8_t compare(
 
 inline int_fast8_t compare(
 		const fol_atom& first,
-		const fol_atom& second,
-		const canonicalizer& sorter)
+		const fol_atom& second)
 {
 	if (first.predicate < second.predicate) return -1;
 	else if (first.predicate > second.predicate) return 1;
 
-	int_fast8_t result = compare(first.arg1, second.arg1, sorter);
+	int_fast8_t result = compare(first.arg1, second.arg1);
 	if (result != 0) return result;
 
-	return compare(first.arg2, second.arg2, sorter);
+	return compare(first.arg2, second.arg2);
 }
 
 inline int_fast8_t compare(
 		const fol_unary_formula& first,
-		const fol_unary_formula& second,
-		const canonicalizer& sorter)
+		const fol_unary_formula& second)
 {
-	return compare(*first.operand, *second.operand, sorter);
+	return compare(*first.operand, *second.operand);
 }
 
 inline int_fast8_t compare(
 		const fol_binary_formula& first,
-		const fol_binary_formula& second,
-		const canonicalizer& sorter)
+		const fol_binary_formula& second)
 {
-	int_fast8_t result = compare(*first.left, *second.left, sorter);
+	int_fast8_t result = compare(*first.left, *second.left);
 	if (result != 0) return result;
-	return compare(*first.right, *second.right, sorter);
+	return compare(*first.right, *second.right);
 }
 
 inline int_fast8_t compare(
 		const fol_quantifier& first,
-		const fol_quantifier& second,
-		const canonicalizer& sorter)
+		const fol_quantifier& second)
 {
 	if (first.variable < second.variable) return -1;
 	else if (first.variable > second.variable) return 1;
-	return compare(*first.operand, *second.operand, sorter);
+	return compare(*first.operand, *second.operand);
 }
 
 int_fast8_t compare(
 		const fol_formula& first,
-		const fol_formula& second,
-		const canonicalizer& sorter)
+		const fol_formula& second)
 {
 	if (first.type < second.type) return true;
 	else if (first.type > second.type) return false;
 	switch (first.type) {
 	case fol_formula_type::ATOM:
-		return compare(first.atom, second.atom, sorter);
+		return compare(first.atom, second.atom);
 	case fol_formula_type::NOT:
-		return compare(first.unary, second.unary, sorter);
+		return compare(first.unary, second.unary);
 	case fol_formula_type::AND:
 	case fol_formula_type::OR:
 	case fol_formula_type::IF_THEN:
 	case fol_formula_type::IFF:
-		return compare(first.binary, second.binary, sorter);
+		return compare(first.binary, second.binary);
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
-		return compare(first.quantifier, second.quantifier, sorter);
+		return compare(first.quantifier, second.quantifier);
 	case fol_formula_type::TRUE:
 	case fol_formula_type::FALSE:
 		return 0;
@@ -1080,12 +1071,18 @@ int_fast8_t compare(
 	exit(EXIT_FAILURE);
 }
 
-bool less_than(
+inline bool less_than(
 		const fol_formula* first,
-		const fol_formula* second,
-		const canonicalizer& sorter)
+		const fol_formula* second)
 {
-	return compare(*first, *second, sorter) < 0;
+	return compare(*first, *second) < 0;
+}
+
+inline bool operator < (
+		const fol_formula& first,
+		const fol_formula& second)
+{
+	return compare(first, second) < 0;
 }
 
 
