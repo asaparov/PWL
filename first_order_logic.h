@@ -1071,13 +1071,6 @@ int_fast8_t compare(
 	exit(EXIT_FAILURE);
 }
 
-inline bool less_than(
-		const fol_formula* first,
-		const fol_formula* second)
-{
-	return compare(*first, *second) < 0;
-}
-
 inline bool operator < (
 		const fol_formula& first,
 		const fol_formula& second)
@@ -1182,7 +1175,7 @@ inline bool relabel_variables(fol_formula& formula) {
 /* forward declarations */
 struct fol_scope;
 bool operator == (const fol_scope&, const fol_scope&);
-int_fast8_t compare(const fol_scope&, const fol_scope&, const canonicalizer&);
+int_fast8_t compare(const fol_scope&, const fol_scope&);
 void shift_variables(fol_scope&, unsigned int);
 bool canonicalize_scope(const fol_formula&, fol_scope&, array_map<unsigned int, unsigned int>&);
 
@@ -1445,8 +1438,7 @@ inline bool operator == (const fol_scope& first, const fol_scope& second)
 
 inline int_fast8_t compare(
 		const fol_commutative_scope& first,
-		const fol_commutative_scope& second,
-		const canonicalizer& sorter)
+		const fol_commutative_scope& second)
 {
 	if (first.children.length < second.children.length) return -1;
 	else if (first.children.length > second.children.length) return 1;
@@ -1454,10 +1446,10 @@ inline int_fast8_t compare(
 	else if (first.negated.length > second.negated.length) return 1;
 
 	for (unsigned int i = 0; i < first.children.length; i++) {
-		int_fast8_t result = compare(first.children[i], second.children[i], sorter);
+		int_fast8_t result = compare(first.children[i], second.children[i]);
 		if (result != 0) return result;
 	} for (unsigned int i = 0; i < first.negated.length; i++) {
-		int_fast8_t result = compare(first.negated[i], second.negated[i], sorter);
+		int_fast8_t result = compare(first.negated[i], second.negated[i]);
 		if (result != 0) return result;
 	}
 	return 0;
@@ -1465,8 +1457,7 @@ inline int_fast8_t compare(
 
 inline int_fast8_t compare(
 		const fol_noncommutative_scope& first,
-		const fol_noncommutative_scope& second,
-		const canonicalizer& sorter)
+		const fol_noncommutative_scope& second)
 {
 	if (first.left.length < second.left.length) return -1;
 	else if (first.left.length > second.left.length) return 1;
@@ -1478,16 +1469,16 @@ inline int_fast8_t compare(
 	else if (first.right_negated.length > second.right_negated.length) return 1;
 
 	for (unsigned int i = 0; i < first.left.length; i++) {
-		int_fast8_t result = compare(first.left[i], second.left[i], sorter);
+		int_fast8_t result = compare(first.left[i], second.left[i]);
 		if (result != 0) return result;
 	} for (unsigned int i = 0; i < first.left_negated.length; i++) {
-		int_fast8_t result = compare(first.left_negated[i], second.left_negated[i], sorter);
+		int_fast8_t result = compare(first.left_negated[i], second.left_negated[i]);
 		if (result != 0) return result;
 	} for (unsigned int i = 0; i < first.right.length; i++) {
-		int_fast8_t result = compare(first.right[i], second.right[i], sorter);
+		int_fast8_t result = compare(first.right[i], second.right[i]);
 		if (result != 0) return result;
 	} for (unsigned int i = 0; i < first.right_negated.length; i++) {
-		int_fast8_t result = compare(first.right_negated[i], second.right_negated[i], sorter);
+		int_fast8_t result = compare(first.right_negated[i], second.right_negated[i]);
 		if (result != 0) return result;
 	}
 	return 0;
@@ -1495,35 +1486,33 @@ inline int_fast8_t compare(
 
 inline int_fast8_t compare(
 		const fol_quantifier_scope& first,
-		const fol_quantifier_scope& second,
-		const canonicalizer& sorter)
+		const fol_quantifier_scope& second)
 {
 	if (first.variable < second.variable) return -1;
 	else if (first.variable > second.variable) return 1;
-	return compare(*first.operand, *second.operand, sorter);
+	return compare(*first.operand, *second.operand);
 }
 
 int_fast8_t compare(
 		const fol_scope& first,
-		const fol_scope& second,
-		const canonicalizer& sorter)
+		const fol_scope& second)
 {
 	if (first.type < second.type) return -1;
 	else if (first.type > second.type) return 1;
 	switch (first.type) {
 	case fol_formula_type::ATOM:
-		return compare(first.atom, second.atom, sorter);
+		return compare(first.atom, second.atom);
 	case fol_formula_type::NOT:
-		return compare(*first.unary, *second.unary, sorter);
+		return compare(*first.unary, *second.unary);
 	case fol_formula_type::AND:
 	case fol_formula_type::OR:
 	case fol_formula_type::IFF:
-		return compare(first.commutative, second.commutative, sorter);
+		return compare(first.commutative, second.commutative);
 	case fol_formula_type::IF_THEN:
-		return compare(first.noncommutative, second.noncommutative, sorter);
+		return compare(first.noncommutative, second.noncommutative);
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
-		return compare(first.quantifier, second.quantifier, sorter);
+		return compare(first.quantifier, second.quantifier);
 	case fol_formula_type::TRUE:
 	case fol_formula_type::FALSE:
 		return 0;
@@ -1532,20 +1521,14 @@ int_fast8_t compare(
 	exit(EXIT_FAILURE);
 }
 
+struct fol_scope_canonicalizer { };
+
 inline bool less_than(
 		const fol_scope& first,
 		const fol_scope& second,
-		const canonicalizer& sorter)
+		const fol_scope_canonicalizer& sorter)
 {
-	return compare(first, second, sorter) < 0;
-}
-
-inline bool less_than(
-		const fol_scope* first,
-		const fol_scope* second,
-		const canonicalizer& sorter)
-{
-	return less_than(*first, *second, sorter);
+	return compare(first, second) < 0;
 }
 
 inline void shift_variables(fol_term& term, unsigned int removed_variable) {
@@ -1841,7 +1824,7 @@ inline void recompute_variables(
 inline bool scope_contains(const fol_scope& subscope, const array<fol_scope>& scope, unsigned int& index)
 {
 	for (index = 0; index < scope.length; index++) {
-		auto result = compare(subscope, scope[index], canonicalizer());
+		auto result = compare(subscope, scope[index]);
 		if (result < 0) {
 			break;
 		} else if (result == 0) {
@@ -1973,7 +1956,7 @@ unsigned int intersection_size(
 	unsigned int i = 0, j = 0, first_index = 0, second_index = 0;
 	while (i < first.length && j < second.length)
 	{
-		auto result = compare(first[i], second[j], canonicalizer());
+		auto result = compare(first[i], second[j]);
 		if (result == 0) {
 			if (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR || Operator == fol_formula_type::IF_THEN) {
 				return 1;
@@ -2025,7 +2008,7 @@ unsigned int intersection_size(
 			j++; second_index++; continue;
 		}
 
-		auto result = compare(first[i], second[j], canonicalizer());
+		auto result = compare(first[i], second[j]);
 		if (result == 0) {
 			if (Operator == fol_formula_type::AND || Operator == fol_formula_type::OR || Operator == fol_formula_type::IF_THEN) {
 				return 1;
@@ -2067,7 +2050,7 @@ void merge_scopes(array<fol_scope>& dst,
 	unsigned int i = 0, j = 0;
 	while (i < first.length && j < second.length)
 	{
-		auto result = compare(first[i], second[j], canonicalizer());
+		auto result = compare(first[i], second[j]);
 		if (result == 0) {
 			if (Operator == fol_formula_type::IFF) {
 				free(first[i]); free(second[j]);
@@ -2117,7 +2100,7 @@ void merge_scopes(array<fol_scope>& dst,
 			if (j == second.length) break;
 		}
 
-		auto result = compare(first[i], second[j], canonicalizer());
+		auto result = compare(first[i], second[j]);
 		if (result == 0) {
 			if (Operator == fol_formula_type::IFF) {
 				free(first[i]); free(second[j]);
@@ -2535,9 +2518,9 @@ bool canonicalize_commutative_scope(
 				both.commutative.children.length++;
 			}
 			if (both.commutative.children.length > 1)
-				insertion_sort(both.commutative.children, canonicalizer());
+				insertion_sort(both.commutative.children, fol_scope_canonicalizer());
 			if (both.commutative.negated.length > 1)
-				insertion_sort(both.commutative.negated, canonicalizer());
+				insertion_sort(both.commutative.negated, fol_scope_canonicalizer());
 			move(both, out);
 		}
 	}

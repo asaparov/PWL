@@ -875,4 +875,34 @@ bool canonicalize(const nd_step<Formula>& proof,
 	return true;
 }
 
+struct nd_proof_counter {
+	unsigned int and_formulas;
+	unsigned int or_formulas;
+	unsigned int if_then_formulas;
+	unsigned int iff_formulas;
+};
+
+template<typename Formula, typename FormulaPrior>
+double log_likelihood(const nd_step<Formula>& proof,
+		nd_proof_counter& counter, FormulaPrior& formula_prior)
+{
+	
+}
+
+template<typename Formula, typename FormulaPrior>
+double log_likelihood(const nd_step<Formula>& proof, FormulaPrior& formula_prior)
+{
+	array<const nd_step<Formula>*> canonical_order(64);
+	if (!canonicalize(proof, canonical_order)) {
+		fprintf(stderr, "log_likelihood ERROR: Unable to canonicalize proof.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	double value = 0.0;
+	nd_proof_counter counter = {0};
+	for (const nd_step<Formula>* step : canonical_order)
+		value += log_likelihood(*step, counter, formula_prior);
+	return value;
+}
+
 #endif /* NATURAL_DEDUCTION_H_ */
