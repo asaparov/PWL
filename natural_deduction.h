@@ -2,12 +2,13 @@
 #define NATURAL_DEDUCTION_H_
 
 #include <core/array.h>
+#include <math/log.h>
 
 using namespace core;
 
-enum class nd_step_type
+enum class nd_step_type : uint_fast16_t
 {
-	AXIOM,
+	AXIOM = 0,
 	PARAMETER,
 	ARRAY_PARAMETER,
 	TERM_PARAMETER,
@@ -30,10 +31,13 @@ enum class nd_step_type
 	UNIVERSAL_INTRODUCTION,
 	UNIVERSAL_ELIMINATION,
 	EXISTENTIAL_INTRODUCTION,
-	EXISTENTIAL_ELIMINATION
+	EXISTENTIAL_ELIMINATION,
+
+	COUNT
 };
 
 constexpr static unsigned int ND_OPERAND_COUNT = 3;
+constexpr static double LOG_ND_STEP_COUNT = log((double) nd_step_type::COUNT);
 
 template<typename Formula>
 struct nd_step
@@ -875,18 +879,55 @@ bool canonicalize(const nd_step<Formula>& proof,
 	return true;
 }
 
-struct nd_proof_counter {
-	unsigned int and_formulas;
-	unsigned int or_formulas;
-	unsigned int if_then_formulas;
-	unsigned int iff_formulas;
-};
-
 template<typename Formula, typename FormulaPrior>
 double log_likelihood(const nd_step<Formula>& proof,
-		nd_proof_counter& counter, FormulaPrior& formula_prior)
+		unsigned int& formula_counter, FormulaPrior& formula_prior)
 {
-	
+	switch (proof.type) {
+	case TERM_PARAMETER:
+	case ARRAY_PARAMETER:
+	case FORMULA_PARAMETER:
+		/* these aren't actual proof steps in the calculus */
+		return 0.0;
+	case AXIOM:
+		/* TODO: we need to compute the prior */
+		formula_counter++;
+		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+	case CONJUNCTION_ELIMINATION_LEFT:
+	case CONJUNCTION_ELIMINATION_RIGHT:
+		return -LOG_ND_STEP_COUNT - log_cache<V>::instance().get(formula_counter++);
+	case CONJUNCTION_INTRODUCTION:
+	case IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
+	case IMPLICATION_ELIMINATION:
+	case BICONDITIONAL_INTRODUCTION:
+	case BICONDITIONAL_ELIMINATION_LEFT:
+	case BICONDITIONAL_ELIMINATION_RIGHT:
+	case PROOF_BY_CONTRADICTION: /* TODO: is this correct? */
+	case NEGATION_ELIMINATION:
+	case EXISTENTIAL_ELIMINATION:
+		return -LOG_ND_STEP_COUNT - 2*log_cache<V>::instance().get(formula_counter++);
+	case DISJUNCTION_ELIMINATION:
+		return -LOG_ND_STEP_COUNT - 3*log_cache<V>::instance().get(formula_counter++);
+	case DISJUNCTION_INTRODUCTION_LEFT:
+	case DISJUNCTION_INTRODUCTION_RIGHT:
+		/* TODO: we need to compute the prior on the new formula */
+		formula_counter++;
+		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+	case UNIVERSAL_INTRODUCTION:
+		/* TODO: we need to compute the prior on the parameter */
+		formula_counter++;
+		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+	case UNIVERSAL_ELIMINATION:
+		/* TODO: we need to compute the prior on the term */
+		formula_counter++;
+		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+	case EXISTENTIAL_INTRODUCTION:
+		/* TODO: we need to compute the prior on the parameter (it can be a term or a list of term indices) */
+		formula_counter++;
+		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+	}
+	fprintf(stderr, "log_likelihood ERROR: Unrecognized nd_step_type.\n");
+	exit(EXIT_FAILURE);
 }
 
 template<typename Formula, typename FormulaPrior>
@@ -899,7 +940,8 @@ double log_likelihood(const nd_step<Formula>& proof, FormulaPrior& formula_prior
 	}
 
 	double value = 0.0;
-	nd_proof_counter counter = {0};
+	unsigned int formula_counter = 0;
+	log_cache<V>::instance().ensure_size(canonical_order.length);
 	for (const nd_step<Formula>* step : canonical_order)
 		value += log_likelihood(*step, counter, formula_prior);
 	return value;
