@@ -37,7 +37,7 @@ enum class nd_step_type : uint_fast16_t
 };
 
 constexpr static unsigned int ND_OPERAND_COUNT = 3;
-constexpr static double LOG_ND_STEP_COUNT = log((double) nd_step_type::COUNT);
+constexpr static double LOG_ND_RULE_COUNT = log((double) nd_step_type::COUNT);
 
 template<typename Formula>
 struct nd_step
@@ -473,10 +473,10 @@ bool check_proof(proof_state<Formula>& out,
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
 		if (operand_states[0]->formula == NULL) return false;
-		if (proof.operands[1]->type == nd_proof_type::TERM_PARAMETER) {
-			formula = substitute<1>(*operand_states[0]->formula, proof.operands[1]->term, Formula::new_variable(1));
-		} else if (proof.operands[1]->type == nd_proof_type::ARRAY_PARAMETER) {
+		if (proof.operands[1]->type == nd_proof_type::ARRAY_PARAMETER) {
 			formula = substitute<1>(*operand_states[0]->formula, proof.operands[1]->parameters.data, proof.operands[1]->parameters.length, Formula::new_variable(1));
+		} else {
+			return false;
 		}
 
 		if (formula == NULL) return false;
@@ -730,10 +730,6 @@ struct natural_deduction
 		return new_binary_step<nd_step_type::UNIVERSAL_ELIMINATION>(proof, new_parameter(term));
 	}
 
-	static inline Proof* new_existential_intro(Proof* proof, const Term& term) {
-		return new_binary_step<nd_step_type::EXISTENTIAL_INTRODUCTION>(proof, new_parameter(term));
-	}
-
 	static inline Proof* new_existential_intro(Proof* proof, const array<unsigned int>& term_indices) {
 		return new_binary_step<nd_step_type::EXISTENTIAL_INTRODUCTION>(proof, new_parameter(term_indices));
 	}
@@ -895,7 +891,7 @@ double log_likelihood(const nd_step<Formula>& proof,
 		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
 	case CONJUNCTION_ELIMINATION_LEFT:
 	case CONJUNCTION_ELIMINATION_RIGHT:
-		return -LOG_ND_STEP_COUNT - log_cache<V>::instance().get(formula_counter++);
+		return -LOG_ND_RULE_COUNT - log_cache<V>::instance().get(formula_counter++);
 	case CONJUNCTION_INTRODUCTION:
 	case IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
 	case IMPLICATION_ELIMINATION:
@@ -905,9 +901,9 @@ double log_likelihood(const nd_step<Formula>& proof,
 	case PROOF_BY_CONTRADICTION: /* TODO: is this correct? */
 	case NEGATION_ELIMINATION:
 	case EXISTENTIAL_ELIMINATION:
-		return -LOG_ND_STEP_COUNT - 2*log_cache<V>::instance().get(formula_counter++);
+		return -LOG_ND_RULE_COUNT - 2*log_cache<V>::instance().get(formula_counter++);
 	case DISJUNCTION_ELIMINATION:
-		return -LOG_ND_STEP_COUNT - 3*log_cache<V>::instance().get(formula_counter++);
+		return -LOG_ND_RULE_COUNT - 3*log_cache<V>::instance().get(formula_counter++);
 	case DISJUNCTION_INTRODUCTION_LEFT:
 	case DISJUNCTION_INTRODUCTION_RIGHT:
 		/* TODO: we need to compute the prior on the new formula */
