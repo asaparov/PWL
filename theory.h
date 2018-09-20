@@ -24,6 +24,23 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("arg2", PREDICATE_ARG2);
 }
 
+struct relation {
+	unsigned int type;
+	unsigned int arg1; /* `0` here indicates the source vertex */
+	unsigned int arg2; /* `0` here indicates the source vertex */
+};
+
+template<typename ProofCalculus>
+struct concept
+{
+	typedef typename ProofCalculus::Proof Proof;
+
+	array<pair<unsigned int, Proof*>> types;
+	array<pair<unsigned int, Proof*>> negated_types;
+	array<pair<relation, Proof*>> relations;
+	array<pair<relation, Proof*>> negated_relations;
+};
+
 template<typename Formula, typename ProofCalculus>
 struct theory
 {
@@ -32,6 +49,24 @@ struct theory
 
 	array<Proof*> proofs;
 	array<Formula*> observations;
+
+	/* A map from `x` to two list of constants `{y_1, ..., y_n}` and
+	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
+	   theory `type(y_i, x)` and for any `z_i` there is an axiom in the theory
+	   `~type(z_i, x)`. Note that this map is exhaustive, and there are no
+	   other constants `u` such that the axiom `type(u, x)` or `~type(u, x)`
+	   are in the theory. */
+	hash_map<unsigned int, pair<array<unsigned int>, array<unsigned int>>> types;
+
+	/* A map from `R` to two list of constants `{y_1, ..., y_n}` and
+	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
+	   theory `[y_i/0]R` and for any `z_i` there is an axiom in the theory
+	   `~[z_i/0]R`. Note that this map is exhaustive, and there are no
+	   other constants `u` such that the axiom `[u/0]R` or `~[u/0]R`
+	   are in the theory. */
+	hash_map<relation, pair<array<unsigned int>, array<unsigned int>>> relations;
+
+	hash_map<unsigned int, concept> ground_concepts;
 
 	bool add_formula(Formula* formula)
 	{
@@ -70,6 +105,7 @@ struct theory
 			observations.length--;
 			return false;
 		}
+
 return check_proof(*proof, canonicalized);
 		return true;
 	}
@@ -119,10 +155,9 @@ private:
 						Proof* proof = ProofCalculus::new_universal_intro(
 							ProofCalculus::new_implication_intro(
 								ProofCalculus::new_biconditional_elim_left(
-									ProofCalculus::new_universal_elim(ProofCalculus::new_axiom(definition), Formula::new_variable(variable)),
+									ProofCalculus::new_universal_elim(ProofCalculus::new_axiom(definition), Formula::new_parameter(1)),
 									ProofCalculus::new_axiom(left)),
-								ProofCalculus::new_axiom(left)),
-							Formula::new_variable(variable));
+								ProofCalculus::new_axiom(left)), 1);
 						if (proof == NULL) {
 							free(*definition); free(definition);
 						}

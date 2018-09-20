@@ -147,6 +147,7 @@ struct fol_formula
 {
 	typedef fol_formula_type Type;
 	typedef fol_term Term;
+	typedef fol_term_type TermType;
 
 	fol_formula_type type;
 	unsigned int reference_count;
@@ -463,15 +464,40 @@ struct parameter_comparator {
 constexpr bool visit_constant(unsigned int constant, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_predicate(unsigned int predicate, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_parameter(unsigned int parameter, const parameter_comparator& visitor) { return false; }
 constexpr bool visit_true(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_false(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
+
+inline bool visit_parameter(unsigned int parameter, const parameter_comparator& visitor) {
+	return visitor.parameter == parameter;
+}
 
 template<fol_formula_type Operator>
 constexpr bool visit_operator(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
 
 inline bool contains_parameter(const fol_formula& src, unsigned int parameter) {
 	parameter_comparator visitor = {parameter};
+	return !visit(src, visitor);
+}
+
+struct parameter_collector {
+	array<unsigned int>& parameters;
+};
+
+constexpr bool visit_constant(unsigned int constant, const parameter_collector& visitor) { return true; }
+constexpr bool visit_predicate(unsigned int predicate, const parameter_collector& visitor) { return true; }
+constexpr bool visit_variable(unsigned int variable, const parameter_collector& visitor) { return true; }
+constexpr bool visit_true(const fol_formula& formula, const parameter_collector& visitor) { return true; }
+constexpr bool visit_false(const fol_formula& formula, const parameter_collector& visitor) { return true; }
+
+inline bool visit_parameter(unsigned int parameter, const parameter_collector& visitor) {
+	return visitor.parameters.add(parameter);
+}
+
+template<fol_formula_type Operator>
+constexpr bool visit_operator(const fol_formula& formula, const parameter_collector& visitor) { return true; }
+
+inline bool get_parameters(const fol_formula& src, array<unsigned int>& parameters) {
+	parameter_collector visitor = {parameters};
 	return !visit(src, visitor);
 }
 
@@ -3142,7 +3168,7 @@ bool canonicalize_scope(const fol_formula& src, fol_scope& out,
 	return false;
 }
 
-fol_formula* canonicalize(const fol_formula& src)
+inline fol_formula* canonicalize(const fol_formula& src)
 {
 	array_map<unsigned int, unsigned int> variable_map(16);
 	fol_scope& scope = *((fol_scope*) alloca(sizeof(fol_scope)));
@@ -3151,6 +3177,15 @@ fol_formula* canonicalize(const fol_formula& src)
 	fol_formula* canonicalized = scope_to_formula(scope);
 	free(scope);
 	return canonicalized;
+}
+
+bool is_canonical(const fol_formula& src) {
+	fol_formula* canonicalized = canonicalize(src);
+	if (canonicalized == NULL) {
+		fprintf(stderr, "is_canonical ERROR: Unable to canonicalize formula.\n");
+		exit(EXIT_FAILURE);
+	}
+	return src == *canonicalized;
 }
 
 

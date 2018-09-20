@@ -39,7 +39,7 @@ enum class nd_step_type : uint_fast16_t
 constexpr static unsigned int ND_OPERAND_COUNT = 3;
 constexpr static double LOG_ND_RULE_COUNT = log((double) nd_step_type::COUNT);
 
-template<typename Formula>
+template<typename Formula, bool Canonical>
 struct nd_step
 {
 	typedef typename Formula::Term Term;
@@ -52,10 +52,16 @@ struct nd_step
 		unsigned int parameter;
 		array<unsigned int> parameters;
 
-		nd_step<Formula>* operands[ND_OPERAND_COUNT];
+		nd_step<Formula, Canonical>* operands[ND_OPERAND_COUNT];
 	};
 
-	static inline void free(nd_step<Formula>& step) { step.free(); }
+	/* list of proof steps that use the subproof rooted at this rule instance */
+	array<nd_step<Formula, Canonical>*> children;
+
+	static inline void free(nd_step<Formula, Canonical>& step) {
+		core::free(step.children);
+		step.free();
+	}
 
 	inline bool has_subproofs() {
 		switch (type) {
@@ -119,6 +125,7 @@ private:
 		case EXISTENTIAL_ELIMINATION:
 			for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
 				if (operands[i] == NULL) break;
+				operands[i]->remove_child(this);
 				core::free(*operands[i]);
 				if (operands[i]->reference_count == 0)
 					core::free(operands[i]);
@@ -128,10 +135,21 @@ private:
 		fprintf(stderr, "nd_step.free ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
 	}
+
+	inline void remove_child(const nd_step<Formula, Canonical>* child) {
+		unsigned int index = children.index_of(child);
+#if !defined(NDEBUG)
+		if (index == children.length) {
+			fprintf(stderr, "nd_step.remove_child WARNING: Index out of bounds.\n");
+			return;
+		}
+#endif
+		children.remove(index);
+	}
 };
 
-template<typename Formula>
-inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>& second)
+template<typename Formula, bool Canonical>
+inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_step<Formula, Canonical>& second)
 {
 	if (first.type < second.type) return -1;
 	else if (first.type > second.type) return 1;
@@ -186,8 +204,8 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 	exit(EXIT_FAILURE);
 }
 
-template<typename Formula>
-inline bool operator < (const nd_step<Formula>& first, const nd_step<Formula>& second) {
+template<typename Formula, bool Canonical>
+inline bool operator < (const nd_step<Formula, Canonical>& first, const nd_step<Formula, Canonical>& second) {
 	return compare(first, second) < 0;
 }
 
@@ -321,9 +339,20 @@ bool subtract_unifying_hypotheses(
 	return true;
 }
 
-template<typename Formula>
+template<bool Canonical, typename Formula>
+Formula* try_canonicalize(Formula* formula) {
+	if (Canonical) {
+		Formula* out = canonicalize(*formula);
+		free(*formula); if (formula->reference_count == 0) free(formula);
+		return out;
+	} else {
+		return formula;
+	}
+}
+
+template<typename Formula, bool Canonical>
 bool check_proof(proof_state<Formula>& out,
-		const nd_step<Formula>& proof,
+		const nd_step<Formula, Canonical>& proof,
 		const proof_state<Formula>** operand_states)
 {
 	typedef typename Formula::Type FormulaType;
@@ -331,6 +360,10 @@ bool check_proof(proof_state<Formula>& out,
 	Formula* formula; unsigned int parameter;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
+		if (Canonical && !is_canonical(*proof.formula)) {
+			fprintf(stderr, "check_proof ERROR: Axiom is not in canonical form.\n");
+			return false;
+		}
 		out.formula = proof.formula;
 		out.formula->reference_count++;
 		return out.assumptions.add(out.formula);
@@ -340,6 +373,8 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
+		out.formula = try_canonicalize<Canonical>(out.formula);
+		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -375,6 +410,8 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
+		out.formula = try_canonicalize<Canonical>(out.formula);
+		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_ELIMINATION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL || operand_states[2]->formula == NULL
@@ -392,6 +429,8 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
+		out.formula = try_canonicalize<Canonical>(out.formula);
+		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->formula);
 	case nd_step_type::IMPLICATION_ELIMINATION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
@@ -412,6 +451,8 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->binary.left->reference_count++;
 		operand_states[0]->formula->binary.right->reference_count++;
+		out.formula = try_canonicalize<Canonical>(out.formula);
+		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
@@ -460,6 +501,8 @@ bool check_proof(proof_state<Formula>& out,
 			free(*formula); if (formula->reference_count == 0) free(formula);
 			return false;
 		}
+		out.formula = try_canonicalize<Canonical>(out.formula);
+		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::UNIVERSAL_ELIMINATION:
 		if (operand_states[0]->formula == NULL
@@ -469,6 +512,8 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = substitute<-1>(*operand_states[0]->formula->quantifier.operand,
 				Formula::new_variable(operand_states[0]->formula->quantifier.variable),
 				proof.operands[1]->term);
+		if (out.formula == NULL) return false;
+		out.formula = try_canonicalize<Canonical>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
@@ -485,6 +530,8 @@ bool check_proof(proof_state<Formula>& out,
 			free(*formula) if (formula->reference_count == 0) free(formula);
 			return false;
 		}
+		out.formula = try_canonicalize<Canonical>(out.formula);
+		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::EXISTENTIAL_ELIMINATION:
 		if (operand_states[0]->formula == NULL || operand_states[1]->formula == NULL
@@ -504,16 +551,17 @@ bool check_proof(proof_state<Formula>& out,
 	return false;
 }
 
-bool compute_in_degrees(const nd_step<Formula>* proof,
-		hash_map<const nd_step<Formula>*, unsigned int>& in_degrees)
+template<typename Formula, bool Canonical>
+bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
+		hash_map<const nd_step<Formula, Canonical>*, unsigned int>& in_degrees)
 {
-	array<const nd_step<Formula>*> stack(64);
-	hash_set<const nd_step<Formula>*> visited(128);
+	array<const nd_step<Formula, Canonical>*> stack(64);
+	hash_set<const nd_step<Formula, Canonical>*> visited(128);
 	if (!stack.add(proof))
 		return false;
 	while (stack.length > 0)
 	{
-		const nd_step<Formula>* node = stack.pop();
+		const nd_step<Formula, Canonical>* node = stack.pop();
 		if (!visited.add(node)) return false;
 
 		if (!node->has_subproofs()) continue;
@@ -550,22 +598,22 @@ bool compute_in_degrees(const nd_step<Formula>* proof,
 	return true;
 }
 
-template<typename Formula>
-Formula* check_proof(const nd_step<Formula>& proof)
+template<typename Formula, bool Canonical>
+Formula* check_proof(const nd_step<Formula, Canonical>& proof)
 {
 	/* first list the proof steps in reverse topological order */
-	hash_map<const nd_step<Formula>*, unsigned int> in_degrees(128);
+	hash_map<const nd_step<Formula, Canonical>*, unsigned int> in_degrees(128);
 	if (!compute_in_degrees(&proof, in_degrees)) return NULL;
 
-	array<const nd_step<Formula>*> stack(32);
+	array<const nd_step<Formula, Canonical>*> stack(32);
 	for (const auto& entry : in_degrees) {
 		if (entry.value == 0 && !stack.add(entry.key))
 			return NULL;
 	}
 
-	array<const nd_step<Formula>*> topological_order(64);
+	array<const nd_step<Formula, Canonical>*> topological_order(64);
 	while (stack.length > 0) {
-		const nd_step<Formula>* node = stack.pop();
+		const nd_step<Formula, Canonical>* node = stack.pop();
 		if (!topological_order.add(node)) return NULL;
 
 		if (!node->has_subproofs()) continue;
@@ -580,9 +628,9 @@ Formula* check_proof(const nd_step<Formula>& proof)
 	}
 
 	/* process the proof steps in reverse topological order */
-	hash_map<const nd_step<Formula>*, proof_state<Formula>> proof_states(128);
+	hash_map<const nd_step<Formula, Canonical>*, proof_state<Formula>> proof_states(128);
 	for (unsigned int k = topological_order.length; k > 0; k--) {
-		const nd_step<Formula>* node = topological_order[k - 1];
+		const nd_step<Formula, Canonical>* node = topological_order[k - 1];
 		if (!proof_states.check_size()) return NULL;
 
 		bool contains; unsigned int bucket;
@@ -632,9 +680,9 @@ Formula* check_proof(const nd_step<Formula>& proof)
 	return formula;
 }
 
-template<typename Formula>
+template<typename Formula, bool Canonical>
 bool check_proof(
-		const nd_step<Formula>& proof,
+		const nd_step<Formula, Canonical>& proof,
 		const Formula* expected_conclusion)
 {
 	Formula* actual_conclusion = check_proof(proof);
@@ -647,21 +695,24 @@ bool check_proof(
 	return success;
 }
 
-template<typename Formula>
-bool new_nd_step(nd_step<Formula>*& step, nd_step_type type) {
-	step = (nd_step<Formula>*) malloc(sizeof(nd_step<Formula>));
+template<typename Formula, bool Canonical>
+bool new_nd_step(nd_step<Formula, Canonical>*& step, nd_step_type type)
+{
+	step = (nd_step<Formula, Canonical>*) malloc(sizeof(nd_step<Formula, Canonical>));
 	if (step == NULL) {
 		fprintf(stderr, "new_nd_step ERROR: Out of memory.\n");
 		return false;
+	} else if (!array_init(step->children, 4)) {
+		free(step); return false;
 	}
 	step->type = type;
 	return true;
 }
 
-template<typename Formula>
+template<typename Formula, bool Canonical>
 struct natural_deduction
 {
-	typedef nd_step<Formula> Proof;
+	typedef nd_step<Formula, Canonical> Proof;
 	typedef typename Formula::Term Term;
 
 	static inline Proof* new_axiom(Formula* axiom) {
@@ -744,7 +795,7 @@ private:
 	}
 
 	static inline Proof* new_parameter(unsigned int parameter) {
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, nd_step_type::PARAMETER)) return NULL;
 		step->reference_count = 1;
 		step->parameter = parameter;
@@ -753,7 +804,7 @@ private:
 	}
 
 	static inline Proof* new_parameter(const Term& term) {
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, nd_step_type::TERM_PARAMETER)) return NULL;
 		step->reference_count = 1;
 		step->term = term;
@@ -762,7 +813,7 @@ private:
 	}
 
 	static inline Proof* new_parameter(const array<unsigned int>& parameters) {
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, nd_step_type::ARRAY_PARAMETER)) {
 			return NULL;
 		} else if (!array_init(step->parameters, max((size_t) 1, parameters.length))) {
@@ -778,7 +829,7 @@ private:
 	static inline Proof* new_parameterized_step(Formula* parameter) {
 		if (parameter == NULL) return NULL;
 
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 1;
 		step->formula = axiom;
@@ -790,13 +841,17 @@ private:
 	static inline Proof* new_unary_step(Proof* proof) {
 		if (proof == NULL) return NULL;
 
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 1;
 		step->operands[0] = proof;
 		step->operands[1] = NULL;
 		step->operands[2] = NULL;
 		proof->reference_count++;
+		if (!proof->children.add(step)) {
+			free(*step); free(step);
+			return NULL;
+		}
 		return step;
 	}
 
@@ -804,7 +859,7 @@ private:
 	static inline Proof* new_binary_step(Proof* left, Proof* right) {
 		if (left == NULL || right == NULL) return NULL;
 
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 1;
 		step->operands[0] = left;
@@ -812,6 +867,10 @@ private:
 		step->operands[2] = NULL;
 		left->reference_count++;
 		right->reference_count++;
+		if (!left->children.add(step) || !right->children.add(step)) {
+			free(*step); free(step);
+			return NULL;
+		}
 		return step;
 	}
 
@@ -819,7 +878,7 @@ private:
 	static inline Proof* new_ternary_step(Proof* first, Proof* second, Proof* third) {
 		if (first == NULL || second == NULL || third == NULL) return NULL;
 
-		nd_step<Formula>* step;
+		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 1;
 		step->operands[0] = first;
@@ -828,25 +887,29 @@ private:
 		first->reference_count++;
 		second->reference_count++;
 		third->reference_count++;
+		if (!first->children.add(step) || !second->children.add(step) || !third->children.add(step)) {
+			free(*step); free(step);
+			return NULL;
+		}
 		return step;
 	}
 };
 
-template<typename Formula>
+template<typename Formula, bool Canonical>
 struct nd_canonicalizer {
-	inline bool operator() (const nd_step<Formula>* first, const nd_step<Formula>* second) {
+	inline bool operator() (const nd_step<Formula, Canonical>* first, const nd_step<Formula, Canonical>* second) {
 		return *first > *second;
 	}
 };
 
-template<typename Formula>
-bool canonicalize(const nd_step<Formula>& proof,
-		array<const nd_step<Formula>*>& canonical_order)
+template<typename Formula, bool Canonical>
+bool canonicalize(const nd_step<Formula, Canonical>& proof,
+		array<const nd_step<Formula, Canonical>*>& canonical_order)
 {
-	hash_map<const nd_step<Formula>*, unsigned int> in_degrees(128);
+	hash_map<const nd_step<Formula, Canonical>*, unsigned int> in_degrees(128);
 	if (!compute_in_degrees(&proof, in_degrees)) return false;
 
-	array<const nd_step<Formula>*> heap(32);
+	array<const nd_step<Formula, Canonical>*> heap(32);
 	for (const auto& entry : in_degrees) {
 		if (entry.value == 0 && !heap.add(entry.key))
 			return false;
@@ -855,7 +918,7 @@ bool canonicalize(const nd_step<Formula>& proof,
 	std::make_heap(heap.begin(), heap.end(), nd_canonicalizer<Formula>());
 	while (heap.length > 0) {
 		std::pop_heap(heap.begin(), heap.end());
-		const nd_step<Formula>* node = heap.pop();
+		const nd_step<Formula, Canonical>* node = heap.pop();
 		if (!canonical_order.add(node)) return false;
 
 		if (!node->has_subproofs()) continue;
@@ -875,10 +938,22 @@ bool canonicalize(const nd_step<Formula>& proof,
 	return true;
 }
 
-template<typename Formula, typename FormulaPrior>
-double log_likelihood(const nd_step<Formula>& proof,
-		unsigned int& formula_counter, FormulaPrior& formula_prior)
+template<typename Formula,
+	bool Canonical, typename FormulaPrior,
+	typename UniversalIntroductionPrior,
+	typename UniversalEliminationPrior>
+double log_probability(
+		const nd_step<Formula, Canonical>& proof,
+		unsigned int& formula_counter,
+		array<typename Formula::Term>& introduced_terms,
+		array<unsigned int>& available_parameters,
+		FormulaPrior& formula_prior,
+		UniversalIntroductionPrior& universal_introduction_prior,
+		UniversalEliminationPrior& universal_elimination_prior)
 {
+	typedef typename Formula::TermType TermType;
+
+	double value; unsigned int index;
 	switch (proof.type) {
 	case TERM_PARAMETER:
 	case ARRAY_PARAMETER:
@@ -888,7 +963,11 @@ double log_likelihood(const nd_step<Formula>& proof,
 	case AXIOM:
 		/* TODO: we need to compute the prior */
 		formula_counter++;
-		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+		get_parameters(*proof->formula, available_parameters);
+		if (available_parameters.length > 1) {
+			sort(available_parameters); unique(available_parameters);
+		}
+		return log_probability(*proof->formula, formula_prior);
 	case CONJUNCTION_ELIMINATION_LEFT:
 	case CONJUNCTION_ELIMINATION_RIGHT:
 		return -LOG_ND_RULE_COUNT - log_cache<V>::instance().get(formula_counter++);
@@ -908,38 +987,60 @@ double log_likelihood(const nd_step<Formula>& proof,
 	case DISJUNCTION_INTRODUCTION_RIGHT:
 		/* TODO: we need to compute the prior on the new formula */
 		formula_counter++;
-		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
 	case UNIVERSAL_INTRODUCTION:
 		/* TODO: we need to compute the prior on the parameter */
 		formula_counter++;
-		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+		value = log_probability(proof.operands[1]->parameter, universal_introduction_prior, available_parameters);
+		index = available_parameters.index_of(proof.operands[1]->parameter);
+		if (index < available_parameters.length)
+			shift_left(available_parameters.data + index, available_parameters.length - index - 1);
+		return value;
 	case UNIVERSAL_ELIMINATION:
 		/* TODO: we need to compute the prior on the term */
 		formula_counter++;
-		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+		if (proof.operands[2]->term.type == TermType::PARAMETER) {
+			available_parameters.add(proof.operands[2]->term.parameter);
+			insertion_sort(available_parameters); unique(available_parameters);
+		}
+		return log_probability(proof.operands[2]->term, universal_elimination_prior);
 	case EXISTENTIAL_INTRODUCTION:
 		/* TODO: we need to compute the prior on the parameter (it can be a term or a list of term indices) */
 		formula_counter++;
-		fprintf(stderr, "log_likelihood ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
 	}
-	fprintf(stderr, "log_likelihood ERROR: Unrecognized nd_step_type.\n");
+	fprintf(stderr, "log_probability ERROR: Unrecognized nd_step_type.\n");
 	exit(EXIT_FAILURE);
 }
 
-template<typename Formula, typename FormulaPrior>
-double log_likelihood(const nd_step<Formula>& proof, FormulaPrior& formula_prior)
+template<typename Formula,
+	bool Canonical, typename FormulaPrior,
+	typename UniversalIntroductionPrior,
+	typename UniversalEliminationPrior>
+double log_probability(
+		const nd_step<Formula, Canonical>& proof,
+		double log_stop_probability,
+		double log_continue_probability,
+		FormulaPrior& formula_prior,
+		UniversalIntroductionPrior& universal_introduction_prior,
+		UniversalEliminationPrior& universal_elimination_prior)
 {
-	array<const nd_step<Formula>*> canonical_order(64);
+	array<const nd_step<Formula, Canonical>*> canonical_order(64);
 	if (!canonicalize(proof, canonical_order)) {
-		fprintf(stderr, "log_likelihood ERROR: Unable to canonicalize proof.\n");
+		fprintf(stderr, "log_probability ERROR: Unable to canonicalize proof.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	double value = 0.0;
+	universal_introduction_prior.clear();
+	universal_elimination_prior.clear();
+
+	double value = (canonical_order.length - 1) * log_continue_probability + log_stop_probability;
 	unsigned int formula_counter = 0;
+	array<typename Formula::Term>& introduced_terms(16);
 	log_cache<V>::instance().ensure_size(canonical_order.length);
-	for (const nd_step<Formula>* step : canonical_order)
-		value += log_likelihood(*step, counter, formula_prior);
+	for (const nd_step<Formula, Canonical>* step : canonical_order)
+		value += log_probability(*step, counter, introduced_terms, log_max_parameter_count,
+				formula_prior, universal_introduction_prior, universal_elimination_prior);
 	return value;
 }
 
