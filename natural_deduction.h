@@ -53,6 +53,7 @@ struct nd_step
 		array<unsigned int> parameters;
 
 		nd_step<Formula, Canonical>* operands[ND_OPERAND_COUNT];
+		array<nd_step<Formula, Canonical>*> operand_array;
 	};
 
 	/* list of proof steps that use the subproof rooted at this rule instance */
@@ -63,14 +64,18 @@ struct nd_step
 		step.free();
 	}
 
-	inline bool has_subproofs() {
+	inline void get_subproofs(nd_step<Formula, Canonical>**& subproofs, unsigned int& length) {
 		switch (type) {
 		case TERM_PARAMETER:
 		case ARRAY_PARAMETER:
 		case AXIOM:
 		case FORMULA_PARAMETER:
-			return false;
+			subproofs = NULL; length = 0;
+			return;
 		case CONJUNCTION_INTRODUCTION:
+			subproofs = operand_array.data;
+			length = operand_array.length;
+			return;
 		case CONJUNCTION_ELIMINATION_LEFT:
 		case CONJUNCTION_ELIMINATION_RIGHT:
 		case DISJUNCTION_INTRODUCTION_LEFT:
@@ -87,9 +92,11 @@ struct nd_step
 		case UNIVERSAL_ELIMINATION:
 		case EXISTENTIAL_INTRODUCTION:
 		case EXISTENTIAL_ELIMINATION:
-			return false;
+			subproofs = operands;
+			length = ND_OPERAND_COUNT;
+			return true;
 		}
-		fprintf(stderr, "nd_step.has_subproofs ERROR: Unrecognized nd_step_type.\n");
+		fprintf(stderr, "nd_step.get_subproofs ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -107,6 +114,14 @@ private:
 				core::free(formula);
 			return;
 		case CONJUNCTION_INTRODUCTION:
+			for (unsigned int i = 0; i < operand_array.length; i++) {
+				operand_array[i]->remove_child(this);
+				core::free(*operand_array[i]);
+				if (operand_array[i]->reference_count == 0)
+					core::free(operand_array[i]);
+			}
+			core::free(operand_array);
+			return;
 		case CONJUNCTION_ELIMINATION_LEFT:
 		case CONJUNCTION_ELIMINATION_RIGHT:
 		case DISJUNCTION_INTRODUCTION_LEFT:
@@ -170,6 +185,13 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 	case FORMULA_PARAMETER:
 		return compare(*first.formula, *second.formula);
 	case CONJUNCTION_INTRODUCTION:
+		if (first.operand_array.length < second.operand_array.length) return -1;
+		else if (first.operand_array.length > second.operand_array.length) return 1;
+		for (unsigned int i = 0; i < first.operand_array.length; i++) {
+			int_fast8_t result = compare(*first.operand_array[i], *second.operand_array[i]);
+			if (result != 0) return result;
+		}
+		return 0;
 	case CONJUNCTION_ELIMINATION_LEFT:
 	case CONJUNCTION_ELIMINATION_RIGHT:
 	case DISJUNCTION_INTRODUCTION_LEFT:
@@ -353,7 +375,8 @@ Formula* try_canonicalize(Formula* formula) {
 template<typename Formula, bool Canonical>
 bool check_proof(proof_state<Formula>& out,
 		const nd_step<Formula, Canonical>& proof,
-		const proof_state<Formula>** operand_states)
+		const proof_state<Formula>** operand_states,
+		unsigned int operand_count)
 {
 	typedef typename Formula::Type FormulaType;
 
@@ -564,8 +587,11 @@ bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 		const nd_step<Formula, Canonical>* node = stack.pop();
 		if (!visited.add(node)) return false;
 
-		if (!node->has_subproofs()) continue;
-		if (!in_degrees.check_size(in_degrees.table.size + ND_OPERAND_COUNT + 1))
+		unsigned int operand_count;
+		const nd_step<Formula, Canonical>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		if (operand_count == 0) continue;
+		if (!in_degrees.check_size(in_degrees.table.size + operand_count + 1))
 			return false;
 
 		bool contains; unsigned int bucket;
@@ -576,21 +602,21 @@ bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 			degree = 0;
 		}
 
-		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
-			if (node->operands[i] == NULL) continue;
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
 
-			unsigned int& degree = in_degrees.get(node->operands[i], contains, bucket);
+			unsigned int& degree = in_degrees.get(operands[i], contains, bucket);
 			if (!contains) {
-				in_degrees.table.keys[bucket] = node->operands[i];
+				in_degrees.table.keys[bucket] = operands[i];
 				in_degrees.table.size++;
 				degree = 1;
 			} else {
 				degree++;
 			}
 
-			if (visited.contains(node->operands[i]))
+			if (visited.contains(operands[i]))
 				continue;
-			if (!stack.add(node->operands[i]))
+			if (!stack.add(operands[i]))
 				return NULL;
 		}
 	}
@@ -616,19 +642,22 @@ Formula* check_proof(const nd_step<Formula, Canonical>& proof)
 		const nd_step<Formula, Canonical>* node = stack.pop();
 		if (!topological_order.add(node)) return NULL;
 
-		if (!node->has_subproofs()) continue;
-		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
-			if (node->operands[i] == NULL) continue;
-			unsigned int& degree = in_degrees.get(node->operands[i]);
+		unsigned int operand_count;
+		const nd_step<Formula, Canonical>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
+			unsigned int& degree = in_degrees.get(operands[i]);
 			degree--;
 
-			if (degree == 0 && !stack.add(node->operands[i]))
+			if (degree == 0 && !stack.add(operands[i]))
 				return false;
 		}
 	}
 
 	/* process the proof steps in reverse topological order */
 	hash_map<const nd_step<Formula, Canonical>*, proof_state<Formula>> proof_states(128);
+	array<proof_state<Formula>*> operand_states(16);
 	for (unsigned int k = topological_order.length; k > 0; k--) {
 		const nd_step<Formula, Canonical>* node = topological_order[k - 1];
 		if (!proof_states.check_size()) return NULL;
@@ -646,25 +675,28 @@ Formula* check_proof(const nd_step<Formula, Canonical>& proof)
 		state.table.size++;
 
 		/* get the proof states of the operands */
-		proof_state<Formula>* operand_states[ND_OPERAND_COUNT];
-		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
-			if (!node->has_subproofs()) {
-				operand_states[i] = NULL;
-				continue;
-			}
-
-			operand_states[i] = &proof_states.get(node->operands[i], contains);
+		unsigned int operand_count;
+		const nd_step<Formula, Canonical>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		if (!operand_states.ensure_capacity(operand_count)) {
+			free_proof_states(proof_states); return NULL;
+		}
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) break;
+			operand_states[i] = &proof_states.get(operands[i], contains);
 			if (!contains) {
 				fprintf(stderr, "check_proof ERROR: The proof is not topologically ordered.\n");
 				free_proof_states(proof_states); return NULL;
 			}
+			operand_states.length++;
 		}
 
 		/* check this proof step */
-		if (!check_proof(state, *node, operand_states)) {
+		if (!check_proof(state, *node, operand_states.data, operand_states.length)) {
 			free_proof_states(proof_states);
 			return NULL;
 		}
+		operand_states.clear();
 	}
 
 	/* get the proof state of the last deduction step */
@@ -921,14 +953,16 @@ bool canonicalize(const nd_step<Formula, Canonical>& proof,
 		const nd_step<Formula, Canonical>* node = heap.pop();
 		if (!canonical_order.add(node)) return false;
 
-		if (!node->has_subproofs()) continue;
-		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
-			if (node->operands[i] == NULL) continue;
-			unsigned int& degree = in_degrees.get(node->operands[i]);
+		unsigned int operand_count;
+		const nd_step<Formula, Canonical>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
+			unsigned int& degree = in_degrees.get(operands[i]);
 			degree--;
 
 			if (degree == 0) {
-				if (!heap.add(node->operands[i]))
+				if (!heap.add(operands[i]))
 					return false;
 				std::push_heap(heap.begin(), heap.end());
 			}
@@ -970,8 +1004,10 @@ double log_probability(
 		return log_probability(*proof->formula, formula_prior);
 	case CONJUNCTION_ELIMINATION_LEFT:
 	case CONJUNCTION_ELIMINATION_RIGHT:
-		return -LOG_ND_RULE_COUNT - log_cache<V>::instance().get(formula_counter++);
 	case CONJUNCTION_INTRODUCTION:
+		/* TODO: implement this */
+		fprintf(stderr, "log_probability ERROR: Unimplemented.\n");
+		exit(EXIT_FAILURE);
 	case IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
 	case IMPLICATION_ELIMINATION:
 	case BICONDITIONAL_INTRODUCTION:
