@@ -17,7 +17,7 @@ using namespace core;
 /* forward declarations */
 struct fol_formula;
 bool operator == (const fol_formula&, const fol_formula&);
-bool operator == (const fol_formula&, const fol_formula&);
+bool operator != (const fol_formula&, const fol_formula&);
 
 enum class fol_term_type {
 	NONE,
@@ -135,6 +135,14 @@ struct fol_binary_formula {
 	static inline void free(fol_binary_formula& formula);
 };
 
+struct fol_array_formula {
+	fol_formula** operands;
+	unsigned int length;
+
+	static inline void move(const fol_array_formula& src, fol_array_formula& dst);
+	static inline void free(fol_array_formula& formula);
+};
+
 struct fol_quantifier {
 	unsigned int variable;
 	fol_formula* operand;
@@ -155,6 +163,7 @@ struct fol_formula
 		fol_atom atom;
 		fol_unary_formula unary;
 		fol_binary_formula binary;
+		fol_array_formula array;
 		fol_quantifier quantifier;
 	};
 
@@ -197,6 +206,13 @@ inline bool operator == (const fol_binary_formula& first, const fol_binary_formu
 		&& (first.right == second.right || *first.right == *second.right);
 }
 
+inline bool operator == (const fol_array_formula& first, const fol_array_formula& second) {
+	if (first.length != second.length) return false;
+	for (unsigned int i = 0; i < first.length; i++)
+		if (first.operands[i] != second.operands[i] && *first.operands[i] != *second.operands[i]) return false;
+	return true;
+}
+
 inline bool operator == (const fol_quantifier& first, const fol_quantifier& second) {
 	return first.variable == second.variable
 		&& (first.operand == second.operand || *first.operand == *second.operand);
@@ -210,11 +226,12 @@ bool operator == (const fol_formula& first, const fol_formula& second)
 		return first.atom == second.atom;
 	case fol_formula_type::NOT:
 		return first.unary == second.unary;
+	case fol_formula_type::IF_THEN:
+		return first.binary == second.binary;
 	case fol_formula_type::AND:
 	case fol_formula_type::OR:
-	case fol_formula_type::IF_THEN:
 	case fol_formula_type::IFF:
-		return first.binary == second.binary;
+		return first.array == second.array;
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		return first.quantifier == second.quantifier;
@@ -238,11 +255,12 @@ inline void fol_formula::move(const fol_formula& src, fol_formula& dst) {
 		core::move(src.atom, dst.atom); return;
 	case fol_formula_type::NOT:
 		core::move(src.unary, dst.unary); return;
+	case fol_formula_type::IF_THEN:
+		core::move(src.binary, dst.binary); return;
 	case fol_formula_type::AND:
 	case fol_formula_type::OR:
-	case fol_formula_type::IF_THEN:
 	case fol_formula_type::IFF:
-		core::move(src.binary, dst.binary); return;
+		core::move(src.array, dst.array); return;
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		core::move(src.quantifier, dst.quantifier); return;
@@ -262,6 +280,11 @@ inline void fol_binary_formula::move(const fol_binary_formula& src, fol_binary_f
 	dst.right = src.right;
 }
 
+inline void fol_array_formula::move(const fol_array_formula& src, fol_array_formula& dst) {
+	dst.length = src.length;
+	dst.operands = src.operands;
+}
+
 inline void fol_quantifier::move(const fol_quantifier& src, fol_quantifier& dst) {
 	dst.variable = src.variable;
 	dst.operand = src.operand;
@@ -275,11 +298,12 @@ inline void fol_formula::free_helper() {
 			core::free(atom); return;
 		case fol_formula_type::NOT:
 			core::free(unary); return;
+		case fol_formula_type::IF_THEN:
+			core::free(binary); return;
 		case fol_formula_type::AND:
 		case fol_formula_type::OR:
-		case fol_formula_type::IF_THEN:
 		case fol_formula_type::IFF:
-			core::free(binary); return;
+			core::free(array); return;
 		case fol_formula_type::FOR_ALL:
 		case fol_formula_type::EXISTS:
 			core::free(quantifier); return;
@@ -307,11 +331,24 @@ inline void fol_binary_formula::free(fol_binary_formula& formula) {
 		core::free(formula.right);
 }
 
+inline void fol_array_formula::free(fol_array_formula& formula) {
+	for (unsigned int i = 0; i < formula.length; i++) {
+		core::free(*formula.operands[i]);
+		if (formula.operands[i]->reference_count == 0)
+			core::free(formula.operands[i]);
+	}
+	core::free(formula.operands);
+}
+
 inline void fol_quantifier::free(fol_quantifier& formula) {
 	core::free(*formula.operand);
 	if (formula.operand->reference_count == 0)
 		core::free(formula.operand);
 }
+
+char and_separator[] = " & ";
+char or_separator[] = " | ";
+char iff_separator[] = " <=> ";
 
 template<typename Stream, typename... Printer>
 bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
@@ -342,20 +379,17 @@ bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
 		return print('~', out) && print(*formula.unary.operand, out, std::forward<Printer>(printer)...);
 
 	case fol_formula_type::AND:
-		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
-			&& print(" & ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+		return print<fol_formula*, '(', ')', and_separator>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::OR:
-		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
-			&& print(" | ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+		return print<fol_formula*, '(', ')', or_separator>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::IF_THEN:
 		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
 			&& print(" => ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case fol_formula_type::IFF:
-		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
-			&& print(" <=> ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+		return print<fol_formula*, '(', ')', iff_separator>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::FOR_ALL:
 		return print("![", out) && print_variable(formula.quantifier.variable, out) && print("]:", out)
@@ -425,21 +459,24 @@ bool visit(Formula&& formula, Visiter&&... visiter)
 		return visit_operator<fol_formula_type::NOT>(formula, std::forward<Visiter>(visiter)...)
 			&& visit(*formula.unary.operand, std::forward<Visiter>(visiter)...);
 	case fol_formula_type::AND:
-		return visit_operator<fol_formula_type::AND>(formula, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+		if (!visit_operator<fol_formula_type::AND>(formula, std::forward<Visiter>(visiter)...)) return false;
+		for (unsigned int i = 0; i < formula.array.length; i++)
+			if (!visit(*formula.array.operands[i], std::forward<Visiter>(visiter)...)) return false;
+		return true;
 	case fol_formula_type::OR:
-		return visit_operator<fol_formula_type::OR>(formula, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+		if (!visit_operator<fol_formula_type::OR>(formula, std::forward<Visiter>(visiter)...)) return false;
+		for (unsigned int i = 0; i < formula.array.length; i++)
+			if (!visit(*formula.array.operands[i], std::forward<Visiter>(visiter)...)) return false;
+		return true;
 	case fol_formula_type::IF_THEN:
 		return visit_operator<fol_formula_type::IF_THEN>(formula, std::forward<Visiter>(visiter)...)
 			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
 			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
 	case fol_formula_type::IFF:
-		return visit_operator<fol_formula_type::IFF>(formula, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+		if (!visit_operator<fol_formula_type::IFF>(formula, std::forward<Visiter>(visiter)...)) return false;
+		for (unsigned int i = 0; i < formula.array.length; i++)
+			if (!visit(*formula.array.operands[i], std::forward<Visiter>(visiter)...)) return false;
+		return true;
 	case fol_formula_type::FOR_ALL:
 		return visit_operator<fol_formula_type::FOR_ALL>(formula, std::forward<Visiter>(visiter)...)
 			&& visit_variable(formula.quantifier.variable, std::forward<Visiter>(visiter)...)
@@ -560,10 +597,7 @@ bool clone(const fol_formula& src, fol_formula& dst, Cloner&&... cloner)
 			return false;
 		}
 		return true;
-	case fol_formula_type::AND:
-	case fol_formula_type::OR:
 	case fol_formula_type::IF_THEN:
-	case fol_formula_type::IFF:
 		if (!new_fol_formula(dst.binary.left)) {
 			return false;
 		} else if (!new_fol_formula(dst.binary.right)) {
@@ -575,6 +609,23 @@ bool clone(const fol_formula& src, fol_formula& dst, Cloner&&... cloner)
 			free(*dst.binary.left); free(dst.binary.left);
 			free(dst.binary.right); return false;
 		}
+		return true;
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		dst.array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * src.array.length);
+		if (dst.array.operands == NULL) return false;
+		for (unsigned int i = 0; i < src.array.length; i++) {
+			if (!new_fol_formula(dst.array.operands[i])
+			 || !clone(*src.array.operands[i], *dst.array.operands[i], std::forward<Cloner>(cloner)...)) {
+				for (unsigned int j = 0; j < i; j++) {
+					free(*dst.array.operands[j]); free(dst.array.operands[j]);
+				}
+				if (dst.array.operands[i] != NULL) free(dst.array.operands[i]);
+				free(dst.array.operands); return false;
+			}
+		}
+		dst.array.length = src.array.length;
 		return true;
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
@@ -612,8 +663,10 @@ template<typename... Function>
 fol_formula* apply_to_terms(fol_formula& src, Function&&... function)
 {
 	fol_formula* new_formula;
+	fol_formula** new_formulas;
 	fol_formula* left; fol_formula* right;
 	fol_atom atom;
+	bool changed;
 	switch (src.type) {
 	case fol_formula_type::ATOM:
 		if (!apply_to_terms(src.atom, atom, std::forward<Function>(function)...)) {
@@ -646,15 +699,14 @@ fol_formula* apply_to_terms(fol_formula& src, Function&&... function)
 			new_formula->reference_count = 1;
 			return new_formula;
 		}
-	case fol_formula_type::AND:
-	case fol_formula_type::OR:
 	case fol_formula_type::IF_THEN:
-	case fol_formula_type::IFF:
 		left = apply_to_terms(*src.binary.left, std::forward<Function>(function)...);
 		if (left == NULL) return NULL;
 		right = apply_to_terms(*src.binary.right, std::forward<Function>(function)...);
 		if (right == NULL) {
-			free(*left); if (left->reference_count == 0) free(left);
+			if (left != src.binary.left) {
+				free(*left); if (left->reference_count == 0) free(left);
+			}
 			return NULL;
 		} else if (left == src.binary.left && right == src.binary.right) {
 			return &src;
@@ -671,6 +723,45 @@ fol_formula* apply_to_terms(fol_formula& src, Function&&... function)
 			new_formula->binary.right = right;
 			if (left == src.binary.left) left->reference_count++;
 			if (right == src.binary.right) right->reference_count++;
+			new_formula->type = src.type;
+			new_formula->reference_count = 1;
+			return new_formula;
+		}
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		new_formulas = (fol_formula**) malloc(sizeof(fol_formula*) * src.array.length);
+		if (new_formulas == NULL) return NULL;
+		changed = false;
+		for (unsigned int i = 0; i < src.array.length; i++) {
+			new_formulas[i] = apply_to_terms(*src.array.operands[i], std::forward<Function>(function)...);
+			if (new_formulas[i] == NULL) {
+				for (unsigned int j = 0; j < i; j++) {
+					if (new_formulas[j] != src.array.operands[j]) {
+						free(*new_formulas[j]); if (new_formulas[j]->reference_count == 0) free(new_formulas[j]);
+					}
+				}
+				free(new_formulas); return NULL;
+			} else if (new_formulas[i] != src.array.operands[i])
+				changed = true;
+		}
+
+		if (!changed) {
+			free(new_formulas);
+			return &src;
+		} else {
+			if (!new_fol_formula(new_formula)) {
+				for (unsigned int j = 0; j < src.array.length; j++) {
+					if (new_formulas[j] != src.array.operands[j]) {
+						free(*new_formulas[j]); if (new_formulas[j]->reference_count == 0) free(new_formulas[j]);
+					}
+				}
+				free(new_formulas); return NULL;
+			}
+			new_formula->array.operands = new_formulas;
+			new_formula->array.length = src.array.length;
+			for (unsigned int i = 0; i < src.array.length; i++)
+				if (new_formula->array.operands[i] == src.array.operands[i]) src.array.operands[i]->reference_count++;
 			new_formula->type = src.type;
 			new_formula->reference_count = 1;
 			return new_formula;
@@ -708,7 +799,7 @@ struct term_substituter {
 };
 
 template<int VariableShift>
-inline bool substitute(const fol_term& src, fol_term& dst, const term_substituter<VariableShift>& substituter) {
+inline bool apply(const fol_term& src, fol_term& dst, const term_substituter<VariableShift>& substituter) {
 	if (src == substituter.src) {
 		dst = substituter.dst;
 	} else if (src.type == fol_term_type::VARIABLE) {
@@ -725,7 +816,7 @@ inline fol_formula* substitute(const fol_formula& src,
 		const fol_term& src_term, const fol_term& dst_term)
 {
 	const term_substituter<VariableShift> substituter = {src_term, dst_term};
-	fol_formula* formula = substitute(src, substituter);
+	fol_formula* formula = apply_to_terms(src, substituter);
 	if (formula != &src)
 		formula->reference_count++;
 	return formula;
@@ -803,12 +894,16 @@ bool unify(
 		return unify(first.atom, second.atom, src_term, dst_term);
 	case fol_formula_type::NOT:
 		return unify(*first.unary.operand, *second.unary.operand, src_term, dst_term);
-	case fol_formula_type::AND:
-	case fol_formula_type::OR:
 	case fol_formula_type::IF_THEN:
-	case fol_formula_type::IFF:
 		return unify(*first.binary.left, *second.binary.left, src_term, dst_term)
 			&& unify(*first.binary.right, *second.binary.right, src_term, dst_term);
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		if (first.array.length != second.array.length) return false;
+		for (unsigned int i = 0; i < first.array.length; i++)
+			if (!unify(*first.array.operands[i], *second.array.operands[i], src_term, dst_term)) return false;
+		return true;
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		if (first.quantifier.variable != second.quantifier.variable) return false;
@@ -891,60 +986,48 @@ inline fol_formula* fol_formula::new_false() {
 	return &FOL_FALSE;
 }
 
-#include <tuple>
+template<fol_formula_type Operator, unsigned int Index>
+inline void new_fol_array_helper(fol_formula** operands, fol_formula* arg)
+{
+	operands[Index] = arg;
+}
 
-template<unsigned int... I>
-struct static_sequence { };
-
-template<unsigned int N, unsigned int... I>
-struct reverse_static_sequence : reverse_static_sequence<N - 1, I..., N - 1> { };
-
-template<unsigned int... I>
-struct reverse_static_sequence<0, I...> : static_sequence<I...> { };
+template<fol_formula_type Operator, unsigned int Index, typename... Args>
+inline void new_fol_array_helper(fol_formula** operands, fol_formula* arg, Args&&... args)
+{
+	operands[Index] = arg;
+	new_fol_array_helper<Operator, Index + 1>(operands, std::forward<Args>(args)...);
+}
 
 template<fol_formula_type Operator, typename... Args>
-fol_formula* new_fol_binary_helper(fol_formula* arg, Args&&... args)
+inline fol_formula* new_fol_array(Args&&... args)
 {
-	if (arg == NULL) return NULL;
-
 	fol_formula* formula;
 	if (!new_fol_formula(formula)) return NULL;
 	formula->reference_count = 1;
 	formula->type = Operator;
-	formula->binary.left = new_fol_and_helper(std::forward<Args>(args)...);
-	if (formula->binary.left == NULL) {
+	formula->array.length = sizeof...(Args);
+	formula->array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * sizeof...(Args));
+	if (formula->array.operands == NULL) {
 		free(formula); return NULL;
 	}
-	formula->binary.right = arg;
+	new_fol_array_helper<Operator, 0>(formula->array.operands, std::forward<Args>(args)...);
 	return formula;
-}
-
-template<fol_formula_type Operator, typename Tuple, unsigned int... I>
-inline fol_formula* new_fol_binary_helper(Tuple&& args, const static_sequence<I...>& seq)
-{
-	return new_fol_binary_helper<Operator>(std::get<I>(args)...);
-}
-
-template<fol_formula_type Operator, typename... Args>
-inline fol_formula* new_fol_binary(Args&&... args)
-{
-	constexpr auto seq = reverse_static_sequence<sizeof...(Args)>();
-	return new_fol_binary_helper<Operator>(std::forward_as_tuple(args...), seq);
 }
 
 template<typename... Args>
 inline fol_formula* fol_formula::new_and(Args&&... args) {
-	return new_fol_binary<fol_formula_type::AND>(std::forward<Args>(args)...);
+	return new_fol_array<fol_formula_type::AND>(std::forward<Args>(args)...);
 }
 
 template<typename... Args>
 inline fol_formula* fol_formula::new_or(Args&&... args) {
-	return new_fol_binary<fol_formula_type::OR>(std::forward<Args>(args)...);
+	return new_fol_array<fol_formula_type::OR>(std::forward<Args>(args)...);
 }
 
 template<typename... Args>
 inline fol_formula* fol_formula::new_iff(Args&&... args) {
-	return new_fol_binary<fol_formula_type::IFF>(std::forward<Args>(args)...);
+	return new_fol_array<fol_formula_type::IFF>(std::forward<Args>(args)...);
 }
 
 fol_formula* fol_formula::new_if_then(fol_formula* first, fol_formula* second)
@@ -1062,6 +1145,19 @@ inline int_fast8_t compare(
 }
 
 inline int_fast8_t compare(
+		const fol_array_formula& first,
+		const fol_array_formula& second)
+{
+	if (first.length < second.length) return -1;
+	else if (first.length > second.length) return 1;
+	for (unsigned int i = 0; i < first.length; i++) {
+		int_fast8_t result = compare(*first.operands[i], *second.operands[i]);
+		if (result != 0) return result;
+	}
+	return 0;
+}
+
+inline int_fast8_t compare(
 		const fol_quantifier& first,
 		const fol_quantifier& second)
 {
@@ -1081,11 +1177,12 @@ int_fast8_t compare(
 		return compare(first.atom, second.atom);
 	case fol_formula_type::NOT:
 		return compare(first.unary, second.unary);
+	case fol_formula_type::IF_THEN:
+		return compare(first.binary, second.binary);
 	case fol_formula_type::AND:
 	case fol_formula_type::OR:
-	case fol_formula_type::IF_THEN:
 	case fol_formula_type::IFF:
-		return compare(first.binary, second.binary);
+		return compare(first.array, second.array);
 	case fol_formula_type::FOR_ALL:
 	case fol_formula_type::EXISTS:
 		return compare(first.quantifier, second.quantifier);
@@ -1171,12 +1268,15 @@ bool relabel_variables(fol_formula& formula,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	switch (formula.type) {
-	case fol_formula_type::AND:
-	case fol_formula_type::OR:
 	case fol_formula_type::IF_THEN:
-	case fol_formula_type::IFF:
 		return relabel_variables(*formula.binary.left, variable_map)
 			&& relabel_variables(*formula.binary.right, variable_map);
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IFF:
+		for (unsigned int i = 0; i < formula.array.length; i++)
+			if (!relabel_variables(*formula.array.operands[i], variable_map)) return false;
+		return true;
 	case fol_formula_type::NOT:
 		return relabel_variables(*formula.unary.operand, variable_map);
 	case fol_formula_type::FOR_ALL:
@@ -1653,31 +1753,40 @@ template<fol_formula_type ScopeType, bool Negated>
 inline fol_formula* scope_to_formula(const fol_scope* scope,
 		unsigned int scope_length, fol_formula* first)
 {
-	fol_formula* left = first;
+	static_assert(ScopeType == fol_formula_type::AND
+			   || ScopeType == fol_formula_type::OR
+			   || ScopeType == fol_formula_type::IFF,
+			"ScopeType must be either: AND, OR, IFF.");
 
-	for (unsigned int i = 0; i < scope_length; i++) {
-		fol_formula* right = scope_to_formula<Negated>(scope[i]);
-		if (right == NULL) {
-			free(*left); if (left->reference_count == 0) free(left);
-			return NULL;
-		}
+	if (scope_length == 0) return first;
 
-		fol_formula* new_formula;
-		if (!new_fol_formula(new_formula)) {
-			free(*left); if (left->reference_count == 0) free(left);
-			free(*right); if (right->reference_count == 0) free(right);
-			return NULL;
-		}
-		new_formula->type = ScopeType;
-		new_formula->binary.left = left;
-		new_formula->binary.right = right;
-		new_formula->reference_count = 1;
-		/* the reference counts of `left` and `right` are incremented and
-		   decremented simultaneously here, so we don't change them */
-		left = new_formula;
+	fol_formula* new_formula;
+	if (!new_fol_formula(new_formula)) {
+		free(*first); if (first->reference_count == 0) free(first);
+		return NULL;
 	}
-
-	return left;
+	new_formula->type = ScopeType;
+	new_formula->reference_count = 1;
+	new_formula->array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * (scope_length + 1));
+	new_formula->array.length = scope_length + 1;
+	if (new_formula->array.operands == NULL) {
+		free(*first); if (first->reference_count == 0) free(first);
+		free(new_formula); return NULL;
+	}
+	new_formula->array.operands[0] = first;
+	for (unsigned int i = 0; i < scope_length; i++) {
+		new_formula->array.operands[i + 1] = scope_to_formula<Negated>(scope[i]);
+		if (new_formula->array.operands[i + 1] == NULL) {
+			for (unsigned int j = 0; j < i + 1; j++) {
+				free(*new_formula->array.operands[j]);
+				if (new_formula->array.operands[j]->reference_count == 0)
+					free(new_formula->array.operands[j]);
+			}
+			free(new_formula->array.operands); free(new_formula);
+			return NULL;
+		}
+	}
+	return new_formula;
 }
 
 template<fol_formula_type ScopeType>
@@ -1685,17 +1794,49 @@ inline fol_formula* scope_to_formula(
 		const fol_scope* scope, unsigned int scope_length,
 		const fol_scope* negated, unsigned int negated_length)
 {
-	if (scope_length == 0) {
-		fol_formula* first = scope_to_formula<true>(negated[0]);
-		if (first == NULL) return NULL;
-		return scope_to_formula<ScopeType, true>(negated + 1, negated_length - 1, first);
-	} else {
-		fol_formula* first = scope_to_formula<false>(scope[0]);
-		if (first == NULL) return NULL;
-		first = scope_to_formula<ScopeType, false>(scope + 1, scope_length - 1, first);
-		if (first == NULL) return NULL;
-		return scope_to_formula<ScopeType, true>(negated, negated_length, first);
+	static_assert(ScopeType == fol_formula_type::AND
+			   || ScopeType == fol_formula_type::OR
+			   || ScopeType == fol_formula_type::IFF,
+			"ScopeType must be either: AND, OR, IFF.");
+
+	if (scope_length == 1 && negated_length == 0)
+		return scope_to_formula<false>(scope[0]);
+	else if (scope_length == 0 && negated_length == 1)
+		return scope_to_formula<true>(negated[0]);
+
+	fol_formula* new_formula;
+	if (!new_fol_formula(new_formula)) return NULL;
+	new_formula->type = ScopeType;
+	new_formula->reference_count = 1;
+	new_formula->array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * (scope_length + negated_length));
+	new_formula->array.length = scope_length + negated_length;
+	if (new_formula->array.operands == NULL) {
+		free(new_formula); return NULL;
 	}
+	for (unsigned int i = 0; i < scope_length; i++) {
+		new_formula->array.operands[i] = scope_to_formula<false>(scope[i]);
+		if (new_formula->array.operands[i] == NULL) {
+			for (unsigned int j = 0; j < i; j++) {
+				free(*new_formula->array.operands[j]);
+				if (new_formula->array.operands[j]->reference_count == 0)
+					free(new_formula->array.operands[j]);
+			}
+			free(new_formula->array.operands); free(new_formula);
+			return NULL;
+		}
+	} for (unsigned int i = 0; i < negated_length; i++) {
+		new_formula->array.operands[scope_length + i] = scope_to_formula<true>(negated[i]);
+		if (new_formula->array.operands[scope_length + i] == NULL) {
+			for (unsigned int j = 0; j < scope_length + i; j++) {
+				free(*new_formula->array.operands[j]);
+				if (new_formula->array.operands[j]->reference_count == 0)
+					free(new_formula->array.operands[j]);
+			}
+			free(new_formula->array.operands); free(new_formula);
+			return NULL;
+		}
+	}
+	return new_formula;
 }
 
 template<fol_formula_type QuantifierType>
@@ -2241,7 +2382,7 @@ inline bool negate_iff(fol_scope& scope)
 {
 	if (!scope.commutative.children.ensure_capacity(scope.commutative.children.length + 1)) {
 		return false;
-	} else if (scope.commutative.children.last().type == fol_formula_type::FALSE) {
+	} else if (scope.commutative.children.length > 0 && scope.commutative.children.last().type == fol_formula_type::FALSE) {
 		free(scope.commutative.children.last());
 		scope.commutative.children.length--;
 	} else {
@@ -2282,37 +2423,6 @@ bool negate_scope(fol_scope& scope)
 	return true;
 }
 
-inline bool make_negated_iff(fol_scope& out, fol_scope& operand)
-{
-	if (operand.type == fol_formula_type::TRUE) {
-		free(operand);
-		return init(out, fol_formula_type::FALSE);
-	} else if (operand.type == fol_formula_type::FALSE) {
-		free(operand);
-		return init(out, fol_formula_type::TRUE);
-	} else {
-		if (!init(out, fol_formula_type::IFF)) {
-			free(operand); return false;
-		}
-		if (operand.type == fol_formula_type::NOT) {
-			move(*operand.unary, out.commutative.negated[0]);
-			out.commutative.negated.length++;
-			move_variables(operand.variables, out.variables);
-			free(operand.unary);
-			free(operand.variables);
-		} else {
-			move(operand, out.commutative.children[0]);
-			out.commutative.children.length++;
-			move_variables(operand.variables, out.variables);
-		}
-		if (!init(out.commutative.children[out.commutative.children.length], fol_formula_type::FALSE)) {
-			free(out); return false;
-		}
-		out.commutative.children.length++;
-		return true;
-	}
-}
-
 inline bool are_negations(fol_scope& left, fol_scope& right) {
 	if ((left.type == fol_formula_type::NOT && *left.unary == right)
 	 || (right.type == fol_formula_type::NOT && *right.unary == left))
@@ -2346,7 +2456,7 @@ inline bool are_negations(fol_scope& left, fol_scope& right) {
 
 template<fol_formula_type Operator>
 bool canonicalize_commutative_scope(
-		const fol_binary_formula& src, fol_scope& out,
+		const fol_array_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	static_assert(Operator == fol_formula_type::AND
@@ -2354,78 +2464,39 @@ bool canonicalize_commutative_scope(
 			   || Operator == fol_formula_type::IFF,
 			"Operator is not a commutative operator.");
 
-	if (!canonicalize_scope(*src.left, out, variable_map)) return false;
+	if (!init(out, Operator)) return false;
 
-	fol_scope& right = *((fol_scope*) alloca(sizeof(fol_scope)));
-	if (out.type == fol_formula_type::FALSE) {
-		if (Operator == fol_formula_type::AND) {
-			return true;
-		} else if (Operator == fol_formula_type::OR) {
-			free(out);
-			return canonicalize_scope(*src.right, out, variable_map);
-		} else if (Operator == fol_formula_type::IFF) {
-			free(out);
-			if (!canonicalize_scope(*src.right, right, variable_map))
-				return false;
-			return make_negated_iff(out, right);
+	fol_scope& next = *((fol_scope*) alloca(sizeof(fol_scope)));
+	for (unsigned int i = 0; i < src.length; i++) {
+		if (!canonicalize_scope(*src.operands[i], next, variable_map)) {
+			free(out); return false;
 		}
-	} else if (out.type == fol_formula_type::TRUE) {
-		if (Operator == fol_formula_type::OR) {
-			return true;
-		} else {
-			free(out);
-			return canonicalize_scope(*src.right, out, variable_map);
-		}
-	}
 
-	if (!canonicalize_scope(*src.right, right, variable_map))
-		return false;
-
-	if (out == right) {
-		/* consider the case where `*src.left` and `*src.right` are identical */
-		free(right);
-		if (Operator == fol_formula_type::IFF) {
-			free(out);
-			return init(out, fol_formula_type::TRUE);
-		}
-	} else if (right.type == fol_formula_type::FALSE) {
-		free(right);
-		if (Operator == fol_formula_type::AND) {
-			free(out);
-			return init(out, fol_formula_type::FALSE);
-		} else if (Operator == fol_formula_type::IFF) {
-			if (!make_negated_iff(right, out)) return false;
-			move(right, out);
-			return true;
-		}
-	} else if (right.type == fol_formula_type::TRUE) {
-		free(right);
-		if (Operator == fol_formula_type::OR) {
-			free(out);
-			return init(out, fol_formula_type::TRUE);
-		}
-	} else if (are_negations(out, right)) {
-		/* we have the case `A op ~A` */
-		free(right); free(out);
-		if (Operator == fol_formula_type::AND || Operator == fol_formula_type::IFF)
-			return init(out, fol_formula_type::FALSE);
-		else if (Operator == fol_formula_type::OR)
-			return init(out, fol_formula_type::TRUE);
-	} else if (out.type == Operator) {
-		if (right.type == Operator) {
+		if (next.type == fol_formula_type::FALSE) {
+			free(next);
+			if (Operator == fol_formula_type::AND) {
+				free(out);
+				return init(out, fol_formula_type::FALSE);
+			} else if (Operator == fol_formula_type::IFF) {
+				if (!negate_iff(out)) return false;
+			}
+		} else if (next.type == fol_formula_type::TRUE) {
+			free(next);
+			if (Operator == fol_formula_type::OR) {
+				free(out);
+				return init(out, fol_formula_type::TRUE);
+			}
+		} else if (next.type == Operator) {
 			bool found_negation;
-			merge_scopes<Operator>(right.commutative.children, out.commutative.children,
-					right.commutative.negated, out.commutative.negated, found_negation);
-			free(right.commutative.children);
-			free(right.commutative.negated);
+			merge_scopes<Operator>(next.commutative.children, out.commutative.children,
+					next.commutative.negated, out.commutative.negated, found_negation);
+			free(next.commutative.children);
+			free(next.commutative.negated);
 			if (Operator == fol_formula_type::IFF)
 				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
-			else move_variables(right.variables, out.variables);
-			free(right.variables);
-			if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
-				free(out);
-				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
-			} else if (found_negation) {
+			else move_variables(next.variables, out.variables);
+			free(next.variables);
+			if (found_negation) {
 				if (Operator == fol_formula_type::AND) {
 					free(out);
 					return init(out, fol_formula_type::FALSE);
@@ -2434,120 +2505,40 @@ bool canonicalize_commutative_scope(
 					return init(out, fol_formula_type::TRUE);
 				} else if (Operator == fol_formula_type::IFF) {
 					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
-					return negate_iff(out);
+					if (!negate_iff(out)) return false;
 				}
 			}
 		} else {
 			bool found_negation;
-			if (!add_to_scope<Operator>(right, out.commutative.children, out.commutative.negated, out.variables, found_negation)) {
-				free(out); free(right); return false;
-			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
-				free(out);
-				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
-			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 1 && out.commutative.negated.length == 0) {
-				move(out.commutative.children[0], right);
-				out.commutative.children.clear();
-				free(out); move(right, out);
-				if (found_negation && !negate_scope(out)) {
-					free(out); return false;
-				}
-			} else if (Operator == fol_formula_type::IFF && out.commutative.children.length == 0 && out.commutative.negated.length == 1) {
-				move(out.commutative.negated[0], right);
-				out.commutative.negated.clear();
-				free(out);
-				if (!found_negation && !negate_scope(right)) {
-					free(right); return false;
-				}
-				move(right, out);
+			if (!add_to_scope<Operator>(next, out.commutative.children, out.commutative.negated, out.variables, found_negation)) {
+				free(out); free(next); return false;
 			} else if (found_negation) {
 				if (Operator == fol_formula_type::AND) {
 					free(out); return init(out, fol_formula_type::FALSE);
 				} else if (Operator == fol_formula_type::OR) {
 					free(out); return init(out, fol_formula_type::TRUE);
 				} else if (Operator == fol_formula_type::IFF) {
-					return negate_iff(out);
+					if (!negate_iff(out)) return false;
 				}
 			}
 		}
-	} else {
-		if (right.type == Operator) {
-			bool found_negation;
-			if (!add_to_scope<Operator>(out, right.commutative.children, right.commutative.negated, right.variables, found_negation)) {
-				free(out); free(right); return false;
-			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 0 && right.commutative.negated.length == 0) {
-				free(right);
-				return init(out, found_negation ? fol_formula_type::FALSE : fol_formula_type::TRUE);
-			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 1 && right.commutative.negated.length == 0) {
-				move(right.commutative.children[0], out);
-				right.commutative.children.clear();
-				free(right);
-				if (found_negation && !negate_scope(out)) {
-					free(out); return false;
-				}
-			} else if (Operator == fol_formula_type::IFF && right.commutative.children.length == 0 && right.commutative.negated.length == 1) {
-				move(right.commutative.negated[0], out);
-				right.commutative.negated.clear();
-				free(right);
-				if (!found_negation && !negate_scope(out)) {
-					free(out); return false;
-				}
-			} else if (found_negation) {
-				if (Operator == fol_formula_type::AND) {
-					free(right); return init(out, fol_formula_type::FALSE);
-				} else if (Operator == fol_formula_type::OR) {
-					free(right); return init(out, fol_formula_type::TRUE);
-				} else if (Operator == fol_formula_type::IFF) {
-					move(right, out);
-					return negate_iff(out);
-				}
-			} else {
-				move(right, out);
-			}
-		} else {
-			fol_scope& both = *((fol_scope*) alloca(sizeof(fol_scope)));
-			if (!init(both, Operator, out.variables)) {
-				free(out); free(right);
-				return false;
-			}
-			move_variables(right.variables, both.variables);
+	}
 
-			if (out.type == fol_formula_type::NOT) {
-				move(*out.unary, both.commutative.negated[both.commutative.negated.length]);
-				both.commutative.negated.length++;
-				free(out.variables);
-				free(out.unary);
-			} else if (out.type == fol_formula_type::IFF && out.commutative.children.length > 0
-					&& out.commutative.children.last().type == fol_formula_type::FALSE)
-			{
-				free(out.commutative.children.last());
-				out.commutative.children.length--;
-				move(out, both.commutative.negated[both.commutative.negated.length]);
-				both.commutative.negated.length++;
-			} else {
-				move(out, both.commutative.children[both.commutative.children.length]);
-				both.commutative.children.length++;
-			}
-			if (right.type == fol_formula_type::NOT) {
-				move(*right.unary, both.commutative.negated[both.commutative.negated.length]);
-				both.commutative.negated.length++;
-				free(right.variables);
-				free(right.unary);
-			} else if (right.type == fol_formula_type::IFF && right.commutative.children.length > 0
-					&& right.commutative.children.last().type == fol_formula_type::FALSE)
-			{
-				free(right.commutative.children.last());
-				right.commutative.children.length--;
-				move(right, both.commutative.negated[both.commutative.negated.length]);
-				both.commutative.negated.length++;
-			} else {
-				move(right, both.commutative.children[both.commutative.children.length]);
-				both.commutative.children.length++;
-			}
-			if (both.commutative.children.length > 1)
-				insertion_sort(both.commutative.children, fol_scope_canonicalizer());
-			if (both.commutative.negated.length > 1)
-				insertion_sort(both.commutative.negated, fol_scope_canonicalizer());
-			move(both, out);
+	if (out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
+		free(out);
+		if (Operator == fol_formula_type::AND || Operator == fol_formula_type::IFF)
+			return init(out, fol_formula_type::TRUE);
+		else return init(out, fol_formula_type::FALSE);
+	} else if (out.commutative.children.length == 1 && out.commutative.negated.length == 0) {
+		move(out.commutative.children[0], next);
+		out.commutative.children.clear();
+		free(out); move(next, out);
+	} else if (out.commutative.children.length == 0 && out.commutative.negated.length == 1) {
+		move(out.commutative.negated[0], next);
+		out.commutative.negated.clear();
+		free(out); move(next, out);
+		if (!negate_scope(out)) {
+			free(out); return false;
 		}
 	}
 	return true;
@@ -3144,11 +3135,11 @@ bool canonicalize_scope(const fol_formula& src, fol_scope& out,
 {
 	switch (src.type) {
 	case fol_formula_type::AND:
-		return canonicalize_commutative_scope<fol_formula_type::AND>(src.binary, out, variable_map);
+		return canonicalize_commutative_scope<fol_formula_type::AND>(src.array, out, variable_map);
 	case fol_formula_type::OR:
-		return canonicalize_commutative_scope<fol_formula_type::OR>(src.binary, out, variable_map);
+		return canonicalize_commutative_scope<fol_formula_type::OR>(src.array, out, variable_map);
 	case fol_formula_type::IFF:
-		return canonicalize_commutative_scope<fol_formula_type::IFF>(src.binary, out, variable_map);
+		return canonicalize_commutative_scope<fol_formula_type::IFF>(src.array, out, variable_map);
 	case fol_formula_type::IF_THEN:
 		return canonicalize_conditional_scope(src.binary, out, variable_map);
 	case fol_formula_type::FOR_ALL:
@@ -3667,6 +3658,7 @@ inline bool tptp_interpret_binary_formula(
 template<fol_formula_type OperatorType> struct tptp_operator_type { };
 template<> struct tptp_operator_type<fol_formula_type::AND> { static constexpr tptp_token_type type = tptp_token_type::AND; };
 template<> struct tptp_operator_type<fol_formula_type::OR> { static constexpr tptp_token_type type = tptp_token_type::OR; };
+template<> struct tptp_operator_type<fol_formula_type::IFF> { static constexpr tptp_token_type type = tptp_token_type::IFF; };
 
 template<fol_formula_type OperatorType>
 bool tptp_interpret_binary_sequence(
@@ -3676,34 +3668,37 @@ bool tptp_interpret_binary_sequence(
 	array_map<string, unsigned int>& variables,
 	fol_formula* left)
 {
+	array<fol_formula*>& operands = *((array<fol_formula*>*) alloca(sizeof(array<fol_formula*>)));
+	if (!array_init(operands, 8)) {
+		free(*left); free(left); return false;
+	}
+	operands[0] = left;
+	operands.length = 1;
+
 	while (true) {
 		fol_formula* next;
-		if (!new_fol_formula(next)) {
-			free(*left); free(left); return false;
-		} else if (!tptp_interpret_unary_formula(tokens, index, *next, names, variables)) {
-			free(*left); free(left); free(next); return false;
-		}
-
-		if (index < tokens.length && tokens[index].type == tptp_operator_type<OperatorType>::type) {
-			index++;
-			fol_formula* parent;
-			if (!new_fol_formula(parent)) {
-				free(*left); free(left); free(*next); free(next); return false;
+		if (!new_fol_formula(next) || !operands.ensure_capacity(operands.length + 1)
+		 || !tptp_interpret_unary_formula(tokens, index, *next, names, variables))
+		{
+			if (next != NULL) free(next);
+			for (unsigned int i = 0; i < operands.length; i++) {
+				free(*operands[i]); free(operands[i]);
 			}
-
-			parent->binary.left = left;
-			parent->binary.right = next;
-			parent->type = OperatorType;
-			parent->reference_count = 1;
-			left = parent;
-		} else {
-			formula.binary.left = left;
-			formula.binary.right = next;
-			formula.type = OperatorType;
-			formula.reference_count = 1;
-			return true;
+			free(operands); return false;
 		}
+		operands[operands.length] = next;
+		operands.length++;
+
+		if (index < tokens.length && tokens[index].type == tptp_operator_type<OperatorType>::type)
+			index++;
+		else break;
 	}
+
+	formula.type = OperatorType;
+	formula.reference_count = 1;
+	formula.array.operands = operands.data;
+	formula.array.length = operands.length;
+	return true;
 }
 
 bool tptp_interpret(
@@ -3740,7 +3735,7 @@ bool tptp_interpret(
 
 	} else if (tokens[index].type == tptp_token_type::IFF) {
 		index++;
-		if (!tptp_interpret_binary_formula<fol_formula_type::IFF>(tokens, index, formula, names, variables, left))
+		if (!tptp_interpret_binary_sequence<fol_formula_type::IFF>(tokens, index, formula, names, variables, left))
 			return false;
 	} else {
 		move(*left, formula); free(left);
