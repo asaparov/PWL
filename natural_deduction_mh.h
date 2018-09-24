@@ -17,6 +17,14 @@ void select_axiom(const theory<Formula, nd_step<Formula, true>>& T,
 		array<unsigned int>& intersection)
 {
 	unsigned int type_value; relation relation_value;
+	/* TODO: This should be more likely if the resulting intersecting subset is
+	   closer to the set of all concepts with the given `type`. `A` being
+	   "closer" to being a subset of `B` can be measured in different ways:
+		(1) if `A_1` has fewer elements not in `B` than `A_2` (i.e.
+		    |A_1 \ B| < |A_2 \ B|), then `A_1`is closer than `A_2`,
+		(2) if `A_1` has more elements in `B` than `A_2` (i.e.
+			|A_1 intersect B| > |A_2 intersect B|), then `A_1` is closer than
+			`A_2`. */
 	unsigned int selected_index = sample_uniform(concept_indices.length);
 	switch (concept_indices[selected_index].key) {
 	case 0:
@@ -45,6 +53,66 @@ void select_axiom(const theory<Formula, nd_step<Formula, true>>& T,
 }
 
 template<typename Formula, bool Negated>
+bool get_axiom(
+		array_map<unsigned int, nd_step<Formula, true>*>& types,
+		unsigned int predicate, unsigned int arg,
+		array<nd_step<Formula, true>*>& conjunct_steps)
+{
+	if (!types.ensure_capacity(types.size + 1)) {
+		/* TODO: implement this */
+	}
+	unsigned int index = linear_search(types.keys, predicate, 0, types.size);
+	if (index == types.size || types.keys[index] != predicate) {
+		Proof* new_axiom = Negated ?
+				Proof::new_axiom(Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(arg)))) :
+				Proof::new_axiom(Formula::new_atom(predicate, Formula::new_constant(arg)));
+		if (new_axiom == NULL) {
+			/* TODO: implement this */
+		}
+
+		shift_right(types.keys, types.size, index);
+		shift_right(types.values, types.size, index);
+		types.keys[index] = predicate;
+		types.values[index] = new_axiom;
+		types.size++;
+	}
+	if (!conjunct_steps.add(types.values[index])) {
+		/* TODO: implement this */
+	}
+	return true;
+}
+
+template<typename Formula, bool Negated>
+bool get_axiom(
+		array_map<unsigned int, nd_step<Formula, true>*>& types,
+		relation predicate, unsigned int arg,
+		array<nd_step<Formula, true>*>& conjunct_steps)
+{
+	if (!types.ensure_capacity(types.size + 1)) {
+		/* TODO: implement this */
+	}
+	unsigned int index = linear_search(types.keys, predicate, 0, types.size);
+	if (index == types.size || types.keys[index] != predicate) {
+		Proof* new_axiom = Negated ?
+				Proof::new_axiom(Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(arg)))) :
+				Proof::new_axiom(Formula::new_atom(predicate, Formula::new_constant(arg)));
+		if (new_axiom == NULL) {
+			/* TODO: implement this */
+		}
+
+		shift_right(types.keys, types.size, index);
+		shift_right(types.values, types.size, index);
+		types.keys[index] = predicate;
+		types.values[index] = new_axiom;
+		types.size++;
+	}
+	if (!conjunct_steps.add(types.values[index])) {
+		/* TODO: implement this */
+	}
+	return true;
+}
+
+template<typename Formula, bool Negated>
 bool propose_atom_generalization(
 		const theory<Formula, nd_step<Formula, true>>& T,
 		unsigned int constant, unsigned int type,
@@ -53,7 +121,7 @@ bool propose_atom_generalization(
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
-	typedef concept<natural_deduction<Formula>> ConceptType;
+	typedef concept<natural_deduction<Formula, true>> ConceptType;
 	typedef natural_deduction<Formula, true> Proof;
 
 	/* compute the set of constants for which the selected axiom is true */
@@ -191,14 +259,12 @@ bool propose_atom_generalization(
 			fprintf(stderr, "propose_atom_generalization WARNING: Expected an axiom.\n");
 #endif
 
-		bool contains;
 		for (unsigned int i = 0; i < canonicalized->array.length; i++) {
 			Formula* atom = canonicalized->array.operands[i];
 			if (atom->type == FormulaType::NOT) {
 				atom = atom->unary.operand;
 				if (atom->atom.arg2.type == TermType::NONE) {
-					Proof* axiom = instance.negated_types.get(atom->atom.predicate, contains);
-					/* TODO: implement this */
+					
 				} else {
 					/* TODO: implement this */
 				}
