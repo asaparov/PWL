@@ -1015,6 +1015,23 @@ inline fol_formula* new_fol_array(Args&&... args)
 	return formula;
 }
 
+template<fol_formula_type Operator, template<typename> class Array>
+inline fol_formula* new_fol_array(Array<fol_formula*> operands)
+{
+	fol_formula* formula;
+	if (!new_fol_formula(formula)) return NULL;
+	formula->reference_count = 1;
+	formula->type = Operator;
+	formula->array.length = operands.length;
+	formula->array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * operands.length);
+	if (formula->array.operands == NULL) {
+		free(formula); return NULL;
+	}
+	for (unsigned int i = 0; i < operands.length; i++)
+		formula->array.operands[i] = operands[i];
+	return formula;
+}
+
 template<typename... Args>
 inline fol_formula* fol_formula::new_and(Args&&... args) {
 	return new_fol_array<fol_formula_type::AND>(std::forward<Args>(args)...);
