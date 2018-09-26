@@ -988,8 +988,8 @@ private:
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 1;
-		step->formula = axiom;
-		axiom->reference_count++;
+		step->formula = parameter;
+		parameter->reference_count++;
 		return step;
 	}
 

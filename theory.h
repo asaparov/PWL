@@ -41,9 +41,6 @@ struct theory
 	typedef typename Formula::Type FormulaType;
 	typedef typename ProofCalculus::Proof Proof;
 
-	array<Proof*> proofs;
-	array<Formula*> observations;
-
 	/* A map from `x` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
 	   theory `x(y_i)` and for any `z_i` there is an axiom in the theory
@@ -61,6 +58,8 @@ struct theory
 	hash_map<relation, pair<array<unsigned int>, array<unsigned int>>> relations;
 
 	hash_map<unsigned int, concept> ground_concepts;
+
+	array<Proof*> universal_quantications;
 
 	bool add_formula(Formula* formula)
 	{

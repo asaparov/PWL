@@ -58,16 +58,19 @@ bool get_axiom(
 		unsigned int predicate, unsigned int arg,
 		array<nd_step<Formula, true>*>& conjunct_steps)
 {
-	if (!types.ensure_capacity(types.size + 1)) {
-		/* TODO: implement this */
-	}
+	if (!types.ensure_capacity(types.size + 1))
+		return false;
 	unsigned int index = linear_search(types.keys, predicate, 0, types.size);
 	if (index == types.size || types.keys[index] != predicate) {
 		Proof* new_axiom = Negated ?
 				Proof::new_axiom(Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(arg)))) :
 				Proof::new_axiom(Formula::new_atom(predicate, Formula::new_constant(arg)));
-		if (new_axiom == NULL) {
-			/* TODO: implement this */
+		if (new_axiom == NULL) return false;
+
+		if (!conjunct_steps.add(new_axiom)) {
+			free(*new_axiom);
+			if (new_axiom->reference_count == 0)
+				free(new_axiom);
 		}
 
 		shift_right(types.keys, types.size, index);
@@ -75,39 +78,48 @@ bool get_axiom(
 		types.keys[index] = predicate;
 		types.values[index] = new_axiom;
 		types.size++;
-	}
-	if (!conjunct_steps.add(types.values[index])) {
-		/* TODO: implement this */
+	} else {
+		if (!conjunct_steps.add(types.values[index]))
+			return false;
 	}
 	return true;
 }
 
 template<typename Formula, bool Negated>
 bool get_axiom(
-		array_map<unsigned int, nd_step<Formula, true>*>& types,
-		relation predicate, unsigned int arg,
+		array_map<relation, nd_step<Formula, true>*>& relations,
+		relation rel, unsigned int arg,
 		array<nd_step<Formula, true>*>& conjunct_steps)
 {
-	if (!types.ensure_capacity(types.size + 1)) {
-		/* TODO: implement this */
-	}
-	unsigned int index = linear_search(types.keys, predicate, 0, types.size);
-	if (index == types.size || types.keys[index] != predicate) {
-		Proof* new_axiom = Negated ?
-				Proof::new_axiom(Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(arg)))) :
-				Proof::new_axiom(Formula::new_atom(predicate, Formula::new_constant(arg)));
+	if (!relations.ensure_capacity(relations.size + 1))
+		return false;
+	unsigned int index = linear_search(relations.keys, rel, 0, relations.size);
+	if (index == relations.size || relations.keys[index] != rel) {
+		Proof* atom = Formula::new_atom((rel.type == 0 ? arg : rel.type),
+				Formula::new_constant(rel.arg1 == 0 ? arg : rel.arg1),
+				Formula::new_constant(rel.arg2 == 0 ? arg : rel.arg2));
+		if (atom == NULL) return false;
+
+		Proof* new_axiom = Negated ? Proof::new_axiom(Formula::new_not(atom)) : Proof::new_axiom(atom);
 		if (new_axiom == NULL) {
-			/* TODO: implement this */
+			free(*atom); if (atom->reference_count == 0) free(atom);
+			return false;
 		}
 
-		shift_right(types.keys, types.size, index);
-		shift_right(types.values, types.size, index);
-		types.keys[index] = predicate;
-		types.values[index] = new_axiom;
-		types.size++;
-	}
-	if (!conjunct_steps.add(types.values[index])) {
-		/* TODO: implement this */
+		if (!conjunct_steps.add(new_axiom)) {
+			free(*new_axiom);
+			if (new_axiom->reference_count == 0)
+				free(new_axiom);
+		}
+
+		shift_right(relations.keys, relations.size, index);
+		shift_right(relations.values, relations.size, index);
+		relations.keys[index] = rel;
+		relations.values[index] = new_axiom;
+		relations.size++;
+	} else {
+		if (!conjunct_steps.add(relations.values[index]))
+			return false;
 	}
 	return true;
 }
@@ -228,6 +240,9 @@ bool propose_atom_generalization(
 		}
 	}
 
+	if (!T.universal_quantications.ensure_capacity(T.universal_quantications.length + 1))
+		return false;
+
 	Formula* axiom = Formula::new_for_all(1, Formula::new_if_then(
 			Formula::new_and(conjuncts), Formula::new_atom(type, Formula::new_variable(1))));
 	free_formulas(conjuncts);
@@ -240,15 +255,70 @@ bool propose_atom_generalization(
 	}
 
 	nd_step<Formula, Canonical>* axiom_step = Proof::new_axiom(axiom);
+	free(*axiom) if (axiom->reference_count == 0) free(axiom);
 	if (axiom_step == NULL) {
 		free(*canonicalized); free(canonicalized);
-		free(*axiom) if (axiom->reference_count == 0) free(axiom);
 		return false;
 	}
 
 	array<nd_step<Formula, Canonical>*> conjunct_steps(canonicalized->array.length);
 	for (unsigned int concept : intersection) {
 		const ConceptType& instance = T.ground_concepts.get(concept);
+
+		for (unsigned int i = 0; i < canonicalized->array.length; i++) {
+			Formula* atom = canonicalized->array.operands[i];
+			if (atom->type == FormulaType::NOT) {
+				atom = atom->unary.operand;
+				if (atom->atom.arg2.type == TermType::NONE) {
+					if (!get_axiom<Formula, true>(instance.negated_types, atom->predicate, concept, conjunct_steps)) {
+						free(*canonicalized); free(canonicalized);
+						for (auto step : conjunct_steps) {
+							free(*step); if (step->reference_count == 0) free(step);
+						}
+						return false;
+					}
+				} else {
+					const relation rel = { atom->predicate,
+							atom->arg1.type == TermType::CONSTANT ? atom->arg1.constant : 0,
+							atom->arg2.type == TermType::CONSTANT ? atom->arg2.constant : 0 };
+					if (!get_axiom<Formula, true>(instance.negated_relations, rel, concept, conjunct_steps)) {
+						free(*canonicalized); free(canonicalized);
+						for (auto step : conjunct_steps) {
+							free(*step); if (step->reference_count == 0) free(step);
+						}
+						return false;
+					}
+				}
+			} else {
+				if (atom->atom.arg2.type == TermType::NONE) {
+					if (!get_axiom<Formula, false>(instance.types, atom->predicate, concept, conjunct_steps)) {
+						free(*canonicalized); free(canonicalized);
+						for (auto step : conjunct_steps) {
+							free(*step); if (step->reference_count == 0) free(step);
+						}
+						return false;
+					}
+				} else {
+					const relation rel = { atom->predicate,
+							atom->arg1.type == TermType::CONSTANT ? atom->arg1.constant : 0,
+							atom->arg2.type == TermType::CONSTANT ? atom->arg2.constant : 0 };
+					if (!get_axiom<Formula, true>(instance.negated_relations, rel, concept, conjunct_steps)) {
+						free(*canonicalized); free(canonicalized);
+						for (auto step : conjunct_steps) {
+							free(*step); if (step->reference_count == 0) free(step);
+						}
+						return false;
+					}
+				}
+			}
+		}
+	}
+	free(*canonicalized); free(canonicalized);
+
+	T.universal_quantications.add(axiom);
+	for (unsigned int k = 0; k < intersection.length; k++) {
+		const unsigned int concept = intersection[k];
+		ConceptType& instance = T.ground_concepts.get(concept);
 
 		array_map<unsigned int, nd_step<Formula, Canonical>*>& proofs = Negated ? instance.negated_types : instance.types;
 		unsigned int index = proofs.index_of(type);
@@ -259,36 +329,41 @@ bool propose_atom_generalization(
 			fprintf(stderr, "propose_atom_generalization WARNING: Expected an axiom.\n");
 #endif
 
-		for (unsigned int i = 0; i < canonicalized->array.length; i++) {
-			Formula* atom = canonicalized->array.operands[i];
-			if (atom->type == FormulaType::NOT) {
-				atom = atom->unary.operand;
-				if (atom->atom.arg2.type == TermType::NONE) {
-					
-				} else {
-					/* TODO: implement this */
-				}
-			} else {
-				if (atom->atom.arg2.type == TermType::NONE) {
-					/* TODO: implement this */
-				} else {
-					/* TODO: implement this */
-				}
+		Proof* implication = Proof::new_universal_elim(axiom_step, Formula::new_constant(concept));
+		if (implication == NULL) {
+			for (unsigned int i = k; k < conjunct_steps.length; k++) {
+				free(*conjunct_steps[k]);
+				if (conjunct_steps[k]->reference_count == 0)
+					free(conjunct_steps[k]);
 			}
+			return false;
+		}
+
+		Proof* antecedent = Proof::new_conjunction_intro(conjunct_steps);
+		if (antecedent == NULL) {
+			free(*implication); free(implication);
+			for (unsigned int i = k; k < conjunct_steps.length; k++) {
+				free(*conjunct_steps[k]);
+				if (conjunct_steps[k]->reference_count == 0)
+					free(conjunct_steps[k]);
+			}
+			return false;
 		}
 
 		nd_step<Formula, Canonical>* step = proofs.values[index];
 		step->type = nd_step_type::IMPLICATION_ELIMINATION;
-		free(*step->formula);
-		if (step->formula->reference_count == 0)
-			free(step->formula);
-		step->operands[0] = Proof::new_universal_elim(axiom_step, Formula::new_constant(concept));
-		step->operands[1] = Proof::new_conjunction_intro(conjunct_steps);
+		Formula* old_formula = step->formula;
+		step->operands[0] = implication;
+		step->operands[1] = antecedent;
 		for (unsigned int i = 2; i < ND_OPERAND_COUNT; i++)
 			step->operands[i] = NULL;
-		if (!step->operands[0]->children.add(step) || !step->operands[1]->children.add(step)) {
-			/* TODO: implement this */
-		}
+		step->operands[0]->children.add(step); /* NOTE: `children` is initialized with positive capacity */
+		step->operands[1]->children.add(step);
+
+		/* remove the now redundant axiom from the theory */
+		shift_left(proofs.keys + index, proofs.size - index);
+		shift_left(proofs.values + index, proofs.size - index);
+		proofs.size--;
 	}
 }
 
@@ -302,7 +377,7 @@ bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 	Formula* axiom;
 
 	if (axiom->type == FormulaType::FOR_ALL) {
-
+		return propose_universal_elimination(T, axiom, proposed_proofs);
 	} else if (axiom->type == FormulaType::ATOM) {
 		return propose_atom_generalization(T, axiom, proposed_proofs);
 	} else if (axiom->type == FormulaType::NOT) {
