@@ -25,21 +25,27 @@ struct relation {
 };
 
 template<typename ProofCalculus>
-struct concept
+struct proof
 {
 	typedef typename ProofCalculus::Proof Proof;
 
-	array_map<unsigned int, Proof*> types;
-	array_map<unsigned int, Proof*> negated_types;
-	array_map<relation, Proof*> relations;
-	array_map<relation, Proof*> negated_relations;
+	Proof* axiom;
+	array<Proof*> proofs;
+};
+
+template<typename ProofCalculus>
+struct concept
+{
+	array_map<unsigned int, proof<ProofCalculus>> types;
+	array_map<unsigned int, proof<ProofCalculus>> negated_types;
+	array_map<relation, proof<ProofCalculus>> relations;
+	array_map<relation, proof<ProofCalculus>> negated_relations;
 };
 
 template<typename Formula, typename ProofCalculus>
 struct theory
 {
 	typedef typename Formula::Type FormulaType;
-	typedef typename ProofCalculus::Proof Proof;
 
 	/* A map from `x` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
@@ -59,7 +65,7 @@ struct theory
 
 	hash_map<unsigned int, concept> ground_concepts;
 
-	array<Proof*> universal_quantications;
+	array<proof<ProofCalculus>> universal_quantications;
 
 	bool add_formula(Formula* formula)
 	{

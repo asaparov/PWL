@@ -91,6 +91,8 @@ bool get_axiom(
 		relation rel, unsigned int arg,
 		array<nd_step<Formula, true>*>& conjunct_steps)
 {
+	typedef natural_deduction<Formula, true> Proof;
+
 	if (!relations.ensure_capacity(relations.size + 1))
 		return false;
 	unsigned int index = linear_search(relations.keys, rel, 0, relations.size);
@@ -124,10 +126,24 @@ bool get_axiom(
 	return true;
 }
 
-template<typename Formula, bool Negated>
-bool propose_atom_generalization(
+template<bool Negated, typename Formula>
+const array<unsigned int>& get_proposed_set(
+		const theory<Formula, nd_step<Formula, true>>& T, unsigned int predicate)
+{
+	return (Negated ? T.types.get(predicate).value : T.types.get(predicate).key);
+}
+
+template<bool Negated, typename Formula>
+const array<unsigned int>& get_proposed_set(
+		const theory<Formula, nd_step<Formula, true>>& T, relation predicate)
+{
+	return (Negated ? T.relations.get(predicate).value : T.relations.get(predicate).key);
+}
+
+template<bool Negated, typename Formula, typename PredicateType>
+bool propose_universal_intro(
 		const theory<Formula, nd_step<Formula, true>>& T,
-		unsigned int constant, unsigned int type,
+		unsigned int constant, PredicateType predicate,
 		array<pair<nd_step<Formula, true>*, nd_step<Formula, true>*>>& proposed_proofs,
 		double stop_probability)
 {
@@ -137,7 +153,7 @@ bool propose_atom_generalization(
 	typedef natural_deduction<Formula, true> Proof;
 
 	/* compute the set of constants for which the selected axiom is true */
-	const array<unsigned int>& proposed_set = (Negated ? T.types.get(type).value : T.types.get(type).key);
+	const array<unsigned int>& proposed_set = get_proposed_set<Negated>(T, predicate);
 
 	/* find other ground axioms that are connected to this constant */
 	const ConceptType& c = T.ground_concepts.get(constant);
@@ -240,13 +256,13 @@ bool propose_atom_generalization(
 		}
 	}
 
-	if (!T.universal_quantications.ensure_capacity(T.universal_quantications.length + 1))
-		return false;
-
 	Formula* axiom = Formula::new_for_all(1, Formula::new_if_then(
-			Formula::new_and(conjuncts), Formula::new_atom(type, Formula::new_variable(1))));
+			Formula::new_and(conjuncts), Formula::new_atom(predicate, Formula::new_variable(1))));
 	free_formulas(conjuncts);
 	if (axiom == NULL) return false;
+
+	if (proposed_proofs.ensure_capacity(proposed_proofs.length + intersection.length))
+		return false;
 
 	Formula* canonicalized = canonicalize(*axiom->quantifier.operand->binary.left);
 	if (canonicalized == NULL) {
@@ -315,13 +331,12 @@ bool propose_atom_generalization(
 	}
 	free(*canonicalized); free(canonicalized);
 
-	T.universal_quantications.add(axiom);
 	for (unsigned int k = 0; k < intersection.length; k++) {
 		const unsigned int concept = intersection[k];
 		ConceptType& instance = T.ground_concepts.get(concept);
 
 		array_map<unsigned int, nd_step<Formula, Canonical>*>& proofs = Negated ? instance.negated_types : instance.types;
-		unsigned int index = proofs.index_of(type);
+		unsigned int index = proofs.index_of(predicate);
 #if !defined(NDEBUG)
 		if (index == proofs.size)
 			fprintf(stderr, "propose_atom_generalization WARNING: Theory is invalid.\n");
@@ -329,7 +344,7 @@ bool propose_atom_generalization(
 			fprintf(stderr, "propose_atom_generalization WARNING: Expected an axiom.\n");
 #endif
 
-		Proof* implication = Proof::new_universal_elim(axiom_step, Formula::new_constant(concept));
+		Proof* new_step = Proof::new_implication_elim(Proof::new_universal_elim(axiom_step, Formula::new_constant(concept)), Proof::new_conjunction_intro(conjunct_steps));
 		if (implication == NULL) {
 			for (unsigned int i = k; k < conjunct_steps.length; k++) {
 				free(*conjunct_steps[k]);
@@ -339,52 +354,38 @@ bool propose_atom_generalization(
 			return false;
 		}
 
-		Proof* antecedent = Proof::new_conjunction_intro(conjunct_steps);
-		if (antecedent == NULL) {
-			free(*implication); free(implication);
-			for (unsigned int i = k; k < conjunct_steps.length; k++) {
-				free(*conjunct_steps[k]);
-				if (conjunct_steps[k]->reference_count == 0)
-					free(conjunct_steps[k]);
-			}
-			return false;
-		}
-
-		nd_step<Formula, Canonical>* step = proofs.values[index];
-		step->type = nd_step_type::IMPLICATION_ELIMINATION;
-		Formula* old_formula = step->formula;
-		step->operands[0] = implication;
-		step->operands[1] = antecedent;
-		for (unsigned int i = 2; i < ND_OPERAND_COUNT; i++)
-			step->operands[i] = NULL;
-		step->operands[0]->children.add(step); /* NOTE: `children` is initialized with positive capacity */
-		step->operands[1]->children.add(step);
-
-		/* remove the now redundant axiom from the theory */
-		shift_left(proofs.keys + index, proofs.size - index);
-		shift_left(proofs.values + index, proofs.size - index);
-		proofs.size--;
+		proposed_proofs.data[proposed_proofs.length++] = {proofs.values[index], new_step};
 	}
+
+	return true;
 }
 
 template<typename Formula>
 bool propose(const theory<Formula, nd_step<Formula, true>>& T,
-		array<pair<nd_step<Formula, true>*, nd_step<Formula, true>*>>& proposed_proofs)
+		array<pair<nd_step<Formula, true>*, nd_step<Formula, true>*>>& proposed_proofs,
+		bool new_antecedent_stop_probability)
 {
 	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::TermType TermType;
 
 	/* TODO: select an axiom from `T` uniformly at random */
 	Formula* axiom;
 
 	if (axiom->type == FormulaType::FOR_ALL) {
-		return propose_universal_elimination(T, axiom, proposed_proofs);
+		return propose_universal_elim(T, axiom, proposed_proofs);
 	} else if (axiom->type == FormulaType::ATOM) {
-		return propose_atom_generalization(T, axiom, proposed_proofs);
+		if (axiom->atom.arg2.type == TermType::NONE)
+			return propose_universal_intro<false>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
+		else return propose_universal_intro<false>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
 	} else if (axiom->type == FormulaType::NOT) {
-		if (axiom->unary.operand->type == FormulaType::ATOM)
-			return propose_atom_generalization(T, axiom, proposed_proofs);
-		else if (axiom->unary.operand.type == FormulaType::EXISTS)	
+		axiom = axiom->unary.operand;
+		if (axiom->type == FormulaType::ATOM) {
+			if (axiom->atom.arg.type == TermType::None)
+				return propose_universal_intro<true>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
+			else propose_universal_intro<true>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
+		} else if (axiom->type == FormulaType::EXISTS) {
 			return propose_exists_generalization(T, axiom, proposed_proofs);
+		}
 	}
 	fprintf(stderr, "propose ERROR: Selected an axiom with unsupported form.\n");
 	return false;
