@@ -11,7 +11,7 @@ using namespace core;
 template<bool FirstSample, typename Formula>
 void select_axiom(const theory<Formula, nd_step<Formula, true>>& T,
 		const concept<natural_deduction<Formula, true>>& c,
-		array<pair<uint_fast8_t, unsigned int>>& concept_indices,
+		array<pair<uint_fast8_t, unsigned int>>& axiom_indices,
 		array<unsigned int>& selected_types, array<unsigned int>& selected_negated_types,
 		array<relation>& selected_relations, array<relation>& selected_negated_relations,
 		array<unsigned int>& intersection)
@@ -25,31 +25,31 @@ void select_axiom(const theory<Formula, nd_step<Formula, true>>& T,
 		(2) if `A_1` has more elements in `B` than `A_2` (i.e.
 			|A_1 intersect B| > |A_2 intersect B|), then `A_1` is closer than
 			`A_2`. */
-	unsigned int selected_index = sample_uniform(concept_indices.length);
-	switch (concept_indices[selected_index].key) {
+	unsigned int selected_index = sample_uniform(axiom_indices.length);
+	switch (axiom_indices[selected_index].key) {
 	case 0:
-		type_value = c.types.keys[concept_indices[selected_index].value];
+		type_value = c.types.keys[axiom_indices[selected_index].value];
 		if (!selected_types.add(type_value)) return false;
 		if (FirstSample) intersection.append(T.types.get(type_value).key);
 		else set_intersect(intersection, T.types.get(type_value).key);
 	case 1:
-		type_value = c.negated_types.keys[concept_indices[selected_index].value];
+		type_value = c.negated_types.keys[axiom_indices[selected_index].value];
 		if (!selected_negated_types.add(type_value)) return false;
 		if (FirstSample) intersection.append(T.types.get(type_value).value);
 		else set_intersect(intersection, T.types.get(type_value).value);
 	case 2:
-		relation_value = c.relations.keys[concept_indices[selected_index].value];
+		relation_value = c.relations.keys[axiom_indices[selected_index].value];
 		if (!selected_relations.add(relation_value)) return false;
 		if (FirstSample) intersection.append(T.relations.get(relation_value).key);
 		else set_intersect(intersection, T.relations.get(relation_value).key);
 	case 3:
-		relation_value = c.negated_relations.keys[concept_indices[selected_index].value];
+		relation_value = c.negated_relations.keys[axiom_indices[selected_index].value];
 		if (!selected_negated_relations.add(relation_value)) return false;
 		if (FirstSample) intersection.append(T.negated_relations.get(relation_value).value);
 		else set_intersect(intersection, T.negated_relations.get(relation_value).value);
 	}
 
-	concept_indices.remove(selected_index);
+	axiom_indices.remove(selected_index);
 }
 
 template<typename Formula, bool Negated>
@@ -126,26 +126,82 @@ bool get_axiom(
 	return true;
 }
 
-template<bool Negated, typename Formula>
-const array<unsigned int>& get_proposed_set(
-		const theory<Formula, nd_step<Formula, true>>& T, unsigned int predicate)
-{
-	return (Negated ? T.types.get(predicate).value : T.types.get(predicate).key);
+template<bool Negated, unsigned int Arity, unsigned int LiftedArgIndex>
+struct atom {
+	static_assert(LiftedArgIndex < Arity, "LiftedArgIndex is out of bounds");
+
+	unsigned int predicate;
+	unsigned int args[Arity];
+};
+
+template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, unsigned int LiftedArgIndex>
+inline Formula* new_lifted_atom_helper(atom<Negated, Arity, LiftedArgIndex> a, Formula*... args) {
+	if (Index == 0)
+		return Formula::new_atom(a.predicate, args...);
+	else return new_lifted_atom_helper<Formula, Index - 1>(a,
+			(Index - 1 == LiftedArgIndex ? Formula::new_variable(1) : Formula::new_constant(a.args[Index - 1])), args);
+}
+
+template<typename Formula, bool Negated, unsigned int Arity, unsigned int LiftedArgIndex>
+inline Formula* new_lifted_atom(atom<Negated, Arity, LiftedArgIndex> a) {
+	return new_lifted_atom_helper<Formula, Arity>(a);
 }
 
 template<bool Negated, typename Formula>
-const array<unsigned int>& get_proposed_set(
-		const theory<Formula, nd_step<Formula, true>>& T, relation predicate)
+inline const array<unsigned int>& get_negated_set(
+		const theory<Formula, nd_step<Formula, true>>& T,
+		atom<Negated, 1, 0> a)
 {
-	return (Negated ? T.relations.get(predicate).value : T.relations.get(predicate).key);
+	return (Negated ? T.types.get(a.predicate).key : T.types.get(a.predicate).value);
 }
 
-template<bool Negated, typename Formula, typename PredicateType>
+template<bool Negated, unsigned int LiftedArgIndex, typename Formula>
+const array<unsigned int>& get_negated_set(
+		const theory<Formula, nd_step<Formula, true>>& T,
+		atom<Negated, 2, LiftedArgIndex> a)
+{
+	relation r = { a.predicate, (LiftedArgIndex == 0 ? 0 : a.args[0]), (LiftedArgIndex == 1 ? 0 : a.args[1]) };
+	return (Negated ? T.relations.get(r).key : T.relations.get(r).value);
+}
+
+template<bool Negated, typename Formula>
+const nd_step<Formula, Canonical>* get_proof(
+		const concept<natural_deduction<Formula, true>>& c,
+		atom<Negated, 1, 0> a)
+{
+	array_map<unsigned int, nd_step<Formula, Canonical>*>& proofs = Negated ? instance.negated_types : instance.types;
+	unsigned int index = proofs.index_of(a.predicate);
+#if !defined(NDEBUG)
+	if (index == proofs.size) {
+		fprintf(stderr, "propose_atom_generalization WARNING: Theory is invalid.\n");
+		return NULL;
+	}
+#endif
+	return proofs.values[index];
+}
+
+template<bool Negated, unsigned int LiftedArgIndex, typename Formula>
+const nd_step<Formula, Canonical>* get_proof(
+		const concept<natural_deduction<Formula, true>>& c,
+		atom<Negated, 2, LiftedArgIndex> a)
+{
+	array_map<relation, nd_step<Formula, Canonical>*>& proofs = Negated ? instance.negated_relations : instance.relations;
+	relation r = { a.predicate, (LiftedArgIndex == 0 ? 0 : a.args[0]), (LiftedArgIndex == 1 ? 0 : a.args[1]) };
+	unsigned int index = proofs.index_of(r);
+#if !defined(NDEBUG)
+	if (index == proofs.size) {
+		fprintf(stderr, "propose_atom_generalization WARNING: Theory is invalid.\n");
+		return NULL;
+	}
+#endif
+	return proofs.values[index];
+}
+
+template<bool Negated, unsigned int Arity, unsigned int LiftedArgIndex, typename Formula>
 bool propose_universal_intro(
 		const theory<Formula, nd_step<Formula, true>>& T,
-		unsigned int constant, PredicateType predicate,
 		array<pair<nd_step<Formula, true>*, nd_step<Formula, true>*>>& proposed_proofs,
-		double stop_probability)
+		atom<Negated, Arity, LiftedArgIndex> a, double stop_probability)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
@@ -153,22 +209,22 @@ bool propose_universal_intro(
 	typedef natural_deduction<Formula, true> Proof;
 
 	/* compute the set of constants for which the selected axiom is true */
-	const array<unsigned int>& proposed_set = get_proposed_set<Negated>(T, predicate);
+	const array<unsigned int>& negated_set = get_negated_set(T, a);
 
 	/* find other ground axioms that are connected to this constant */
-	const ConceptType& c = T.ground_concepts.get(constant);
-	array<pair<uint_fast8_t, unsigned int>> concept_indices(
+	const ConceptType& c = T.ground_concepts.get(a.args[LiftedArgIndex]);
+	array<pair<uint_fast8_t, unsigned int>> axiom_indices(
 			c.types.length + c.negated_types.length + c.relations.length + c.negated_relations.length);
 	for (unsigned int i = 0; i < c.types.length; i++)
-		concept_indices.add(make_pair<uint_fast8_t, unsigned int>(0, i));
+		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(0, i));
 	for (unsigned int i = 0; i < c.negated_types.length; i++)
-		concept_indices.add(make_pair<uint_fast8_t, unsigned int>(1, i));
+		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(1, i));
 	for (unsigned int i = 0; i < c.relations.length; i++)
-		concept_indices.add(make_pair<uint_fast8_t, unsigned int>(2, i));
+		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(2, i));
 	for (unsigned int i = 0; i < c.negated_relations.length; i++)
-		concept_indices.add(make_pair<uint_fast8_t, unsigned int>(3, i));
+		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(3, i));
 
-	if (concept_indices.length == 0) {
+	if (axiom_indices.length == 0) {
 		/* no candidate axioms are available */
 		return true;
 	}
@@ -185,19 +241,19 @@ bool propose_universal_intro(
 		/* select a candidate axiom at random, and compute the set of constants
 		   for which it's true and intersect it with `intersection` */
 		if (first_sample) {
-			select_axiom<true>(T, c, concept_indices, selected_types, selected_negated_types,
+			select_axiom<true>(T, c, axiom_indices, selected_types, selected_negated_types,
 					selected_relations, selected_negated_relations, intersection);
 		} else {
-			select_axiom<false>(T, c, concept_indices, selected_types, selected_negated_types,
+			select_axiom<false>(T, c, axiom_indices, selected_types, selected_negated_types,
 					selected_relations, selected_negated_relations, intersection);
 		}
-		if (concept_indices.length == 0) {
+		if (axiom_indices.length == 0) {
 			/* it is impossible to create a universally-quantified rule using
 				only ground concepts and relations */
 			return true;
 		}
 
-		if (is_subset(intersection.data, intersection.length, proposed_set.data, proposed_set.length))
+		if (!has_intersection(intersection.data, intersection.length, negated_set.data, negated_set.length))
 			break;
 		first_sample = false;
 	}
@@ -208,9 +264,9 @@ bool propose_universal_intro(
 			break;
 
 		/* select a candidate axiom at random */
-		select_axiom<false>(T, c, concept_indices, selected_types, selected_negated_types,
+		select_axiom<false>(T, c, axiom_indices, selected_types, selected_negated_types,
 				selected_relations, selected_negated_relations, intersection);
-		if (concept_indices.length == 0)
+		if (axiom_indices.length == 0)
 			break;
 	}
 
@@ -257,7 +313,7 @@ bool propose_universal_intro(
 	}
 
 	Formula* axiom = Formula::new_for_all(1, Formula::new_if_then(
-			Formula::new_and(conjuncts), Formula::new_atom(predicate, Formula::new_variable(1))));
+			Formula::new_and(conjuncts), new_lifted_atom<Formula>(a)));
 	free_formulas(conjuncts);
 	if (axiom == NULL) return false;
 
@@ -335,12 +391,9 @@ bool propose_universal_intro(
 		const unsigned int concept = intersection[k];
 		ConceptType& instance = T.ground_concepts.get(concept);
 
-		array_map<unsigned int, nd_step<Formula, Canonical>*>& proofs = Negated ? instance.negated_types : instance.types;
-		unsigned int index = proofs.index_of(predicate);
+		Proof* old_step = get_proof(instance, a);
 #if !defined(NDEBUG)
-		if (index == proofs.size)
-			fprintf(stderr, "propose_atom_generalization WARNING: Theory is invalid.\n");
-		else if (proofs.values[index]->type != nd_step_type::AXIOM)
+		else if (old_step->type != nd_step_type::AXIOM)
 			fprintf(stderr, "propose_atom_generalization WARNING: Expected an axiom.\n");
 #endif
 
@@ -354,10 +407,101 @@ bool propose_universal_intro(
 			return false;
 		}
 
-		proposed_proofs.data[proposed_proofs.length++] = {proofs.values[index], new_step};
+		proposed_proofs.data[proposed_proofs.length++] = {old_step, new_step};
 	}
 
 	return true;
+}
+
+template<bool FirstSample, bool Negated, typename Formula>
+inline void get_satisfying_concepts(
+		const theory<Formula, nd_step<Formula, true>>& T,
+		const Formula* literal, array<unsigned int>& intersection)
+{
+	typedef typename Formula::TermType TermType;
+
+	if (literal->atom.arg2.type == TermType::NONE) {
+		/* this is a unary atom */
+		const pair<array<unsigned int>, array<unsigned int>>& list = T.types.get(literal->atom.predicate);
+		const array<unsigned int>& sublist = Negated ? list.value : list.key;
+		if (FirstSample) intersection.append(sublist);
+		else set_intersect(intersection, sublist);
+	} else {
+		/* this is a binary atom */
+		relation r = { literal->atom.predicate,
+				(literal->atom.arg1.type == TermType::VARIABLE ? 0 : literal->atom.arg1.constant),
+				(literal->atom.arg2.type == TermType::VARIABLE ? 0 : literal->atom.arg2.constant) };
+		const pair<array<unsigned int>, array<unsigned int>>& list = T.relations.get(r);
+		const array<unsigned int>& sublist = Negated ? list.value : list.key;
+		if (FirstSample) intersection.append(sublist);
+		else set_intersect(intersection, sublist);
+	}
+}
+
+template<bool FirstSample, typename Formula>
+bool get_satisfying_concepts(
+		const theory<Formula, nd_step<Formula, true>>& T,
+		const Formula* formula, array<unsigned int>& intersection)
+{
+	typedef typename Formula::Type FormulaType;
+
+	if (formula->type == FormulaType::ATOM) {
+		get_satisfying_concepts_helper<FirstSample, false>(T, formula, intersection);
+	} else if (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::ATOM) {
+		get_satisfying_concepts_helper<FirstSample, true>(T, formula->unary->operand, intersection);
+	} else if (formula->type == FormulaType::AND) {
+		for (unsigned int i = 0; i < antecedent->array.length; i++) {
+			Formula* conjunct = antecedent->array.operand[i];
+			if ((i == 0 && !get_satisfying_concepts<FirstSample>(T, conjunct, antecedent_concepts))
+			 || (i > 0 && !get_satisfying_concepts<false>(T, conjunct, antecedent_concepts)))
+				return false;
+		}
+	} else {
+		fprintf(stderr, "get_satisfying_concepts ERROR: Expected a literal.\n");
+		return false;
+	}
+	return true;
+} 
+
+template<bool Negated, unsigned int Arity, unsigned int LiftedArgIndex, typename Formula>
+bool propose_universal_elim(
+		const theory<Formula, nd_step<Formula, true>>& T,
+		array<pair<nd_step<Formula, true>*, nd_step<Formula, true>*>>& proposed_proofs,
+		const Formula* formula)
+{
+	typedef typename Formula::Type FormulaType;
+	typedef natural_deduction<Formula, true> Proof;
+
+	Formula* quantified_formula = formula->quantifier.operand;
+	if (quantified_formula->type != FormulaType::IF_THEN) {
+		fprintf(stderr, "propose_universal_elim ERROR: Expected a conditional statement within the quantifier.\n");
+		return false;
+	}
+
+	const Formula* antecedent = quantified_formula->binary.left;
+	const Formula* consequent = quantified_formula->binary.right;
+
+	/* compute the set of concepts for which the antecedent holds */
+	array<unsigned int> antecedent_concepts(64);
+	if (!get_satisfying_concepts<true>(T, antecedent, antecedent_concepts))
+		return false;
+
+	/* find the proof step for the universally-quantified axiom */
+	Proof* old_step = NULL;
+	for (unsigned int i = 0; i < T.universal_quantifications.length; i++) {
+		if (T.universal_quantifications[i].axiom->formula != formula) continue;
+		old_step = T.universal_quantifications[i].axiom;
+	}
+#if !defined(NDEBUG)
+	if (old_step == NULL || old_step->type != nd_step_type::AXIOM) {
+		fprintf(stderr, "propose_universal_elim ERROR: Unable to find axiom in theory.\n");
+		return false;
+	}
+#endif
+
+	for (unsigned int antecedent_concept : antecedent_concepts) {
+
+	}
 }
 
 template<typename Formula>
@@ -372,19 +516,47 @@ bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 	Formula* axiom;
 
 	if (axiom->type == FormulaType::FOR_ALL) {
-		return propose_universal_elim(T, axiom, proposed_proofs);
+		return propose_universal_elim(T, axiom->quantifier.operand, proposed_proofs);
 	} else if (axiom->type == FormulaType::ATOM) {
-		if (axiom->atom.arg2.type == TermType::NONE)
-			return propose_universal_intro<false>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
-		else return propose_universal_intro<false>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
+		if (axiom->atom.arg2.type == TermType::NONE) {
+			atom<false, 1, 0> a;
+			a.predicate = axiom->atom.predicate;
+			a.args[0] = axiom->atom.arg1;
+			return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+		} else if (sample_uniform(2) == 0) {
+			atom<false, 2, 0> a;
+			a.predicate = axiom->atom.predicate;
+			a.args[0] = axiom->atom.arg1;
+			a.args[1] = axiom->atom.arg2;
+			return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+		} else {
+			atom<false, 2, 1> a;
+			a.predicate = axiom->atom.predicate;
+			a.args[0] = axiom->atom.arg1;
+			a.args[1] = axiom->atom.arg2;
+			return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+		}
 	} else if (axiom->type == FormulaType::NOT) {
 		axiom = axiom->unary.operand;
 		if (axiom->type == FormulaType::ATOM) {
-			if (axiom->atom.arg.type == TermType::None)
-				return propose_universal_intro<true>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
-			else propose_universal_intro<true>(T, axiom, proposed_proofs, new_antecedent_stop_probability);
-		} else if (axiom->type == FormulaType::EXISTS) {
-			return propose_exists_generalization(T, axiom, proposed_proofs);
+			if (axiom->atom.arg2.type == TermType::NONE) {
+				atom<true, 1, 0> a;
+				a.predicate = axiom->atom.predicate;
+				a.args[0] = axiom->atom.arg1;
+				return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+			} else if (sample_uniform(2) == 0) {
+				atom<true, 2, 0> a;
+				a.predicate = axiom->atom.predicate;
+				a.args[0] = axiom->atom.arg1;
+				a.args[1] = axiom->atom.arg2;
+				return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+			} else {
+				atom<true, 2, 1> a;
+				a.predicate = axiom->atom.predicate;
+				a.args[0] = axiom->atom.arg1;
+				a.args[1] = axiom->atom.arg2;
+				return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+			}
 		}
 	}
 	fprintf(stderr, "propose ERROR: Selected an axiom with unsupported form.\n");
