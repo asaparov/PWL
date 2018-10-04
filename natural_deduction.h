@@ -444,6 +444,18 @@ struct proof_state_assumptions {
 };
 
 template<typename T>
+struct array_view {
+	T* array;
+	unsigned int length;
+
+	array_view(T* array, unsigned int length) : array(array), length(length) { }
+
+	inline T& operator[] (size_t index) {
+		return array[index];
+	}
+};
+
+template<typename T>
 struct indexed_array_view {
 	T* array;
 	unsigned int* indices;
@@ -985,7 +997,7 @@ private:
 	static inline Proof* new_parameter(unsigned int parameter) {
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, nd_step_type::PARAMETER)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		step->parameter = parameter;
 		axiom->reference_count++;
 		return step;
@@ -994,7 +1006,7 @@ private:
 	static inline Proof* new_parameter(const Term& term) {
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, nd_step_type::TERM_PARAMETER)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		step->term = term;
 		axiom->reference_count++;
 		return step;
@@ -1011,7 +1023,7 @@ private:
 		}
 		for (unsigned int i = 0; i < parameters.length; i++)
 			step->parameters[i] = parameters[i];
-		step->reference_count = 1;
+		step->reference_count = 0;
 		return step;
 	}
 
@@ -1021,7 +1033,7 @@ private:
 
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		step->formula = parameter;
 		parameter->reference_count++;
 		return step;
@@ -1033,7 +1045,7 @@ private:
 
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		step->operands[0] = proof;
 		step->operands[1] = NULL;
 		step->operands[2] = NULL;
@@ -1051,7 +1063,7 @@ private:
 
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		step->operands[0] = left;
 		step->operands[1] = right;
 		step->operands[2] = NULL;
@@ -1070,7 +1082,7 @@ private:
 
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		step->operands[0] = first;
 		step->operands[1] = second;
 		step->operands[2] = third;
@@ -1113,7 +1125,7 @@ private:
 
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		if (!array_init(step->operand_array, sizeof...(Args))) {
 			free(step); return NULL;
 		}
@@ -1131,7 +1143,7 @@ private:
 
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, Type)) return NULL;
-		step->reference_count = 1;
+		step->reference_count = 0;
 		if (!array_init(step->operand_array, operands.length)) {
 			free(step); return NULL;
 		}

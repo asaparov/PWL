@@ -8,6 +8,76 @@
 
 using namespace core;
 
+template<typename Formula>
+struct proof_transformation {
+	array_map<nd_step<Formula, true>*, nd_step<Formula, true>*> transformations;
+
+	static inline void free(proof_transformation<Formula>& t) {
+		for (auto entry : t.transformations) {
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		}
+		core::free(t.transformations);
+	}
+};
+
+template<typename Formula>
+inline bool init(proof_transformation<Formula>& t) {
+	return array_map_init(t.transformations, 4);
+}
+
+template<typename Formula>
+struct proof_transformations {
+	array_map<nd_step<Formula, true>*, proof_transformation<Formula>> transformed_proofs;
+
+	static inline void free(proof_transformations<Formula>& t) {
+		for (auto entry : t.transformed_proofs)
+			core::free(entry.value);
+		core::free(t.transformed_proofs);
+	}
+};
+
+bool propose_transformation(
+		const theory<Formula, nd_step<Formula, true>>& T,
+		proof_transformations<Formula>& proposed_proofs,
+		nd_step<Formula, true>* old_step, nd_step<Formula, true>* new_step)
+{
+	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef typename ProofCalculus::Proof Proof;
+
+	array<Proof*> stack(16);
+	hash_set<Proof*> visited(32);
+	stack[0] = old_step; stack.length++;
+	while (stack.length > 0) {
+		Proof* step = stack.pop();
+		if (!visited.add(step)) return false;
+
+		if (T.observations.contains(step)) {
+			if (!proposed_proofs.transformed_proofs.check_size())
+				return false;
+
+			unsigned int index = proposed_proofs.transformed_proofs.index_of(step);
+			if (index == proposed_proofs.transformed_proofs.size) {
+				proposed_proofs.transformed_proofs.keys[index] = step;
+				if (!init(proposed_proofs.transformed_proofs.values[index]))
+					return false;
+			}
+			proposed_proofs.transformed_proofs.size++;
+
+			proof_transformation<Formula>& value = proposed_proofs.transformed_proofs.values[index];
+			value.transformations.put(old_step, new_step);
+		}
+
+		if (!stack.ensure_capacity(stack.length + step->children.length))
+			return false;
+		for (Proof* child : step->children) {
+			if (visited.contains(child)) continue;
+			stack[stack.length++] = child;
+		}
+	}
+}
+
 template<bool FirstSample, typename Formula>
 void select_axiom(const theory<Formula, nd_step<Formula, true>>& T,
 		const concept<natural_deduction<Formula, true>>& c,
@@ -66,6 +136,7 @@ bool get_axiom(
 				Proof::new_axiom(Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(arg)))) :
 				Proof::new_axiom(Formula::new_atom(predicate, Formula::new_constant(arg)));
 		if (new_axiom == NULL) return false;
+		new_axiom->reference_count++;
 
 		if (!conjunct_steps.add(new_axiom)) {
 			free(*new_axiom);
@@ -101,6 +172,7 @@ bool get_axiom(
 				Formula::new_constant(rel.arg1 == 0 ? arg : rel.arg1),
 				Formula::new_constant(rel.arg2 == 0 ? arg : rel.arg2));
 		if (atom == NULL) return false;
+		atom->reference_count++;
 
 		Proof* new_axiom = Negated ? Proof::new_axiom(Formula::new_not(atom)) : Proof::new_axiom(atom);
 		if (new_axiom == NULL) {
@@ -204,7 +276,7 @@ const proof<ProofCalculus>& get_proof(
 template<bool Negated, unsigned int Arity, unsigned int LiftedArgIndex, typename Formula>
 bool propose_universal_intro(
 		const theory<Formula, nd_step<Formula, true>>& T,
-		array<pair<proof_substitution<Formula, true>, array<nd_step<Formula, true>*>*>>& proposed_proofs,
+		proof_transformations<Formula>& proposed_proofs,
 		atom<Negated, Arity, LiftedArgIndex> a, double stop_probability)
 {
 	typedef typename Formula::Type FormulaType;
@@ -322,9 +394,6 @@ bool propose_universal_intro(
 	free_formulas(conjuncts);
 	if (axiom == NULL) return false;
 
-	if (proposed_proofs.ensure_capacity(proposed_proofs.length + intersection.length))
-		return false;
-
 	Formula* canonicalized = canonicalize(*axiom->quantifier.operand->binary.left);
 	if (canonicalized == NULL) {
 		free(*axiom); free(axiom);
@@ -352,6 +421,7 @@ bool propose_universal_intro(
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
+						free(*axiom_step); free(axiom_step);
 						return false;
 					}
 				} else {
@@ -363,6 +433,7 @@ bool propose_universal_intro(
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
+						free(*axiom_step); free(axiom_step);
 						return false;
 					}
 				}
@@ -373,6 +444,7 @@ bool propose_universal_intro(
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
+						free(*axiom_step); free(axiom_step);
 						return false;
 					}
 				} else {
@@ -384,6 +456,7 @@ bool propose_universal_intro(
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
+						free(*axiom_step); free(axiom_step);
 						return false;
 					}
 				}
@@ -396,34 +469,85 @@ bool propose_universal_intro(
 		const unsigned int concept = intersection[k];
 		ConceptType& instance = T.ground_concepts.get(concept);
 
-		proof<ProofCalculus>& old_step = get_proof(instance, a);
+		Proof* old_step = get_proof(instance, a);
 #if !defined(NDEBUG)
-		else if (old_step.axiom->type != nd_step_type::AXIOM)
+		else if (old_step->type != nd_step_type::AXIOM)
 			fprintf(stderr, "propose_atom_generalization WARNING: Expected an axiom.\n");
 #endif
 
 		Proof* new_step = ProofCalculus::new_implication_elim(
 				ProofCalculus::new_universal_elim(axiom_step, Formula::new_constant(concept)),
 				ProofCalculus::new_conjunction_intro(conjunct_steps));
-		if (implication == NULL) {
+		if (new_step == NULL) {
 			for (unsigned int i = k; k < conjunct_steps.length; k++) {
 				free(*conjunct_steps[k]);
 				if (conjunct_steps[k]->reference_count == 0)
 					free(conjunct_steps[k]);
 			}
+			free(*axiom_step); free(axiom_step);
 			return false;
 		}
+		new_step->reference_count++;
 
-		proposed_proofs.data[proposed_proofs.length++] = {{old_step.axiom, new_step}, old_step.proofs};
+		if (!propose_transformation(T, proposed_proofs, old_step, new_step)) {
+			free(*new_step);
+			if (new_step->reference_count == 0)
+				free(new_step);
+			for (unsigned int i = k; k < conjunct_steps.length; k++) {
+				free(*conjunct_steps[k]);
+				if (conjunct_steps[k]->reference_count == 0)
+					free(conjunct_steps[k]);
+			}
+			free(*axiom_step); free(axiom_step);
+			return false;
+		}
 	}
 
 	return true;
 }
 
-template<bool Negated, unsigned int Arity, unsigned int LiftedArgIndex, typename Formula>
+void free_proofs(nd_step<Formula, true>** proofs, unsigned int count) {
+	for (unsigned int i = 0; i < count; i++) {
+		if (proofs[i] == NULL) continue;
+		free(*proofs[i]);
+		if (proofs[i]->reference_count == 0)
+			free(proofs[i]);
+	}
+}
+
+template<typename Formula>
+nd_step<Formula, true>* make_grounded_conjunction(
+		Formula* consequent, unsigned int variable,
+		typename Formula::Term constant,
+		nd_step<Formula, true>** new_axioms)
+{
+	typedef natural_deduction<Formula, true> ProofCalculus;
+
+	for (unsigned int i = 0; i < consequent->array.length; i++) {
+		if (new_axioms[i] != NULL) continue;
+
+		new_axioms[i] = ProofCalculus::new_axiom(
+				substitute(*consequent->array.operands[i],
+				Formula::new_variable(variable), constant));
+		if (new_axioms[i] == NULL) {
+			free_proofs(new_axioms);
+			return NULL;
+		}
+		new_axioms[i]->reference_count++;
+	}
+	new_step = ProofCalculus::new_conjunction_intro(array_view(new_axioms, consequent->array.length));
+	if (new_step == NULL) {
+		free_proofs(new_axioms);
+		return NULL;
+	}
+	new_step->reference_count++;
+	return new_step;
+}
+
+template<typename Formula>
 bool propose_universal_elim(
 		const theory<Formula, nd_step<Formula, true>>& T,
-		array<pair<proof_substitution<Formula, true>, array<nd_step<Formula, true>*>*>>& proposed_proofs,
+		proof_transformations<Formula>& proposed_proofs,
 		const Formula* formula)
 {
 	typedef typename Formula::Type FormulaType;
@@ -457,13 +581,82 @@ bool propose_universal_elim(
 			if (grandchild->type != nd_step_type::IMPLICATION_ELIMINATION)
 				return true;
 
-			for (Proof* descendant : grandchild->children) {
+			Proof* new_step = NULL;
+			Proof** new_axioms = (Proof**) calloc(consequent->array.length, sizeof(Proof*));
+			if (new_axioms == NULL) return false;
 
+			/* check if `grandchild` is observed */
+			if (T.observations.contains(grandchild)) {
+				new_step = make_grounded_conjunction(consequent,
+						formula->quantifier.variable, child->operands[1]->term, new_axioms);
+				if (new_step == NULL) {
+					free_proofs(new_axioms);
+					free(new_axioms); return false;
+				}
+
+				/* propose `new_step` to substitute `grandchild` */
+				if (!propose_transformation(T, proposed_proofs, grandchild, new_step)) {
+					free(*new_step); if (new_step->reference_count == 0) free(new_step);
+					free_proofs(new_axioms); free(new_axioms); return false;
+				}
 			}
+			for (Proof* descendant : grandchild->children) {
+				if (descendant->type != nd_step_type::CONJUNCTION_ELIMINATION) {
+					/* we need to prove all conjuncts in `grandchild` */
+					if (new_step == NULL) {
+						new_step = make_grounded_conjunction(consequent,
+								formula->quantifier.variable, child->operands[1]->term, new_axioms);
+						if (new_step == NULL) {
+							free_proofs(new_axioms);
+							free(new_axioms); return false;
+						}
+
+						/* propose `new_step` to substitute `grandchild` if we haven't already */
+						if (!propose_transformation(T, proposed_proofs, grandchild, new_step)) {
+							free(*new_step); if (new_step->reference_count == 0) free(new_step);
+							free_proofs(new_axioms); free(new_axioms); return false;
+						}
+					}
+				} else {
+					const array<unsigned int>& indices = descendant->operands[1]->parameters;
+					for (unsigned int index : indices) {
+						if (new_axioms[index] != NULL) continue;
+
+						new_axioms[index] = ProofCalculus::new_axiom(
+								substitute(*consequent->array.operands[index],
+								Formula::new_variable(variable), child->operands[1]->term));
+						if (new_axioms[index] == NULL) {
+							if (new_step != NULL) {
+								free(*new_step); if (new_step->reference_count == 0) free(new_step);
+							}
+							free_proofs(new_axioms); free(new_axioms); return false;
+						}
+						new_axioms[index]->reference_count++;
+					}
+
+					Proof* new_indexed_step = ProofCalculus::new_conjunction_intro(
+							indexed_array_view(new_axioms, indices.data, indices.length));
+					if (new_indexed_step == NULL) {
+						if (new_step != NULL) {
+							free(*new_step); if (new_step->reference_count == 0) free(new_step);
+						}
+						free_proofs(new_axioms); free(new_axioms); return false;
+					}
+
+					/* propose `new_indexed_step` to substitute `descendant` */
+					if (!propose_transformation(T, proposed_proofs, descendant, new_indexed_step)) {
+						if (new_step != NULL) {
+							free(*new_step); if (new_step->reference_count == 0) free(new_step);
+						}
+						free_proofs(new_axioms); free(new_axioms); return false;
+					}
+				}
+			}
+			free_proofs(new_axioms);
+			free(new_axioms);
 		}
 	}
-	if (proposed_proofs.ensure_capacity(proposed_proofs.length + 1)) return false;
-	proposed_proofs[proposed_proofs.length++] = {{} };
+	return true;
 }
 
 template<typename Formula>

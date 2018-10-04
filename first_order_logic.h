@@ -811,7 +811,7 @@ inline bool apply(const fol_term& src, fol_term& dst, const term_substituter<Var
 	return true;
 }
 
-template<int VariableShift>
+template<int VariableShift = 0>
 inline fol_formula* substitute(const fol_formula& src,
 		const fol_term& src_term, const fol_term& dst_term)
 {
