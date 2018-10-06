@@ -741,10 +741,6 @@ bool propose_universal_elim(
 				return true;
 
 			Proof* new_step = NULL;
-			/* TODO: there is a potential problem; if a new grounded atom is
-					 proveable by another univerally-quantified axiom, the
-					 currently implemented algorithm will make that grounded
-					 atom as an axiom */
 			Proof** new_axioms = (Proof**) calloc(consequent->array.length, sizeof(Proof*));
 			if (new_axioms == NULL) return false;
 

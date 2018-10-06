@@ -193,44 +193,44 @@ private:
 					/* this is a formula of form `t(c)` */
 
 					/* check that this is not implied by an existing univerally-quantified axiom */
-					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
-						Proof* axiom = universal_quantifications[k];
-						Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
-						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-						unsigned int i = 0;
-						if (consequent->type == FormulaType::AND) {
-							for (; i < consequent->array.length; i++) {
-								fol_term dst;
-								if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
-									break;
-							}
-							if (i == consequent->array.length) continue;
-						} else if (*consequent != *canonicalized) {
-							i = consequent->array.length;
-							continue;
-						}
+					// for (unsigned int k = 0; k < universal_quantifications.length; k++) {
+					// 	Proof* axiom = universal_quantifications[k];
+					// 	Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
+					// 	Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+					// 	unsigned int i = 0;
+					// 	if (consequent->type == FormulaType::AND) {
+					// 		for (; i < consequent->array.length; i++) {
+					// 			fol_term dst;
+					// 			if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
+					// 				break;
+					// 		}
+					// 		if (i == consequent->array.length) continue;
+					// 	} else if (*consequent != *canonicalized) {
+					// 		i = consequent->array.length;
+					// 		continue;
+					// 	}
 
-						/* check if the antecedent is satisfied by `c` */
-						Proof* proof;
-						if (!make_universal_elim_proof(consequent, ground_concepts.get(atom->atom.arg1.constant), proof))
-							return false;
-						if (proof != NULL) {
-							Proof* new_proof;
-							proof->reference_count++;
-							if (i == consequent->array.length) {
-								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof);
-							} else {
-								new_proof = ProofCalculus::new_conjunction_elim(
-										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof),
-										array_view(&i, 1));
-							}
-							if (new_proof == NULL) {
-								free(*proof); if (proof->reference_count == 0) free(proof);
-								return false;
-							}
-							return new_proof;
-						}
-					}
+					// 	/* check if the antecedent is satisfied by `c` */
+					// 	Proof* proof;
+					// 	if (!make_universal_elim_proof(consequent, ground_concepts.get(atom->atom.arg1.constant), proof))
+					// 		return false;
+					// 	if (proof != NULL) {
+					// 		Proof* new_proof;
+					// 		proof->reference_count++;
+					// 		if (i == consequent->array.length) {
+					// 			new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof);
+					// 		} else {
+					// 			new_proof = ProofCalculus::new_conjunction_elim(
+					// 					ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof),
+					// 					array_view(&i, 1));
+					// 		}
+					// 		if (new_proof == NULL) {
+					// 			free(*proof); if (proof->reference_count == 0) free(proof);
+					// 			return false;
+					// 		}
+					// 		return new_proof;
+					// 	}
+					// }
 
 					/* no existing universally-quantified axiom implies this observation */
 					return ProofCalculus::new_axiom(canonicalized);
@@ -254,44 +254,44 @@ private:
 					/* this is a formula of form `r(c_1,c_2)` */
 
 					/* check that this is not implied by an existing univerally-quantified axiom */
-					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
-						Proof* axiom = universal_quantifications[k];
-						Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
-						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-						fol_term unifying_term;
-						unsigned int i = 0;
-						if (consequent->type == FormulaType::AND) {
-							for (; i < consequent->array.length; i++) {
-								if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
-									break;
-							}
-							if (i == consequent->array.length) continue;
-						} else if (*consequent != *canonicalized) {
-							i = consequent->array.length;
-							continue;
-						}
+					// for (unsigned int k = 0; k < universal_quantifications.length; k++) {
+					// 	Proof* axiom = universal_quantifications[k];
+					// 	Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
+					// 	Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+					// 	fol_term unifying_term;
+					// 	unsigned int i = 0;
+					// 	if (consequent->type == FormulaType::AND) {
+					// 		for (; i < consequent->array.length; i++) {
+					// 			if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
+					// 				break;
+					// 		}
+					// 		if (i == consequent->array.length) continue;
+					// 	} else if (*consequent != *canonicalized) {
+					// 		i = consequent->array.length;
+					// 		continue;
+					// 	}
 
-						/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
-						Proof* proof;
-						if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term.constant), proof))
-							return false;
-						if (proof != NULL) {
-							Proof* new_proof;
-							proof->reference_count++;
-							if (i == consequent->array.length) {
-								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof);
-							} else {
-								new_proof = ProofCalculus::new_conjunction_elim(
-										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof),
-										array_view(&i, 1));
-							}
-							if (new_proof == NULL) {
-								free(*proof); if (proof->reference_count == 0) free(proof);
-								return false;
-							}
-							return new_proof;
-						}
-					}
+					// 	/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
+					// 	Proof* proof;
+					// 	if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term.constant), proof))
+					// 		return false;
+					// 	if (proof != NULL) {
+					// 		Proof* new_proof;
+					// 		proof->reference_count++;
+					// 		if (i == consequent->array.length) {
+					// 			new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof);
+					// 		} else {
+					// 			new_proof = ProofCalculus::new_conjunction_elim(
+					// 					ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof),
+					// 					array_view(&i, 1));
+					// 		}
+					// 		if (new_proof == NULL) {
+					// 			free(*proof); if (proof->reference_count == 0) free(proof);
+					// 			return false;
+					// 		}
+					// 		return new_proof;
+					// 	}
+					// }
 
 					/* no existing universally-quantified axiom implies this observation */
 					return ProofCalculus::new_axiom(canonicalized);
