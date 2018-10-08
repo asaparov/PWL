@@ -40,6 +40,7 @@ struct proof_transformations {
 	}
 };
 
+template<typename Formula>
 bool propose_transformation(
 		const theory<Formula, nd_step<Formula, true>>& T,
 		proof_transformations<Formula>& proposed_proofs,
@@ -272,7 +273,7 @@ const nd_step<Formula, true>* get_proof(
 }
 
 template<bool FirstSample, bool Negated, typename Formula>
-inline void get_satisfying_concepts(
+inline void get_satisfying_concepts_helper(
 		const theory<Formula, nd_step<Formula, true>>& T,
 		const Formula* literal, array<unsigned int>& intersection)
 {
@@ -364,7 +365,8 @@ template<bool Negated, unsigned int Arity, unsigned int LiftedArgIndex, typename
 bool propose_universal_intro(
 		const theory<Formula, nd_step<Formula, true>>& T,
 		proof_transformations<Formula>& proposed_proofs,
-		const atom<Negated, Arity, LiftedArgIndex> a, double stop_probability)
+		const atom<Negated, Arity, LiftedArgIndex> a,
+		double& log_proposal_probability_ratio)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
@@ -386,15 +388,26 @@ bool propose_universal_intro(
 	/* find other ground axioms that are connected to this constant */
 	const ConceptType& c = T.ground_concepts.get(a.args[LiftedArgIndex]);
 	array<pair<uint_fast8_t, unsigned int>> axiom_indices(
-			c.types.length + c.negated_types.length + c.relations.length + c.negated_relations.length);
-	for (unsigned int i = 0; i < c.types.length; i++)
+			c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size);
+	for (unsigned int i = 0; i < c.types.size; i++) {
+		if (!Negated && Arity == 1 && c.types.keys[i] == a.predicate) continue; /* avoid selecting the consequent as a conjunct in the antecedent */
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(0, i));
-	for (unsigned int i = 0; i < c.negated_types.length; i++)
+	} for (unsigned int i = 0; i < c.negated_types.size; i++) {
+		if (Negated && Arity == 1 && c.negated_types.keys[i] == a.predicate) continue; /* avoid selecting the consequent as a conjunct in the antecedent */
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(1, i));
-	for (unsigned int i = 0; i < c.relations.length; i++)
+	} for (unsigned int i = 0; i < c.relations.size; i++) {
+		/* avoid selecting the consequent as a conjunct in the antecedent */
+		if (!Negated && Arity == 2 && c.relations.keys[i].type == a.predicate
+		 && c.relations.keys[i].arg1 == (LiftedArgIndex == 0 ? 0 : a.args[0])
+		 && c.relations.keys[i].arg2 == (LiftedArgIndex == 1 ? 0 : a.args[1])) continue;
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(2, i));
-	for (unsigned int i = 0; i < c.negated_relations.length; i++)
+	} for (unsigned int i = 0; i < c.negated_relations.size; i++) {
+		/* avoid selecting the consequent as a conjunct in the antecedent */
+		if (Negated && Arity == 2 && c.negated_relations.keys[i].type == a.predicate
+		 && c.negated_relations.keys[i].arg1 == (LiftedArgIndex == 0 ? 0 : a.args[0])
+		 && c.negated_relations.keys[i].arg2 == (LiftedArgIndex == 1 ? 0 : a.args[1])) continue;
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(3, i));
+	}
 
 	if (axiom_indices.length == 0) {
 		/* no candidate axioms are available */
@@ -406,44 +419,29 @@ bool propose_universal_intro(
 	array<relation> selected_relations(8);
 	array<relation> selected_negated_relations(8);
 
-	bool first_sample = true;
-	unsigned int count = sample_geometric(stop_probability);
+	unsigned int count = sample_uniform(axiom_indices.length - 1) + 1;
 	array<unsigned int> intersection(32);
-	while (true) {
+	if (!log_cache<double>::instance().ensure_size(axiom_indices.length - 1))
+		return false;
+	log_proposal_probability_ratio -= log_cache<double>::instance().get(axiom_indices.length - 1)
+			+ lgamma(axiom_indicies.length + 1) - lgamma(count + 1) - lgamma(axiom_indicies.length - count + 1);
+	for (unsigned int i = 0; i < count; i++) {
 		/* select a candidate axiom at random, and compute the set of constants
-		for which it's true and intersect it with `intersection` */
-		if (first_sample) {
+		   for which it's true and intersect it with `intersection` */
+		if (i == 0) {
 			select_axiom<true>(T, c, axiom_indices, selected_types, selected_negated_types,
 					selected_relations, selected_negated_relations, intersection);
 		} else {
 			select_axiom<false>(T, c, axiom_indices, selected_types, selected_negated_types,
 					selected_relations, selected_negated_relations, intersection);
 		}
-		if (axiom_indices.length == 0) {
-			/* it is impossible to create a universally-quantified rule using
-				only ground concepts and relations */
-			return true;
-		}
-
-		if (!has_intersection(intersection.data, intersection.length, negated_set.data, negated_set.length))
-			break;
-		first_sample = false;
 	}
 
-	while (true) {
-		if (selected_types.length + selected_negated_types.length
-		+ selected_relations.length + selected_negated_relations.length >= count)
-			break;
-
-		/* select a candidate axiom at random */
-		select_axiom<false>(T, c, axiom_indices, selected_types, selected_negated_types,
-				selected_relations, selected_negated_relations, intersection);
-		if (axiom_indices.length == 0)
-			break;
-	}
+	if (has_intersection(intersection.data, intersection.length, negated_set.data, negated_set.length))
+		return true;
 
 	/* we've finished constructing the new universally-quantified formula,
-	and now we need to transform all the relevant proofs */
+	   and now we need to transform all the relevant proofs */
 	array<Formula*> conjuncts(32);
 	for (unsigned int type : selected_types) {
 		Formula* conjunct = Formula::new_atom(type, Formula::new_variable(1));
@@ -487,12 +485,25 @@ bool propose_universal_intro(
 		return false;
 
 	nd_step<Formula, true>* axiom_step = ProofCalculus::new_axiom(canonicalized);
-	if (axiom_step == NULL) {
-		free(*canonicalized);
-		if (canonicalized->reference_count == 0)
-			free(canonicalized);
+	free(*canonicalized);
+	if (canonicalized->reference_count == 0)
+		free(canonicalized);
+	if (axiom_step == NULL)
+		return false;
+
+	/* check if the new axiom already exists in the theory */
+	for (Proof* old_axiom : T.universal_quantifications) {
+		if (*old_axiom->formula == *canonicalized) {
+			free(*axiom_step); if (axiom_step->reference_count == 0) free(axiom_step);
+			return true; /* we fail here so that the inverse proposal is easier to implement */
+		}
+	}
+
+	if (!log_cache<double>::instance().ensure_size(T.universal_quantifications.length + 1)) {
+		free(*axiom_step); if (axiom_step->reference_count == 0) free(axiom_step);
 		return false;
 	}
+	log_proposal_probability_ratio += log_cache<double>::instance().get(T.universal_quantifications.length + 1);
 
 	array<nd_step<Formula, Canonical>*> conjunct_steps(antecedent->array.length);
 	for (unsigned int concept : intersection) {
@@ -504,9 +515,6 @@ bool propose_universal_intro(
 				atom = atom->unary.operand;
 				if (atom->atom.arg2.type == TermType::NONE) {
 					if (!get_axiom<Formula, true>(instance.negated_types, atom->predicate, concept, conjunct_steps)) {
-						free(*canonicalized);
-						if (canonicalized->reference_count == 0)
-							free(canonicalized);
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
@@ -518,9 +526,6 @@ bool propose_universal_intro(
 							atom->arg1.type == TermType::CONSTANT ? atom->arg1.constant : 0,
 							atom->arg2.type == TermType::CONSTANT ? atom->arg2.constant : 0 };
 					if (!get_axiom<Formula, true>(instance.negated_relations, rel, concept, conjunct_steps)) {
-						free(*canonicalized);
-						if (canonicalized->reference_count == 0)
-							free(canonicalized);
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
@@ -531,9 +536,6 @@ bool propose_universal_intro(
 			} else {
 				if (atom->atom.arg2.type == TermType::NONE) {
 					if (!get_axiom<Formula, false>(instance.types, atom->predicate, concept, conjunct_steps)) {
-						free(*canonicalized);
-						if (canonicalized->reference_count == 0)
-							free(canonicalized);
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
@@ -545,9 +547,6 @@ bool propose_universal_intro(
 							atom->arg1.type == TermType::CONSTANT ? atom->arg1.constant : 0,
 							atom->arg2.type == TermType::CONSTANT ? atom->arg2.constant : 0 };
 					if (!get_axiom<Formula, true>(instance.negated_relations, rel, concept, conjunct_steps)) {
-						free(*canonicalized);
-						if (canonicalized->reference_count == 0)
-							free(canonicalized);
 						for (auto step : conjunct_steps) {
 							free(*step); if (step->reference_count == 0) free(step);
 						}
@@ -558,9 +557,6 @@ bool propose_universal_intro(
 			}
 		}
 	}
-	free(*canonicalized);
-	if (canonicalized->reference_count == 0)
-		free(canonicalized);
 
 	for (unsigned int k = 0; k < intersection.length; k++) {
 		const unsigned int concept = intersection[k];
@@ -616,10 +612,11 @@ void free_proofs(nd_step<Formula, true>** proofs, unsigned int count) {
 template<typename Formula>
 inline bool make_grounded_conjunct(
 		const theory<Formula, nd_step<Formula, true>>& T,
-		Formula* consequent, unsigned int variable,
+		Formula* lifted_conjunct, unsigned int variable,
 		typename Formula::Term constant,
 		nd_step<Formula, true>** new_axioms,
-		unsigned int i)
+		unsigned int i,
+		hash_map<unsigned int, unsigned int>* new_grounded_axiom_count)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
@@ -628,7 +625,7 @@ inline bool make_grounded_conjunct(
 	if (new_axioms[i] != NULL) return true;
 
 	/* first check if the grounded conjunct already exists as an axiom in the theory */
-	const Formula* operand = consequent->array.operands[i];
+	const Formula* operand = lifted_conjunct;
 	if (operand->type == FormulaType::ATOM) {
 		if (operand->atom.arg2.type == TermType::NONE) {
 			/* atom is unary */
@@ -677,9 +674,19 @@ inline bool make_grounded_conjunct(
 		return false;
 	}
 
+	bool contains; unsigned int bucket;
+	if (!new_grounded_axiom_count.check_size()) return false;
+	unsigned int& count = new_grounded_axiom_count.get(constant.constant, contains, bucket);
+	if (!contains) {
+		new_grounded_axiom_count.table.keys[bucket] = constant.constant;
+		new_grounded_axiom_count.table.size++;
+		count = 1;
+	} else {
+		count++;
+	}
+
 	new_axioms[i] = ProofCalculus::new_axiom(
-			substitute(*consequent->array.operands[i],
-			Formula::new_variable(variable), constant));
+			substitute(*lifted_conjunct, Formula::new_variable(variable), constant));
 	if (new_axioms[i] == NULL)
 		return false;
 	new_axioms[i]->reference_count++;
@@ -689,9 +696,10 @@ inline bool make_grounded_conjunct(
 template<typename Formula>
 nd_step<Formula, true>* make_grounded_conjunction(
 		const theory<Formula, nd_step<Formula, true>>& T,
-		Formula* consequent, unsigned int variable,
-		typename Formula::Term constant,
-		nd_step<Formula, true>** new_axioms)
+		Formula** conjuncts, unsigned int conjunct_count,
+		unsigned int variable, typename Formula::Term constant,
+		nd_step<Formula, true>** new_axioms,
+		hash_map<unsigned int, unsigned int>* new_grounded_axiom_count)
 {
 	typedef natural_deduction<Formula, true> ProofCalculus;
 
@@ -701,15 +709,19 @@ nd_step<Formula, true>* make_grounded_conjunction(
 	if (!contains)
 		fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", constant.constant);
 #endif
-	for (unsigned int i = 0; i < consequent->array.length; i++) {
-		if (!make_grounded_conjunct(T, consequent, variable, constant, new_axioms, i)) {
+	for (unsigned int i = 0; i < consequent_count; i++) {
+		if (!make_grounded_conjunct(T, conjuncts[i], variable, constant, new_axioms, i, new_grounded_axiom_count)) {
 			free_proofs(new_axioms, i);
 			return NULL;
 		}
 	}
-	new_step = ProofCalculus::new_conjunction_intro(array_view(new_axioms, consequent->array.length));
+
+	if (consequent_count == 1)
+		return new_axioms[0];
+
+	new_step = ProofCalculus::new_conjunction_intro(array_view(new_axioms, consequent_count));
 	if (new_step == NULL) {
-		free_proofs(new_axioms, consequent->array.length);
+		free_proofs(new_axioms, consequent_count);
 		return NULL;
 	}
 	new_step->reference_count++;
@@ -720,17 +732,31 @@ template<typename Formula>
 bool propose_universal_elim(
 		const theory<Formula, nd_step<Formula, true>>& T,
 		proof_transformations<Formula>& proposed_proofs,
-		const nd_step<Formula, true>* axiom)
+		const nd_step<Formula, true>* axiom,
+		double& log_proposal_probability_ratio)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
+	typedef concept<natural_deduction<Formula, true>> ConceptType;
 	typedef natural_deduction<Formula, true> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	/* first check that all uses of this axiom eliminate the universal quantification; otherwise, we can't remove it */
-	if (T.observations.contains(axiom->formula)) return false;
+	if (T.observations.contains(axiom->formula)) return true;
 
-	Formula* consequent = formula->quantifier.operand->binary.right;
+	/* this proposal is not invertible if the consequent is not atomic */
+	unsigned int consequent_length;
+	Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+	if (consequent->type == FormulaType::ATOM || (consequent->type == FormulaType::NOT && consequent->unary.operand->type == FormulaType::ATOM)) {
+		consequent_length = 1;
+	} else if (consequent->type == FormulaType::AND) {
+		consequent_length = consequent->array.length;
+		return true;
+	} else {
+		return true;
+	}
+
+	hash_map<unsigned int, unsigned int> new_grounded_axiom_count(16);
 	for (Proof* child : axiom->children) {
 		if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
 		 || child->operands[1]->term.type == TermType::CONSTANT)
@@ -741,13 +767,18 @@ bool propose_universal_elim(
 				return true;
 
 			Proof* new_step = NULL;
-			Proof** new_axioms = (Proof**) calloc(consequent->array.length, sizeof(Proof*));
+			Proof** new_axioms = (Proof**) calloc(consequent_length, sizeof(Proof*));
 			if (new_axioms == NULL) return false;
 
 			/* check if `grandchild` is observed */
 			if (T.observations.contains(grandchild)) {
-				new_step = make_grounded_conjunction(consequent,
-						formula->quantifier.variable, child->operands[1]->term, new_axioms);
+				if (consequent->type == FormulaType::AND) {
+					new_step = make_grounded_conjunction(T, consequent->array.operands, consequent_length,
+							formula->quantifier.variable, child->operands[1]->term, new_axioms, new_grounded_axiom_count);
+				} else {
+					new_step = make_grounded_conjunction(T, &consequent, 1,
+							formula->quantifier.variable, child->operands[1]->term, new_axioms, new_grounded_axiom_count);
+				}
 				if (new_step == NULL) {
 					free_proofs(new_axioms);
 					free(new_axioms); return false;
@@ -763,8 +794,13 @@ bool propose_universal_elim(
 				if (descendant->type != nd_step_type::CONJUNCTION_ELIMINATION) {
 					/* we need to prove all conjuncts in `grandchild` */
 					if (new_step == NULL) {
-						new_step = make_grounded_conjunction(consequent,
-								formula->quantifier.variable, child->operands[1]->term, new_axioms);
+						if (consequent->type == FormulaType::AND) {
+							new_step = make_grounded_conjunction(T, consequent->array.operands, consequent_length,
+									formula->quantifier.variable, child->operands[1]->term, new_axioms, new_grounded_axiom_count);
+						} else {
+							new_step = make_grounded_conjunction(T, &consequent, 1,
+									formula->quantifier.variable, child->operands[1]->term, new_axioms, new_grounded_axiom_count);
+						}
 						if (new_step == NULL) {
 							free_proofs(new_axioms);
 							free(new_axioms); return false;
@@ -779,7 +815,9 @@ bool propose_universal_elim(
 				} else {
 					const array<unsigned int>& indices = descendant->operands[1]->parameters;
 					for (unsigned int index : indices) {
-						if (!make_grounded_conjunct(T, consequent, formula->quantifier.variable, child->operands[1]->term, new_axioms, index)) {
+						if (!make_grounded_conjunct(T, consequent->array.operands[index],
+								formula->quantifier.variable, child->operands[1]->term, new_axioms, index, new_grounded_axiom_count))
+						{
 							if (new_step != NULL) {
 								free(*new_step); if (new_step->reference_count == 0) free(new_step);
 							}
@@ -809,13 +847,42 @@ bool propose_universal_elim(
 			free(new_axioms);
 		}
 	}
+
+	unsigned int antecedent_length;
+	Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
+	if (antecedent->type == FormulaType::ATOM || (antecedent->type == FormulaType::NOT && antecedent->unary.operand->type == FormulaType::ATOM)) {
+		antecedent_length = 1;
+	} else if (antecedent->type == FormulaType::AND) {
+		antecedent_length = antecedent->array.length;
+		return true;
+	} else {
+		return true;
+	}
+
+	/* compute the probability of inverting this proposal */
+	array<unsigned int> intersection(64);
+	if (!get_satisfying_concepts<true>(T, antecedent, intersection))
+		return false;
+	for (const auto& entry : new_grounded_axiom_count)
+		if (!intersection.contains(entry.key) && !intersection.add(entry.key)) return false;
+	double* log_probabilities = (double*) calloc(intersection.length, sizeof(double));
+	for (unsigned int i = 0; i < intersection.length; i++) {
+		const ConceptType& c = T.ground_concepts.get(intersection[i]);
+		unsigned int count = c.types.length + c.negated_types.length + c.relations.length + c.negated_relations.length;
+
+		if (!log_cache<double>::instance().ensure_size(count - 1)) {
+			free(log_probabilities); return false;
+		}
+		log_probabilities[i] -= log_cache<double>::instance().get(count - 1)
+				+ lgamma(count + 1) - lgamma(antecedent_length + 1) - lgamma(count - antecedent_length + 1);
+	}
+
 	return true;
 }
 
 template<typename Formula>
 bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 		proof_transformations<Formula>& proposed_proofs,
-		bool new_antecedent_stop_probability,
 		double& log_proposal_probability_ratio)
 {
 	typedef typename Formula::Type FormulaType;
@@ -831,14 +898,14 @@ bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 				atom<false, 1, 0> a;
 				a.predicate = entry.key;
 				a.args[0] = entry.value.key[random];
-				return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+				return propose_universal_intro(T, proposed_proofs, a, log_proposal_probability_ratio);
 			}
 			random -= entry.value.key.length;
 			if (random < entry.value.value.length) {
 				atom<true, 1, 0> a;
 				a.predicate = entry.key;
 				a.args[0] = entry.value.key[random];
-				return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+				return propose_universal_intro(T, proposed_proofs, a, log_proposal_probability_ratio);
 			}
 			random -= entry.value.value.length;
 		}
@@ -855,13 +922,13 @@ bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 					a.predicate = axiom->atom.predicate;
 					a.args[0] = axiom->atom.arg1;
 					a.args[1] = axiom->atom.arg2;
-					return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+					return propose_universal_intro(T, proposed_proofs, a, log_proposal_probability_ratio);
 				} else {
 					atom<false, 2, 1> a;
 					a.predicate = axiom->atom.predicate;
 					a.args[0] = axiom->atom.arg1;
 					a.args[1] = axiom->atom.arg2;
-					return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+					return propose_universal_intro(T, proposed_proofs, a, log_proposal_probability_ratio);
 				}
 			}
 			random -= entry.value.key.length;
@@ -872,13 +939,13 @@ bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 					a.predicate = axiom->atom.predicate;
 					a.args[0] = axiom->atom.arg1;
 					a.args[1] = axiom->atom.arg2;
-					return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+					return propose_universal_intro(T, proposed_proofs, a, log_proposal_probability_ratio);
 				} else {
-					atom<false, 2, 2> a;
+					atom<false, 2, 1> a;
 					a.predicate = axiom->atom.predicate;
 					a.args[0] = axiom->atom.arg1;
 					a.args[1] = axiom->atom.arg2;
-					return propose_universal_intro(T, proposed_proofs, a, new_antecedent_stop_probability);
+					return propose_universal_intro(T, proposed_proofs, a, log_proposal_probability_ratio);
 				}
 			}
 			random -= entry.value.value.length;
@@ -888,7 +955,7 @@ bool propose(const theory<Formula, nd_step<Formula, true>>& T,
 
 	if (random < T.universal_quantifications.length) {
 		/* we've selected a universally-quantified formula */
-		return propose_universal_elim(T, proposed_proofs, T.universal_quantifications[random]->formula);
+		return propose_universal_elim(T, proposed_proofs, T.universal_quantifications[random]->formula, log_proposal_probability_ratio);
 	}
 
 	fprintf(stderr, "propose ERROR: Unable to select axiom.\n");
