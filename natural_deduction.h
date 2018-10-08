@@ -355,17 +355,17 @@ bool pass_hypotheses(array<T>& dst, const array<T>& first, const exclude<Array, 
 	return discharged;
 }
 
-template<typename T>
-bool pass_hypotheses(array<T>& out, const array<T>& first, const array<T>&&... lists) {
-	if (!pass_hypotheses(out, lists...)) return false;
+template<typename T, typename... Lists>
+bool pass_hypotheses(array<T>& out, const array<T>& first, Lists&&... lists) {
+	if (!pass_hypotheses(out, std::forward<Lists>(lists)...)) return false;
 	array<T> temp = array<T>(out.length + first.length);
 	swap(temp, out);
 	return set_union(out, temp, first);
 }
 
-template<template<typename> typename Array, typename T>
-bool pass_hypotheses(array<T>& out, const exclude<Array, T>& first, const array<T>&&... lists) {
-	if (!pass_hypotheses(out, lists...)) return false;
+template<template<typename> typename Array, typename T, typename... Lists>
+bool pass_hypotheses(array<T>& out, const exclude<Array, T>& first, Lists&&... lists) {
+	if (!pass_hypotheses(out, std::forward<Lists>(lists)...)) return false;
 	array<T> temp = array<T>(out.length + first.elements.length);
 	swap(temp, out);
 	return pass_hypotheses(out, temp, first);
@@ -713,7 +713,7 @@ bool check_proof(proof_state<Formula>& out,
 	return false;
 }
 
-template<typename Formula, bool Canonical, template... ProofMap>
+template<typename Formula, bool Canonical, typename... ProofMap>
 bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 		hash_map<const nd_step<Formula, Canonical>*, unsigned int>& in_degrees,
 		ProofMap&&... proof_map)
@@ -766,7 +766,7 @@ bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 	return true;
 }
 
-template<typename Formula, bool Canonical, template... ProofMap>
+template<typename Formula, bool Canonical, typename... ProofMap>
 Formula* check_proof(const nd_step<Formula, Canonical>& proof, ProofMap&&... proof_map)
 {
 	/* first list the proof steps in reverse topological order */
