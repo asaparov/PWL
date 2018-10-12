@@ -470,9 +470,13 @@ struct indexed_array_view {
 
 template<typename Formula, bool Canonical>
 struct proof_substitution {
-	const nd_step<Formula, Canonical>* old_step;
-	const nd_step<Formula, Canonical>* new_step;
+	array_map<const nd_step<Formula, Canonical>*, const nd_step<Formula, Canonical>*> map;
 };
+
+template<typename Formula, bool Canonical>
+inline bool init(proof_substitution<Formula, Canonical>& substitution) {
+	return array_map_init(substitution.map, 8);
+}
 
 template<typename Formula, bool Canonical>
 inline const nd_step<Formula, Canonical>* map(const nd_step<Formula, Canonical>* step) {
@@ -483,7 +487,9 @@ template<typename Formula, bool Canonical>
 inline const nd_step<Formula, Canonical>* map(const nd_step<Formula, Canonical>* step,
 		const proof_substitution<Formula, Canonical>& substitution)
 {
-	if (step == substitution.old_step) return new_step;
+	bool contains;
+	const nd_step<Formula, Canonical>* new_step = substitution.map.get(step, contains);
+	if (contains) return new_step;
 	else return step;
 }
 
@@ -1213,7 +1219,7 @@ bool canonicalize(const nd_step<Formula, Canonical>& proof,
 }
 
 template<typename Formula,
-	bool Canonical, typename FormulaPrior,
+	bool Canonical, typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
@@ -1223,7 +1229,7 @@ double log_probability(
 		unsigned int& formula_counter,
 		array<typename Formula::Term>& introduced_terms,
 		array<unsigned int>& available_parameters,
-		FormulaPrior& formula_prior,
+		AxiomPrior& axiom_prior,
 		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior,
@@ -1245,7 +1251,7 @@ double log_probability(
 		if (available_parameters.length > 1) {
 			sort(available_parameters); unique(available_parameters);
 		}
-		return log_probability(*proof->formula, formula_prior);
+		return log_probability(*proof->formula, axiom_prior);
 	case CONJUNCTION_ELIMINATION:
 		/* TODO: implement this */
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n");
@@ -1298,7 +1304,7 @@ double log_probability(
 }
 
 template<typename Formula,
-	bool Canonical, typename FormulaPrior,
+	bool Canonical, typename AxiomPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
 	typename... ProofMap>
@@ -1306,7 +1312,7 @@ double log_probability(
 		const nd_step<Formula, Canonical>& proof,
 		double log_stop_probability,
 		double log_continue_probability,
-		FormulaPrior& formula_prior,
+		AxiomPrior& axiom_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior,
 		ProofMap&&... proof_map)
@@ -1326,7 +1332,7 @@ double log_probability(
 	log_cache<V>::instance().ensure_size(canonical_order.length);
 	for (const nd_step<Formula, Canonical>* step : canonical_order)
 		value += log_probability(*step, counter, introduced_terms,
-				log_max_parameter_count, formula_prior, universal_introduction_prior,
+				log_max_parameter_count, axiom_prior, universal_introduction_prior,
 				universal_elimination_prior, std::forward<ProofMap>(proof_map)...);
 	return value;
 }

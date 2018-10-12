@@ -46,7 +46,6 @@ struct theory
 	   other constants `u` such that the axiom `x(u)` or `~x(u)`
 	   are in the theory. */
 	hash_map<unsigned int, pair<array<unsigned int>, array<unsigned int>>> types;
-	unsigned int type_count;
 
 	/* A map from `R` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
@@ -55,9 +54,9 @@ struct theory
 	   other constants `u` such that the axiom `[u/0]R` or `~[u/0]R`
 	   are in the theory. */
 	hash_map<relation, pair<array<unsigned int>, array<unsigned int>>> relations;
-	unsigned int relation_count;
 
 	hash_map<unsigned int, concept<ProofCalculus>> ground_concepts;
+	unsigned int ground_axiom_count;
 
 	array<Proof*> universal_quantifications;
 
@@ -103,6 +102,142 @@ struct theory
 		}
 
 return check_proof(*proof, canonicalized);
+		return true;
+	}
+
+	inline void remove_universal_quantification(unsigned int axiom_index) {
+		Proof* axiom = universal_quantifications[axiom_index];
+		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
+		universal_quantifications.remove(axiom_index);
+	}
+
+	template<bool Negated>
+	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom)
+	{
+#if !defined(NDEBUG)
+		if (!ground_concepts.contains(arg))
+			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", predicate);
+#endif
+		bool contains; unsigned int bucket;
+		if (!types.check_size()) return false;
+		pair<array<unsigned int>, array<unsigned int>>& instance_pair = types.get(predicate, contains, bucket);
+		if (!contains) {
+			if (!array_init(instance_pair.key, 8)) {
+				return false;
+			} else if (!array_init(instance_pair.value, 8)) {
+				core::free(instance_pair.key); return false;
+			}
+			instance_pair.table.keys[bucket] = predicate;
+			instance_pair.table.size++;
+		}
+
+		array<unsigned int>& instances = (Negated ? instance_pair.value : instance_pair.key);
+		array_map<unsigned int, Proof*>* ground_types = (Negated ? ground_concepts.get(arg).negated_types : ground_concepts.get(arg).types);
+		if (!instances.ensure_capacity(instances.length + 1)
+		 || !ground_types.check_size(ground_types.size + 1)) return false;
+
+		instances[instances.length++] = arg;
+		insertion_sort(instances);
+		ground_types.keys[ground_types.size] = predicate;
+		ground_types.value[ground_types.size++] = axiom;
+		axiom->reference_count++;
+		ground_axiom_count++;
+		return true;
+	}
+
+	template<bool Negated>
+	inline bool add_binary_atom(relation rel, Proof* axiom)
+	{
+#if !defined(NDEBUG)
+		if (!ground_concepts.contains(rel.arg1))
+			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
+		if (!ground_concepts.contains(rel.arg2))
+			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
+#endif
+
+		bool contains; unsigned int bucket;
+		if (!relations.check_size(relations.size + 4)) return false;
+		pair<array<unsigned int>, array<unsigned int>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2}, contains, bucket);
+		if (!contains) {
+			if (!array_init(predicate_instance_pair.key, 8)) {
+				return false;
+			} else if (!array_init(predicate_instance_pair.value, 8)) {
+				core::free(predicate_instance_pair.key); return false;
+			}
+			relations.table.keys[bucket] = {0, rel.arg1, rel.arg2};
+			relations.table.size++;
+		}
+
+		pair<array<unsigned int>, array<unsigned int>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2}, contains, bucket);
+		if (!contains) {
+			if (!array_init(arg1_instance_pair.key, 8)) {
+				return false;
+			} else if (!array_init(arg1_instance_pair.value, 8)) {
+				core::free(arg1_instance_pair.key); return false;
+			}
+			relations.table.keys[bucket] = {rel.predicate, 0, rel.arg2};
+			relations.table.size++;
+		}
+
+		pair<array<unsigned int>, array<unsigned int>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0}, contains, bucket);
+		if (!contains) {
+			if (!array_init(arg2_instance_pair.key, 8)) {
+				return false;
+			} else if (!array_init(arg2_instance_pair.value, 8)) {
+				core::free(arg2_instance_pair.key); return false;
+			}
+			relations.table.keys[bucket] = {rel.predicate, rel.arg1, 0};
+			relations.table.size++;
+		}
+
+		array<unsigned int>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
+		array<unsigned int>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
+		array<unsigned int>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
+		array_map<relation, Proof*>* ground_arg1 = (Negated ? ground_concepts.get(rel.arg1).negated_relations : ground_concepts.get(rel.arg1).relations);
+		array_map<relation, Proof*>* ground_arg2 = (Negated ? ground_concepts.get(rel.arg2).negated_relations : ground_concepts.get(rel.arg2).relations);
+		if (!predicate_instances.ensure_capacity(predicate_instances.length + 1)
+		 || !arg1_instances.ensure_capacity(arg1_instances.length + 1)
+		 || !arg2_instances.ensure_capacity(arg2_instances.length + 1)
+		 || !ground_arg1.check_size(ground_arg1.size + 3)
+		 || !ground_arg2.check_size(ground_arg2.size + 3)) return false;
+
+		if (rel.arg1 == rel.arg2) {
+			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
+			if (!contains) {
+				if (!array_init(both_arg_instance_pair.key, 8)) {
+					return false;
+				} else if (!array_init(both_arg_instance_pair.value, 8)) {
+					core::free(both_arg_instance_pair.key); return false;
+				}
+				relations.table.keys[bucket] = {rel.predicate, 0, 0};
+				relations.table.size++;
+			}
+
+			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
+			if (both_arg_instances.ensure_capacity(both_arg_instances.length + 1)) return false;
+			both_arg_instances[both_arg_instances.length++] = rel.arg1;
+			insertion_sort(both_arg_instances);
+		}
+
+		predicate_instances[predicate_instances.length++] = rel.predicate;
+		arg1_instances[arg1_instances.length++] = rel.arg1;
+		arg2_instances[arg2_instances.length++] = rel.arg2;
+		insertion_sort(predicate_instances);
+		insertion_sort(arg1_instances);
+		insertion_sort(arg2_instances);
+		ground_arg1.keys[ground_arg1.size] = {rel.predicate, 0, rel.arg2};
+		ground_arg1.value[ground_arg1.size++] = axiom;
+		ground_arg2.keys[ground_arg2.size] = {rel.predicate, rel.arg1, 0};
+		ground_arg2.value[ground_arg2.size++] = axiom;
+		axiom->reference_count += 2;
+		ground_axiom_count += 2;
+		if (arg1 == arg2) {
+			/* in this case, `ground_arg1` and `ground_arg2` are the same */
+			ground_arg1.keys[ground_arg1.size] = {rel.predicate, 0, 0};
+			ground_arg1.value[ground_arg1.size++] = axiom;
+			axiom->reference_count++;
+			ground_axiom_count++;
+		}
 		return true;
 	}
 
@@ -193,44 +328,44 @@ private:
 					/* this is a formula of form `t(c)` */
 
 					/* check that this is not implied by an existing univerally-quantified axiom */
-					// for (unsigned int k = 0; k < universal_quantifications.length; k++) {
-					// 	Proof* axiom = universal_quantifications[k];
-					// 	Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
-					// 	Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-					// 	unsigned int i = 0;
-					// 	if (consequent->type == FormulaType::AND) {
-					// 		for (; i < consequent->array.length; i++) {
-					// 			fol_term dst;
-					// 			if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
-					// 				break;
-					// 		}
-					// 		if (i == consequent->array.length) continue;
-					// 	} else if (*consequent != *canonicalized) {
-					// 		i = consequent->array.length;
-					// 		continue;
-					// 	}
+					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
+						Proof* axiom = universal_quantifications[k];
+						Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
+						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+						unsigned int i = 0;
+						if (consequent->type == FormulaType::AND) {
+							for (; i < consequent->array.length; i++) {
+								fol_term dst;
+								if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
+									break;
+							}
+							if (i == consequent->array.length) continue;
+						} else if (*consequent != *canonicalized) {
+							i = consequent->array.length;
+							continue;
+						}
 
-					// 	/* check if the antecedent is satisfied by `c` */
-					// 	Proof* proof;
-					// 	if (!make_universal_elim_proof(consequent, ground_concepts.get(atom->atom.arg1.constant), proof))
-					// 		return false;
-					// 	if (proof != NULL) {
-					// 		Proof* new_proof;
-					// 		proof->reference_count++;
-					// 		if (i == consequent->array.length) {
-					// 			new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof);
-					// 		} else {
-					// 			new_proof = ProofCalculus::new_conjunction_elim(
-					// 					ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof),
-					// 					array_view(&i, 1));
-					// 		}
-					// 		if (new_proof == NULL) {
-					// 			free(*proof); if (proof->reference_count == 0) free(proof);
-					// 			return false;
-					// 		}
-					// 		return new_proof;
-					// 	}
-					// }
+						/* check if the antecedent is satisfied by `c` */
+						Proof* proof;
+						if (!make_universal_elim_proof(consequent, ground_concepts.get(atom->atom.arg1.constant), proof))
+							return false;
+						if (proof != NULL) {
+							Proof* new_proof;
+							proof->reference_count++;
+							if (i == consequent->array.length) {
+								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof);
+							} else {
+								new_proof = ProofCalculus::new_conjunction_elim(
+										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof),
+										array_view(&i, 1));
+							}
+							if (new_proof == NULL) {
+								free(*proof); if (proof->reference_count == 0) free(proof);
+								return false;
+							}
+							return new_proof;
+						}
+					}
 
 					/* no existing universally-quantified axiom implies this observation */
 					return ProofCalculus::new_axiom(canonicalized);
@@ -254,44 +389,44 @@ private:
 					/* this is a formula of form `r(c_1,c_2)` */
 
 					/* check that this is not implied by an existing univerally-quantified axiom */
-					// for (unsigned int k = 0; k < universal_quantifications.length; k++) {
-					// 	Proof* axiom = universal_quantifications[k];
-					// 	Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
-					// 	Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-					// 	fol_term unifying_term;
-					// 	unsigned int i = 0;
-					// 	if (consequent->type == FormulaType::AND) {
-					// 		for (; i < consequent->array.length; i++) {
-					// 			if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
-					// 				break;
-					// 		}
-					// 		if (i == consequent->array.length) continue;
-					// 	} else if (*consequent != *canonicalized) {
-					// 		i = consequent->array.length;
-					// 		continue;
-					// 	}
+					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
+						Proof* axiom = universal_quantifications[k];
+						Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
+						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+						fol_term unifying_term;
+						unsigned int i = 0;
+						if (consequent->type == FormulaType::AND) {
+							for (; i < consequent->array.length; i++) {
+								if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
+									break;
+							}
+							if (i == consequent->array.length) continue;
+						} else if (*consequent != *canonicalized) {
+							i = consequent->array.length;
+							continue;
+						}
 
-					// 	/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
-					// 	Proof* proof;
-					// 	if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term.constant), proof))
-					// 		return false;
-					// 	if (proof != NULL) {
-					// 		Proof* new_proof;
-					// 		proof->reference_count++;
-					// 		if (i == consequent->array.length) {
-					// 			new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof);
-					// 		} else {
-					// 			new_proof = ProofCalculus::new_conjunction_elim(
-					// 					ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof),
-					// 					array_view(&i, 1));
-					// 		}
-					// 		if (new_proof == NULL) {
-					// 			free(*proof); if (proof->reference_count == 0) free(proof);
-					// 			return false;
-					// 		}
-					// 		return new_proof;
-					// 	}
-					// }
+						/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
+						Proof* proof;
+						if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term.constant), proof))
+							return false;
+						if (proof != NULL) {
+							Proof* new_proof;
+							proof->reference_count++;
+							if (i == consequent->array.length) {
+								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof);
+							} else {
+								new_proof = ProofCalculus::new_conjunction_elim(
+										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonlicalized->atom.arg1), proof),
+										array_view(&i, 1));
+							}
+							if (new_proof == NULL) {
+								free(*proof); if (proof->reference_count == 0) free(proof);
+								return false;
+							}
+							return new_proof;
+						}
+					}
 
 					/* no existing universally-quantified axiom implies this observation */
 					return ProofCalculus::new_axiom(canonicalized);
