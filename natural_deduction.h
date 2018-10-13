@@ -68,34 +68,34 @@ struct nd_step
 
 	inline void get_subproofs(nd_step<Formula, Canonical>**& subproofs, unsigned int& length) {
 		switch (type) {
-		case TERM_PARAMETER:
-		case ARRAY_PARAMETER:
-		case AXIOM:
-		case FORMULA_PARAMETER:
+		case nd_step_type::TERM_PARAMETER:
+		case nd_step_type::ARRAY_PARAMETER:
+		case nd_step_type::AXIOM:
+		case nd_step_type::FORMULA_PARAMETER:
 			subproofs = NULL; length = 0;
 			return;
-		case CONJUNCTION_INTRODUCTION:
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
-		case CONJUNCTION_ELIMINATION:
-		case CONJUNCTION_ELIMINATION_LEFT:
-		case CONJUNCTION_ELIMINATION_RIGHT:
-		case DISJUNCTION_INTRODUCTION:
-		case DISJUNCTION_INTRODUCTION_LEFT:
-		case DISJUNCTION_INTRODUCTION_RIGHT:
-		case DISJUNCTION_ELIMINATION:
-		case IMPLICATION_INTRODUCTION:
-		case IMPLICATION_ELIMINATION:
-		case BICONDITIONAL_INTRODUCTION:
-		case BICONDITIONAL_ELIMINATION_LEFT:
-		case BICONDITIONAL_ELIMINATION_RIGHT:
-		case PROOF_BY_CONTRADICTION:
-		case NEGATION_ELIMINATION:
-		case UNIVERSAL_INTRODUCTION:
-		case UNIVERSAL_ELIMINATION:
-		case EXISTENTIAL_INTRODUCTION:
-		case EXISTENTIAL_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
 			subproofs = operands;
 			length = ND_OPERAND_COUNT;
 			return true;
@@ -107,17 +107,17 @@ struct nd_step
 private:
 	inline void free() {
 		switch (type) {
-		case TERM_PARAMETER:
+		case nd_step_type::TERM_PARAMETER:
 			free(term); return;
-		case ARRAY_PARAMETER:
+		case nd_step_type::ARRAY_PARAMETER:
 			free(parameters); return;
-		case AXIOM:
-		case FORMULA_PARAMETER:
+		case nd_step_type::AXIOM:
+		case nd_step_type::FORMULA_PARAMETER:
 			core::free(*formula);
 			if (formula->reference_count == 0)
 				core::free(formula);
 			return;
-		case CONJUNCTION_INTRODUCTION:
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
 			for (unsigned int i = 0; i < operand_array.length; i++) {
 				operand_array[i]->remove_child(this);
 				core::free(*operand_array[i]);
@@ -126,24 +126,24 @@ private:
 			}
 			core::free(operand_array);
 			return;
-		case CONJUNCTION_ELIMINATION:
-		case CONJUNCTION_ELIMINATION_LEFT:
-		case CONJUNCTION_ELIMINATION_RIGHT:
-		case DISJUNCTION_INTRODUCTION:
-		case DISJUNCTION_INTRODUCTION_LEFT:
-		case DISJUNCTION_INTRODUCTION_RIGHT:
-		case DISJUNCTION_ELIMINATION:
-		case IMPLICATION_INTRODUCTION:
-		case IMPLICATION_ELIMINATION:
-		case BICONDITIONAL_INTRODUCTION:
-		case BICONDITIONAL_ELIMINATION_LEFT:
-		case BICONDITIONAL_ELIMINATION_RIGHT:
-		case PROOF_BY_CONTRADICTION:
-		case NEGATION_ELIMINATION:
-		case UNIVERSAL_INTRODUCTION:
-		case UNIVERSAL_ELIMINATION:
-		case EXISTENTIAL_INTRODUCTION:
-		case EXISTENTIAL_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
 			for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
 				if (operands[i] == NULL) break;
 				operands[i]->remove_child(this);
@@ -177,9 +177,9 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 
 	int_fast8_t result;
 	switch (first.type) {
-	case TERM_PARAMETER:
+	case nd_step_type::TERM_PARAMETER:
 		return compare(first.term, second.term);
-	case ARRAY_PARAMETER:
+	case nd_step_type::ARRAY_PARAMETER:
 		if (first.parameters.length < second.parameters.length) return -1;
 		else if (first.parameters.length > second.parameters.length) return 1;
 		for (unsigned int i = 0; i < first.parameters.length; i++) {
@@ -187,10 +187,10 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 			else if (first.parameters[i] > second.parameters[i]) return 1;
 		}
 		return 0;
-	case AXIOM:
-	case FORMULA_PARAMETER:
+	case nd_step_type::AXIOM:
+	case nd_step_type::FORMULA_PARAMETER:
 		return compare(*first.formula, *second.formula);
-	case CONJUNCTION_INTRODUCTION:
+	case nd_step_type::CONJUNCTION_INTRODUCTION:
 		if (first.operand_array.length < second.operand_array.length) return -1;
 		else if (first.operand_array.length > second.operand_array.length) return 1;
 		for (unsigned int i = 0; i < first.operand_array.length; i++) {
@@ -198,24 +198,24 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 			if (result != 0) return result;
 		}
 		return 0;
-	case CONJUNCTION_ELIMINATION:
-	case CONJUNCTION_ELIMINATION_LEFT:
-	case CONJUNCTION_ELIMINATION_RIGHT:
-	case DISJUNCTION_INTRODUCTION:
-	case DISJUNCTION_INTRODUCTION_LEFT:
-	case DISJUNCTION_INTRODUCTION_RIGHT:
-	case DISJUNCTION_ELIMINATION:
-	case IMPLICATION_INTRODUCTION:
-	case IMPLICATION_ELIMINATION:
-	case BICONDITIONAL_INTRODUCTION:
-	case BICONDITIONAL_ELIMINATION_LEFT:
-	case BICONDITIONAL_ELIMINATION_RIGHT:
-	case PROOF_BY_CONTRADICTION:
-	case NEGATION_ELIMINATION:
-	case UNIVERSAL_INTRODUCTION:
-	case UNIVERSAL_ELIMINATION:
-	case EXISTENTIAL_INTRODUCTION:
-	case EXISTENTIAL_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+	case nd_step_type::DISJUNCTION_ELIMINATION:
+	case nd_step_type::IMPLICATION_INTRODUCTION:
+	case nd_step_type::IMPLICATION_ELIMINATION:
+	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+	case nd_step_type::PROOF_BY_CONTRADICTION:
+	case nd_step_type::NEGATION_ELIMINATION:
+	case nd_step_type::UNIVERSAL_INTRODUCTION:
+	case nd_step_type::UNIVERSAL_ELIMINATION:
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
 		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
 			if (first.operands[i] == NULL) {
 				if (second.operands[i] == NULL)
@@ -1239,12 +1239,12 @@ double log_probability(
 
 	double value; unsigned int index;
 	switch (proof.type) {
-	case TERM_PARAMETER:
-	case ARRAY_PARAMETER:
-	case FORMULA_PARAMETER:
+	case nd_step_type::TERM_PARAMETER:
+	case nd_step_type::ARRAY_PARAMETER:
+	case nd_step_type::FORMULA_PARAMETER:
 		/* these aren't actual proof steps in the calculus */
 		return 0.0;
-	case AXIOM:
+	case nd_step_type::AXIOM:
 		/* TODO: we need to compute the prior */
 		formula_counter++;
 		get_parameters(*proof->formula, available_parameters);
@@ -1252,31 +1252,31 @@ double log_probability(
 			sort(available_parameters); unique(available_parameters);
 		}
 		return log_probability(*proof->formula, axiom_prior);
-	case CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION:
 		/* TODO: implement this */
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n");
 		exit(EXIT_FAILURE);
-	case CONJUNCTION_INTRODUCTION:
+	case nd_step_type::CONJUNCTION_INTRODUCTION:
 		return -LOG_ND_RULE_COUNT + log_probability(proof.operand_array.length, conjunction_introduction_prior)
 			  + lgamma(formula_counter - proof.operand_array.length - 1) - lgamma(formula_counter++);
-	case IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
-	case IMPLICATION_ELIMINATION:
-	case BICONDITIONAL_INTRODUCTION:
-	case BICONDITIONAL_ELIMINATION_LEFT:
-	case BICONDITIONAL_ELIMINATION_RIGHT:
-	case PROOF_BY_CONTRADICTION: /* TODO: is this correct? */
-	case NEGATION_ELIMINATION:
-	case EXISTENTIAL_ELIMINATION:
+	case nd_step_type::IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
+	case nd_step_type::IMPLICATION_ELIMINATION:
+	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+	case nd_step_type::PROOF_BY_CONTRADICTION: /* TODO: is this correct? */
+	case nd_step_type::NEGATION_ELIMINATION:
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
 		return -LOG_ND_RULE_COUNT - 2*log_cache<V>::instance().get(formula_counter++);
-	case DISJUNCTION_ELIMINATION:
+	case nd_step_type::DISJUNCTION_ELIMINATION:
 		return -LOG_ND_RULE_COUNT - 3*log_cache<V>::instance().get(formula_counter++);
-	case DISJUNCTION_INTRODUCTION:
-	case DISJUNCTION_INTRODUCTION_LEFT:
-	case DISJUNCTION_INTRODUCTION_RIGHT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
 		/* TODO: we need to compute the prior on the new formula */
 		formula_counter++;
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
-	case UNIVERSAL_INTRODUCTION:
+	case nd_step_type::UNIVERSAL_INTRODUCTION:
 		/* TODO: we need to compute the prior on the parameter */
 		formula_counter++;
 		operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
@@ -1285,7 +1285,7 @@ double log_probability(
 		if (index < available_parameters.length)
 			shift_left(available_parameters.data + index, available_parameters.length - index - 1);
 		return value;
-	case UNIVERSAL_ELIMINATION:
+	case nd_step_type::UNIVERSAL_ELIMINATION:
 		/* TODO: we need to compute the prior on the term */
 		formula_counter++;
 		operand = map(proof.operands[2], std::forward<ProofMap>(proof_map)...);
@@ -1294,7 +1294,7 @@ double log_probability(
 			insertion_sort(available_parameters); unique(available_parameters);
 		}
 		return log_probability(operand->term, universal_elimination_prior);
-	case EXISTENTIAL_INTRODUCTION:
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
 		/* TODO: we need to compute the prior on the parameter (it can be a term or a list of term indices) */
 		formula_counter++;
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);

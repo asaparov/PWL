@@ -105,6 +105,12 @@ return check_proof(*proof, canonicalized);
 		return true;
 	}
 
+	inline bool add_universal_quantification(Proof* axiom) {
+		if (!universal_quantifications.add(axiom)) return false;
+		axiom->reference_count++;
+		return true;
+	}
+
 	inline void remove_universal_quantification(unsigned int axiom_index) {
 		Proof* axiom = universal_quantifications[axiom_index];
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
@@ -116,7 +122,7 @@ return check_proof(*proof, canonicalized);
 	{
 #if !defined(NDEBUG)
 		if (!ground_concepts.contains(arg))
-			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", predicate);
+			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
 #endif
 		bool contains; unsigned int bucket;
 		if (!types.check_size()) return false;
@@ -132,7 +138,7 @@ return check_proof(*proof, canonicalized);
 		}
 
 		array<unsigned int>& instances = (Negated ? instance_pair.value : instance_pair.key);
-		array_map<unsigned int, Proof*>* ground_types = (Negated ? ground_concepts.get(arg).negated_types : ground_concepts.get(arg).types);
+		array_map<unsigned int, Proof*>& ground_types = (Negated ? ground_concepts.get(arg).negated_types : ground_concepts.get(arg).types);
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.check_size(ground_types.size + 1)) return false;
 
@@ -193,8 +199,8 @@ return check_proof(*proof, canonicalized);
 		array<unsigned int>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
 		array<unsigned int>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
 		array<unsigned int>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
-		array_map<relation, Proof*>* ground_arg1 = (Negated ? ground_concepts.get(rel.arg1).negated_relations : ground_concepts.get(rel.arg1).relations);
-		array_map<relation, Proof*>* ground_arg2 = (Negated ? ground_concepts.get(rel.arg2).negated_relations : ground_concepts.get(rel.arg2).relations);
+		array_map<relation, Proof*>& ground_arg1 = (Negated ? ground_concepts.get(rel.arg1).negated_relations : ground_concepts.get(rel.arg1).relations);
+		array_map<relation, Proof*>& ground_arg2 = (Negated ? ground_concepts.get(rel.arg2).negated_relations : ground_concepts.get(rel.arg2).relations);
 		if (!predicate_instances.ensure_capacity(predicate_instances.length + 1)
 		 || !arg1_instances.ensure_capacity(arg1_instances.length + 1)
 		 || !arg2_instances.ensure_capacity(arg2_instances.length + 1)
@@ -231,7 +237,7 @@ return check_proof(*proof, canonicalized);
 		ground_arg2.value[ground_arg2.size++] = axiom;
 		axiom->reference_count += 2;
 		ground_axiom_count += 2;
-		if (arg1 == arg2) {
+		if (rel.arg1 == rel.arg2) {
 			/* in this case, `ground_arg1` and `ground_arg2` are the same */
 			ground_arg1.keys[ground_arg1.size] = {rel.predicate, 0, 0};
 			ground_arg1.value[ground_arg1.size++] = axiom;
@@ -239,6 +245,132 @@ return check_proof(*proof, canonicalized);
 			ground_axiom_count++;
 		}
 		return true;
+	}
+
+	template<bool Negated>
+	inline void remove_unary_atom(unsigned int predicate, unsigned int arg)
+	{
+#if !defined(NDEBUG)
+		if (!types.contains(predicate))
+			fprintf(stderr, "theory.remove_unary_atom WARNING: `types` does not contain the key %u.\n", predicate);
+		if (!ground_concepts.contains(arg))
+			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
+#endif
+
+		array<unsigned int>& instances = (Negated ? types.get(predicate).value : types.get(predicate).key);
+		array_map<unsigned int, Proof*>& ground_types = (Negated ? ground_concepts.get(arg).negated_types : ground_concepts.get(arg).types);
+
+		unsigned int index = instances.index_of(arg);
+#if !defined(NDEBUG)
+		if (index == instances.length)
+			fprintf(stderr, "theory.remove_unary_atom WARNING: `instances` does not contain %u.\n", arg);
+#endif
+		shift_left(instances.data + index, instances.length - index - 1);
+		instances.length--;
+
+		index = ground_types.index_of(predicate);
+#if !defined(NDEBUG)
+		if (index == instances.length)
+			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_types` does not contain %u.\n", predicate);
+#endif
+		Proof* axiom = ground_types.values[index];
+		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
+		ground_types.remove_at(index);
+		ground_axiom_count--;
+	}
+
+	template<bool Negated>
+	inline void remove_binary_atom(relation rel)
+	{
+#if !defined(NDEBUG)
+		if (!relations.contains({0, rel.arg1, rel.arg2})
+		 || !relations.contains({rel.predicate, 0, rel.arg2})
+		 || !relations.contains({rel.predicate, rel.arg1, 0}))
+			fprintf(stderr, "theory.add_binary_atom WARNING: `relations` does not contain the necessary relations.\n");
+		if (!ground_concepts.contains(rel.arg1))
+			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
+		if (!ground_concepts.contains(rel.arg2))
+			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
+#endif
+
+		pair<array<unsigned int>, array<unsigned int>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2});
+		pair<array<unsigned int>, array<unsigned int>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2});
+		pair<array<unsigned int>, array<unsigned int>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0});
+
+		array<unsigned int>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
+		array<unsigned int>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
+		array<unsigned int>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
+		array_map<relation, Proof*>& ground_arg1 = (Negated ? ground_concepts.get(rel.arg1).negated_relations : ground_concepts.get(rel.arg1).relations);
+		array_map<relation, Proof*>& ground_arg2 = (Negated ? ground_concepts.get(rel.arg2).negated_relations : ground_concepts.get(rel.arg2).relations);
+
+		unsigned int index;
+		if (rel.arg1 == rel.arg2) {
+			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0});
+			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
+			index = both_arg_instances.index_of(rel.arg1);
+#if !defined(NDEBUG)
+			if (index == both_arg_instances.length)
+				fprintf(stderr, "theory.add_binary_atom WARNING: `both_arg_instances` does not contain %u.\n", rel.arg1);
+#endif
+			shift_left(both_arg_instances.data + index, both_arg_instances.length - index - 1);
+			both_arg_instances.length--;
+		}
+
+		index = predicate_instances.index_of(rel.predicate);
+#if !defined(NDEBUG)
+		if (index == predicate_instances.length)
+			fprintf(stderr, "theory.add_binary_atom WARNING: `predicate_instances` does not contain %u.\n", rel.predicate);
+#endif
+		shift_left(predicate_instances.data + index, predicate_instances.length - index - 1);
+		predicate_instances.length--;
+
+		index = arg1_instances.index_of(rel.arg1);
+#if !defined(NDEBUG)
+		if (index == arg1_instances.length)
+			fprintf(stderr, "theory.add_binary_atom WARNING: `arg1_instances` does not contain %u.\n", rel.arg1);
+#endif
+		shift_left(arg1_instances.data + index, arg1_instances.length - index - 1);
+		arg1_instances.length--;
+
+		index = arg2_instances.index_of(rel.arg2);
+#if !defined(NDEBUG)
+		if (index == arg2_instances.length)
+			fprintf(stderr, "theory.add_binary_atom WARNING: `arg2_instances` does not contain %u.\n", rel.arg2);
+#endif
+		shift_left(arg2_instances.data + index, arg2_instances.length - index - 1);
+		arg2_instances.length--;
+
+		index = ground_arg1.index_of({rel.predicate, 0, rel.arg2});
+#if !defined(NDEBUG)
+		if (index == ground_arg1.size)
+			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
+#endif
+		Proof* axiom = ground_arg1.values[index];
+		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
+		ground_arg1.remove_at(index);
+
+		index = ground_arg2.index_of({rel.predicate, rel.arg1, 0});
+#if !defined(NDEBUG)
+		if (index == ground_arg2.size)
+			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg2` does not contain the requested predicate.\n");
+#endif
+		axiom = ground_arg2.values[index];
+		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
+		ground_arg2.remove_at(index);
+		ground_axiom_count -= 2;
+
+		if (rel.arg1 == rel.arg2) {
+			/* in this case, `ground_arg1` and `ground_arg2` are the same */
+			index = ground_arg1.index_of({rel.predicate, 0, 0});
+#if !defined(NDEBUG)
+			if (index == ground_arg1.size)
+				fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
+#endif
+			axiom = ground_arg1.values[index];
+			core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
+			ground_arg1.remove_at(index);
+			ground_axiom_count--;
+		}
 	}
 
 private:

@@ -24,7 +24,7 @@ struct proof_transformations {
 
 template<typename Formula>
 bool propose_transformation(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		proof_transformations<Formula>& proposed_proofs,
 		nd_step<Formula, true>* old_step, nd_step<Formula, true>* new_step)
 {
@@ -65,7 +65,8 @@ bool propose_transformation(
 }
 
 template<bool FirstSample, typename Formula>
-void select_axiom(const theory<Formula, nd_step<Formula, true>>& T,
+void select_axiom(
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const concept<natural_deduction<Formula, true>>& c,
 		array<pair<uint_fast8_t, unsigned int>>& axiom_indices,
 		array<unsigned int>& selected_types, array<unsigned int>& selected_negated_types,
@@ -153,7 +154,7 @@ inline Formula* (const atom<Negated, Arity> a) {
 
 template<bool Negated, typename Formula>
 inline const array<unsigned int>& get_negated_set(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 1> a)
 {
 	return (Negated ? T.types.get(a.predicate).key : T.types.get(a.predicate).value);
@@ -161,7 +162,7 @@ inline const array<unsigned int>& get_negated_set(
 
 template<bool Negated, typename Formula>
 const array<unsigned int>& get_negated_set(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 2> a)
 {
 	relation r = { a.predicate, a.args[0], a.args[1] };
@@ -203,7 +204,7 @@ const nd_step<Formula, true>* get_proof(
 
 template<bool FirstSample, bool Negated, typename Formula>
 inline void get_satisfying_concepts_helper(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const Formula* literal, array<unsigned int>& intersection)
 {
 	typedef typename Formula::TermType TermType;
@@ -228,7 +229,7 @@ inline void get_satisfying_concepts_helper(
 
 template<bool FirstSample, typename Formula>
 bool get_satisfying_concepts(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const Formula* formula, array<unsigned int>& intersection)
 {
 	typedef typename Formula::Type FormulaType;
@@ -292,7 +293,7 @@ bool is_subset(const Formula* first, const Formula* second)
 
 template<bool Negated, unsigned int Arity, typename Formula>
 bool propose_universal_intro(
-		theory<Formula, nd_step<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, Arity> a,
 		unsigned int concept,
 		double& log_proposal_probability_ratio)
@@ -542,7 +543,7 @@ void free_proofs(nd_step<Formula, true>** proofs, unsigned int count) {
 
 template<typename Formula>
 inline bool make_grounded_conjunct(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		Formula* lifted_conjunct, unsigned int variable,
 		typename Formula::Term constant,
 		nd_step<Formula, true>** new_axioms,
@@ -612,7 +613,7 @@ inline bool make_grounded_conjunct(
 
 template<typename Formula>
 bool make_grounded_conjunction(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		Formula** conjuncts, unsigned int conjunct_count,
 		unsigned int variable, typename Formula::Term constant,
 		nd_step<Formula, true>** new_axioms,
@@ -654,7 +655,7 @@ template<typename Formula,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool propose_universal_elim(
-		theory<Formula, nd_step<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula, true>>& T,
 		unsigned int axiom_index,
 		double& log_proposal_probability_ratio,
 		double log_proof_stop_probability,
@@ -868,6 +869,7 @@ bool propose_universal_elim(
 	}
 }
 
+template<typename Formula>
 bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 {
 	typedef natural_deduction<Formula, true> ProofCalculus;
@@ -891,7 +893,7 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 
 			bool error = false;
 			switch (child->type) {
-			case CONJUNCTION_INTRODUCTION:
+			case nd_step_type::CONJUNCTION_INTRODUCTION:
 				for (unsigned int j = 0; j < child->operand_array.length; j++) {
 					if (child->operand_array[j] == entry.key) {
 						child->operand_array[j] = entry.value;
@@ -901,24 +903,24 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 					}
 				}
 				break;
-			case CONJUNCTION_ELIMINATION:
-			case CONJUNCTION_ELIMINATION_LEFT:
-			case CONJUNCTION_ELIMINATION_RIGHT:
-			case DISJUNCTION_INTRODUCTION:
-			case DISJUNCTION_INTRODUCTION_LEFT:
-			case DISJUNCTION_INTRODUCTION_RIGHT:
-			case DISJUNCTION_ELIMINATION:
-			case IMPLICATION_INTRODUCTION:
-			case IMPLICATION_ELIMINATION:
-			case BICONDITIONAL_INTRODUCTION:
-			case BICONDITIONAL_ELIMINATION_LEFT:
-			case BICONDITIONAL_ELIMINATION_RIGHT:
-			case PROOF_BY_CONTRADICTION:
-			case NEGATION_ELIMINATION:
-			case UNIVERSAL_INTRODUCTION:
-			case UNIVERSAL_ELIMINATION:
-			case EXISTENTIAL_INTRODUCTION:
-			case EXISTENTIAL_ELIMINATION:
+			case nd_step_type::CONJUNCTION_ELIMINATION:
+			case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+			case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+			case nd_step_type::DISJUNCTION_INTRODUCTION:
+			case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+			case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+			case nd_step_type::DISJUNCTION_ELIMINATION:
+			case nd_step_type::IMPLICATION_INTRODUCTION:
+			case nd_step_type::IMPLICATION_ELIMINATION:
+			case nd_step_type::BICONDITIONAL_INTRODUCTION:
+			case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+			case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+			case nd_step_type::PROOF_BY_CONTRADICTION:
+			case nd_step_type::NEGATION_ELIMINATION:
+			case nd_step_type::UNIVERSAL_INTRODUCTION:
+			case nd_step_type::UNIVERSAL_ELIMINATION:
+			case nd_step_type::EXISTENTIAL_INTRODUCTION:
+			case nd_step_type::EXISTENTIAL_ELIMINATION:
 				for (unsigned int j = 0; j < ND_OPERAND_COUNT; j++) {
 					if (child->operands[j] == entry.key) {
 						child->operands[j] = entry.value;
@@ -928,10 +930,10 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 					}
 				}
 				break;
-			case TERM_PARAMETER:
-			case ARRAY_PARAMETER:
-			case AXIOM:
-			case FORMULA_PARAMETER:
+			case nd_step_type::TERM_PARAMETER:
+			case nd_step_type::ARRAY_PARAMETER:
+			case nd_step_type::AXIOM:
+			case nd_step_type::FORMULA_PARAMETER:
 				error = true; break;
 			}
 			if (error) {
@@ -946,9 +948,55 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 	return true;
 }
 
+template<typename Formula,
+	bool Negated, unsigned int Arity,
+	typename TheoryPrior, typename AxiomPrior,
+	typename UniversalIntroductionPrior,
+	typename UniversalEliminationPrior>
+bool do_mh_universal_intro(
+		theory<Formula, natural_deduction<Formula, true>>& T,
+		const proof_transformations<Formula>& proposed_proofs,
+		nd_step<Formula, true>* new_universal_quantification,
+		double log_proposal_probability_ratio,
+		double log_proof_stop_probability,
+		double log_proof_continue_probability,
+		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
+		UniversalIntroductionPrior& universal_introduction_prior,
+		UniversalEliminationPrior& universal_elimination_prior)
+{
+	/* compute the proof portion of the prior for both current and proposed theories */
+	for (const auto& entry : proposed_proofs.transformed_proofs) {
+		/* contribution from the old proof */
+		log_proposal_probability_ratio -= log_probability(
+				*entry.key, log_proof_stop_probability,
+				log_proof_continue_probability, axiom_prior,
+				universal_introduction_prior, universal_elimination_prior);
+
+		/* contribution from the new proof */
+		log_proposal_probability_ratio += log_probability(
+				*entry.key, log_proof_stop_probability,
+				log_proof_continue_probability, axiom_prior,
+				universal_introduction_prior, universal_elimination_prior,
+				entry.value);
+	}
+
+	/* compute the prior of the current and proposed theories and add them to `log_proposal_probability_ratio` */
+	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior /* add arguments here */);
+
+	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+		/* we've accepted the proposal */
+		if (!transform_proofs(proposed_proofs)) return false;
+
+		if (!T.add_universal_quantification(new_universal_quantification)) return false;
+		for (auto entry : new_grounded_axioms)
+			if (!add_ground_axiom(T, consequent_atom, entry.key, entry.value)) return false;
+	}
+	return true;
+}
+
 template<bool Negated, typename Formula>
 inline bool add_ground_axiom(
-		theory<Formula, nd_step<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 1> consequent_atom,
 		unsigned int constant, nd_step<Formula, true>* axiom)
 {
@@ -957,7 +1005,7 @@ inline bool add_ground_axiom(
 
 template<bool Negated, typename Formula>
 inline bool add_ground_axiom(
-		theory<Formula, nd_step<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 2> consequent_atom,
 		unsigned int constant, nd_step<Formula, true>* axiom)
 {
@@ -973,7 +1021,7 @@ template<typename Formula,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool do_mh_universal_elim(
-		theory<Formula, nd_step<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula, true>>& T,
 		const proof_transformations<Formula>& proposed_proofs,
 		unsigned int axiom_index,
 		const hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms,
@@ -1019,7 +1067,7 @@ template<typename Formula, typename AxiomPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool do_mh_step(
-		const theory<Formula, nd_step<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula, true>>& T,
 		double log_proof_stop_probability,
 		double log_proof_continue_probability
 		AxiomPrior& axiom_prior,
