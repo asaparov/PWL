@@ -4,6 +4,8 @@
 #include <core/array.h>
 #include <math/log.h>
 
+#include "array_view.h"
+
 using namespace core;
 
 enum class nd_step_type : uint_fast16_t
@@ -98,7 +100,7 @@ struct nd_step
 		case nd_step_type::EXISTENTIAL_ELIMINATION:
 			subproofs = operands;
 			length = ND_OPERAND_COUNT;
-			return true;
+			return;
 		}
 		fprintf(stderr, "nd_step.get_subproofs ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
@@ -295,9 +297,9 @@ struct exclude {
 };
 
 template<template<typename> class Array, typename T>
-inline exclude<Array<T>, T> make_exclude(Array<T>& elements, T& excluded) {
-	return exclude<Array<T>, T>(elements, excluded);
-} 
+inline exclude<Array, T> make_exclude(Array<T>& elements, T& excluded) {
+	return exclude<Array, T>(elements, excluded);
+}
 
 template<typename T>
 bool pass_hypotheses(array<T>& dst, const array<T>& first) {
@@ -347,7 +349,7 @@ bool pass_hypotheses(array<T>& dst, const array<T>& first, const exclude<Array, 
 		set_union_helper<RemoveDuplicates>(dst, dst.length, first[i]);
 		i++;
 	} while (j < second.elements.length) {
-		if (*discharge_second == *second.elements[j]) { j++; discharged = true; continue; }
+		if (*second.excluded == *second.elements[j]) { j++; discharged = true; continue; }
 		set_union_helper<RemoveDuplicates>(dst, dst.length, second.elements[j]);
 		j++;
 	}
@@ -363,7 +365,7 @@ bool pass_hypotheses(array<T>& out, const array<T>& first, Lists&&... lists) {
 	return set_union(out, temp, first);
 }
 
-template<template<typename> typename Array, typename T, typename... Lists>
+template<template<typename> class Array, typename T, typename... Lists>
 bool pass_hypotheses(array<T>& out, const exclude<Array, T>& first, Lists&&... lists) {
 	if (!pass_hypotheses(out, std::forward<Lists>(lists)...)) return false;
 	array<T> temp = array<T>(out.length + first.elements.length);
@@ -371,7 +373,7 @@ bool pass_hypotheses(array<T>& out, const exclude<Array, T>& first, Lists&&... l
 	return pass_hypotheses(out, temp, first);
 }
 
-template<template<typename> typename Array, typename T>
+template<template<typename> class Array, typename T>
 bool pass_hypotheses(array<T>& out, const Array<array<T>>& lists) {
 	if (lists.length == 0)
 		return true;
@@ -432,6 +434,11 @@ struct proof_state_formulas {
 };
 
 template<typename Formula>
+proof_state_formulas<Formula> make_proof_state_formulas(proof_state<Formula>** states, unsigned int length) {
+	return proof_state_formulas<Formula>(states, length);
+}
+
+template<typename Formula>
 struct proof_state_assumptions {
 	proof_state<Formula>** states;
 	unsigned int length;
@@ -443,30 +450,10 @@ struct proof_state_assumptions {
 	}
 };
 
-template<typename T>
-struct array_view {
-	T* array;
-	unsigned int length;
-
-	array_view(T* array, unsigned int length) : array(array), length(length) { }
-
-	inline T& operator[] (size_t index) {
-		return array[index];
-	}
-};
-
-template<typename T>
-struct indexed_array_view {
-	T* array;
-	unsigned int* indices;
-	unsigned int length;
-
-	indexed_array_view(T* array, unsigned int* indices, unsigned int length) : array(array), indices(indices), length(length) { }
-
-	inline T& operator[] (size_t index) {
-		return array[indices[index]];
-	}
-};
+template<typename Formula>
+proof_state_assumptions<Formula> make_proof_state_assumptions(proof_state<Formula>** states, unsigned int length) {
+	return proof_state_assumptions<Formula>(states, length);
+}
 
 template<typename Formula, bool Canonical>
 struct proof_substitution {
@@ -514,13 +501,13 @@ bool check_proof(proof_state<Formula>& out,
 		return out.assumptions.add(out.formula);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
 		if (operand_count < 2) return false;
-		out.formula = Formula::new_and(proof_state_formulas(operand_states, operand_count));
+		out.formula = Formula::new_and(make_proof_state_formulas(operand_states, operand_count));
 		if (out.formula == NULL) return false;
 		for (unsigned int i = 0; i < operand_count; i++)
 			operand_states[i]->formula->reference_count++;
 		out.formula = try_canonicalize<Canonical>(out.formula);
 		if (out.formula == NULL) return false;
-		return pass_hypotheses(out.assumptions, proof_state_assumptions(operand_states, operand_count));
+		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states, operand_count));
 	case nd_step_type::CONJUNCTION_ELIMINATION:
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -540,13 +527,13 @@ bool check_proof(proof_state<Formula>& out,
 				free(formula);
 			return false;
 		}
-		if (proof.type == CONJUNCTION_ELIMINATION_LEFT) {
+		if (proof.type == nd_step_type::CONJUNCTION_ELIMINATION_LEFT) {
 			out.formula = formula->array.operands[0];
 			out.formula->reference_count++;
-		} else if (proof.type == CONJUNCTION_ELIMINATION_RIGHT) {
+		} else if (proof.type == nd_step_type::CONJUNCTION_ELIMINATION_RIGHT) {
 			out.formula = formula->array.operands[1];
 			out.formula->reference_count++;
-		} else if (proof.type == CONJUNCTION_ELIMINATION) {
+		} else if (proof.type == nd_step_type::CONJUNCTION_ELIMINATION) {
 			const indexed_array_view<Formula*> conjuncts(formula->array.operands, second_operand->parameters.data, second_operand->parameters.length);
 			if (std::max_element(conjuncts.indices, conjuncts.indices + conjuncts.length) >= formula->array.length
 			 || !std::is_sorted(conjuncts.indices, conjuncts.indices + conjuncts.length)
@@ -639,7 +626,7 @@ bool check_proof(proof_state<Formula>& out,
 		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (operand_count != 2
 		 || operand_states[0]->formula->type != FormulaType::FALSE
-		 || second_operand->type != nd_proof_type::axiom
+		 || second_operand->type != nd_step_type::AXIOM
 		 || operand_states[1]->formula->type != FormulaType::NOT)
 			return false;
 		out.formula = second_operand->formula->unary;
@@ -654,7 +641,7 @@ bool check_proof(proof_state<Formula>& out,
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::UNIVERSAL_INTRODUCTION:
 		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
-		if (operand_count != 2 || operand_states[0]->formula == NULL || second_operand->type != nd_proof_type::PARAMETER) {
+		if (operand_count != 2 || operand_states[0]->formula == NULL || second_operand->type != nd_step_type::PARAMETER) {
 			return false;
 		} else if (operand_states[0]->assumptions_have_parameter(second_operand->parameter)) {
 			/* the parameter is not allowed to occur free in the assumptions */
@@ -675,7 +662,7 @@ bool check_proof(proof_state<Formula>& out,
 		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (operand_count != 2
 		 || operand_states[0]->formula->type != FormulaType::FOR_ALL
-		 || second_operand->type != nd_proof_type::TERM_PARAMETER)
+		 || second_operand->type != nd_step_type::TERM_PARAMETER)
 			return false;
 		out.formula = substitute<-1>(*operand_states[0]->formula->quantifier.operand,
 				Formula::new_variable(operand_states[0]->formula->quantifier.variable),
@@ -687,7 +674,7 @@ bool check_proof(proof_state<Formula>& out,
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
 		if (operand_count != 2) return false;
 		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
-		if (second_operand->type == nd_proof_type::ARRAY_PARAMETER) {
+		if (second_operand->type == nd_step_type::ARRAY_PARAMETER) {
 			formula = substitute<1>(*operand_states[0]->formula, second_operand->parameters.data, second_operand->parameters.length, Formula::new_variable(1));
 		} else {
 			return false;
@@ -696,7 +683,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (formula == NULL) return false;
 		out.formula = Formula::new_exists(1, formula);
 		if (out.formula == NULL) {
-			free(*formula) if (formula->reference_count == 0) free(formula);
+			free(*formula); if (formula->reference_count == 0) free(formula);
 			return false;
 		}
 		out.formula = try_canonicalize<Canonical>(out.formula);
@@ -870,10 +857,10 @@ bool check_proof(const nd_step<Formula, Canonical>& proof,
 		const Formula* expected_conclusion, ProofMap&&... proof_map)
 {
 	Formula* actual_conclusion = check_proof(proof, std::forward<ProofMap>(proof_map)...);
-	bool success = (*actual_conclusion != *expected_conclusion)
+	bool success = (*actual_conclusion != *expected_conclusion);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
-	free(*actual_conclusion)
+	free(*actual_conclusion);
 	if (actual_conclusion->reference_count == 0)
 		free(actual_conclusion);
 	return success;
@@ -900,7 +887,7 @@ struct natural_deduction
 	typedef typename Formula::Term Term;
 
 	static inline Proof* new_axiom(Formula* axiom) {
-		new_parameterized_step<nd_step_type::AXIOM>(axiom);
+		return new_parameterized_step<nd_step_type::AXIOM>(axiom);
 	}
 
 	template<typename... Args>
@@ -950,7 +937,7 @@ struct natural_deduction
 	}
 
 	static inline Proof* new_implication_intro(Proof* proof, Proof* assumption) {
-		if (assumption == NULL || assumption->type != nd_proof_type::AXIOM) return NULL;
+		if (assumption == NULL || assumption->type != nd_step_type::AXIOM) return NULL;
 		return new_binary_step<nd_step_type::IMPLICATION_INTRODUCTION>(proof, assumption);
 	}
 
@@ -971,7 +958,7 @@ struct natural_deduction
 	}
 
 	static inline Proof* new_proof_by_contradiction(Proof* proof, Proof* assumption) {
-		if (assumption == NULL || assumption->type != nd_proof_type::AXIOM) return NULL;
+		if (assumption == NULL || assumption->type != nd_step_type::AXIOM) return NULL;
 		return new_binary_step<nd_step_type::PROOF_BY_CONTRADICTION>(proof, assumption);
 	}
 
@@ -997,7 +984,7 @@ struct natural_deduction
 
 private:
 	static inline Proof* new_parameter(Formula* parameter) {
-		new_formula_parameterized_step<nd_step_type::FORMULA_PARAMETER>(parameter);
+		return new_parameterized_step<nd_step_type::FORMULA_PARAMETER>(parameter);
 	}
 
 	static inline Proof* new_parameter(unsigned int parameter) {
@@ -1005,7 +992,6 @@ private:
 		if (!new_nd_step(step, nd_step_type::PARAMETER)) return NULL;
 		step->reference_count = 0;
 		step->parameter = parameter;
-		axiom->reference_count++;
 		return step;
 	}
 
@@ -1014,7 +1000,6 @@ private:
 		if (!new_nd_step(step, nd_step_type::TERM_PARAMETER)) return NULL;
 		step->reference_count = 0;
 		step->term = term;
-		axiom->reference_count++;
 		return step;
 	}
 
@@ -1165,7 +1150,7 @@ private:
 				return NULL;
 			}
 		}
-		step->operand_array.length = operand_count;
+		step->operand_array.length = operands.length;
 		return step;
 	}
 };
@@ -1191,7 +1176,7 @@ bool canonicalize(const nd_step<Formula, Canonical>& proof,
 			return false;
 	}
 
-	std::make_heap(heap.begin(), heap.end(), nd_canonicalizer<Formula>());
+	std::make_heap(heap.begin(), heap.end(), nd_canonicalizer<Formula, Canonical>());
 	while (heap.length > 0) {
 		std::pop_heap(heap.begin(), heap.end());
 		const nd_step<Formula, Canonical>* node = heap.pop();
@@ -1237,7 +1222,7 @@ double log_probability(
 {
 	typedef typename Formula::TermType TermType;
 
-	double value; unsigned int index;
+	double value; unsigned int index; Formula* operand;
 	switch (proof.type) {
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::ARRAY_PARAMETER:
@@ -1267,9 +1252,9 @@ double log_probability(
 	case nd_step_type::PROOF_BY_CONTRADICTION: /* TODO: is this correct? */
 	case nd_step_type::NEGATION_ELIMINATION:
 	case nd_step_type::EXISTENTIAL_ELIMINATION:
-		return -LOG_ND_RULE_COUNT - 2*log_cache<V>::instance().get(formula_counter++);
+		return -LOG_ND_RULE_COUNT - 2*log_cache<double>::instance().get(formula_counter++);
 	case nd_step_type::DISJUNCTION_ELIMINATION:
-		return -LOG_ND_RULE_COUNT - 3*log_cache<V>::instance().get(formula_counter++);
+		return -LOG_ND_RULE_COUNT - 3*log_cache<double>::instance().get(formula_counter++);
 	case nd_step_type::DISJUNCTION_INTRODUCTION:
 	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
 	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
@@ -1290,8 +1275,8 @@ double log_probability(
 		formula_counter++;
 		operand = map(proof.operands[2], std::forward<ProofMap>(proof_map)...);
 		if (operand->term.type == TermType::PARAMETER) {
-			available_parameters.add(operand->term.parameter);
-			insertion_sort(available_parameters); unique(available_parameters);
+			if (available_parameters.ensure_capacity(available_parameters.length + 1)) exit(EXIT_FAILURE);
+			add_sorted<true>(available_parameters, operand->term.parameter);
 		}
 		return log_probability(operand->term, universal_elimination_prior);
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
@@ -1329,10 +1314,11 @@ double log_probability(
 	double value = (canonical_order.length - 1) * log_continue_probability + log_stop_probability;
 	unsigned int formula_counter = 0;
 	array<typename Formula::Term>& introduced_terms(16);
-	log_cache<V>::instance().ensure_size(canonical_order.length);
+	array<unsigned int> available_parameters(16);
+	log_cache<double>::instance().ensure_size(canonical_order.length);
 	for (const nd_step<Formula, Canonical>* step : canonical_order)
-		value += log_probability(*step, counter, introduced_terms,
-				log_max_parameter_count, axiom_prior, universal_introduction_prior,
+		value += log_probability(*step, formula_counter, introduced_terms,
+				available_parameters, axiom_prior, universal_introduction_prior,
 				universal_elimination_prior, std::forward<ProofMap>(proof_map)...);
 	return value;
 }

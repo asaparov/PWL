@@ -4,26 +4,57 @@
 #include <core/lex.h>
 #include <cstdint>
 
+#include "first_order_logic.h"
+
 using namespace core;
 
 struct token {
 	unsigned int id;
 };
 
+inline bool operator != (const token& first, const token& second) {
+	return first.id != second.id;
+}
+
 struct sentence {
 	token* tokens;
 	unsigned int length;
 
-	static inline void free() {
-		free(tokens);
+	static inline bool is_empty(const sentence& key) {
+		return key.tokens == NULL;
+	}
+
+	static inline unsigned int hash(const sentence& key) {
+		return default_hash(key.tokens, key.length);
+	}
+
+	static inline void move(const sentence& src, sentence& dst) {
+		dst.tokens = src.tokens;
+		dst.length = src.length;
+	}
+
+	static inline void free(sentence& s) {
+		core::free(s.tokens);
 	}
 };
+
+inline bool operator == (const sentence& first, const sentence& second) {
+	if (first.length != second.length) return false;
+	for (unsigned int i = 0; i < first.length; i++)
+		if (first.tokens[i] != second.tokens[i]) return false;
+	return true;
+}
 
 struct article {
 	sentence* sentences;
 	unsigned int sentence_count;
 
 	~article() { free(); }
+
+	static inline void move(const article& src, article& dst) {
+		dst.sentences = src.sentences;
+		dst.sentence_count = src.sentence_count;
+	}
 
 	static inline void free(article& a) { a.free(); }
 
@@ -36,7 +67,9 @@ private:
 };
 
 struct in_memory_article_store {
-	hash_map<unsigned int, article>& articles;
+	hash_map<unsigned int, article> articles;
+
+	in_memory_article_store() : articles(64) { }
 
 	~in_memory_article_store() {
 		for (auto entry : articles)
@@ -93,18 +126,6 @@ bool article_emit_symbol(array<article_token>& tokens, const position& start, ch
 		fprintf(stderr, "article_emit_symbol ERROR: Unexpected symbol.\n");
 		return false;
 	}
-}
-
-inline bool append_to_token(
-	array<char>& token, wint_t next, std::mbstate_t& shift)
-{
-	if (!token.ensure_capacity(token.length + MB_CUR_MAX))
-		return false;
-	size_t written = wcrtomb(token.data + token.length, next, &shift);
-	if (written == static_cast<std::size_t>(-1))
-		return false;
-	token.length += written;
-	return true;
 }
 
 template<typename Stream>
@@ -215,40 +236,95 @@ inline bool concatenate(lexical_token<TokenType>* tokens, unsigned int token_cou
 bool article_interpret_sentence(
 		const array<article_token>& tokens,
 		unsigned int& index, sentence& out,
+		array_map<unsigned int, unsigned int>& labels,
 		hash_map<string, unsigned int>& names)
 {
-	array<token>& sentence_tokens = *((array<token>*) alloca(sizeof(array<tokens>)));
+	array<token>& sentence_tokens = *((array<token>*) alloca(sizeof(array<token>)));
 	if (!array_init(sentence_tokens, 16)) return false;
 	while (true) {
 		unsigned int token_id;
 		if (!expect_token(tokens, index, article_token_type::TOKEN, "sentence token")
-		 || !get_token(tokens[index], token_id, names) || !sentence_tokens.add({token_id}))
+		 || !get_token(tokens[index].text, token_id, names) || !sentence_tokens.add({token_id}))
 		{
 			free(sentence_tokens); return false;
 		}
 		index++;
+
+		if (index < tokens.length && tokens[index].type == article_token_type::COLON) {
+			index++;
+			unsigned int token_label;
+			if (!expect_token(tokens, index, article_token_type::TOKEN, "token label")
+			 || !get_token(tokens[index].text, token_label, names) || !labels.put(token_id, token_label))
+			{
+				free(sentence_tokens); return false;
+			}
+			index++;
+		}
 
 		if (index >= tokens.length) {
 			read_error("Expected a token or period at end of sentence", tokens[index].start);
 			free(sentence_tokens); return false;
 		} else if (tokens[index].type == article_token_type::PERIOD) {
 			index++; break;
-		} else if (tokens[index].type == article_token_type::TOKEN) {
+		} else if (tokens[index].type != article_token_type::TOKEN) {
 			read_error("Expected a token or period at end of sentence", tokens[index].start);
 			free(sentence_tokens); return false;
 		}
 	}
 
 	move(sentence_tokens.data, out.tokens);
-	move(sentence_tokens.length, out.length);
+	out.length = sentence_tokens.length;
 	return true;
+}
+
+struct sentence_label {
+	fol_formula* logical_form;
+	array_map<unsigned int, unsigned int> labels;
+
+	static inline void move(const sentence_label& src, sentence_label& dst) {
+		dst.logical_form = src.logical_form;
+		core::move(src.labels, dst.labels);
+	}
+
+	static inline void free(sentence_label& label) {
+		if (label.logical_form->reference_count > 0) {
+			core::free(*label.logical_form);
+			if (label.logical_form->reference_count == 0)
+				core::free(label.logical_form);
+		}
+		core::free(label.labels);
+	}
+};
+
+inline bool init(sentence_label& label) {
+	label.logical_form = (fol_formula*) malloc(sizeof(fol_formula));
+	if (label.logical_form == NULL) {
+		fprintf(stderr, "init ERROR: Insufficient memory for sentence_label.logical_form.\n");
+		return false;
+	} else if (!array_map_init(label.labels, 8)) {
+		free(label.logical_form);
+		return false;
+	}
+	label.logical_form->reference_count = 0;
+	return true;
+}
+
+inline bool operator != (const sentence_label& first, const sentence_label& second) {
+	if (*first.logical_form != *second.logical_form)
+		return true;
+	if (first.labels.size != second.labels.size)
+		return true;
+	for (unsigned int i = 0; i < first.labels.size; i++)
+		if (first.labels.keys[i] != second.labels.keys[i]
+		 || first.labels.values[i] != second.labels.values[i]) return true;
+	return false;
 }
 
 bool article_interpret(
 		const array<article_token>& tokens,
 		unsigned int& index,
 		article& out, unsigned int& article_name,
-		hash_map<sentence, fol_formula*> logical_forms,
+		hash_map<sentence, sentence_label> logical_forms,
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int start = index;
@@ -258,7 +334,7 @@ bool article_interpret(
 	while (tokens[index].type != article_token_type::COLON) {
 		if (!expect_token(tokens, index, article_token_type::TOKEN, "article name"))
 			return false;
-		index+;
+		index++;
 	}
 
 	string name;
@@ -275,11 +351,15 @@ bool article_interpret(
 	if (!array_init(sentences, 8))
 		return false;
 	while (true) {
-		if (!sentences.ensure_capacity(sentences.length + 1)
-		 || !article_interpret_sentence(tokens, index, sentences[sentences.length], names))
-		{
+		sentence_label& new_label = *((sentence_label*) alloca(sizeof(sentence_label)));
+		if (!init(new_label)) {
 			for (sentence& s : sentences) free(s);
 			free(sentences); return false;
+		} else if (!sentences.ensure_capacity(sentences.length + 1)
+				|| !article_interpret_sentence(tokens, index, sentences[sentences.length], new_label.labels, names))
+		{
+			for (sentence& s : sentences) free(s);
+			free(sentences); free(new_label); return false;
 		}
 		sentences.length++;
 
@@ -299,37 +379,31 @@ bool article_interpret(
 			{
 				read_error("Unable to parse first-order formula (lexical analysis failed)", tokens[index].start);
 				for (sentence& s : sentences) free(s);
-				free(sentences); free_tokens(formula_tokens);
+				free(sentences); free(new_label); free_tokens(formula_tokens);
 				return false;
 			}
 
 			unsigned int formula_index = 0;
 			array_map<string, unsigned int> variables = array_map<string, unsigned int>(16);
-			fol_formula* formula = (fol_formula*) malloc(sizeof(fol_formula));
-			if (formula == NULL) {
-				fprintf(stderr, "article_interpret ERROR: Insufficient memory for fol_formula.\n");
-				for (sentence& s : sentences) free(s);
-				free(sentences); free_tokens(formula_tokens);
-				return false;
-			} else if (!tptp_interpret(formula_tokens, formula_index, *formula, names, variables)) {
+			if (!tptp_interpret(formula_tokens, formula_index, *new_label.logical_form, names, variables)) {
 				read_error("Unable to parse first-order formula", tokens[index].start);
 				for (auto entry : variables) free(entry.key);
 				for (sentence& s : sentences) free(s);
-				free(sentences); free(formula); free_tokens(formula_tokens);
+				free(sentences); free(new_label); free_tokens(formula_tokens);
 				return false;
 			}
 			free_tokens(formula_tokens);
 
 			bool contains; unsigned int bucket;
-			fol_formula*& value = logical_forms.get(sentences.last(), contains, bucket);
+			sentence_label& value = logical_forms.get(sentences.last(), contains, bucket);
 			if (!contains) {
-				value = formula;
+				move(new_label, value);
 				logical_forms.table.keys[bucket] = sentences.last();
 				logical_forms.table.size++;
-			} else if (*value != *formula) {
+			} else if (value != new_label) {
 				read_error("A different logical form was previously mapped to this sentence", tokens[index].start);
 				for (sentence& s : sentences) free(s);
-				free(sentences); free(*formula); free(formula);
+				free(sentences); free(new_label);
 				free_tokens(formula_tokens);
 				return false;
 			}
@@ -337,15 +411,15 @@ bool article_interpret(
 		}
 	}
 
-	move(sentences.data, article.sentences);
-	move(sentences.length, article.sentence_count);
+	move(sentences.data, out.sentences);
+	out.sentence_count = sentences.length;
 	return true;
 }
 
 bool articles_interpret(
 		const array<article_token>& tokens,
 		in_memory_article_store& articles,
-		hash_map<sentence, fol_formula*> logical_forms,
+		hash_map<sentence, sentence_label> logical_forms,
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int index = 0;

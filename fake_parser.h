@@ -3,7 +3,6 @@
 
 #include "article.h"
 #include "first_order_logic.h"
-#include "theory.h"
 
 struct constant_relabeler {
 	const unsigned int* old_constants;
@@ -24,6 +23,10 @@ inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predic
 
 inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable, constant_relabeler& relabeler) {
 	return clone_variable(src_variable, dst_variable);
+}
+
+inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parameter, constant_relabeler& relabeler) {
+	return clone_parameter(src_parameter, dst_parameter);
 }
 
 inline fol_formula* relabel_constants(
@@ -58,40 +61,34 @@ inline bool visit_constant(unsigned int constant, const constant_subtracter& sub
 }
 
 struct fake_parser {
-	hash_map<sentence, fol_formula*> table;
-	array_map<token, unsigned int> unknown_tokens;
+	hash_map<sentence, sentence_label> table;
 	unsigned int unknown_id;
 
-	fake_parser(unsigned int unknown_id) : table(64),
-			unknown_tokens(16), unknown_id(unknown_id) { }
+	fake_parser(unsigned int unknown_id) : table(64), unknown_id(unknown_id) { }
 
 	~fake_parser() {
 		for (auto entry : table) {
 			free(entry.key);
-			free(*entry.value);
-			if (entry.value->reference_count == 0)
-				free(entry.value);
+			free(entry.value);
 		}
 	}
 
+	template<typename TheoryType>
 	bool parse(const sentence& s, fol_formula** logical_forms,
 			double* log_probabilities, unsigned int& parse_count,
-			const theory& T, array<token>& unrecognized) const
+			const TheoryType& T, array<token>& unrecognized) const
 	{
-		for (unsigned int i = 0; i < s.length; i++) {
-			if (unknown_tokens.contains(s.tokens[i])
-			 && !unrecognized.add(s.tokens[i]))
-				return false;
-		}
-
 		bool contains;
-		const fol_formula* parse = table.get(s, contains);
+		const sentence_label& parse = table.get(s, contains);
 		if (!contains) {
 			parse_count = 0;
 			return true;
 		}
 
-		fol_formula* out = relabel_constants(parse, unknown_tokens.values, unknown_tokens.size, unknown_id);
+		for (const auto& entry : parse.labels)
+			if (!unrecognized.add({entry.key})) return false;
+
+		fol_formula* out = relabel_constants(parse.logical_form, parse.labels.values, parse.labels.size, unknown_id);
 		if (out == NULL) {
 			fprintf(stderr, "fake_parser.parse ERROR: Failed to relabel unknown constants.\n");
 			return false;
@@ -101,8 +98,10 @@ struct fake_parser {
 
 	bool add_definition(const sentence& s, const fol_formula* definition)
 	{
-		for (unsigned int i = 0; i < s.length; i++)
-			unknown_tokens.remove(s.tokens[i]);
+		bool contains;
+		sentence_label& label = table.get(s, contains);
+		if (!contains) return false;
+		label.labels.clear();
 		return true;
 	}
 };

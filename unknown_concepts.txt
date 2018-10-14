@@ -1,7 +1,0 @@
-organism organism
-animal animal
-mammal mammal
-cat cat
-bob Bob
-kate Kate
-sam Sam
