@@ -38,6 +38,18 @@ struct sentence {
 	}
 };
 
+inline bool init(sentence& dst, const sentence& src) {
+	dst.tokens = (token*) malloc(max((size_t) 1, sizeof(token) * src.length));
+	if (dst.tokens == NULL) {
+		fprintf(stderr, "init ERROR: Insufficient memory for sentence.tokens.\n");
+		return false;
+	}
+	for (unsigned int i = 0; i < src.length; i++)
+		dst.tokens[i] = src.tokens[i];
+	dst.length = src.length;
+	return true;
+}
+
 inline bool operator == (const sentence& first, const sentence& second) {
 	if (first.length != second.length) return false;
 	for (unsigned int i = 0; i < first.length; i++)
@@ -152,13 +164,14 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 					return false;
 				state = article_lexer_state::FORMULA;
 				token.clear(); shift = {0};
+				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN))
 					return false;
 				state = article_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
 				new_line = (next == '\n');
-				if (new_line && !emit_token(tokens, start, start + 1, article_token_type::NEWLINE))
+				if (new_line && !emit_token(tokens, current, current + 1, article_token_type::NEWLINE))
 					return false;
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
@@ -183,9 +196,10 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 			} else if (next == '{') {
 				state = article_lexer_state::FORMULA;
 				token.clear(); shift = {0};
+				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
-				if (new_line && !emit_token(tokens, start, start + 1, article_token_type::NEWLINE))
+				if (new_line && !emit_token(tokens, current, current + 1, article_token_type::NEWLINE))
 					return false;
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
@@ -220,7 +234,8 @@ inline bool concatenate(lexical_token<TokenType>* tokens, unsigned int token_cou
 	for (unsigned int i = 1; i < token_count; i++)
 		length += 1 + tokens[i].text.length;
 
-	if (!init(out, length)) return false;
+	if (!core::resize(out.data, length)) return false;
+	out.length = length;
 
 	unsigned int index = 0;
 	for (unsigned int i = 0; i < token_count; i++) {
@@ -291,6 +306,8 @@ struct sentence_label {
 			core::free(*label.logical_form);
 			if (label.logical_form->reference_count == 0)
 				core::free(label.logical_form);
+		} else {
+			core::free(label.logical_form);
 		}
 		core::free(label.labels);
 	}
@@ -324,7 +341,7 @@ bool article_interpret(
 		const array<article_token>& tokens,
 		unsigned int& index,
 		article& out, unsigned int& article_name,
-		hash_map<sentence, sentence_label> logical_forms,
+		hash_map<sentence, sentence_label>& logical_forms,
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int start = index;
@@ -337,15 +354,14 @@ bool article_interpret(
 		index++;
 	}
 
-	string name;
+	string name = string(16);
 	if (!concatenate(tokens.data + start, index - start, name)) {
 		fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
 		return false;
 	} else if (!get_token(name, article_name, names)) {
-		free(name);
 		return false;
 	}
-	free(name);
+	index++;
 
 	array<sentence>& sentences = *((array<sentence>*) alloca(sizeof(array<sentence>)));
 	if (!array_init(sentences, 8))
@@ -363,18 +379,14 @@ bool article_interpret(
 		}
 		sentences.length++;
 
-		if (index >= tokens.length) {
-			break;
-		} else if (tokens[index].type == article_token_type::NEWLINE) {
-			index++; break;
-		} else if (tokens[index].type == article_token_type::FORMULA) {
+		if (index < tokens.length && tokens[index].type == article_token_type::FORMULA) {
 			/* parse the formula */
 			array<tptp_token> formula_tokens = array<tptp_token>(128);
 			memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
 			in.buffer = tokens[index].text.data;
 			in.length = tokens[index].text.length;
 			in.position = 0; in.shift = {0};
-			if (!tptp_lex(formula_tokens, in)
+			if (!tptp_lex(formula_tokens, in, tokens[index].start + 1)
 			 || !logical_forms.check_size())
 			{
 				read_error("Unable to parse first-order formula (lexical analysis failed)", tokens[index].start);
@@ -397,8 +409,13 @@ bool article_interpret(
 			bool contains; unsigned int bucket;
 			sentence_label& value = logical_forms.get(sentences.last(), contains, bucket);
 			if (!contains) {
+				if (!init(logical_forms.table.keys[bucket], sentences.last())) {
+					for (sentence& s : sentences) free(s);
+					free(sentences); free(new_label);
+					free_tokens(formula_tokens);
+					return false;
+				}
 				move(new_label, value);
-				logical_forms.table.keys[bucket] = sentences.last();
 				logical_forms.table.size++;
 			} else if (value != new_label) {
 				read_error("A different logical form was previously mapped to this sentence", tokens[index].start);
@@ -408,6 +425,12 @@ bool article_interpret(
 				return false;
 			}
 			index++;
+		}
+
+		if (index >= tokens.length) {
+			break;
+		} else if (tokens[index].type == article_token_type::NEWLINE) {
+			index++; break;
 		}
 	}
 
@@ -419,7 +442,7 @@ bool article_interpret(
 bool articles_interpret(
 		const array<article_token>& tokens,
 		in_memory_article_store& articles,
-		hash_map<sentence, sentence_label> logical_forms,
+		hash_map<sentence, sentence_label>& logical_forms,
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int index = 0;

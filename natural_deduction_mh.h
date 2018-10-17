@@ -292,8 +292,25 @@ bool is_subset(const Formula* first, const Formula* second)
 	}
 }
 
+template<typename Formula, bool Negated, unsigned int Arity>
+struct universal_intro_proposal {
+	nd_step<Formula, true>* new_universal_quantification;
+	hash_set<unsigned int>& old_grounded_axioms;
+	atom<Negated, Arity> consequent_atom;
+};
+
+template<typename Formula, bool Negated, unsigned int Arity>
+inline universal_intro_proposal<Formula, Negated, Arity> make_universal_intro_proposal(
+		nd_step<Formula, true>* new_universal_quantification,
+		hash_set<unsigned int>& old_grounded_axioms,
+		atom<Negated, Arity> consequent_atom)
+{
+	return {new_universal_quantification, old_grounded_axioms, consequent_atom};
+}
+
 template<bool Negated, unsigned int Arity, typename Formula,
 	typename TheoryPrior, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool propose_universal_intro(
@@ -304,6 +321,7 @@ bool propose_universal_intro(
 		double log_proof_stop_probability,
 		double log_proof_continue_probability,
 		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior)
 {
@@ -537,11 +555,10 @@ bool propose_universal_intro(
 		}
 	}
 
-	return do_mh_universal_intro(
-			T, proposed_proofs, axiom_step->formula, intersection, a,
-			log_proposal_probability_ratio, log_proof_stop_probability,
-			log_proof_continue_probability, theory_prior, axiom_prior,
-			universal_introduction_prior, universal_elimination_prior);
+	return do_mh_universal_intro(T, proposed_proofs,
+			make_universal_intro_proposal(axiom_step->formula, intersection, a), log_proposal_probability_ratio,
+			log_proof_stop_probability, log_proof_continue_probability, theory_prior, axiom_prior,
+			conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 }
 
 template<typename Formula>
@@ -661,8 +678,25 @@ bool make_grounded_conjunction(
 	return true;
 }
 
+template<typename Formula, bool Negated, unsigned int Arity>
+struct universal_elim_proposal {
+	unsigned int universal_axiom_index;
+	hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms;
+	atom<Negated, Arity> consequent_atom;
+};
+
+template<typename Formula, bool Negated, unsigned int Arity>
+inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_proposal(
+		unsigned int universal_axiom_index,
+		hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms,
+		atom<Negated, Arity> consequent_atom)
+{
+	return {universal_axiom_index, new_grounded_axioms, consequent_atom};
+}
+
 template<typename Formula,
 	typename TheoryPrior, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool propose_universal_elim(
@@ -672,6 +706,7 @@ bool propose_universal_elim(
 		double log_proof_stop_probability,
 		double log_proof_continue_probability,
 		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior)
 {
@@ -719,7 +754,7 @@ bool propose_universal_elim(
 		return true;
 	}
 
-	hash_map<unsigned int, Proof*> new_grounded_axioms(16);
+	hash_map<unsigned int, nd_step<Formula, true>*> new_grounded_axioms(16);
 	for (Proof* child : axiom->children) {
 		if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
 		 || child->operands[1]->term.type == TermType::CONSTANT)
@@ -829,9 +864,9 @@ bool propose_universal_elim(
 	/* if the antecedent conjuncts aren't grounded, then we can't propose the inverse transformation */
 	if (intersection.length == 0) return true;
 	unsigned int new_axiom_count = T.ground_axiom_count + T.universal_quantifications.length - 1;
-	if (is_consequent_symmetric) new_axiom_count += new_grounded_axioms.size * 3;
-	else if (is_consequent_binary) new_axiom_count += new_grounded_axioms.size * 2;
-	else new_axiom_count += new_grounded_axioms.size;
+	if (is_consequent_symmetric) new_axiom_count += new_grounded_axioms.table.size * 3;
+	else if (is_consequent_binary) new_axiom_count += new_grounded_axioms.table.size * 2;
+	else new_axiom_count += new_grounded_axioms.table.size;
 	if (!log_cache<double>::instance().ensure_size(new_axiom_count)) return false;
 	double* log_probabilities = (double*) calloc(intersection.length, sizeof(double));
 	for (unsigned int i = 0; i < intersection.length; i++) {
@@ -853,17 +888,19 @@ bool propose_universal_elim(
 			atom<false, 1> consequent_atom;
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = 0;
-			return do_mh_universal_elim(T, proposed_proofs, axiom_index, new_grounded_axioms, consequent_atom,
-				log_proposal_probability_ratio, log_proof_stop_probability, log_proof_continue_probability,
-				theory_prior, axiom_prior, universal_introduction_prior, universal_elimination_prior);
+			return do_mh_universal_elim(T, proposed_proofs,
+					make_universal_elim_proposal(new_grounded_axioms, consequent_atom), log_proposal_probability_ratio,
+					log_proof_stop_probability, log_proof_continue_probability, theory_prior, axiom_prior,
+					conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 		} else {
 			atom<false, 2> consequent_atom;
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = (atomic_formula->atom.arg1.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg1.constant);
 			consequent_atom.args[1] = (atomic_formula->atom.arg2.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg2.constant);
-			return do_mh_universal_elim(T, proposed_proofs, axiom_index, new_grounded_axioms, consequent_atom,
-				log_proposal_probability_ratio, log_proof_stop_probability, log_proof_continue_probability,
-				theory_prior, axiom_prior, universal_introduction_prior, universal_elimination_prior);
+			return do_mh_universal_elim(T, proposed_proofs,
+					make_universal_elim_proposal(new_grounded_axioms, consequent_atom), log_proposal_probability_ratio,
+					log_proof_stop_probability, log_proof_continue_probability, theory_prior, axiom_prior,
+					conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 		}
 	} else if (consequent->type == FormulaType::NOT && consequent->unary.operand->type == FormulaType::ATOM) {
 		Formula* atomic_formula = consequent->unary.operand;
@@ -871,17 +908,19 @@ bool propose_universal_elim(
 			atom<true, 1> consequent_atom;
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = 0;
-			return do_mh_universal_elim(T, proposed_proofs, axiom_index, new_grounded_axioms, consequent_atom,
-				log_proposal_probability_ratio, log_proof_stop_probability, log_proof_continue_probability,
-				theory_prior, axiom_prior, universal_introduction_prior, universal_elimination_prior);
+			return do_mh_universal_elim(T, proposed_proofs,
+					make_universal_elim_proposal(new_grounded_axioms, consequent_atom), log_proposal_probability_ratio,
+					log_proof_stop_probability, log_proof_continue_probability, theory_prior, axiom_prior,
+					conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 		} else {
 			atom<true, 2> consequent_atom;
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = (atomic_formula->atom.arg1.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg1.constant);
 			consequent_atom.args[1] = (atomic_formula->atom.arg2.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg2.constant);
-			return do_mh_universal_elim(T, proposed_proofs, axiom_index, new_grounded_axioms, consequent_atom,
-				log_proposal_probability_ratio, log_proof_stop_probability, log_proof_continue_probability,
-				theory_prior, axiom_prior, universal_introduction_prior, universal_elimination_prior);
+			return do_mh_universal_elim(T, proposed_proofs,
+					make_universal_elim_proposal(new_grounded_axioms, consequent_atom), log_proposal_probability_ratio,
+					log_proof_stop_probability, log_proof_continue_probability, theory_prior, axiom_prior,
+					conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 		}
 	}
 }
@@ -966,68 +1005,60 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 }
 
 template<bool Negated, typename Formula>
-inline bool remove_ground_axiom(
+inline void remove_ground_axiom(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 1> consequent_atom, unsigned int constant)
 {
-	return T.remove_unary_axiom<Negated>(consequent_atom.predicate, constant);
+	T.remove_unary_axiom<Negated>(consequent_atom.predicate, constant);
 }
 
 template<bool Negated, typename Formula>
-inline bool remove_ground_axiom(
+inline void remove_ground_axiom(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 2> consequent_atom, unsigned int constant)
 {
 	relation rel = { consequent_atom.predicate,
 			(consequent_atom.args[0] == 0 ? constant : consequent_atom.args[0]),
 			(consequent_atom.args[1] == 0 ? constant : consequent_atom.args[1]) };
-	return T.remove_unary_axiom<Negated>(rel);
+	T.remove_unary_axiom<Negated>(rel);
 }
 
 template<typename Formula,
 	bool Negated, unsigned int Arity,
 	typename TheoryPrior, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool do_mh_universal_intro(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const proof_transformations<Formula>& proposed_proofs,
-		nd_step<Formula, true>* new_universal_quantification,
-		const hash_set<unsigned int>& old_grounded_axioms,
-		const atom<Negated, Arity> consequent_atom,
+		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
 		double log_proposal_probability_ratio,
 		double log_proof_stop_probability,
 		double log_proof_continue_probability,
 		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior)
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
-	for (const auto& entry : proposed_proofs.transformed_proofs) {
-		/* contribution from the old proof */
-		log_proposal_probability_ratio -= log_probability(
-				*entry.key, log_proof_stop_probability,
-				log_proof_continue_probability, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior);
-
-		/* contribution from the new proof */
-		log_proposal_probability_ratio += log_probability(
-				*entry.key, log_proof_stop_probability,
-				log_proof_continue_probability, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior,
-				entry.value);
-	}
+	log_proposal_probability_ratio += log_probability_ratio(
+			proposed_proofs, log_proof_stop_probability, log_proof_continue_probability, axiom_prior,
+			conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 
 	/* compute the prior of the current and proposed theories and add them to `log_proposal_probability_ratio` */
-	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior /* add arguments here */);
+	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior, proposal);
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
 
-		if (!T.add_universal_quantification(new_universal_quantification)) return false;
-		for (unsigned int concept : old_grounded_axioms)
-			if (!remove_ground_axiom(T, consequent_atom, concept)) return false;
+		if (!T.add_universal_quantification(proposal.new_universal_quantification)) return false;
+		for (unsigned int concept : proposal.old_grounded_axioms)
+			remove_ground_axiom(T, proposal.consequent_atom, concept);
+		for (const auto& entry : proposed_proofs.transformed_proofs)
+			axiom_prior.remove(entry.key->formula); /* remove the old axioms from the `axiom_prior` */
+		if (!axiom_prior.add(proposal.new_universal_quantification)) return false;
 	}
 	return true;
 }
@@ -1056,53 +1087,50 @@ inline bool add_ground_axiom(
 template<typename Formula,
 	bool Negated, unsigned int Arity,
 	typename TheoryPrior, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool do_mh_universal_elim(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const proof_transformations<Formula>& proposed_proofs,
-		unsigned int axiom_index,
-		const hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms,
-		const atom<Negated, Arity> consequent_atom,
+		const universal_elim_proposal<Formula, Negated, Arity>& proposal,
 		double log_proposal_probability_ratio,
 		double log_proof_stop_probability,
 		double log_proof_continue_probability,
 		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior)
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
-	for (const auto& entry : proposed_proofs.transformed_proofs) {
-		/* contribution from the old proof */
-		log_proposal_probability_ratio -= log_probability(
-				*entry.key, log_proof_stop_probability,
-				log_proof_continue_probability, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior);
-
-		/* contribution from the new proof */
-		log_proposal_probability_ratio += log_probability(
-				*entry.key, log_proof_stop_probability,
-				log_proof_continue_probability, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior,
-				entry.value);
-	}
+	log_proposal_probability_ratio += log_probability_ratio(
+			proposed_proofs.transformed_proofs, log_proof_stop_probability,
+			log_proof_continue_probability, axiom_prior, conjunction_introduction_prior,
+			universal_introduction_prior, universal_elimination_prior);
 
 	/* compute the prior of the current and proposed theories and add them to `log_proposal_probability_ratio` */
-	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior, axiom_index, new_grounded_axioms);
+	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior, proposal);
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
 
-		T.remove_universal_quantification(axiom_index);
-		for (auto entry : new_grounded_axioms)
-			if (!add_ground_axiom(T, consequent_atom, entry.key, entry.value)) return false;
+		T.remove_universal_quantification(proposal.universal_axiom_index);
+		axiom_prior.remove(T.universal_quantifications[proposal.universal_axiom_index]->formula);
+		for (auto entry : proposal.new_grounded_axioms) {
+			if (!add_ground_axiom(T, proposal.consequent_atom, entry.key, entry.value)
+			 || !axiom_prior.add(entry.value->formula))
+			{
+				return false;
+			}
+		}
 	}
 	return true;
 }
 
 template<typename Formula,
 	typename TheoryPrior, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior>
 bool do_mh_step(
@@ -1110,11 +1138,10 @@ bool do_mh_step(
 		double log_proof_stop_probability,
 		double log_proof_continue_probability,
 		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior)
 {
-	typedef typename Formula::Type FormulaType;
-	typedef typename Formula::TermType TermType;
 	typedef natural_deduction<Formula, true> ProofCalculus;
 
 	double log_proposal_probability_ratio = 0.0;
@@ -1156,10 +1183,9 @@ bool do_mh_step(
 
 	if (random < T.universal_quantifications.length) {
 		/* we've selected a universally-quantified formula */
-		return propose_universal_elim(T, random,
-				log_proposal_probability_ratio, log_proof_stop_probability,
-				log_proof_continue_probability, theory_prior, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior);
+		return propose_universal_elim(T, random, log_proposal_probability_ratio,
+				log_proof_stop_probability, log_proof_continue_probability, theory_prior, axiom_prior,
+				conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 	}
 
 	fprintf(stderr, "propose ERROR: Unable to select axiom.\n");

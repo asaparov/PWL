@@ -3,6 +3,7 @@
 
 #include <core/array.h>
 #include <math/log.h>
+#include <math/multiset.h>
 
 #include "array_view.h"
 
@@ -1205,45 +1206,49 @@ bool canonicalize(const nd_step<Formula, Canonical>& proof,
 
 template<typename Formula,
 	bool Canonical, typename AxiomPrior,
-	typename ConjunctionIntroductionPrior,
-	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior,
+	typename ConjunctionIntroductions,
+	typename UniversalIntroductions,
+	typename UniversalEliminations,
 	typename... ProofMap>
 double log_probability(
-		const nd_step<Formula, Canonical>& proof,
+		const nd_step<Formula, Canonical>* proof,
+		unsigned int step_index,
 		unsigned int& formula_counter,
-		array<typename Formula::Term>& introduced_terms,
 		array<unsigned int>& available_parameters,
-		AxiomPrior& axiom_prior,
-		ConjunctionIntroductionPrior& conjunction_introduction_prior,
-		UniversalIntroductionPrior& universal_introduction_prior,
-		UniversalEliminationPrior& universal_elimination_prior,
+		array_multiset<const Formula*>& axioms,
+		ConjunctionIntroductions& conjunction_introductions,
+		UniversalIntroductions& universal_introductions,
+		UniversalEliminations& universal_eliminations,
 		ProofMap&&... proof_map)
 {
 	typedef typename Formula::TermType TermType;
 
+	const nd_step<Formula, Canonical>& current_step = *proof[step_index];
 	double value; unsigned int index; Formula* operand;
-	switch (proof.type) {
+	switch (current_step.type) {
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::ARRAY_PARAMETER:
 	case nd_step_type::FORMULA_PARAMETER:
 		/* these aren't actual proof steps in the calculus */
 		return 0.0;
 	case nd_step_type::AXIOM:
-		/* TODO: we need to compute the prior */
 		formula_counter++;
-		get_parameters(*proof->formula, available_parameters);
+		get_parameters(*current_step.formula, available_parameters);
 		if (available_parameters.length > 1) {
 			sort(available_parameters); unique(available_parameters);
 		}
-		return log_probability(*proof->formula, axiom_prior);
+		/* the contribution from the axiom_prior is computed at the end */
+		if (!axioms.add_unsorted(current_step.formula)) exit(EXIT_FAILURE);
+		return 0.0;
 	case nd_step_type::CONJUNCTION_ELIMINATION:
 		/* TODO: implement this */
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n");
 		exit(EXIT_FAILURE);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
-		return -LOG_ND_RULE_COUNT + log_probability(proof.operand_array.length, conjunction_introduction_prior)
-			  + lgamma(formula_counter - proof.operand_array.length - 1) - lgamma(formula_counter++);
+		if (!conjunction_introductions.add(
+				make_array_view(current_step.operand_array.operands, current_step.operand_array.length), make_array_view(proof, step_index)))
+			exit(EXIT_FAILURE);
+		return -LOG_ND_RULE_COUNT;
 	case nd_step_type::IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
 	case nd_step_type::IMPLICATION_ELIMINATION:
 	case nd_step_type::BICONDITIONAL_INTRODUCTION:
@@ -1264,21 +1269,24 @@ double log_probability(
 	case nd_step_type::UNIVERSAL_INTRODUCTION:
 		/* TODO: we need to compute the prior on the parameter */
 		formula_counter++;
-		operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
-		value = log_probability(operand->parameter, universal_introduction_prior, available_parameters);
+		operand = map(current_step.operands[1], std::forward<ProofMap>(proof_map)...);
+		if (!universal_introductions.add(operand->parameter, available_parameters))
+			exit(EXIT_FAILURE);
+		
 		index = available_parameters.index_of(operand->parameter);
 		if (index < available_parameters.length)
 			shift_left(available_parameters.data + index, available_parameters.length - index - 1);
-		return value;
+		return 0.0;
 	case nd_step_type::UNIVERSAL_ELIMINATION:
 		/* TODO: we need to compute the prior on the term */
 		formula_counter++;
-		operand = map(proof.operands[2], std::forward<ProofMap>(proof_map)...);
+		operand = map(current_step.operands[2], std::forward<ProofMap>(proof_map)...);
 		if (operand->term.type == TermType::PARAMETER) {
 			if (available_parameters.ensure_capacity(available_parameters.length + 1)) exit(EXIT_FAILURE);
 			add_sorted<true>(available_parameters, operand->term.parameter);
 		}
-		return log_probability(operand->term, universal_elimination_prior);
+		if (!universal_eliminations.add(operand->term)) exit(EXIT_FAILURE);
+		return 0.0;
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
 		/* TODO: we need to compute the prior on the parameter (it can be a term or a list of term indices) */
 		formula_counter++;
@@ -1290,6 +1298,49 @@ double log_probability(
 
 template<typename Formula,
 	bool Canonical, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
+	typename UniversalIntroductionPrior,
+	typename UniversalEliminationPrior,
+	typename... ProofMap>
+inline double log_probability_helper(
+		const nd_step<Formula, Canonical>& proof,
+		double log_stop_probability,
+		double log_continue_probability,
+		array_multiset<const Formula*>& axioms,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
+		UniversalIntroductionPrior& universal_introduction_prior,
+		UniversalEliminationPrior& universal_elimination_prior,
+		ProofMap&&... proof_map)
+{
+	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
+	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
+	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
+
+	array<const nd_step<Formula, Canonical>*> canonical_order(64);
+	if (!canonicalize(proof, canonical_order, std::forward<ProofMap>(proof_map)...)) {
+		fprintf(stderr, "log_probability ERROR: Unable to canonicalize proof.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	double value = (canonical_order.length - 1) * log_continue_probability + log_stop_probability;
+	unsigned int formula_counter = 0;
+	array<unsigned int> available_parameters(16);
+	log_cache<double>::instance().ensure_size(canonical_order.length);
+	ConjunctionIntroductions conjunction_introductions;
+	UniversalIntroductions universal_introductions;
+	UniversalEliminations universal_eliminations;
+	for (unsigned int i = 0; i < canonical_order.length; i++)
+		value += log_probability(canonical_order.data, i, formula_counter,
+				available_parameters, axioms, conjunction_introductions, universal_introductions,
+				universal_eliminations, std::forward<ProofMap>(proof_map)...);
+	return value + log_probability(conjunction_introductions, conjunction_introduction_prior)
+			+ log_probability(universal_introductions, universal_introduction_prior)
+			+ log_probability(universal_eliminations, universal_elimination_prior);
+}
+
+template<typename Formula,
+	bool Canonical, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
 	typename... ProofMap>
@@ -1298,29 +1349,49 @@ double log_probability(
 		double log_stop_probability,
 		double log_continue_probability,
 		AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
 		UniversalEliminationPrior& universal_elimination_prior,
 		ProofMap&&... proof_map)
 {
-	array<const nd_step<Formula, Canonical>*> canonical_order(64);
-	if (!canonicalize(proof, canonical_order, std::forward<ProofMap>(proof_map)...)) {
-		fprintf(stderr, "log_probability ERROR: Unable to canonicalize proof.\n");
-		exit(EXIT_FAILURE);
+	array_multiset<const Formula*> axioms(16);
+	double value = log_probability_helper(proof,
+			log_stop_probability, log_continue_probability, axioms,
+			conjunction_introduction_prior, universal_introduction_prior,
+			universal_elimination_prior, std::forward<ProofMap>(proof_map)...);
+	return value + log_probability(axioms, axiom_prior);
+}
+
+template<typename Formula,
+	bool Canonical, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
+	typename UniversalIntroductionPrior,
+	typename UniversalEliminationPrior>
+double log_probability_ratio(
+		const array_map<nd_step<Formula, true>*, proof_substitution<Formula, true>>& proofs,
+		double log_stop_probability,
+		double log_continue_probability,
+		AxiomPrior& axiom_prior,
+		ConjunctionIntroductionPrior& conjunction_introduction_prior,
+		UniversalIntroductionPrior& universal_introduction_prior,
+		UniversalEliminationPrior& universal_elimination_prior)
+{
+	double value = 0.0;
+	array_multiset<const Formula*> old_axioms(16), new_axioms(16);
+	for (const auto& entry : proofs) {
+		value -= log_probability_helper(*entry.key,
+			log_stop_probability, log_continue_probability, old_axioms,
+			conjunction_introduction_prior, universal_introduction_prior,
+			universal_elimination_prior);
+		value += log_probability_helper(*entry.key,
+			log_stop_probability, log_continue_probability, new_axioms,
+			conjunction_introduction_prior, universal_introduction_prior,
+			universal_elimination_prior, entry.value);
 	}
 
-	universal_introduction_prior.clear();
-	universal_elimination_prior.clear();
-
-	double value = (canonical_order.length - 1) * log_continue_probability + log_stop_probability;
-	unsigned int formula_counter = 0;
-	array<typename Formula::Term>& introduced_terms(16);
-	array<unsigned int> available_parameters(16);
-	log_cache<double>::instance().ensure_size(canonical_order.length);
-	for (const nd_step<Formula, Canonical>* step : canonical_order)
-		value += log_probability(*step, formula_counter, introduced_terms,
-				available_parameters, axiom_prior, universal_introduction_prior,
-				universal_elimination_prior, std::forward<ProofMap>(proof_map)...);
-	return value;
+	sort(old_axioms.counts.keys, old_axioms.counts.values, old_axioms.counts.size);
+	sort(new_axioms.counts.keys, new_axioms.counts.values, new_axioms.counts.size);
+	return value + log_probability_ratio(old_axioms, new_axioms, axiom_prior);
 }
 
 #endif /* NATURAL_DEDUCTION_H_ */

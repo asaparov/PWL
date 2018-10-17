@@ -3342,9 +3342,8 @@ inline bool append_to_token(
 }
 
 template<typename Stream>
-bool tptp_lex(array<tptp_token>& tokens, Stream& input) {
-	position start = position(1, 1);
-	position current = position(1, 1);
+bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = position(1, 1)) {
+	position current = start;
 	tptp_lexer_state state = tptp_lexer_state::DEFAULT;
 	array<char> token = array<char>(1024);
 

@@ -75,12 +75,12 @@ struct theory
 
 	hash_set<Proof*> observations;
 
+	theory() : types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
+
 	bool add_formula(Formula* formula)
 	{
 		Formula* canonicalized = canonicalize(*formula);
-		if (canonicalized == NULL) {
-			return false;
-		}
+		if (canonicalized == NULL) return false;
 
 		for (unsigned int i = 0; i < observations.length; i++) {
 			if (*observations[i] == *canonicalized) {
@@ -98,23 +98,13 @@ struct theory
 				free(canonicalized);
 		}
 
-		Proof* proof = make_proof(canonicalized);
-		if (proof == NULL)
-			return false;
-		else proof->reference_count++;
-
-		if (!proofs.add(proof)) {
-			free(*proof);
-			if (proof->reference_count == 0)
-				free(proof);
+		if (make_proof(canonicalized) == NULL) {
 			free(*canonicalized);
 			if (canonicalized->reference_count == 0)
 				free(canonicalized);
 			observations.length--;
 			return false;
 		}
-
-return check_proof(*proof, canonicalized);
 		return true;
 	}
 
@@ -386,10 +376,10 @@ private:
 	Proof* make_proof(Formula* canonicalized)
 	{
 		if (canonicalized->type == FormulaType::ATOM) {
-			return make_atom_proof(canonicalized, canonicalized);
+			return make_atom_proof<false>(canonicalized);
 		} else if (canonicalized->type == FormulaType::NOT) {
 			if (canonicalized->unary.operand->type == FormulaType::ATOM) {
-				return make_atom_proof(canonicalized, canonicalized->unary.operand);
+				return make_atom_proof<true>(canonicalized);
 			}
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			unsigned int variable = canonicalized->quantifier.variable;
@@ -410,8 +400,28 @@ private:
 							return NULL;
 						}
 
+						if (!ground_concepts.check_size()) return NULL;
 						unsigned int new_type = PREDICATE_COUNT + ground_concepts.table.size;
-						Formula* definition = Formula::new_for_all(variable, Formula::new_iff(
+
+						bool contains; unsigned int bucket;
+						concept<ProofCalculus>& c = ground_concepts.get(new_type, contains, bucket);
+						if (!contains) {
+							if (!init(c)) return NULL;
+							ground_concepts.table.keys[bucket] = new_type;
+							ground_concepts.table.size++;
+						}
+
+						/* TODO: definitions of new concepts should be biconditionals */
+						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+						if (new_axiom == NULL) return NULL;
+						new_axiom->reference_count++;
+						if (!universal_quantifications.add(new_axiom)) {
+							free(*new_axiom); free(new_axiom);
+							return NULL;
+						}
+						return new_axiom;
+
+						/*Formula* definition = Formula::new_for_all(variable, Formula::new_iff(
 								Formula::new_atom(new_type, Formula::new_variable(variable)), right));
 						if (definition == NULL) return NULL;
 						right->reference_count++;
@@ -425,11 +435,18 @@ private:
 						if (proof == NULL) {
 							free(*definition); free(definition);
 						}
-						return proof;
+						return proof;*/
 					} else {
 						/* this is a formula of form `![x]:(t(x) => f(x))` */
 						/* TODO: check that this is not implied by an existing univerally-quantified axiom */
-						return ProofCalculus::new_axiom(canonicalized);
+						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+						if (new_axiom == NULL) return NULL;
+						new_axiom->reference_count++;
+						if (!universal_quantifications.add(new_axiom)) {
+							free(*new_axiom); free(new_axiom);
+							return NULL;
+						}
+						return new_axiom;
 					}
 				} else if (left->type == FormulaType::ATOM) {
 					/* TODO: implement this */
@@ -454,8 +471,11 @@ private:
 		return NULL;
 	}
 
-	Proof* make_atom_proof(Formula* canonicalized, Formula* atom)
+	template<bool Negated>
+	Proof* make_atom_proof(Formula* canonicalized)
 	{
+		bool contains; unsigned int bucket;
+		Formula* atom = (Negated ? canonicalized->unary.operand : canonicalized);
 		if (atom->atom.arg1.type == TermType::CONSTANT
 		 && atom->atom.arg2.type == TermType::NONE)
 		{
@@ -463,8 +483,26 @@ private:
 			if (atom->atom.predicate != PREDICATE_UNKNOWN) {
 				if (atom->atom.arg1.constant == PREDICATE_UNKNOWN) {
 					/* this is a definition of an object */
+					if (!ground_concepts.check_size()) return NULL;
 					atom->atom.arg1.constant = PREDICATE_COUNT + ground_concepts.table.size;
-					return ProofCalculus::new_axiom(canonicalized);
+					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+					if (new_axiom == NULL) return NULL;
+					new_axiom->reference_count++;
+
+					concept<ProofCalculus>& c = ground_concepts.get(atom->atom.arg1.constant, contains, bucket);
+					if (!contains) {
+						if (!init(c)) {
+							free(*new_axiom); free(new_axiom);
+							return NULL;
+						}
+						ground_concepts.table.keys[bucket] = atom->atom.arg1.constant;
+						ground_concepts.table.size++;
+					} if (!add_unary_atom<Negated>(atom->atom.predicate, atom->atom.arg1.constant, new_axiom)) {
+						free(*new_axiom); free(new_axiom);
+						return NULL;
+					}
+					free(*new_axiom);
+					return new_axiom;
 				} else {
 					/* this is a formula of form `t(c)` */
 
@@ -489,10 +527,10 @@ private:
 						/* check if the antecedent is satisfied by `c` */
 						Proof* proof;
 						if (!make_universal_elim_proof(consequent, ground_concepts.get(atom->atom.arg1.constant), proof))
-							return false;
+							return NULL;
 						if (proof != NULL) {
-							Proof* new_proof;
 							proof->reference_count++;
+							Proof* new_proof;
 							if (i == consequent->array.length) {
 								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof);
 							} else {
@@ -500,16 +538,21 @@ private:
 										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof),
 										make_array_view(&i, 1));
 							}
-							if (new_proof == NULL) {
-								free(*proof); if (proof->reference_count == 0) free(proof);
-								return false;
-							}
+							free(*proof); if (proof->reference_count == 0) free(proof);
+							if (new_proof == NULL) return NULL;
 							return new_proof;
 						}
 					}
 
 					/* no existing universally-quantified axiom implies this observation */
-					return ProofCalculus::new_axiom(canonicalized);
+					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+					if (new_axiom == NULL) return NULL;
+					new_axiom->reference_count++;
+					if (!universal_quantifications.add(new_axiom)) {
+						free(*new_axiom); free(new_axiom);
+						return NULL;
+					}
+					return new_axiom;
 				}
 			} else {
 				/* TODO: implement this */
@@ -550,10 +593,10 @@ private:
 						/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
 						Proof* proof;
 						if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term.constant), proof))
-							return false;
+							return NULL;
 						if (proof != NULL) {
-							Proof* new_proof;
 							proof->reference_count++;
+							Proof* new_proof;
 							if (i == consequent->array.length) {
 								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonicalized->atom.arg1), proof);
 							} else {
@@ -561,16 +604,21 @@ private:
 										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonicalized->atom.arg1), proof),
 										make_array_view(&i, 1));
 							}
-							if (new_proof == NULL) {
-								free(*proof); if (proof->reference_count == 0) free(proof);
-								return false;
-							}
+							free(*proof); if (proof->reference_count == 0) free(proof);
+							if (new_proof == NULL) return NULL;
 							return new_proof;
 						}
 					}
 
 					/* no existing universally-quantified axiom implies this observation */
-					return ProofCalculus::new_axiom(canonicalized);
+					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+					if (new_axiom == NULL) return NULL;
+					new_axiom->reference_count++;
+					if (!universal_quantifications.add(new_axiom)) {
+						free(*new_axiom); free(new_axiom);
+						return NULL;
+					}
+					return new_axiom;
 				}
 			} else {
 				/* TODO: implement this */
@@ -599,8 +647,8 @@ private:
 		}
 	}
 
-	template<bool Negated = false>
-	bool make_atom_proof(Formula* constraint, const concept<ProofCalculus>& c, Proof*& proof) const
+	template<bool Negated>
+	bool make_conjunct_proof(Formula* constraint, const concept<ProofCalculus>& c, Proof*& proof) const
 	{
 		if (constraint->type == FormulaType::ATOM) {
 			bool contains;
@@ -619,7 +667,7 @@ private:
 				return true;
 			}
 		} else if (constraint->type == FormulaType::NOT) {
-			return satisfies_atom<true>(constraint->unary.operand, c);
+			return make_conjunct_proof<true>(constraint->unary.operand, c, proof);
 		} else {
 			return false;
 		}
@@ -635,14 +683,14 @@ private:
 			}
 			for (unsigned int i = 0; i < constraint->array.length; i++) {
 				Formula* conjunct = constraint->array.operands[i];
-				if (!make_atom_proof(conjunct, c, conjunct_proofs[i])) return false;
+				if (!make_conjunct_proof<false>(conjunct, c, conjunct_proofs[i])) return false;
 				if (conjunct_proofs[i] == NULL) { proof = NULL; return true; }
 			}
 			proof = ProofCalculus::new_conjunction_intro(make_array_view(conjunct_proofs, constraint->array.length));
 			free(conjunct_proofs);
 			return proof != NULL;
 		} else {
-			return make_atom_proof(constraint, c, proof);
+			return make_conjunct_proof<false>(constraint, c, proof);
 		}
 	}
 };
