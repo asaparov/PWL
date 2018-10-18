@@ -34,14 +34,42 @@ double log_probability(
 	return log_probability(multiset.size + new_clusters.length, prior);
 }
 
-template<template<typename> class BaseDistribution, typename T>
+template<typename Formula>
+struct uniform_axiom_distribution {
+	struct counter {
+		unsigned int count;
+
+		counter() : count(0) { }
+
+		inline bool add(const Formula* observation) {
+			count++; return true;
+		}
+
+		inline void remove(const Formula* observation) {
+			count--;
+		}
+	};
+
+	typedef counter ObservationCollection;
+};
+
+template<template<typename> class ContainerType, typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
+double log_probability_ratio(const ContainerType<Formula*>& axioms,
+		const uniform_axiom_distribution<Formula>& prior,
+		const typename uniform_axiom_distribution<Formula>::counter& new_axioms,
+		const typename uniform_axiom_distribution<Formula>::counter& old_axioms)
+{
+	
+}
+
+template<typename BaseDistribution, typename T>
 struct dirichlet_process
 {
 	double alpha, log_alpha;
-	BaseDistribution<T> base_distribution;
+	BaseDistribution base_distribution;
 	hash_multiset<T> tables;
 
-	dirichlet_process(double alpha, const BaseDistribution<T>& base_distribution) :
+	dirichlet_process(double alpha, const BaseDistribution& base_distribution) :
 			alpha(alpha), log_alpha(log(alpha)), base_distribution(base_distribution), tables(64)
 	{ }
 
@@ -65,37 +93,11 @@ struct dirichlet_process
 	}
 };
 
-template<template<typename> class MultiSetType,
-	template<typename> class BaseDistribution, typename T>
-double log_probability(const MultiSetType<T>& observations,
-		const dirichlet_process<BaseDistribution, T>& prior)
-{
-	bool contains; double value;
-	array<T> new_clusters(observations.size);
-	for (const auto& entry : observations) {
-		unsigned int count = prior.tables.counts.get(entry.key, contains);
-		if (!contains) {
-			value += prior.log_alpha + lgamma(entry.value);
-			new_clusters.add(entry.key);
-		} else {
-			value += lgamma(count + entry.value) - lgamma(count);
-		}
-	}
-
-	/* compute the normalizing constant */
-	value += lgamma(prior.alpha + prior.tables.sum) - lgamma(prior.alpha + prior.tables.sum + observations.sum);
-
-	/* recompute the contribution from the base distribution */
-	value += log_probability(prior.tables.counts, new_clusters, prior.base_distribution)
-			- log_probability(prior.tables.counts, prior.base_distribution);
-	return value;
-}
-
-template<template<typename> class BaseDistribution, typename T>
+template<typename BaseDistribution, typename T>
 inline double log_probability_ratio_old_cluster(
 		const T& observation, unsigned int frequency,
 		const dirichlet_process<BaseDistribution, T>& prior,
-		array<T>& old_clusters)
+		typename BaseDistribution::ObservationCollection& old_clusters)
 {
 	unsigned int count = prior.tables.counts.get(observation);
 	double value = lgamma(count - frequency) - lgamma(count);
@@ -106,11 +108,11 @@ inline double log_probability_ratio_old_cluster(
 	return value;
 }
 
-template<template<typename> class BaseDistribution, typename T>
+template<typename BaseDistribution, typename T>
 inline double log_probability_ratio_new_cluster(
 		const T& observation, unsigned int frequency,
 		const dirichlet_process<BaseDistribution, T>& prior,
-		array<T>& new_clusters)
+		typename BaseDistribution::ObservationCollection& new_clusters)
 {
 	bool contains;
 	unsigned int count = prior.tables.counts.get(observation, contains);
@@ -122,14 +124,16 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-template<template<typename> class BaseDistribution, typename T>
+template<typename BaseDistribution, typename T>
 double log_probability_ratio(
 		const array_multiset<T>& new_observations,
 		const array_multiset<T>& old_observations,
 		const dirichlet_process<BaseDistribution, T>& prior)
 {
+	typedef typename BaseDistribution::ObservationCollection Clusters;
+
 	unsigned int i = 0, j = 0; double value = 0.0;
-	array<T> old_clusters(8), new_clusters(8);
+	Clusters old_clusters, new_clusters;
 	while (i < old_observations.counts.size && j < new_observations.counts.size)
 	{
 		if (old_observations.counts.keys[i] == new_observations.counts.keys[j]) {
@@ -159,7 +163,7 @@ double log_probability_ratio(
 	}
 
 	value += lgamma(prior.alpha + prior.tables.sum) - lgamma(prior.alpha + prior.tables.sum - old_observations.sum + new_observations.sum);
-	return value + log_probability_ratio(new_clusters, old_clusters, prior.base_distribution);
+	return value + log_probability_ratio(prior.tables.counts.table, new_clusters, old_clusters, prior.base_distribution);
 }
 
 const string* get_name(const hash_map<string, unsigned int>& names, unsigned int id)
