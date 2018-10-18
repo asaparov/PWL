@@ -77,6 +77,10 @@ struct theory
 
 	theory() : types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
 
+	inline unsigned int axiom_count() const {
+		return universal_quantifications.length + ground_axiom_count;
+	}
+
 	bool add_formula(Formula* formula)
 	{
 		Formula* canonicalized = canonicalize(*formula);

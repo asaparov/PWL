@@ -1366,7 +1366,8 @@ template<typename Formula,
 	bool Canonical, typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior>
+	typename UniversalEliminationPrior,
+	typename... AxiomPriorParameters>
 double log_probability_ratio(
 		const array_map<nd_step<Formula, true>*, proof_substitution<Formula, true>>& proofs,
 		double log_stop_probability,
@@ -1374,7 +1375,8 @@ double log_probability_ratio(
 		AxiomPrior& axiom_prior,
 		ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		UniversalIntroductionPrior& universal_introduction_prior,
-		UniversalEliminationPrior& universal_elimination_prior)
+		UniversalEliminationPrior& universal_elimination_prior,
+		AxiomPriorParameters&&... axiom_prior_parameters)
 {
 	double value = 0.0;
 	array_multiset<const Formula*> old_axioms(16), new_axioms(16);
@@ -1391,7 +1393,8 @@ double log_probability_ratio(
 
 	sort(old_axioms.counts.keys, old_axioms.counts.values, old_axioms.counts.size);
 	sort(new_axioms.counts.keys, new_axioms.counts.values, new_axioms.counts.size);
-	return value + log_probability_ratio(old_axioms, new_axioms, axiom_prior);
+	return value + log_probability_ratio(old_axioms, new_axioms, axiom_prior,
+			std::forward<AxiomPriorParameters>(axiom_prior_parameters)...);
 }
 
 #endif /* NATURAL_DEDUCTION_H_ */

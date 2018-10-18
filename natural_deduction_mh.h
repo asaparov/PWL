@@ -397,7 +397,7 @@ bool propose_universal_intro(
 		return true;
 
 	/* compute the probability of the inverse proposal */
-	unsigned int new_axiom_count = T.ground_axiom_count + T.universal_quantifications.length + 1;
+	unsigned int new_axiom_count = T.axiom_count() + 1;
 	if (Arity == 2 && a.args[0] == a.args[1]) new_axiom_count -= 3 * intersection.length;
 	else if (Arity == 2) new_axiom_count -= 2 * intersection.length;
 	else new_axiom_count -= intersection.length;
@@ -863,7 +863,7 @@ bool propose_universal_elim(
 		return false;
 	/* if the antecedent conjuncts aren't grounded, then we can't propose the inverse transformation */
 	if (intersection.length == 0) return true;
-	unsigned int new_axiom_count = T.ground_axiom_count + T.universal_quantifications.length - 1;
+	unsigned int new_axiom_count = T.axiom_count() - 1;
 	if (is_consequent_symmetric) new_axiom_count += new_grounded_axioms.table.size * 3;
 	else if (is_consequent_binary) new_axiom_count += new_grounded_axioms.table.size * 2;
 	else new_axiom_count += new_grounded_axioms.table.size;
@@ -1043,11 +1043,8 @@ bool do_mh_universal_intro(
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
 	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs, log_proof_stop_probability, log_proof_continue_probability, axiom_prior,
-			conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
-
-	/* compute the prior of the current and proposed theories and add them to `log_proposal_probability_ratio` */
-	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior, proposal);
+			proposed_proofs.transformed_proofs, log_proof_stop_probability, log_proof_continue_probability, axiom_prior,
+			conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior, T, proposal);
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
@@ -1104,12 +1101,8 @@ bool do_mh_universal_elim(
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
 	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs.transformed_proofs, log_proof_stop_probability,
-			log_proof_continue_probability, axiom_prior, conjunction_introduction_prior,
-			universal_introduction_prior, universal_elimination_prior);
-
-	/* compute the prior of the current and proposed theories and add them to `log_proposal_probability_ratio` */
-	log_proposal_probability_ratio += log_probability_ratio(T, theory_prior, proposal);
+			proposed_proofs.transformed_proofs, log_proof_stop_probability, log_proof_continue_probability, axiom_prior,
+			conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior, T, proposal);
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
@@ -1147,7 +1140,7 @@ bool do_mh_step(
 	double log_proposal_probability_ratio = 0.0;
 
 	/* TODO: select an axiom from `T` uniformly at random */
-	unsigned int axiom_count = T.ground_axiom_count + T.universal_quantifications.length;
+	unsigned int axiom_count = T.axiom_count();
 	unsigned int random = sample_uniform(axiom_count);
 	if (!log_cache<double>::instance().ensure_size(axiom_count)) return false;
 	log_proposal_probability_ratio -= -log_cache<double>::instance().get(axiom_count);

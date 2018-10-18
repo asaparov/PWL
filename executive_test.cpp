@@ -1,37 +1,28 @@
 #include "executive.h"
 #include "fake_parser.h"
 
-template<typename ProofCalculus>
-double log_probability_ratio(theory<fol_formula, ProofCalculus>& T) {
+struct simple_theory_distribution {
+	double log_axiom_stop_probability;
+	double log_axiom_continue_probability;
 
-}
+	double log_antecedent_stop_probability;
+	double log_antecedent_continue_probability;
 
-template<typename T>
-struct uniform_distribution { };
+	double log_consequent_stop_probability;
+	double log_consequent_continue_probability;
 
-template<template<typename, typename> class MapType, typename T>
-inline double log_probability(unsigned int size,
-		const uniform_distribution<T>& prior)
+	simple_theory_distribution(double axiom_stop_probability) :
+		log_axiom_stop_probability(log(axiom_stop_probability)),
+		log_axiom_continue_probability(log(1.0 - axiom_stop_probability))
+	{ }
+};
+
+template<typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
+double log_probability_ratio(const theory<Formula, ProofCalculus>& T,
+		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
+		const simple_theory_distribution& prior)
 {
-	if (!log_cache<double>::instance().ensure_size(size)) exit(EXIT_FAILURE);
-	return -log_cache<double>::instance().get(size);
-}
 
-template<template<typename, typename> class MapType, typename T>
-double log_probability(
-		const MapType<T, unsigned int>& multiset,
-		const uniform_distribution<T>& prior)
-{
-	return log_probability(multiset.size, prior);
-}
-
-template<template<typename, typename> class MapType, typename T>
-double log_probability(
-		const MapType<T, unsigned int>& multiset,
-		const array<T>& new_clusters,
-		const uniform_distribution<T>& prior)
-{
-	return log_probability(multiset.size + new_clusters.length, prior);
 }
 
 template<typename Formula>
@@ -56,10 +47,31 @@ struct uniform_axiom_distribution {
 template<template<typename> class ContainerType, typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
 double log_probability_ratio(const ContainerType<Formula*>& axioms,
 		const uniform_axiom_distribution<Formula>& prior,
+		const typename uniform_axiom_distribution<Formula>::counter& old_axioms,
 		const typename uniform_axiom_distribution<Formula>::counter& new_axioms,
-		const typename uniform_axiom_distribution<Formula>::counter& old_axioms)
+		const theory<Formula, ProofCalculus>& T,
+		const universal_intro_proposal<Formula, Negated, Arity>& proposal)
 {
-	
+	unsigned int old_axiom_count = T.axiom_count();
+	unsigned int new_axiom_count = old_axiom_count + 1 - proposal.old_grounded_axioms.size;
+	if (!log_cache<double>::instance().ensure_size(old_axiom_count + 1)) exit(EXIT_FAILURE);
+	return -(prior.size - old_axioms.count + new_axioms.count) * log_cache<double>::instance().get(new_axiom_count)
+			+ prior.size * log_cache<double>::instance().get(old_axiom_count);
+}
+
+template<template<typename> class ContainerType, typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
+double log_probability_ratio(const ContainerType<Formula*>& axioms,
+		const uniform_axiom_distribution<Formula>& prior,
+		const typename uniform_axiom_distribution<Formula>::counter& old_axioms,
+		const typename uniform_axiom_distribution<Formula>::counter& new_axioms,
+		const theory<Formula, ProofCalculus>& T,
+		const universal_elim_proposal<Formula, Negated, Arity>& proposal)
+{
+	unsigned int old_axiom_count = T.axiom_count();
+	unsigned int new_axiom_count = old_axiom_count - 1 + proposal.new_grounded_axioms.table.size;
+	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) exit(EXIT_FAILURE);
+	return -(prior.size - old_axioms.count + new_axioms.count) * log_cache<double>::instance().get(new_axiom_count)
+			+ prior.size * log_cache<double>::instance().get(old_axiom_count);
 }
 
 template<typename BaseDistribution, typename T>
@@ -124,11 +136,15 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-template<typename BaseDistribution, typename T>
+template<typename BaseDistribution, typename T,
+		typename BaseDistributionOldParameter,
+		typename BaseDistributionNewParameter>
 double log_probability_ratio(
-		const array_multiset<T>& new_observations,
 		const array_multiset<T>& old_observations,
-		const dirichlet_process<BaseDistribution, T>& prior)
+		const array_multiset<T>& new_observations,
+		const dirichlet_process<BaseDistribution, T>& prior,
+		BaseDistributionOldParameter& base_distribution_old_parameter,
+		BaseDistributionNewParameter& base_distribution_new_parameter)
 {
 	typedef typename BaseDistribution::ObservationCollection Clusters;
 
@@ -163,7 +179,8 @@ double log_probability_ratio(
 	}
 
 	value += lgamma(prior.alpha + prior.tables.sum) - lgamma(prior.alpha + prior.tables.sum - old_observations.sum + new_observations.sum);
-	return value + log_probability_ratio(prior.tables.counts.table, new_clusters, old_clusters, prior.base_distribution);
+	return value + log_probability_ratio(prior.tables.counts.table, prior.base_distribution,
+			old_clusters, new_clusters, base_distribution_old_parameter, base_distribution_new_parameter);
 }
 
 const string* get_name(const hash_map<string, unsigned int>& names, unsigned int id)
