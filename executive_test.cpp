@@ -1,87 +1,151 @@
 #include "executive.h"
 #include "fake_parser.h"
 
-struct simple_theory_distribution {
-	double log_axiom_stop_probability;
-	double log_axiom_continue_probability;
+struct chinese_restaurant_process
+{
+	double alpha, log_alpha;
+	array_multiset<unsigned int> tables;
+};
 
-	double log_antecedent_stop_probability;
+template<typename PredicateDistribution, typename ConstantDistribution>
+struct simple_fol_formula_distribution
+{
+	double log_ground_literal_probability;
+	double log_universal_probability;
+
+	double log_negation_probability;
+	double log_positive_probability;
+
+	double log_unary_probability;
+	double log_binary_probability;
+
 	double log_antecedent_continue_probability;
-
-	double log_consequent_stop_probability;
+	double log_antecedent_stop_probability;
 	double log_consequent_continue_probability;
+	double log_consequent_stop_probability;
 
-	simple_theory_distribution(double axiom_stop_probability) :
-		log_axiom_stop_probability(log(axiom_stop_probability)),
-		log_axiom_continue_probability(log(1.0 - axiom_stop_probability))
-	{ }
+	PredicateDistribution predicate_distribution;
+	ConstantDistribution constant_distribution;
 };
 
-template<typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
-double log_probability_ratio(const theory<Formula, ProofCalculus>& T,
-		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
-		const simple_theory_distribution& prior)
+template<typename PredicateDistribution, typename ConstantDistribution>
+double log_probability_atom(const fol_atom& atom,
+		const simple_fol_formula_distribution<PredicateDistribution, ConstantDistribution>& prior,
+		typename PredicateDistribution::ObservationCollection& predicates,
+		typename ConstantDistribution::ObservationCollection& constants)
 {
-
+	predicates.add(formula->atom.predicate);
+	if (formula->atom.arg2.type == fol_term_type::NONE) {
+		constants.add(formula->atom.arg2.constant);
+		return prior.log_unary_probability;
+	} else {
+		constants.add(formula->atom.arg1.constant);
+		constants.add(formula->atom.arg2.constant);
+		return prior.log_binary_probability;
+	}
 }
 
-template<typename Formula>
-struct uniform_axiom_distribution {
-	struct counter {
-		unsigned int count;
+template<typename PredicateDistribution, typename ConstantDistribution>
+double log_probability_literal(const fol_formula* literal,
+		const simple_fol_formula_distribution<PredicateDistribution, ConstantDistribution>& prior,
+		typename PredicateDistribution::ObservationCollection& predicates,
+		typename ConstantDistribution::ObservationCollection& constants)
+{
+	if (literal->type == fol_formula_type::ATOM) {
+		return prior.log_positive_probability + log_probability_atom(literal->atom, prior, predicates, constants);
+	} else if (literal->type == fol_formula_type::NOT && literal->unary.operand->type == fol_formula_type::ATOM) {
+		return prior.log_negation_probability + log_probability_atom(literal->unary.operand->atom, prior, predicates, constants);
+	} else {
+		return std::numeric_limits<double>::infinity();
+	}
+}
 
-		counter() : count(0) { }
+template<typename PredicateDistribution, typename ConstantDistribution>
+double log_probability(const fol_formula* formula,
+		const simple_fol_formula_distribution<PredicateDistribution, ConstantDistribution>& prior,
+		typename PredicateDistribution::ObservationCollection& predicates,
+		typename ConstantDistribution::ObservationCollection& constants)
+{
+	double value;
+	const fol_formula* antecedent;
+	const fol_formula* consequent;
+	const fol_formula* operand;
+	switch (formula->type)
+	{
+	case fol_formula_type::ATOM:
+	case fol_formula_type::NOT:
+		return prior.log_ground_literal_probability + log_probability_literal(formula, prior, predicates, constants);
+	case fol_formula_type::FOR_ALL:
+		if (formula->quantifier.operand->type == fol_formula_type::IF_THEN) {
+			antecedent = formula->quantifier.operand->binary.left;
+			consequent = formula->quantifier.operand->binary.right;
+			if (antecedent->type == fol_formula_type::AND) {
+				value = (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+				for (unsigned int i = 0; i < antecedent->array.length; i++)
+					value += log_probability_literal(antecedent->array.operands[i], prior, predicates, constants);
+			} else {
+				value = prior.log_antecedent_stop_probability + log_probability_literal(antecedent, prior, predicates, constants);
+			}
 
-		inline bool add(const Formula* observation) {
-			count++; return true;
+			if (consequent->type == fol_formula_type::AND) {
+				value = (consequent->array.length - 1) * prior.log_consequent_continue_probability + prior.log_consequent_stop_probability;
+				for (unsigned int i = 0; i < consequent->array.length; i++)
+					value += log_probability_literal(consequent->array.operands[i], prior, predicates, constants);
+			} else {
+				value = prior.log_consequent_stop_probability + log_probability_literal(consequent, prior, predicates, constants);
+			}
+			return value;
+		} else {
+			return -std::numeric_limits<double>::infinity();
 		}
+	case fol_formula_type::AND:
+	case fol_formula_type::OR:
+	case fol_formula_type::IF_THEN:
+	case fol_formula_type::IFF:
+	case fol_formula_type::EXISTS:
+	case fol_formula_type::TRUE:
+	case fol_formula_type::FALSE:
+		return -std::numeric_limits<double>::infinity();
+	}
+	fprintf(stderr, "log_probability ERROR: Unrecognized fol_formula_type.\n");
+	exit(EXIT_FAILURE);
+}
 
-		inline void remove(const Formula* observation) {
-			count--;
-		}
-	};
+template<template<typename> class BaseDistribution, typename T>
+struct identically_sampled_distribution {
+	BaseDistribution<T> base_distribution;
 
-	typedef counter ObservationCollection;
+	typedef array<T> ObservationCollection;
 };
 
-template<template<typename> class ContainerType, typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
-double log_probability_ratio(const ContainerType<Formula*>& axioms,
-		const uniform_axiom_distribution<Formula>& prior,
-		const typename uniform_axiom_distribution<Formula>::counter& old_axioms,
-		const typename uniform_axiom_distribution<Formula>::counter& new_axioms,
-		const theory<Formula, ProofCalculus>& T,
-		const universal_intro_proposal<Formula, Negated, Arity>& proposal)
+template<template<typename> class Collection,
+	template<typename> class BaseDistribution,
+	template<typename> class ObservationCollection, typename T,
+	typename NewBaseDistributionParameters,
+	typename OldBaseDistributionParameters>
+double log_probability_ratio(const Collection<T>& observations,
+		const identically_sampled_distribution<BaseDistribution, T>& prior,
+		const ObservationCollection<T>& old_observations,
+		const ObservationCollection<T>& new_observations,
+		const NewBaseDistributionParameters& new_base_distribution_parameters,
+		const OldBaseDistributionParameters& old_base_distribution_parameters)
 {
-	unsigned int old_axiom_count = T.axiom_count();
-	unsigned int new_axiom_count = old_axiom_count + 1 - proposal.old_grounded_axioms.size;
-	if (!log_cache<double>::instance().ensure_size(old_axiom_count + 1)) exit(EXIT_FAILURE);
-	return -(prior.size - old_axioms.count + new_axioms.count) * log_cache<double>::instance().get(new_axiom_count)
-			+ prior.size * log_cache<double>::instance().get(old_axiom_count);
+	double value = 0.0;
+	for (const T& observation : new_observations)
+		value += log_probability(observation, prior.base_distribution, new_base_distribution_parameters);
+	for (const T& observation : old_observations)
+		value -= log_probability(observation, prior.base_distribution, old_base_distribution_parameters);
+	return value;
 }
 
-template<template<typename> class ContainerType, typename Formula, typename ProofCalculus, bool Negated, unsigned int Arity>
-double log_probability_ratio(const ContainerType<Formula*>& axioms,
-		const uniform_axiom_distribution<Formula>& prior,
-		const typename uniform_axiom_distribution<Formula>::counter& old_axioms,
-		const typename uniform_axiom_distribution<Formula>::counter& new_axioms,
-		const theory<Formula, ProofCalculus>& T,
-		const universal_elim_proposal<Formula, Negated, Arity>& proposal)
-{
-	unsigned int old_axiom_count = T.axiom_count();
-	unsigned int new_axiom_count = old_axiom_count - 1 + proposal.new_grounded_axioms.table.size;
-	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) exit(EXIT_FAILURE);
-	return -(prior.size - old_axioms.count + new_axioms.count) * log_cache<double>::instance().get(new_axiom_count)
-			+ prior.size * log_cache<double>::instance().get(old_axiom_count);
-}
-
-template<typename BaseDistribution, typename T>
+template<template<typename> class BaseDistribution, typename T>
 struct dirichlet_process
 {
 	double alpha, log_alpha;
-	BaseDistribution base_distribution;
+	BaseDistribution<T> base_distribution;
 	hash_multiset<T> tables;
 
-	dirichlet_process(double alpha, const BaseDistribution& base_distribution) :
+	dirichlet_process(double alpha, const BaseDistribution<T>& base_distribution) :
 			alpha(alpha), log_alpha(log(alpha)), base_distribution(base_distribution), tables(64)
 	{ }
 
@@ -105,11 +169,11 @@ struct dirichlet_process
 	}
 };
 
-template<typename BaseDistribution, typename T>
+template<template<typename> class BaseDistribution, typename T>
 inline double log_probability_ratio_old_cluster(
 		const T& observation, unsigned int frequency,
 		const dirichlet_process<BaseDistribution, T>& prior,
-		typename BaseDistribution::ObservationCollection& old_clusters)
+		typename BaseDistribution<T>::ObservationCollection& old_clusters)
 {
 	unsigned int count = prior.tables.counts.get(observation);
 	double value = lgamma(count - frequency) - lgamma(count);
@@ -120,11 +184,11 @@ inline double log_probability_ratio_old_cluster(
 	return value;
 }
 
-template<typename BaseDistribution, typename T>
+template<template<typename> class BaseDistribution, typename T>
 inline double log_probability_ratio_new_cluster(
 		const T& observation, unsigned int frequency,
 		const dirichlet_process<BaseDistribution, T>& prior,
-		typename BaseDistribution::ObservationCollection& new_clusters)
+		typename BaseDistribution<T>::ObservationCollection& new_clusters)
 {
 	bool contains;
 	unsigned int count = prior.tables.counts.get(observation, contains);
@@ -136,7 +200,7 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-template<typename BaseDistribution, typename T,
+template<template<typename> class BaseDistribution, typename T,
 		typename BaseDistributionOldParameter,
 		typename BaseDistributionNewParameter>
 double log_probability_ratio(
@@ -146,7 +210,7 @@ double log_probability_ratio(
 		BaseDistributionOldParameter& base_distribution_old_parameter,
 		BaseDistributionNewParameter& base_distribution_new_parameter)
 {
-	typedef typename BaseDistribution::ObservationCollection Clusters;
+	typedef typename BaseDistribution<T>::ObservationCollection Clusters;
 
 	unsigned int i = 0, j = 0; double value = 0.0;
 	Clusters old_clusters, new_clusters;
