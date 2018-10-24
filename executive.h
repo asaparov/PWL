@@ -15,18 +15,12 @@ inline void free_logical_forms(fol_formula** logical_forms, unsigned int count)
 	}
 }
 
-template<typename ArticleSource, typename Parser,
-	typename TheoryPrior, typename AxiomPrior,
-	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior>
+template<typename ArticleSource,
+	typename Parser, typename ProofPrior>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const sentence& s,
 		theory<fol_formula, natural_deduction<fol_formula, true>>& T,
-		unsigned int article_name, double log_proof_stop_probability,
-		double log_proof_continue_probability,
-		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
-		UniversalIntroductionPrior& universal_introduction_prior,
-		UniversalEliminationPrior& universal_elimination_prior)
+		unsigned int article_name, ProofPrior& proof_prior)
 {
 	unsigned int parse_count;
 	fol_formula* logical_forms[2];
@@ -57,10 +51,7 @@ bool read_sentence(
 			}
 			next_article = unrecognized[1].id;
 		}
-		if (!read_article(unrecognized[0].id, articles, parser, T,
-				log_proof_stop_probability, log_proof_continue_probability, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior))
-		{
+		if (!read_article(unrecognized[0].id, articles, parser, T, proof_prior)) {
 			free_logical_forms(logical_forms, parse_count);
 			return false;
 		}
@@ -83,38 +74,21 @@ bool read_sentence(
 		return false;
 	}
 
-	for (unsigned int t = 0; t < 10; t++) {
-		if (!do_mh_step(T, log_proof_stop_probability,
-				log_proof_continue_probability, theory_prior, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior))
-		{
-			return false;
-		}
-	}
+	for (unsigned int t = 0; t < 10; t++)
+		if (!do_mh_step(T, proof_prior)) return false;
 
 	free_logical_forms(logical_forms, parse_count);
 	return true;
 }
 
-template<typename ArticleSource, typename Parser,
-	typename TheoryPrior, typename AxiomPrior,
-	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior>
-bool read_article(
-		unsigned int article_name, const ArticleSource& articles, Parser& parser,
-		theory<fol_formula, natural_deduction<fol_formula, true>>& T,
-		double log_proof_stop_probability,
-		double log_proof_continue_probability,
-		TheoryPrior& theory_prior, AxiomPrior& axiom_prior,
-		UniversalIntroductionPrior& universal_introduction_prior,
-		UniversalEliminationPrior& universal_elimination_prior)
+template<typename ArticleSource,
+	typename Parser, typename ProofPrior>
+bool read_article(unsigned int article_name, const ArticleSource& articles, Parser& parser,
+		theory<fol_formula, natural_deduction<fol_formula, true>>& T, ProofPrior& proof_prior)
 {
 	const article& doc = articles.get(article_name);
 	for (unsigned int i = 0; i < doc.sentence_count; i++) {
-		if (!read_sentence(articles, parser, doc.sentences[i],
-				T, article_name, log_proof_stop_probability,
-				log_proof_continue_probability, theory_prior, axiom_prior,
-				universal_introduction_prior, universal_elimination_prior))
+		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, proof_prior))
 			return false;
 	}
 	return true;
