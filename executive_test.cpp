@@ -1,12 +1,6 @@
 #include "executive.h"
 #include "fake_parser.h"
 
-namespace core {
-	inline bool copy(fol_formula* src, fol_formula*& dst) {
-		dst = src; return true;
-	}
-}
-
 template<typename T>
 struct chinese_restaurant_process
 {
