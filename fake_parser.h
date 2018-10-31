@@ -73,7 +73,7 @@ struct fake_parser {
 		}
 	}
 
-	template<typename TheoryType>
+	template<unsigned int K, typename TheoryType>
 	bool parse(const sentence& s, fol_formula** logical_forms,
 			double* log_probabilities, unsigned int& parse_count,
 			const TheoryType& T, array<token>& unrecognized) const

@@ -77,6 +77,20 @@ struct theory
 
 	theory() : types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
 
+	~theory() {
+		for (Proof* proof : observations) {
+			core::free(*proof);
+			if (proof->reference_count == 0)
+				core::free(proof);
+		} for (Proof* proof : universal_quantifications) {
+			core::free(*proof);
+			if (proof->reference_count == 0)
+				core::free(proof);
+		} for (auto entry : ground_concepts) {
+			core::free(entry.value);
+		}
+	}
+
 	inline unsigned int axiom_count() const {
 		return universal_quantifications.length + ground_axiom_count;
 	}
@@ -86,27 +100,19 @@ struct theory
 		Formula* canonicalized = canonicalize(*formula);
 		if (canonicalized == NULL) return false;
 
-		for (unsigned int i = 0; i < observations.length; i++) {
-			if (*observations[i] == *canonicalized) {
-				/* this formula has already been added to the theory */
-				free(*canonicalized);
-				if (canonicalized->reference_count == 0)
-					free(canonicalized);
-				return true;
-			}
-		}
-
-		if (!observations.add(canonicalized)) {
-			free(*canonicalized);
+		Proof* new_proof = make_proof(canonicalized);
+		if (new_proof == NULL) {
+			core::free(*canonicalized);
 			if (canonicalized->reference_count == 0)
-				free(canonicalized);
-		}
-
-		if (make_proof(canonicalized) == NULL) {
-			free(*canonicalized);
+				core::free(canonicalized);
+			return false;
+		} else if (!observations.add(new_proof)) {
+			core::free(*canonicalized);
 			if (canonicalized->reference_count == 0)
-				free(canonicalized);
-			observations.length--;
+				core::free(canonicalized);
+			core::free(*new_proof);
+			if (new_proof->reference_count == 0)
+				core::free(new_proof);
 			return false;
 		}
 		return true;

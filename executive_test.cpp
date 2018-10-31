@@ -345,7 +345,7 @@ struct uniform_subset_distribution {
 		log_continue_probability(log(1.0 - stop_probability))
 	{ }
 
-	uniform_subset_distribution(const uniform_subset_distribution<BaseDistribution>& src) :
+	uniform_subset_distribution(const uniform_subset_distribution<T>& src) :
 		log_stop_probability(src.log_stop_probability),
 		log_continue_probability(src.log_continue_probability)
 	{ }
@@ -353,49 +353,24 @@ struct uniform_subset_distribution {
 
 template<template<typename> class Collection, typename T>
 double log_probability(
-		const pair<Collection<T>, Collection<T>>& observations,
+		const pair<Collection<T>, Collection<T>>& observation,
 		const uniform_subset_distribution<T>& prior)
 {
-	log_cache<double>::instance().ensure_size(size(observations.value));
-	return -log_cache<double>::instance().get(size(observations.value)) * size(observations.key)
-		 + size(observations) * prior.log_continue_probability + prior.log_stop_probability;
+	log_cache<double>::instance().ensure_size(size(observation.value));
+	return -log_cache<double>::instance().get(size(observation.value)) * size(observation.key)
+		 + size(observation) * prior.log_continue_probability + prior.log_stop_probability;
 }
 
-template<typename BaseDistribution>
-struct iid_distribution {
-	BaseDistribution base_distribution;
-
-	iid_distribution(const BaseDistribution& src) : base_distribution(src) { }
-	iid_distribution(const iid_distribution<BaseDistribution>& src) : base_distribution(src.base_distribution) { }
-};
-
-template<typename BaseDistribution>
-inline iid_distribution<BaseDistribution> make_iid_distribution(const BaseDistribution& src) {
-	return iid_distribution<BaseDistribution>(src);
-}
-
-template<template<typename> class Collection,
-	typename BaseDistribution, typename... BaseDistributionParameters>
+template<template<typename> class ObservationCollection,
+	template<typename> class Collection, typename T>
 double log_probability(
-		const Collection<typename BaseDistribution::ObservationType>& observations,
-		const iid_distribution<BaseDistribution>& prior,
-		BaseDistributionParameters&&... base_distribution_parameters)
+		const ObservationCollection<pair<Collection<T>, Collection<T>>>& observations,
+		const uniform_subset_distribution<T>& prior)
 {
 	double value = 0.0;
-	for (const typename BaseDistribution::ObservationType& observation : observations)
-		value += log_probability(observation, prior.base_distribution, std::forward<BaseDistributionParameters>(base_distribution_parameters)...);
+	for (const pair<Collection<T>, Collection<T>>& observation : observations)
+		value += log_probability(observation, prior);
 	return value;
-}
-
-/* NOTE: this function assumes that `observation` is contained in `support` */
-template<typename T, template<typename> class Array>
-inline double log_probability(
-		const T& observation,
-		const uniform_distribution<T>& prior,
-		const Array<T>& support)
-{
-	log_cache<double>::instance().ensure_size(size(support));
-	return -log_cache<double>::instance().get(size(support));
 }
 
 const string* get_name(const hash_map<string, unsigned int>& names, unsigned int id)
@@ -454,12 +429,15 @@ int main(int argc, const char** argv)
 
 	/* read the articles */
 	theory<fol_formula, natural_deduction<fol_formula, true>> T;
-	auto constant_distribution = chinese_restaurant_process<unsigned int>(1.0);
-	auto theory_element_distribution = make_simple_fol_formula_distribution(constant_distribution, 0.5, 0.3, 0.4, 0.2, 0.4);
-	auto axiom_distribution = make_dirichlet_process(1.0, theory_element_distribution);
-	auto conjunction_prior = make_iid_distribution(uniform_subset_distribution<nd_step<fol_formula, true>*>(0.5));
-	//auto proof_prior = make_canonicalized_proof_prior();
-	/*read_article(names.get("bob"), corpus, parser, T, proof_prior);*/
+	auto constant_prior = chinese_restaurant_process<unsigned int>(1.0);
+	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.5, 0.3, 0.4, 0.2, 0.4);
+	auto axiom_prior = make_dirichlet_process(1.0, theory_element_prior);
+	auto conjunction_prior = uniform_subset_distribution<nd_step<fol_formula, true>*>(0.5);
+	auto universal_introduction_prior = uniform_subset_distribution<unsigned int >(0.5);
+	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
+	auto proof_prior = make_canonicalized_proof_prior(0.1, axiom_prior,
+			conjunction_prior, universal_introduction_prior, universal_elimination_prior);
+	read_article(names.get("bob"), corpus, parser, T, proof_prior);
 
 	for (auto entry : names) free(entry.key);
 	return EXIT_SUCCESS;

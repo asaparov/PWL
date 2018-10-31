@@ -87,6 +87,14 @@ struct in_memory_article_store {
 		for (auto entry : articles)
 			free(entry.value);
 	}
+
+	const article& get(unsigned int article_id) const {
+#if !defined(NDEBUG)
+		if (!articles.table.contains(article_id))
+			fprintf(stderr, "in_memory_article_store.get WARNING: No such article with corresponding key.\n");
+#endif
+		return articles.get(article_id);
+	}
 };
 
 

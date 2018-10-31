@@ -20,7 +20,7 @@ bool operator == (const fol_formula&, const fol_formula&);
 bool operator != (const fol_formula&, const fol_formula&);
 
 enum class fol_term_type {
-	NONE,
+	NONE = 0,
 	VARIABLE,
 	CONSTANT,
 	PARAMETER
@@ -33,6 +33,21 @@ struct fol_term {
 		unsigned int constant;
 		unsigned int parameter;
 	};
+
+	static inline bool is_empty(const fol_term& key) {
+		return key.type == fol_term_type::NONE;
+	}
+
+	static inline void set_empty(fol_term& key) {
+		key.type = fol_term_type::NONE;
+	}
+
+	static inline bool copy(const fol_term& src, fol_term& dst) {
+		dst = src;
+		return true;
+	}
+
+	static inline void free(fol_term& term) { }
 };
 
 fol_term EMPTY_FOL_TERM = {fol_term_type::NONE, {0}};

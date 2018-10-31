@@ -31,7 +31,6 @@ bool read_sentence(
 		if (!parser.template parse<2>(s, logical_forms, log_probabilities, parse_count, T, unrecognized)) return false;
 
 		/* read the article on the unrecognized word */
-		fol_formula* definition;
 		if (unrecognized.length == 0) {
 			break;
 		} else if (parse_count > 0 && unrecognized.length == 1 && unrecognized[0].id == article_name) {

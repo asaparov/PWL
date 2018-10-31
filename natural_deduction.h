@@ -1270,7 +1270,7 @@ double log_probability(
 		/* TODO: we need to compute the prior on the parameter */
 		formula_counter++;
 		operand = map(current_step.operands[1], std::forward<ProofMap>(proof_map)...);
-		if (!universal_introductions.add(operand->parameter, available_parameters))
+		if (!universal_introductions.add(make_pair(operand->parameter, available_parameters)))
 			exit(EXIT_FAILURE);
 		
 		index = available_parameters.index_of(operand->parameter);
