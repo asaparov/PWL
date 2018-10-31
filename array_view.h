@@ -19,6 +19,11 @@ array_view<T> make_array_view(T* array, unsigned int length) {
 }
 
 template<typename T>
+inline unsigned int size(const array_view<T>& view) {
+	return view.length;
+}
+
+template<typename T>
 struct indexed_array_view {
 	T* array;
 	unsigned int* indices;
@@ -34,6 +39,11 @@ struct indexed_array_view {
 template<typename T>
 indexed_array_view<T> make_indexed_array_view(T* array, unsigned int* indices, unsigned int length) {
 	return indexed_array_view<T>(array, indices, length);
+}
+
+template<typename T>
+inline unsigned int size(const indexed_array_view<T>& view) {
+	return view.length;
 }
 
 #endif /* ARRAY_VIEW_H_ */

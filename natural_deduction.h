@@ -1245,8 +1245,8 @@ double log_probability(
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n");
 		exit(EXIT_FAILURE);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
-		if (!conjunction_introductions.add(
-				make_array_view(current_step.operand_array.operands, current_step.operand_array.length), make_array_view(proof, step_index)))
+		if (!conjunction_introductions.add(make_pair(
+				make_array_view(current_step.operand_array.operands, current_step.operand_array.length), make_array_view(proof, step_index))))
 			exit(EXIT_FAILURE);
 		return -LOG_ND_RULE_COUNT;
 	case nd_step_type::IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
