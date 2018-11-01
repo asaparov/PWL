@@ -11,6 +11,10 @@ struct array_view {
 	inline T& operator[] (size_t index) {
 		return array[index];
 	}
+
+	inline const T& operator[] (size_t index) const {
+		return array[index];
+	}
 };
 
 template<typename T>
@@ -32,6 +36,10 @@ struct indexed_array_view {
 	indexed_array_view(T* array, unsigned int* indices, unsigned int length) : array(array), indices(indices), length(length) { }
 
 	inline T& operator[] (size_t index) {
+		return array[indices[index]];
+	}
+
+	inline const T& operator[] (size_t index) const {
 		return array[indices[index]];
 	}
 };

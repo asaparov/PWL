@@ -71,9 +71,10 @@ struct nd_step
 
 	inline void get_subproofs(nd_step<Formula, Canonical>**& subproofs, unsigned int& length) {
 		switch (type) {
+		case nd_step_type::AXIOM:
+		case nd_step_type::PARAMETER:
 		case nd_step_type::TERM_PARAMETER:
 		case nd_step_type::ARRAY_PARAMETER:
-		case nd_step_type::AXIOM:
 		case nd_step_type::FORMULA_PARAMETER:
 			subproofs = NULL; length = 0;
 			return;
@@ -107,13 +108,26 @@ struct nd_step
 		exit(EXIT_FAILURE);
 	}
 
+	inline void remove_child(const nd_step<Formula, Canonical>* child) {
+		unsigned int index = children.index_of(child);
+#if !defined(NDEBUG)
+		if (index == children.length) {
+			fprintf(stderr, "nd_step.remove_child WARNING: Index out of bounds.\n");
+			return;
+		}
+#endif
+		children.remove(index);
+	}
+
 private:
 	inline void free() {
 		switch (type) {
+		case nd_step_type::PARAMETER:
+			return;
 		case nd_step_type::TERM_PARAMETER:
-			free(term); return;
+			core::free(term); return;
 		case nd_step_type::ARRAY_PARAMETER:
-			free(parameters); return;
+			core::free(parameters); return;
 		case nd_step_type::AXIOM:
 		case nd_step_type::FORMULA_PARAMETER:
 			core::free(*formula);
@@ -159,17 +173,6 @@ private:
 		fprintf(stderr, "nd_step.free ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
 	}
-
-	inline void remove_child(const nd_step<Formula, Canonical>* child) {
-		unsigned int index = children.index_of(child);
-#if !defined(NDEBUG)
-		if (index == children.length) {
-			fprintf(stderr, "nd_step.remove_child WARNING: Index out of bounds.\n");
-			return;
-		}
-#endif
-		children.remove(index);
-	}
 };
 
 template<typename Formula, bool Canonical>
@@ -180,6 +183,10 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 
 	int_fast8_t result;
 	switch (first.type) {
+	case nd_step_type::PARAMETER:
+		if (first.parameter < second.parameter) return -1;
+		else if (first.parameter > second.parameter) return 1;
+		else return 0;
 	case nd_step_type::TERM_PARAMETER:
 		return compare(first.term, second.term);
 	case nd_step_type::ARRAY_PARAMETER:
@@ -698,6 +705,7 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = operand_states[1]->formula;
 		out.formula->reference_count++;
 		return true;
+	case nd_step_type::PARAMETER:
 	case nd_step_type::ARRAY_PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::FORMULA_PARAMETER:
@@ -892,12 +900,12 @@ struct natural_deduction
 	}
 
 	template<typename... Args>
-	static inline Proof* new_conjunction_intro(Args&&... args) {
+	static inline Proof* new_conjunction_intro2(Args&&... args) { /* TODO: undo this name change */
 		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION>(std::forward<Args>(args)...);
 	}
 
 	template<template<typename> class Array>
-	static inline Proof* new_conjunction_intro(const Array<Proof>& operands) {
+	static inline Proof* new_conjunction_intro(const Array<Proof*>& operands) {
 		if (!Canonical) return NULL;
 		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION>(operands);
 	}
@@ -1010,7 +1018,7 @@ private:
 		nd_step<Formula, Canonical>* step;
 		if (!new_nd_step(step, nd_step_type::ARRAY_PARAMETER)) {
 			return NULL;
-		} else if (!array_init(step->parameters, max((size_t) 1, parameters.length))) {
+		} else if (!array_init(step->parameters, max((decltype(parameters.length)) 1, parameters.length))) {
 			free(step); return NULL;
 		}
 		for (unsigned int i = 0; i < parameters.length; i++)
@@ -1130,7 +1138,7 @@ private:
 	}
 
 	template<nd_step_type Type, template<typename> class Array>
-	static inline Proof* new_array_step(const Array<Proof>& operands) {
+	static inline Proof* new_array_step(const Array<Proof*>& operands) {
 		if (operands.length < 2) return NULL;
 
 		nd_step<Formula, Canonical>* step;
@@ -1215,7 +1223,7 @@ double log_probability(
 		unsigned int step_index,
 		unsigned int& formula_counter,
 		array<unsigned int>& available_parameters,
-		array_multiset<const Formula*>& axioms,
+		array_multiset<Formula*>& axioms,
 		ConjunctionIntroductions& conjunction_introductions,
 		UniversalIntroductions& universal_introductions,
 		UniversalEliminations& universal_eliminations,
@@ -1226,6 +1234,7 @@ double log_probability(
 	const nd_step<Formula, Canonical>& current_step = *proof[step_index];
 	double value; unsigned int index; Formula* operand;
 	switch (current_step.type) {
+	case nd_step_type::PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::ARRAY_PARAMETER:
 	case nd_step_type::FORMULA_PARAMETER:
@@ -1366,7 +1375,7 @@ template<typename Formula,
 	typename... ProofMap>
 inline double log_probability_helper(
 		const nd_step<Formula, Canonical>& proof,
-		array_multiset<const Formula*>& axioms,
+		array_multiset<Formula*>& axioms,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
 		ProofMap&&... proof_map)
 {
@@ -1407,7 +1416,7 @@ double log_probability(
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
 		ProofMap&&... proof_map)
 {
-	array_multiset<const Formula*> axioms(16);
+	array_multiset<Formula*> axioms(16);
 	double value = log_probability_helper(
 			proof, axioms, prior, std::forward<ProofMap>(proof_map)...);
 	return value + log_probability(axioms, prior.axiom_prior);
@@ -1425,7 +1434,7 @@ double log_probability_ratio(
 		AxiomPriorParameters&&... axiom_prior_parameters)
 {
 	double value = 0.0;
-	array_multiset<const Formula*> old_axioms(16), new_axioms(16);
+	array_multiset<Formula*> old_axioms(16), new_axioms(16);
 	for (const auto& entry : proofs) {
 		value -= log_probability_helper(*entry.key, old_axioms, prior);
 		value += log_probability_helper(*entry.key, new_axioms, prior, entry.value);

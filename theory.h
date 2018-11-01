@@ -22,7 +22,27 @@ struct relation {
 	unsigned int predicate;
 	unsigned int arg1; /* `0` here indicates the source vertex */
 	unsigned int arg2; /* `0` here indicates the source vertex */
+
+	static inline bool is_empty(const relation& key) {
+		return key.predicate == 0;
+	}
+
+	static inline unsigned int hash(const relation& key) {
+		return default_hash(key.predicate) ^ default_hash(key.arg1) ^ default_hash(key.arg2);
+	}
 };
+
+inline bool operator == (const relation& first, const relation& second) {
+	return first.predicate == second.predicate
+		&& first.arg1 == second.arg1
+		&& first.arg2 == second.arg2;
+}
+
+inline bool operator != (const relation& first, const relation& second) {
+	return first.predicate != second.predicate
+		|| first.arg1 != second.arg1
+		|| first.arg2 != second.arg2;
+}
 
 template<typename ProofCalculus>
 struct concept
@@ -33,7 +53,43 @@ struct concept
 	array_map<unsigned int, Proof*> negated_types;
 	array_map<relation, Proof*> relations;
 	array_map<relation, Proof*> negated_relations;
+
+	static inline void free(concept<ProofCalculus>& c) {
+		for (auto entry : c.types) {
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		} for (auto entry : c.negated_types) {
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		} for (auto entry : c.relations) {
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		} for (auto entry : c.negated_relations) {
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		}
+	}
 };
+
+template<typename ProofCalculus>
+inline bool init(concept<ProofCalculus>& c) {
+	if (!array_map_init(c.types, 8)) {
+		return false;
+	} else if (!array_map_init(c.negated_types, 8)) {
+		free(c.types); return false;
+	} else if (!array_map_init(c.relations, 8)) {
+		free(c.negated_types);
+		free(c.types); return false;
+	} else if (!array_map_init(c.negated_relations, 8)) {
+		free(c.relations); free(c.negated_types);
+		free(c.types); return false;
+	}
+	return true;
+}
 
 template<bool Unique, typename T>
 inline void add_sorted(array<T>& list, const T& element) {
@@ -134,7 +190,7 @@ struct theory
 	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom)
 	{
 #if !defined(NDEBUG)
-		if (!ground_concepts.contains(arg))
+		if (!ground_concepts.table.contains(arg))
 			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
 #endif
 		bool contains; unsigned int bucket;
@@ -153,11 +209,11 @@ struct theory
 		array<unsigned int>& instances = (Negated ? instance_pair.value : instance_pair.key);
 		array_map<unsigned int, Proof*>& ground_types = (Negated ? ground_concepts.get(arg).negated_types : ground_concepts.get(arg).types);
 		if (!instances.ensure_capacity(instances.length + 1)
-		 || !ground_types.check_size(ground_types.size + 1)) return false;
+		 || !ground_types.ensure_capacity(ground_types.size + 1)) return false;
 
 		add_sorted<false>(instances, arg);
 		ground_types.keys[ground_types.size] = predicate;
-		ground_types.value[ground_types.size++] = axiom;
+		ground_types.values[ground_types.size++] = axiom;
 		axiom->reference_count++;
 		ground_axiom_count++;
 		return true;
@@ -167,9 +223,9 @@ struct theory
 	inline bool add_binary_atom(relation rel, Proof* axiom)
 	{
 #if !defined(NDEBUG)
-		if (!ground_concepts.contains(rel.arg1))
+		if (!ground_concepts.table.contains(rel.arg1))
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
-		if (!ground_concepts.contains(rel.arg2))
+		if (!ground_concepts.table.contains(rel.arg2))
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
 #endif
 
@@ -216,8 +272,8 @@ struct theory
 		if (!predicate_instances.ensure_capacity(predicate_instances.length + 1)
 		 || !arg1_instances.ensure_capacity(arg1_instances.length + 1)
 		 || !arg2_instances.ensure_capacity(arg2_instances.length + 1)
-		 || !ground_arg1.check_size(ground_arg1.size + 3)
-		 || !ground_arg2.check_size(ground_arg2.size + 3)) return false;
+		 || !ground_arg1.ensure_capacity(ground_arg1.size + 3)
+		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3)) return false;
 
 		if (rel.arg1 == rel.arg2) {
 			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
@@ -241,15 +297,15 @@ struct theory
 		add_sorted<false>(arg1_instances, rel.arg1);
 		add_sorted<false>(arg2_instances, rel.arg2);
 		ground_arg1.keys[ground_arg1.size] = {rel.predicate, 0, rel.arg2};
-		ground_arg1.value[ground_arg1.size++] = axiom;
+		ground_arg1.values[ground_arg1.size++] = axiom;
 		ground_arg2.keys[ground_arg2.size] = {rel.predicate, rel.arg1, 0};
-		ground_arg2.value[ground_arg2.size++] = axiom;
+		ground_arg2.values[ground_arg2.size++] = axiom;
 		axiom->reference_count += 2;
 		ground_axiom_count += 2;
 		if (rel.arg1 == rel.arg2) {
 			/* in this case, `ground_arg1` and `ground_arg2` are the same */
 			ground_arg1.keys[ground_arg1.size] = {rel.predicate, 0, 0};
-			ground_arg1.value[ground_arg1.size++] = axiom;
+			ground_arg1.values[ground_arg1.size++] = axiom;
 			axiom->reference_count++;
 			ground_axiom_count++;
 		}
@@ -519,13 +575,12 @@ private:
 					/* check that this is not implied by an existing univerally-quantified axiom */
 					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
 						Proof* axiom = universal_quantifications[k];
-						Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
 						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
 						unsigned int i = 0;
 						if (consequent->type == FormulaType::AND) {
 							for (; i < consequent->array.length; i++) {
 								Term dst;
-								if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
+								if (unify(*consequent->array.operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
 									break;
 							}
 							if (i == consequent->array.length) continue;
@@ -585,13 +640,12 @@ private:
 					/* check that this is not implied by an existing univerally-quantified axiom */
 					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
 						Proof* axiom = universal_quantifications[k];
-						Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
 						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
 						Term unifying_term;
 						unsigned int i = 0;
 						if (consequent->type == FormulaType::AND) {
 							for (; i < consequent->array.length; i++) {
-								if (unify(*consequent->operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
+								if (unify(*consequent->array.operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
 									break;
 							}
 							if (i == consequent->array.length) continue;
@@ -664,7 +718,7 @@ private:
 			bool contains;
 			if (constraint->atom.arg2.type == TermType::NONE) {
 				/* `constraint` is a unary literal */
-				proof = (Negated ? c.negated_types.get(constraint->atom.predicate, contains) : c.types.contains(constraint->atom.predicate, contains));
+				proof = (Negated ? c.negated_types.get(constraint->atom.predicate, contains) : c.types.get(constraint->atom.predicate, contains));
 				if (!contains) proof = NULL;
 				return true;
 			} else {
