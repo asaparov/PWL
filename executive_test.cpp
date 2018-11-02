@@ -2,8 +2,34 @@
 #include "fake_parser.h"
 
 template<typename T>
+struct default_array {
+	array<T> a;
+
+	default_array() : a(16) { }
+
+	inline bool add(const T& item) {
+		return a.add(item);
+	}
+
+	inline auto begin() -> decltype(a.begin()) {
+		return a.begin();
+	}
+
+	inline auto end() -> decltype(a.end()) {
+		return a.end();
+	}
+};
+
+template<typename T>
+inline unsigned int size(const default_array<T>& array) {
+	return array.a.length;
+}
+
+template<typename T>
 struct chinese_restaurant_process
 {
+	typedef default_array<T> ObservationCollection;
+
 	double alpha, log_alpha;
 	hash_multiset<T> tables;
 
@@ -350,30 +376,6 @@ inline double log_probability_ratio(
 		 + log_probability_ratio(old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
 }
 
-template<typename T>
-struct default_array {
-	array<T> a;
-
-	default_array() : a(16) { }
-
-	inline bool add(const T& item) {
-		return a.add(item);
-	}
-
-	inline auto begin() -> decltype(a.begin()) {
-		return a.begin();
-	}
-
-	inline auto end() -> decltype(a.end()) {
-		return a.end();
-	}
-};
-
-template<typename T>
-inline unsigned int size(const default_array<T>& array) {
-	return array.a.length;
-}
-
 template<typename ConstantDistribution>
 struct constant_adder {
 	ConstantDistribution& constant_distribution;
@@ -602,7 +604,7 @@ struct uniform_subset_distribution {
 	double log_stop_probability;
 	double log_continue_probability;
 
-	typedef default_array<T> ObservationCollection;
+	typedef default_array<pair<array_view<const T>, array_view<const T>>> ObservationCollection;
 
 	uniform_subset_distribution(double stop_probability) :
 		log_stop_probability(log(stop_probability)),
@@ -617,7 +619,7 @@ struct uniform_subset_distribution {
 
 template<template<typename> class Collection, typename T>
 double log_probability(
-		const pair<Collection<T>, Collection<T>>& observation,
+		const pair<Collection<const T>, Collection<const T>>& observation,
 		const uniform_subset_distribution<T>& prior)
 {
 	log_cache<double>::instance().ensure_size(size(observation.value));
@@ -628,11 +630,37 @@ double log_probability(
 template<template<typename> class ObservationCollection,
 	template<typename> class Collection, typename T>
 double log_probability(
-		const ObservationCollection<pair<Collection<T>, Collection<T>>>& observations,
+		const ObservationCollection<pair<Collection<const T>, Collection<const T>>>& observations,
 		const uniform_subset_distribution<T>& prior)
 {
 	double value = 0.0;
-	for (const pair<Collection<T>, Collection<T>>& observation : observations)
+	for (const pair<Collection<const T>, Collection<const T>>& observation : observations)
+		value += log_probability(observation, prior);
+	return value;
+}
+
+template<typename T>
+struct uniform_distribution {
+	typedef default_array<pair<T, array<T>>> ObservationCollection;
+};
+
+template<template<typename> class Collection, typename T>
+double log_probability(
+		const pair<T, Collection<T>>& observation,
+		const uniform_subset_distribution<T>& prior)
+{
+	log_cache<double>::instance().ensure_size(size(observation.value));
+	return -log_cache<double>::instance().get(size(observation.value));
+}
+
+template<template<typename> class ObservationCollection,
+	template<typename> class Collection, typename T>
+double log_probability(
+		const ObservationCollection<pair<T, Collection<T>>>& observations,
+		const uniform_subset_distribution<T>& prior)
+{
+	double value = 0.0;
+	for (const pair<T, Collection<T>>& observation : observations)
 		value += log_probability(observation, prior);
 	return value;
 }
@@ -698,7 +726,7 @@ int main(int argc, const char** argv)
 	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.5, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<nd_step<fol_formula, true>*>(0.5);
-	auto universal_introduction_prior = uniform_subset_distribution<unsigned int >(0.5);
+	auto universal_introduction_prior = uniform_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
 	auto proof_prior = make_canonicalized_proof_prior(0.1, axiom_prior,
 			conjunction_prior, universal_introduction_prior, universal_elimination_prior);

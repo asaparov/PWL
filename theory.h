@@ -30,6 +30,12 @@ struct relation {
 	static inline unsigned int hash(const relation& key) {
 		return default_hash(key.predicate) ^ default_hash(key.arg1) ^ default_hash(key.arg2);
 	}
+
+	static inline void move(const relation& src, relation& dst) {
+		dst.predicate = src.predicate;
+		dst.arg1 = src.arg1;
+		dst.arg2 = src.arg2;
+	}
 };
 
 inline bool operator == (const relation& first, const relation& second) {

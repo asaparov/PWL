@@ -69,7 +69,7 @@ struct nd_step
 		step.free();
 	}
 
-	inline void get_subproofs(nd_step<Formula, Canonical>**& subproofs, unsigned int& length) {
+	inline void get_subproofs(const nd_step<Formula, Canonical>* const*& subproofs, unsigned int& length) const {
 		switch (type) {
 		case nd_step_type::AXIOM:
 		case nd_step_type::PARAMETER:
@@ -103,6 +103,7 @@ struct nd_step
 			subproofs = operands;
 			length = ND_OPERAND_COUNT;
 			return;
+		case nd_step_type::COUNT:
 		}
 		fprintf(stderr, "nd_step.get_subproofs ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
@@ -239,6 +240,7 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 			}
 		}
 		return 0;
+	case nd_step_type::COUNT:
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized nd_step_type.\n");
 	exit(EXIT_FAILURE);
@@ -247,6 +249,11 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 template<typename Formula, bool Canonical>
 inline bool operator < (const nd_step<Formula, Canonical>& first, const nd_step<Formula, Canonical>& second) {
 	return compare(first, second) < 0;
+}
+
+template<typename Formula, bool Canonical>
+inline bool operator > (const nd_step<Formula, Canonical>& first, const nd_step<Formula, Canonical>& second) {
+	return compare(first, second) > 0;
 }
 
 template<typename Formula>
@@ -1212,14 +1219,13 @@ bool canonicalize(const nd_step<Formula, Canonical>& proof,
 	return true;
 }
 
-template<typename Formula,
-	bool Canonical, typename AxiomPrior,
+template<typename Formula, bool Canonical,
 	typename ConjunctionIntroductions,
 	typename UniversalIntroductions,
 	typename UniversalEliminations,
 	typename... ProofMap>
 double log_probability(
-		const nd_step<Formula, Canonical>* proof,
+		const nd_step<Formula, Canonical>* const* proof,
 		unsigned int step_index,
 		unsigned int& formula_counter,
 		array<unsigned int>& available_parameters,
@@ -1232,7 +1238,7 @@ double log_probability(
 	typedef typename Formula::TermType TermType;
 
 	const nd_step<Formula, Canonical>& current_step = *proof[step_index];
-	double value; unsigned int index; Formula* operand;
+	unsigned int index; const nd_step<Formula, Canonical>* operand;
 	switch (current_step.type) {
 	case nd_step_type::PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
@@ -1250,12 +1256,14 @@ double log_probability(
 		if (!axioms.add_unsorted(current_step.formula)) exit(EXIT_FAILURE);
 		return 0.0;
 	case nd_step_type::CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
 		/* TODO: implement this */
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n");
 		exit(EXIT_FAILURE);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
 		if (!conjunction_introductions.add(make_pair(
-				make_array_view(current_step.operand_array.operands, current_step.operand_array.length), make_array_view(proof, step_index))))
+				make_array_view(current_step.operand_array.data, current_step.operand_array.length), make_array_view(proof, step_index))))
 			exit(EXIT_FAILURE);
 		return -LOG_ND_RULE_COUNT;
 	case nd_step_type::IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
@@ -1300,6 +1308,7 @@ double log_probability(
 		/* TODO: we need to compute the prior on the parameter (it can be a term or a list of term indices) */
 		formula_counter++;
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+	case nd_step_type::COUNT:
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized nd_step_type.\n");
 	exit(EXIT_FAILURE);
