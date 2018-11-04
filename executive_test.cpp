@@ -11,11 +11,11 @@ struct default_array {
 		return a.add(item);
 	}
 
-	inline auto begin() -> decltype(a.begin()) {
+	inline auto begin() const -> decltype(a.begin()) {
 		return a.begin();
 	}
 
-	inline auto end() -> decltype(a.end()) {
+	inline auto end() const -> decltype(a.end()) {
 		return a.end();
 	}
 };
@@ -26,9 +26,60 @@ inline unsigned int size(const default_array<T>& array) {
 }
 
 template<typename T>
+struct default_array_multiset {
+	array_multiset<T> a;
+
+	default_array_multiset() : a(16) { }
+
+	inline bool add(const T& item) {
+		return a.add(item);
+	}
+};
+
+template<typename T>
+inline unsigned int size(const default_array_multiset<T>& multiset) {
+	return multiset.a.counts.size;
+}
+
+template<typename T>
+inline const T& get_key(const default_array_multiset<T>& multiset, unsigned int i) {
+	return multiset.a.counts.keys[i];
+}
+
+template<typename T>
+inline unsigned int get_value(const default_array_multiset<T>& multiset, unsigned int i) {
+	return multiset.a.counts.values[i];
+}
+
+template<typename T>
+unsigned int sum(const default_array_multiset<T>& multiset) {
+	return multiset.a.sum;
+}
+
+template<typename T>
+inline unsigned int size(const array_multiset<T>& multiset) {
+	return multiset.counts.size;
+}
+
+template<typename T>
+inline const T& get_key(const array_multiset<T>& multiset, unsigned int i) {
+	return multiset.counts.keys[i];
+}
+
+template<typename T>
+inline unsigned int get_value(const array_multiset<T>& multiset, unsigned int i) {
+	return multiset.counts.values[i];
+}
+
+template<typename T>
+unsigned int sum(const array_multiset<T>& multiset) {
+	return multiset.sum;
+}
+
+template<typename T>
 struct chinese_restaurant_process
 {
-	typedef default_array<T> ObservationCollection;
+	typedef default_array_multiset<T> ObservationCollection;
 
 	double alpha, log_alpha;
 	hash_multiset<T> tables;
@@ -134,44 +185,45 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-template<typename T, template<typename> class Collection>
+template<template<typename> class MultisetType,
+	template<typename> class Collection, typename T>
 double log_probability_ratio(
-		const array_multiset<T>& old_observations,
-		const array_multiset<T>& new_observations,
+		const MultisetType<T>& old_observations,
+		const MultisetType<T>& new_observations,
 		const chinese_restaurant_process<T>& prior,
 		Collection<T>& old_clusters, Collection<T>& new_clusters)
 {
 	unsigned int i = 0, j = 0; double value = 0.0;
-	while (i < old_observations.counts.size && j < new_observations.counts.size)
+	while (i < size(old_observations) && j < size(new_observations))
 	{
-		if (old_observations.counts.keys[i] == new_observations.counts.keys[j]) {
-			unsigned int count = prior.tables.counts.get(old_observations.counts.keys[i]);
-			int diff = (int) new_observations.counts.values[j] - (int) old_observations.counts.values[i];
+		if (get_key(old_observations, i) == get_key(new_observations, j)) {
+			unsigned int count = prior.tables.counts.get(get_key(old_observations, i));
+			int diff = (int) get_value(new_observations, j) - (int) get_value(old_observations, i);
 			value += lgamma(count + diff) - lgamma(count);
 			i++; j++;
-		} else if (old_observations.counts.keys[i] < new_observations.counts.keys[j]) {
+		} else if (get_key(old_observations, i) < get_key(new_observations, j)) {
 			value += log_probability_ratio_old_cluster(
-					old_observations.counts.keys[i], old_observations.counts.values[i], prior, old_clusters);
+					get_key(old_observations, i), get_value(old_observations, i), prior, old_clusters);
 			i++;
 		} else {
 			value += log_probability_ratio_new_cluster(
-					new_observations.counts.keys[j], new_observations.counts.values[j], prior, new_clusters);
+					get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters);
 			j++;
 		}
 	}
 
-	while (i < old_observations.counts.size) {
+	while (i < size(old_observations)) {
 		value += log_probability_ratio_old_cluster(
-				old_observations.counts.keys[i], old_observations.counts.values[i], prior, old_clusters);
+				get_key(old_observations, i), get_value(old_observations, i), prior, old_clusters);
 		i++;
-	} while (j < new_observations.counts.size) {
+	} while (j < size(new_observations)) {
 		value += log_probability_ratio_new_cluster(
-				new_observations.counts.keys[j], new_observations.counts.values[j], prior, new_clusters);
+				get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters);
 		j++;
 	}
 
 	return value + lgamma(prior.alpha + prior.tables.sum)
-		 - lgamma(prior.alpha + prior.tables.sum - old_observations.sum + new_observations.sum);
+		 - lgamma(prior.alpha + prior.tables.sum - sum(old_observations) + sum(new_observations));
 }
 
 template<typename T>
@@ -179,85 +231,14 @@ struct dummy_collection {
 	constexpr bool add(const T& i) { return true; }
 };
 
-template<typename T, template<typename> class Collection>
+template<template<typename> class MultisetType, typename T>
 inline double log_probability_ratio(
-		const array_multiset<T>& old_observations,
-		const array_multiset<T>& new_observations,
+		const MultisetType<T>& old_observations,
+		const MultisetType<T>& new_observations,
 		const chinese_restaurant_process<T>& prior)
 {
 	dummy_collection<T> old_clusters, new_clusters;
 	return log_probability_ratio(old_observations, new_observations, prior, old_clusters, new_clusters);
-}
-
-template<typename T, template<typename> class Collection>
-inline double log_probability_ratio_old_cluster(
-		const T& observation, unsigned int frequency,
-		const chinese_restaurant_process<T>& prior,
-		Collection<T>& old_clusters)
-{
-	unsigned int count = prior.tables.counts.get(observation);
-	double value = lgamma(count - frequency) - lgamma(count);
-	if (count == frequency) {
-		value -= prior.log_alpha;
-		old_clusters.add(observation);
-	}
-	return value;
-}
-
-template<typename T, template<typename> class Collection>
-inline double log_probability_ratio_new_cluster(
-		const T& observation, unsigned int frequency,
-		const chinese_restaurant_process<T>& prior,
-		Collection<T>& new_clusters)
-{
-	bool contains;
-	unsigned int count = prior.tables.counts.get(observation, contains);
-	if (contains) {
-		return lgamma(count + frequency) - lgamma(count);
-	} else {
-		new_clusters.add(observation);
-		return prior.log_alpha + lgamma(frequency);
-	}
-}
-
-template<typename T, template<typename> class Collection>
-double log_probability_ratio(
-		const array_multiset<T>& old_observations,
-		const array_multiset<T>& new_observations,
-		const chinese_restaurant_process<T>& prior,
-		Collection<T>& old_clusters, Collection<T>& new_clusters)
-{
-	unsigned int i = 0, j = 0; double value = 0.0;
-	while (i < old_observations.counts.size && j < new_observations.counts.size)
-	{
-		if (old_observations.counts.keys[i] == new_observations.counts.keys[j]) {
-			unsigned int count = prior.tables.counts.get(old_observations.counts.keys[i]);
-			int diff = (int) new_observations.counts.values[j] - (int) old_observations.counts.values[i];
-			value += lgamma(count + diff) - lgamma(count);
-			i++; j++;
-		} else if (old_observations.counts.keys[i] < new_observations.counts.keys[j]) {
-			value += log_probability_ratio_old_cluster(
-					old_observations.counts.keys[i], old_observations.counts.values[i], prior, old_clusters);
-			i++;
-		} else {
-			value += log_probability_ratio_new_cluster(
-					new_observations.counts.keys[j], new_observations.counts.values[j], prior, new_clusters);
-			j++;
-		}
-	}
-
-	while (i < old_observations.counts.size) {
-		value += log_probability_ratio_old_cluster(
-				old_observations.counts.keys[i], old_observations.counts.values[i], prior, old_clusters);
-		i++;
-	} while (j < new_observations.counts.size) {
-		value += log_probability_ratio_new_cluster(
-				new_observations.counts.keys[j], new_observations.counts.values[j], prior, new_clusters);
-		j++;
-	}
-
-	return value + lgamma(prior.alpha + prior.tables.sum)
-		 - lgamma(prior.alpha + prior.tables.sum - old_observations.sum + new_observations.sum);
 }
 
 template<typename BaseDistribution>
@@ -292,9 +273,7 @@ inline dirichlet_process<BaseDistribution> make_dirichlet_process(
 	return dirichlet_process<BaseDistribution>(alpha, base_distribution);
 }
 
-template<typename BaseDistribution, typename T,
-		typename BaseDistributionOldParameter,
-		typename BaseDistributionNewParameter>
+template<typename BaseDistribution, typename T>
 double log_probability_ratio(
 		const array_multiset<T>& old_observations,
 		const array_multiset<T>& new_observations,
@@ -310,11 +289,9 @@ double log_probability_ratio(
 template<typename ConstantDistribution, typename PredicateDistribution>
 struct simple_constant_distribution
 {
-	typedef constant_array ObservationCollection;
-
 	struct constant_array {
-		array<unsigned int> constants;
-		array<unsigned int> predicates;
+		array_multiset<unsigned int> constants;
+		array_multiset<unsigned int> predicates;
 
 		constant_array() : constants(8), predicates(8) { }
 
@@ -326,6 +303,8 @@ struct simple_constant_distribution
 			return predicates.add(predicate);
 		}
 	};
+
+	typedef constant_array ObservationCollection;
 
 	ConstantDistribution constant_distribution;
 	PredicateDistribution predicate_distribution;
@@ -388,7 +367,7 @@ inline bool visit_constant(unsigned int constant, const constant_adder<ConstantD
 
 template<typename ConstantDistribution>
 inline bool visit_predicate(unsigned int predicate, const constant_adder<ConstantDistribution>& visitor) {
-	return visitor.constant_distribution.add_predicate(constant);
+	return visitor.constant_distribution.add_predicate(predicate);
 }
 
 template<typename ConstantDistribution> constexpr bool visit_variable(unsigned int variable, const constant_adder<ConstantDistribution>& visitor) { return true; }
@@ -396,8 +375,8 @@ template<typename ConstantDistribution> constexpr bool visit_parameter(unsigned 
 template<typename ConstantDistribution> constexpr bool visit_true(const fol_formula& formula, const constant_adder<ConstantDistribution>& visitor) { return true; }
 template<typename ConstantDistribution> constexpr bool visit_false(const fol_formula& formula, const constant_adder<ConstantDistribution>& visitor) { return true; }
 
-template<fol_formula_type Operator>
-constexpr bool visit_operator(const fol_formula& formula, const parameter_collector& visitor) { return true; }
+template<fol_formula_type Operator, typename ConstantDistribution>
+constexpr bool visit_operator(const fol_formula& formula, const constant_adder<ConstantDistribution>& visitor) { return true; }
 
 template<typename ConstantDistribution>
 struct constant_remover {
@@ -412,7 +391,7 @@ inline bool visit_constant(unsigned int constant, const constant_remover<Constan
 
 template<typename ConstantDistribution>
 inline bool visit_predicate(unsigned int predicate, const constant_remover<ConstantDistribution>& visitor) {
-	visitor.constant_distribution.remove_predicate(constant);
+	visitor.constant_distribution.remove_predicate(predicate);
 	return true;
 }
 
@@ -421,8 +400,8 @@ template<typename ConstantDistribution> constexpr bool visit_parameter(unsigned 
 template<typename ConstantDistribution> constexpr bool visit_true(const fol_formula& formula, const constant_remover<ConstantDistribution>& visitor) { return true; }
 template<typename ConstantDistribution> constexpr bool visit_false(const fol_formula& formula, const constant_remover<ConstantDistribution>& visitor) { return true; }
 
-template<fol_formula_type Operator>
-constexpr bool visit_operator(const fol_formula& formula, const parameter_collector& visitor) { return true; }
+template<fol_formula_type Operator, typename ConstantDistribution>
+constexpr bool visit_operator(const fol_formula& formula, const constant_remover<ConstantDistribution>& visitor) { return true; }
 
 template<typename ConstantDistribution>
 struct simple_fol_formula_distribution
@@ -539,7 +518,6 @@ double log_probability_helper(const fol_formula* formula,
 	double value;
 	const fol_formula* antecedent;
 	const fol_formula* consequent;
-	const fol_formula* operand;
 	switch (formula->type)
 	{
 	case fol_formula_type::ATOM:
@@ -585,7 +563,7 @@ template<typename ConstantDistribution,
 	template<typename> class ObservationCollection,
 	template<typename> class Collection>
 double log_probability_ratio(
-		const Collection<fol_formula*>& observations,
+		const ObservationCollection<fol_formula*>& observations,
 		const simple_fol_formula_distribution<ConstantDistribution>& prior,
 		const Collection<fol_formula*>& old_clusters,
 		const Collection<fol_formula*>& new_clusters)
@@ -624,7 +602,7 @@ double log_probability(
 {
 	log_cache<double>::instance().ensure_size(size(observation.value));
 	return -log_cache<double>::instance().get(size(observation.value)) * size(observation.key)
-		 + size(observation) * prior.log_continue_probability + prior.log_stop_probability;
+		 + size(observation.key) * prior.log_continue_probability + prior.log_stop_probability;
 }
 
 template<template<typename> class ObservationCollection,
@@ -639,6 +617,16 @@ double log_probability(
 	return value;
 }
 
+template<template<typename> class ObservationCollection,
+	template<typename> class Collection, typename T>
+inline double log_probability_ratio(
+		const ObservationCollection<pair<Collection<const T>, Collection<const T>>>& old_observations,
+		const ObservationCollection<pair<Collection<const T>, Collection<const T>>>& new_observations,
+		const uniform_subset_distribution<T>& prior)
+{
+	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
+}
+
 template<typename T>
 struct uniform_distribution {
 	typedef default_array<pair<T, array<T>>> ObservationCollection;
@@ -647,7 +635,7 @@ struct uniform_distribution {
 template<template<typename> class Collection, typename T>
 double log_probability(
 		const pair<T, Collection<T>>& observation,
-		const uniform_subset_distribution<T>& prior)
+		const uniform_distribution<T>& prior)
 {
 	log_cache<double>::instance().ensure_size(size(observation.value));
 	return -log_cache<double>::instance().get(size(observation.value));
@@ -657,12 +645,22 @@ template<template<typename> class ObservationCollection,
 	template<typename> class Collection, typename T>
 double log_probability(
 		const ObservationCollection<pair<T, Collection<T>>>& observations,
-		const uniform_subset_distribution<T>& prior)
+		const uniform_distribution<T>& prior)
 {
 	double value = 0.0;
 	for (const pair<T, Collection<T>>& observation : observations)
 		value += log_probability(observation, prior);
 	return value;
+}
+
+template<template<typename> class ObservationCollection,
+	template<typename> class Collection, typename T>
+inline double log_probability_ratio(
+		const ObservationCollection<pair<T, Collection<T>>>& old_observations,
+		const ObservationCollection<pair<T, Collection<T>>>& new_observations,
+		const uniform_distribution<T>& prior)
+{
+	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
 }
 
 const string* get_name(const hash_map<string, unsigned int>& names, unsigned int id)
@@ -725,7 +723,7 @@ int main(int argc, const char** argv)
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
 	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.5, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0, theory_element_prior);
-	auto conjunction_prior = uniform_subset_distribution<nd_step<fol_formula, true>*>(0.5);
+	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula, true>*>(0.5);
 	auto universal_introduction_prior = uniform_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
 	auto proof_prior = make_canonicalized_proof_prior(0.1, axiom_prior,

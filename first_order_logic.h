@@ -47,6 +47,31 @@ struct fol_term {
 		return true;
 	}
 
+	static inline void move(const fol_term& src, fol_term& dst) {
+		dst = src;
+	}
+
+	static inline void swap(fol_term& first, fol_term& second) {
+		fol_term temp = first;
+		first = second;
+		second = temp;
+	}
+
+	static inline unsigned int hash(const fol_term& key) {
+		switch (key.type) {
+		case fol_term_type::VARIABLE:
+			return 0 + 3 * default_hash(key.variable);
+		case fol_term_type::CONSTANT:
+			return 1 + 3 * default_hash(key.constant);
+		case fol_term_type::PARAMETER:
+			return 2 + 3 * default_hash(key.parameter);
+		case fol_term_type::NONE:
+			break;
+		}
+		fprintf(stderr, "fol_term.hash ERROR: Unrecognized fol_term_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	static inline void free(fol_term& term) { }
 };
 
@@ -70,6 +95,23 @@ inline bool operator == (const fol_term& first, const fol_term& second) {
 
 inline bool operator != (const fol_term& first, const fol_term& second) {
 	return !(first == second);
+}
+
+inline bool operator < (const fol_term& first, const fol_term& second) {
+	if (first.type < second.type) return true;
+	else if (first.type > second.type) return false;
+	switch (first.type) {
+	case fol_term_type::VARIABLE:
+		return first.variable < second.variable;
+	case fol_term_type::CONSTANT:
+		return first.constant < second.constant;
+	case fol_term_type::PARAMETER:
+		return first.parameter < second.parameter;
+	case fol_term_type::NONE:
+		return false;
+	}
+	fprintf(stderr, "operator < ERROR: Unrecognized fol_term_type.\n");
+	exit(EXIT_FAILURE);
 }
 
 template<typename Stream>
@@ -827,7 +869,7 @@ inline bool apply(const fol_term& src, fol_term& dst, const term_substituter<Var
 }
 
 template<int VariableShift = 0>
-inline fol_formula* substitute(const fol_formula& src,
+inline fol_formula* substitute(fol_formula& src,
 		const fol_term& src_term, const fol_term& dst_term)
 {
 	const term_substituter<VariableShift> substituter = {src_term, dst_term};

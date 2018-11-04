@@ -42,7 +42,7 @@ bool propose_transformation(
 
 		if (T.observations.contains(step)) {
 			/* `step` is an observed logical form in the theory `T` */
-			if (!proposed_proofs.transformed_proofs.check_size())
+			if (!proposed_proofs.transformed_proofs.ensure_capacity(proposed_proofs.transformed_proofs.size + 1))
 				return false;
 
 			unsigned int index = proposed_proofs.transformed_proofs.index_of(step);
@@ -64,6 +64,7 @@ bool propose_transformation(
 			stack[stack.length++] = child;
 		}
 	}
+	return true;
 }
 
 template<bool FirstSample, typename Formula>
@@ -85,27 +86,30 @@ bool select_axiom(
 			|A_1 intersect B| > |A_2 intersect B|), then `A_1` is closer than
 			`A_2`. */
 	unsigned int selected_index = sample_uniform(axiom_indices.length);
-	switch (axiom_indices[selected_index].key) {
-	case 0:
+	if (axiom_indices[selected_index].key == 0) {
 		type_value = c.types.keys[axiom_indices[selected_index].value];
 		if (!selected_types.add(type_value)) return false;
-		if (FirstSample) intersection.append(T.types.get(type_value).key);
-		else set_intersect(intersection, T.types.get(type_value).key);
-	case 1:
+		const array<unsigned int>& ids = T.types.get(type_value).key;
+		if (FirstSample) intersection.append(ids.data, ids.length);
+		else set_intersect(intersection, ids);
+	} else if (axiom_indices[selected_index].key == 1) {
 		type_value = c.negated_types.keys[axiom_indices[selected_index].value];
 		if (!selected_negated_types.add(type_value)) return false;
-		if (FirstSample) intersection.append(T.types.get(type_value).value);
-		else set_intersect(intersection, T.types.get(type_value).value);
-	case 2:
+		const array<unsigned int>& ids = T.types.get(type_value).value;
+		if (FirstSample) intersection.append(ids.data, ids.length);
+		else set_intersect(intersection, ids);
+	} else if (axiom_indices[selected_index].key == 2) {
 		relation_value = c.relations.keys[axiom_indices[selected_index].value];
 		if (!selected_relations.add(relation_value)) return false;
-		if (FirstSample) intersection.append(T.relations.get(relation_value).key);
-		else set_intersect(intersection, T.relations.get(relation_value).key);
-	case 3:
+		const array<unsigned int>& ids = T.relations.get(relation_value).key;
+		if (FirstSample) intersection.append(ids.data, ids.length);
+		else set_intersect(intersection, ids);
+	} else if (axiom_indices[selected_index].key == 3) {
 		relation_value = c.negated_relations.keys[axiom_indices[selected_index].value];
 		if (!selected_negated_relations.add(relation_value)) return false;
-		if (FirstSample) intersection.append(T.relations.get(relation_value).value);
-		else set_intersect(intersection, T.relations.get(relation_value).value);
+		const array<unsigned int>& ids = T.relations.get(relation_value).value;
+		if (FirstSample) intersection.append(ids.data, ids.length);
+		else set_intersect(intersection, ids);
 	}
 
 	axiom_indices.remove(selected_index);
@@ -142,17 +146,22 @@ struct atom {
 	unsigned int args[Arity];
 };
 
-template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, typename... Formulas>
-inline Formula* new_lifted_atom_helper(const atom<Negated, Arity> a, Formulas&&... args) {
-	if (Index == 0)
-		return Formula::new_atom(a.predicate, std::forward<Formulas>(args)...);
-	else return new_lifted_atom_helper<Formula, Index - 1>(a,
-			(a.args[Index - 1] == 0 ? Formula::new_variable(1) : Formula::new_constant(a.args[Index - 1])), std::forward<Formulas>(args)...);
+template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, typename... Terms,
+	typename std::enable_if<Index == Arity>::type* = nullptr>
+inline Formula* new_lifted_atom_helper(const atom<Negated, Arity> a, Terms&&... args) {
+	return Formula::new_atom(a.predicate, std::forward<Terms>(args)...);
+}
+
+template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, typename... Terms,
+	typename std::enable_if<Index < Arity>::type* = nullptr>
+inline Formula* new_lifted_atom_helper(const atom<Negated, Arity> a, Terms&&... args) {
+	return new_lifted_atom_helper<Formula, Index + 1>(a,
+			(a.args[Index] == 0 ? Formula::new_variable(1) : Formula::new_constant(a.args[Index])), std::forward<Terms>(args)...);
 }
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline Formula* new_lifted_atom(const atom<Negated, Arity> a) {
-	return new_lifted_atom_helper<Formula, Arity>(a);
+	return new_lifted_atom_helper<Formula, 0>(a);
 }
 
 template<bool Negated, typename Formula>
@@ -240,10 +249,10 @@ bool get_satisfying_concepts(
 	if (formula->type == FormulaType::ATOM) {
 		get_satisfying_concepts_helper<FirstSample, false>(T, formula, intersection);
 	} else if (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::ATOM) {
-		get_satisfying_concepts_helper<FirstSample, true>(T, formula->unary->operand, intersection);
+		get_satisfying_concepts_helper<FirstSample, true>(T, formula->unary.operand, intersection);
 	} else if (formula->type == FormulaType::AND) {
 		for (unsigned int i = 0; i < formula->array.length; i++) {
-			Formula* conjunct = formula->array.operand[i];
+			Formula* conjunct = formula->array.operands[i];
 			if ((i == 0 && !get_satisfying_concepts<FirstSample>(T, conjunct, intersection))
 			 || (i > 0 && !get_satisfying_concepts<false>(T, conjunct, intersection)))
 				return false;
@@ -297,14 +306,14 @@ bool is_subset(const Formula* first, const Formula* second)
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_intro_proposal {
 	nd_step<Formula, true>* new_universal_quantification;
-	hash_set<unsigned int>& old_grounded_axioms;
+	array<unsigned int>& old_grounded_axioms;
 	atom<Negated, Arity> consequent_atom;
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline universal_intro_proposal<Formula, Negated, Arity> make_universal_intro_proposal(
 		nd_step<Formula, true>* new_universal_quantification,
-		hash_set<unsigned int>& old_grounded_axioms,
+		array<unsigned int>& old_grounded_axioms,
 		atom<Negated, Arity> consequent_atom)
 {
 	return {new_universal_quantification, old_grounded_axioms, consequent_atom};
@@ -357,13 +366,13 @@ bool propose_universal_intro(
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(1, i));
 	} for (unsigned int i = 0; i < c.relations.size; i++) {
 		/* avoid selecting the consequent as a conjunct in the antecedent */
-		if (!Negated && Arity == 2 && c.relations.keys[i].type == a.predicate
+		if (!Negated && Arity == 2 && c.relations.keys[i].predicate == a.predicate
 		 && c.relations.keys[i].arg1 == a.args[0]
 		 && c.relations.keys[i].arg2 == a.args[1]) continue;
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(2, i));
 	} for (unsigned int i = 0; i < c.negated_relations.size; i++) {
 		/* avoid selecting the consequent as a conjunct in the antecedent */
-		if (Negated && Arity == 2 && c.negated_relations.keys[i].type == a.predicate
+		if (Negated && Arity == 2 && c.negated_relations.keys[i].predicate == a.predicate
 		 && c.negated_relations.keys[i].arg1 == a.args[0]
 		 && c.negated_relations.keys[i].arg2 == a.args[1]) continue;
 		axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(3, i));
@@ -583,7 +592,6 @@ inline bool make_grounded_conjunct(
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
 	typedef natural_deduction<Formula, true> ProofCalculus;
-	typedef typename ProofCalculus::Proof Proof;
 
 	if (new_axioms[i] != NULL) return true;
 
@@ -593,7 +601,7 @@ inline bool make_grounded_conjunct(
 	if (operand->type == FormulaType::ATOM) {
 		if (operand->atom.arg2.type == TermType::NONE) {
 			/* atom is unary */
-			Proof* proof = c.types.get(operand->atom.predicate, contains);
+			c.types.get(operand->atom.predicate, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
@@ -602,7 +610,7 @@ inline bool make_grounded_conjunct(
 			relation r = { operand->atom.predicate,
 					(operand->atom.arg1.type == TermType::VARIABLE ? 0 : operand->atom.arg1.constant),
 					(operand->atom.arg2.type == TermType::VARIABLE ? 0 : operand->atom.arg2.constant) };
-			Proof* proof = c.relations.get(r, contains);
+			c.relations.get(r, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
@@ -611,7 +619,7 @@ inline bool make_grounded_conjunct(
 		operand = operand->unary.operand;
 		if (operand->atom.arg2.type == TermType::NONE) {
 			/* atom is unary */
-			Proof* proof = c.negated_types.get(operand->atom.predicate, contains);
+			c.negated_types.get(operand->atom.predicate, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
@@ -620,7 +628,7 @@ inline bool make_grounded_conjunct(
 			relation r = { operand->atom.predicate,
 					(operand->atom.arg1.type == TermType::VARIABLE ? 0 : operand->atom.arg1.constant),
 					(operand->atom.arg2.type == TermType::VARIABLE ? 0 : operand->atom.arg2.constant) };
-			Proof* proof = c.negated_relations.get(r, contains);
+			c.negated_relations.get(r, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
@@ -775,7 +783,7 @@ bool propose_universal_elim(
 				{
 					bool fail = (new_step == NULL);
 					free_proofs(new_axioms, consequent_length);
-					free(new_axioms, consequent_length); return !fail;
+					free(new_axioms); return !fail;
 				}
 
 				/* propose `new_step` to substitute `grandchild` */
@@ -921,19 +929,19 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 
 	hash_map<Proof*, Proof*> transformations(32);
 	for (auto entry : proposed_proofs.transformed_proofs) {
-		if (!transformations.check_size(transformations.size + entry.value.map.size))
+		if (!transformations.check_size(transformations.table.size + entry.value.map.size))
 			return false;
 		for (auto transformation : entry.value.map)
 			transformations.put(transformation.key, transformation.value);
 	}
 
 	for (auto entry : transformations) {
-		if (!entry.value.children.ensure_capacity(entry.key.children.length))
+		if (!entry.value->children.ensure_capacity(entry.key->children.length))
 			return false;
 
 		/* change the operand of any child to the new proof step */
-		for (unsigned int i = entry.key.children.length; i > 0; i--) {
-			Proof* child = entry.key.children[i - 1];
+		for (unsigned int i = entry.key->children.length; i > 0; i--) {
+			Proof* child = entry.key->children[i - 1];
 
 			bool error = false;
 			switch (child->type) {
@@ -974,10 +982,12 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 					}
 				}
 				break;
+			case nd_step_type::AXIOM:
+			case nd_step_type::PARAMETER:
 			case nd_step_type::TERM_PARAMETER:
 			case nd_step_type::ARRAY_PARAMETER:
-			case nd_step_type::AXIOM:
 			case nd_step_type::FORMULA_PARAMETER:
+			case nd_step_type::COUNT:
 				error = true; break;
 			}
 			if (error) {
@@ -985,8 +995,8 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 				return false;
 			}
 
-			entry.value.children[entry.value.children.length++] = child;
-			entry.key.children.length--;
+			entry.value->children[entry.value->children.length++] = child;
+			entry.key->children.length--;
 		}
 	}
 	return true;
@@ -997,7 +1007,7 @@ inline void remove_ground_axiom(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 1> consequent_atom, unsigned int constant)
 {
-	T.remove_unary_axiom<Negated>(consequent_atom.predicate, constant);
+	T.template remove_unary_atom<Negated>(consequent_atom.predicate, constant);
 }
 
 template<bool Negated, typename Formula>
@@ -1008,7 +1018,7 @@ inline void remove_ground_axiom(
 	relation rel = { consequent_atom.predicate,
 			(consequent_atom.args[0] == 0 ? constant : consequent_atom.args[0]),
 			(consequent_atom.args[1] == 0 ? constant : consequent_atom.args[1]) };
-	T.remove_unary_axiom<Negated>(rel);
+	T.template remove_binary_atom<Negated>(rel);
 }
 
 template<typename Formula,
@@ -1022,7 +1032,7 @@ bool do_mh_universal_intro(
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
 	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs.transformed_proofs, proof_prior, T, proposal);
+			proposed_proofs.transformed_proofs, proof_prior);
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
@@ -1033,7 +1043,7 @@ bool do_mh_universal_intro(
 			remove_ground_axiom(T, proposal.consequent_atom, concept);
 		for (const auto& entry : proposed_proofs.transformed_proofs)
 			proof_prior.remove_axiom(entry.key->formula); /* remove the old axioms from the `proof_prior` */
-		if (!proof_prior.add_axiom(proposal.new_universal_quantification)) return false;
+		if (!proof_prior.add_axiom(proposal.new_universal_quantification->formula)) return false;
 	}
 	return true;
 }
@@ -1069,8 +1079,8 @@ bool do_mh_universal_elim(
 		double log_proposal_probability_ratio, ProofPrior& proof_prior)
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
-	log_proposal_probability_ratio += log_probability_ratio<Formula, true>(
-			proposed_proofs.transformed_proofs, proof_prior, T, proposal);
+	log_proposal_probability_ratio += log_probability_ratio(
+			proposed_proofs.transformed_proofs, proof_prior);
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */

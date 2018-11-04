@@ -23,6 +23,12 @@ struct relation {
 	unsigned int arg1; /* `0` here indicates the source vertex */
 	unsigned int arg2; /* `0` here indicates the source vertex */
 
+	relation() { }
+
+	relation(unsigned int predicate, unsigned int arg1, unsigned int arg2) :
+		predicate(predicate), arg1(arg1), arg2(arg2)
+	{ }
+
 	static inline bool is_empty(const relation& key) {
 		return key.predicate == 0;
 	}
@@ -59,6 +65,13 @@ struct concept
 	array_map<unsigned int, Proof*> negated_types;
 	array_map<relation, Proof*> relations;
 	array_map<relation, Proof*> negated_relations;
+
+	static inline void move(const concept<ProofCalculus>& src, concept<ProofCalculus>& dst) {
+		core::move(src.types, dst.types);
+		core::move(src.negated_types, dst.negated_types);
+		core::move(src.relations, dst.relations);
+		core::move(src.negated_relations, dst.negated_relations);
+	}
 
 	static inline void free(concept<ProofCalculus>& c) {
 		for (auto entry : c.types) {
@@ -324,7 +337,7 @@ struct theory
 #if !defined(NDEBUG)
 		if (!types.table.contains(predicate))
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `types` does not contain the key %u.\n", predicate);
-		if (!ground_concepts.contains(arg))
+		if (!ground_concepts.table.contains(arg))
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
 #endif
 
@@ -358,9 +371,9 @@ struct theory
 		 || !relations.table.contains({rel.predicate, 0, rel.arg2})
 		 || !relations.table.contains({rel.predicate, rel.arg1, 0}))
 			fprintf(stderr, "theory.add_binary_atom WARNING: `relations` does not contain the necessary relations.\n");
-		if (!ground_concepts.contains(rel.arg1))
+		if (!ground_concepts.table.contains(rel.arg1))
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
-		if (!ground_concepts.contains(rel.arg2))
+		if (!ground_concepts.table.contains(rel.arg2))
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
 #endif
 
@@ -411,7 +424,7 @@ struct theory
 		shift_left(arg2_instances.data + index, arg2_instances.length - index - 1);
 		arg2_instances.length--;
 
-		index = ground_arg1.index_of({rel.predicate, 0, rel.arg2});
+		index = ground_arg1.index_of(relation(rel.predicate, 0, rel.arg2));
 #if !defined(NDEBUG)
 		if (index == ground_arg1.size)
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
@@ -420,7 +433,7 @@ struct theory
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		ground_arg1.remove_at(index);
 
-		index = ground_arg2.index_of({rel.predicate, rel.arg1, 0});
+		index = ground_arg2.index_of(relation(rel.predicate, rel.arg1, 0));
 #if !defined(NDEBUG)
 		if (index == ground_arg2.size)
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg2` does not contain the requested predicate.\n");
@@ -432,7 +445,7 @@ struct theory
 
 		if (rel.arg1 == rel.arg2) {
 			/* in this case, `ground_arg1` and `ground_arg2` are the same */
-			index = ground_arg1.index_of({rel.predicate, 0, 0});
+			index = ground_arg1.index_of(relation(rel.predicate, 0, 0));
 #if !defined(NDEBUG)
 			if (index == ground_arg1.size)
 				fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
@@ -464,7 +477,7 @@ private:
 				{
 					if (left->atom.predicate == PREDICATE_UNKNOWN) {
 						/* this is a definition of a type */
-						Formula* right = canonicalized->quantifier.operand.binary.right;
+						Formula* right = canonicalized->quantifier.operand->binary.right;
 
 						/* check the right-hand side is a valid definition */
 						if (!valid_definition(right, variable)) {

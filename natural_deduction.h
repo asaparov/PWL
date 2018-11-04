@@ -69,6 +69,47 @@ struct nd_step
 		step.free();
 	}
 
+	inline void get_subproofs(nd_step<Formula, Canonical>* const*& subproofs, unsigned int& length) {
+		switch (type) {
+		case nd_step_type::AXIOM:
+		case nd_step_type::PARAMETER:
+		case nd_step_type::TERM_PARAMETER:
+		case nd_step_type::ARRAY_PARAMETER:
+		case nd_step_type::FORMULA_PARAMETER:
+			subproofs = NULL; length = 0;
+			return;
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
+			subproofs = operand_array.data;
+			length = operand_array.length;
+			return;
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
+			subproofs = operands;
+			length = ND_OPERAND_COUNT;
+			return;
+		case nd_step_type::COUNT:
+			break;
+		}
+		fprintf(stderr, "nd_step.get_subproofs ERROR: Unrecognized nd_step_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	inline void get_subproofs(const nd_step<Formula, Canonical>* const*& subproofs, unsigned int& length) const {
 		switch (type) {
 		case nd_step_type::AXIOM:
@@ -104,12 +145,14 @@ struct nd_step
 			length = ND_OPERAND_COUNT;
 			return;
 		case nd_step_type::COUNT:
+			break;
 		}
 		fprintf(stderr, "nd_step.get_subproofs ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	inline void remove_child(const nd_step<Formula, Canonical>* child) {
+	template<typename ProofStep>
+	inline void remove_child(const ProofStep& child) {
 		unsigned int index = children.index_of(child);
 #if !defined(NDEBUG)
 		if (index == children.length) {
@@ -170,6 +213,8 @@ private:
 					core::free(operands[i]);
 			}
 			return;
+		case nd_step_type::COUNT:
+			break;
 		}
 		fprintf(stderr, "nd_step.free ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
@@ -241,6 +286,7 @@ inline int_fast8_t compare(const nd_step<Formula, Canonical>& first, const nd_st
 		}
 		return 0;
 	case nd_step_type::COUNT:
+		break;
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized nd_step_type.\n");
 	exit(EXIT_FAILURE);
@@ -472,7 +518,7 @@ proof_state_assumptions<Formula> make_proof_state_assumptions(proof_state<Formul
 
 template<typename Formula, bool Canonical>
 struct proof_substitution {
-	array_map<const nd_step<Formula, Canonical>*, const nd_step<Formula, Canonical>*> map;
+	array_map<nd_step<Formula, Canonical>*, nd_step<Formula, Canonical>*> map;
 };
 
 template<typename Formula, bool Canonical>
@@ -481,16 +527,20 @@ inline bool init(proof_substitution<Formula, Canonical>& substitution) {
 }
 
 template<typename Formula, bool Canonical>
-inline const nd_step<Formula, Canonical>* map(const nd_step<Formula, Canonical>* step) {
+inline const nd_step<Formula, Canonical>* map(
+		const nd_step<Formula, Canonical>* const step)
+{
 	return step;
 }
 
-template<typename Formula, bool Canonical>
-inline const nd_step<Formula, Canonical>* map(const nd_step<Formula, Canonical>* step,
+template<typename Formula, bool Canonical, typename ProofStep>
+inline const nd_step<Formula, Canonical>* map(
+		const ProofStep& step,
 		const proof_substitution<Formula, Canonical>& substitution)
 {
 	bool contains;
-	const nd_step<Formula, Canonical>* new_step = substitution.map.get(step, contains);
+	auto value = substitution.map.get(step, contains);
+	const nd_step<Formula, Canonical>* new_step = value;
 	if (contains) return new_step;
 	else return step;
 }
@@ -906,9 +956,9 @@ struct natural_deduction
 		return new_parameterized_step<nd_step_type::AXIOM>(axiom);
 	}
 
-	template<typename... Args>
-	static inline Proof* new_conjunction_intro2(Args&&... args) { /* TODO: undo this name change */
-		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION>(std::forward<Args>(args)...);
+	template<typename... Proofs>
+	static inline Proof* new_conjunction_intro(Proof* proof, Proofs&&... other_proofs) {
+		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION>(proof, std::forward<Proofs>(other_proofs)...);
 	}
 
 	template<template<typename> class Array>
@@ -958,7 +1008,7 @@ struct natural_deduction
 	}
 
 	static inline Proof* new_implication_elim(Proof* implication, Proof* antecedent) {
-		return new_unary_step<nd_step_type::IMPLICATION_ELIMINATION>(implication, antecedent);
+		return new_binary_step<nd_step_type::IMPLICATION_ELIMINATION>(implication, antecedent);
 	}
 
 	static inline Proof* new_biconditional_intro(Proof* forward, Proof* backward) {
@@ -1105,7 +1155,7 @@ private:
 
 	template<unsigned int Index>
 	static inline bool new_array_step_helper(nd_step<Formula, Canonical>* step, Proof* arg) {
-		step.operand_array[Index] = arg;
+		step->operand_array[Index] = arg;
 		arg->reference_count++;
 		if (!arg->children.add(step)) {
 			free(*arg); return false;
@@ -1115,11 +1165,11 @@ private:
 
 	template<unsigned int Index, typename... Args>
 	static inline bool new_array_step_helper(nd_step<Formula, Canonical>* step, Proof* arg, Args&&... args) {
-		step.operand_array[Index] = arg;
+		step->operand_array[Index] = arg;
 		arg->reference_count++;
 		if (!arg->children.add(step)) {
 			free(*arg); return false;
-		} else if (!new_array_step<Index + 1>(step, std::forward<Args>(args)...)) {
+		} else if (!new_array_step_helper<Index + 1>(step, std::forward<Args>(args)...)) {
 			arg->remove_child(step);
 			free(*arg); return false;
 		}
@@ -1238,7 +1288,9 @@ double log_probability(
 	typedef typename Formula::TermType TermType;
 
 	const nd_step<Formula, Canonical>& current_step = *proof[step_index];
-	unsigned int index; const nd_step<Formula, Canonical>* operand;
+	unsigned int index;
+	const nd_step<Formula, Canonical>* operand;
+	const nd_step<fol_formula, true>* const* operands;
 	switch (current_step.type) {
 	case nd_step_type::PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
@@ -1262,8 +1314,9 @@ double log_probability(
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n");
 		exit(EXIT_FAILURE);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
+		operands = current_step.operand_array.data;
 		if (!conjunction_introductions.add(make_pair(
-				make_array_view(current_step.operand_array.data, current_step.operand_array.length), make_array_view(proof, step_index))))
+				make_array_view(operands, current_step.operand_array.length), make_array_view(proof, step_index))))
 			exit(EXIT_FAILURE);
 		return -LOG_ND_RULE_COUNT;
 	case nd_step_type::IMPLICATION_INTRODUCTION: /* TODO: is this correct? */
@@ -1309,6 +1362,7 @@ double log_probability(
 		formula_counter++;
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
 	case nd_step_type::COUNT:
+		break;
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized nd_step_type.\n");
 	exit(EXIT_FAILURE);
@@ -1350,12 +1404,12 @@ struct canonicalized_proof_prior
 	{ }
 
 	template<typename Formula>
-	inline bool add_axiom(const Formula* axiom) {
+	inline bool add_axiom(Formula* axiom) {
 		return axiom_prior.add(axiom);
 	}
 
 	template<typename Formula>
-	inline void remove_axiom(const Formula* axiom) {
+	inline void remove_axiom(Formula* axiom) {
 		axiom_prior.remove(axiom);
 	}
 };
@@ -1376,42 +1430,35 @@ make_canonicalized_proof_prior(
 			stop_probability, axiom_prior, conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
 }
 
-template<typename Formula,
-	bool Canonical, typename AxiomPrior,
-	typename ConjunctionIntroductionPrior,
-	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior,
+template<typename Formula, bool Canonical,
+	typename ConjunctionIntroductions,
+	typename UniversalIntroductions,
+	typename UniversalEliminations,
 	typename... ProofMap>
 inline double log_probability_helper(
 		const nd_step<Formula, Canonical>& proof,
 		array_multiset<Formula*>& axioms,
-		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
+		ConjunctionIntroductions& conjunction_introductions,
+		UniversalIntroductions& universal_introductions,
+		UniversalEliminations& universal_eliminations,
+		double log_continue_probability, double log_stop_probability,
 		ProofMap&&... proof_map)
 {
-	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
-	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
-	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
-
 	array<const nd_step<Formula, Canonical>*> canonical_order(64);
 	if (!canonicalize(proof, canonical_order, std::forward<ProofMap>(proof_map)...)) {
 		fprintf(stderr, "log_probability ERROR: Unable to canonicalize proof.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	double value = (canonical_order.length - 1) * prior.log_continue_probability + prior.log_stop_probability;
+	double value = (canonical_order.length - 1) * log_continue_probability + log_stop_probability;
 	unsigned int formula_counter = 0;
 	array<unsigned int> available_parameters(16);
 	log_cache<double>::instance().ensure_size(canonical_order.length);
-	ConjunctionIntroductions conjunction_introductions;
-	UniversalIntroductions universal_introductions;
-	UniversalEliminations universal_eliminations;
 	for (unsigned int i = 0; i < canonical_order.length; i++)
 		value += log_probability(canonical_order.data, i, formula_counter,
 				available_parameters, axioms, conjunction_introductions, universal_introductions,
 				universal_eliminations, std::forward<ProofMap>(proof_map)...);
-	return value + log_probability(conjunction_introductions, prior.conjunction_introduction_prior)
-			+ log_probability(universal_introductions, prior.universal_introduction_prior)
-			+ log_probability(universal_eliminations, prior.universal_elimination_prior);
+	return value;
 }
 
 template<typename Formula,
@@ -1425,10 +1472,21 @@ double log_probability(
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
 		ProofMap&&... proof_map)
 {
+	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
+	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
+	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
+
 	array_multiset<Formula*> axioms(16);
+	ConjunctionIntroductions conjunction_introductions;
+	UniversalIntroductions universal_introductions;
+	UniversalEliminations universal_eliminations;
 	double value = log_probability_helper(
-			proof, axioms, prior, std::forward<ProofMap>(proof_map)...);
-	return value + log_probability(axioms, prior.axiom_prior);
+			proof, axioms, conjunction_introductions, universal_introductions, universal_eliminations,
+			prior.log_continue_probability, prior.log_stop_probability, std::forward<ProofMap>(proof_map)...);
+	return value + log_probability(axioms, prior.axiom_prior)
+		 + log_probability(conjunction_introductions, prior.conjunction_introduction_prior)
+		 + log_probability(universal_introductions, prior.universal_introduction_prior)
+		 + log_probability(universal_eliminations, prior.universal_elimination_prior);
 }
 
 template<typename Formula,
@@ -1438,15 +1496,28 @@ template<typename Formula,
 	typename UniversalEliminationPrior,
 	typename... AxiomPriorParameters>
 double log_probability_ratio(
-		const array_map<nd_step<Formula, true>*, proof_substitution<Formula, true>>& proofs,
+		const array_map<nd_step<Formula, Canonical>*, proof_substitution<Formula, Canonical>>& proofs,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
 		AxiomPriorParameters&&... axiom_prior_parameters)
 {
+	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
+	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
+	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
+
 	double value = 0.0;
 	array_multiset<Formula*> old_axioms(16), new_axioms(16);
 	for (const auto& entry : proofs) {
-		value -= log_probability_helper(*entry.key, old_axioms, prior);
-		value += log_probability_helper(*entry.key, new_axioms, prior, entry.value);
+		ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
+		UniversalIntroductions old_universal_introductions, new_universal_introductions;
+		UniversalEliminations old_universal_eliminations, new_universal_eliminations;
+		value -= log_probability_helper(*entry.key, old_axioms, old_conjunction_introductions,
+				old_universal_introductions, old_universal_eliminations, prior.log_continue_probability, prior.log_stop_probability);
+		value += log_probability_helper(*entry.key, new_axioms, new_conjunction_introductions,
+				new_universal_introductions, new_universal_eliminations, prior.log_continue_probability, prior.log_stop_probability, entry.value);
+
+		value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
+		value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
+		value += log_probability_ratio(old_universal_eliminations, new_universal_eliminations, prior.universal_elimination_prior);
 	}
 
 	sort(old_axioms.counts.keys, old_axioms.counts.values, old_axioms.counts.size);
