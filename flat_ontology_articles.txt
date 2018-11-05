@@ -1,0 +1,5 @@
+cat: A cat:cat is a carnivorous animal. {![x]:(cat(x) => (is_carnivorous(x) & animal(x)))}
+mammal: A mammal:mammal is a vertebrate animal. {![x]:(mammal(x) => (vertebrate(x) & animal(x)))}
+Bob: Bob:bob is a cat:cat. {cat(bob)} Bob:bob is a mammal:mammal. {mammal(bob)}
+Kate: Kate:kate is a cat:cat. {cat(kate)} Kate:kate is a mammal:mammal. {mammal(kate)}
+Sam: Sam:sam is a cat:cat. {cat(sam)} Sam:sam is a mammal:mammal. {mammal(sam)}

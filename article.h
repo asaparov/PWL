@@ -10,7 +10,23 @@ using namespace core;
 
 struct token {
 	unsigned int id;
+
+	static inline void move(const token& src, token& dst) {
+		dst.id = src.id;
+	}
+
+	static inline unsigned int hash(const token& key) {
+		return default_hash(key.id);
+	}
+
+	static inline bool is_empty(const token& key) {
+		return key.id == 0;
+	}
 };
+
+inline bool operator == (const token& first, const token& second) {
+	return first.id == second.id;
+}
 
 inline bool operator != (const token& first, const token& second) {
 	return first.id != second.id;
@@ -88,12 +104,8 @@ struct in_memory_article_store {
 			free(entry.value);
 	}
 
-	const article& get(unsigned int article_id) const {
-#if !defined(NDEBUG)
-		if (!articles.table.contains(article_id))
-			fprintf(stderr, "in_memory_article_store.get WARNING: No such article with corresponding key.\n");
-#endif
-		return articles.get(article_id);
+	const article& get(unsigned int article_id, bool& contains) const {
+		return articles.get(article_id, contains);
 	}
 };
 

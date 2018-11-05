@@ -34,6 +34,10 @@ struct fol_term {
 		unsigned int parameter;
 	};
 
+	static constexpr fol_term none() {
+		return {fol_term_type::NONE, {0}};
+	}
+
 	static inline bool is_empty(const fol_term& key) {
 		return key.type == fol_term_type::NONE;
 	}
@@ -74,8 +78,6 @@ struct fol_term {
 
 	static inline void free(fol_term& term) { }
 };
-
-fol_term EMPTY_FOL_TERM = {fol_term_type::NONE, {0}};
 
 inline bool operator == (const fol_term& first, const fol_term& second) {
 	if (first.type != second.type) return false;
@@ -911,7 +913,7 @@ inline fol_formula* substitute(
 		const fol_formula& src, const unsigned int* term_indices,
 		unsigned int term_index_count, const fol_term& dst_term)
 {
-	index_substituter<VariableShift> substituter = {EMPTY_FOL_TERM, dst_term, term_indices, term_index_count, 0};
+	index_substituter<VariableShift> substituter = {fol_term::none(), dst_term, term_indices, term_index_count, 0};
 	fol_formula* formula = substitute(src, substituter);
 	if (formula != &src)
 		formula->reference_count++;
@@ -977,7 +979,7 @@ bool unifies_parameter(
 		const fol_formula& first, const fol_formula& second,
 		const fol_term& src_term, unsigned int& parameter)
 {
-	fol_term dst = EMPTY_FOL_TERM;
+	fol_term dst = fol_term::none();
 	if (!unify(first, second, src_term, dst) || dst.type != fol_term_type::PARAMETER)
 		return false;
 	parameter = dst.parameter;
@@ -1026,11 +1028,11 @@ fol_formula* fol_formula::new_atom(
 }
 
 inline fol_formula* fol_formula::new_atom(unsigned int predicate, fol_term arg1) {
-	return new_atom(predicate, arg1, EMPTY_FOL_TERM);
+	return new_atom(predicate, arg1, fol_term::none());
 }
 
 inline fol_formula* fol_formula::new_atom(unsigned int predicate) {
-	return new_atom(predicate, EMPTY_FOL_TERM, EMPTY_FOL_TERM);
+	return new_atom(predicate, fol_term::none(), fol_term::none());
 }
 
 inline fol_formula* fol_formula::new_true() {
@@ -1073,7 +1075,7 @@ inline fol_formula* new_fol_array(Args&&... args)
 }
 
 template<fol_formula_type Operator, template<typename> class Array>
-inline fol_formula* new_fol_array(Array<fol_formula*> operands)
+inline fol_formula* new_fol_array(Array<fol_formula*>& operands)
 {
 	fol_formula* formula;
 	if (!new_fol_formula(formula)) return NULL;

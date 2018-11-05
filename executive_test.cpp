@@ -91,13 +91,12 @@ struct chinese_restaurant_process
 	chinese_restaurant_process(const chinese_restaurant_process<T>& src) :
 		alpha(src.alpha), log_alpha(log(alpha)), tables(src.tables.counts.table.capacity)
 	{
-		if (!core::copy(src.tables, tables))
+		if (!tables.counts.put_all(src.tables.counts))
 			exit(EXIT_FAILURE);
+		tables.sum = src.tables.sum;
 	}
 
-	~chinese_restaurant_process() {
-		core::free(tables);
-	}
+	~chinese_restaurant_process() { }
 
 	inline bool add(const T& customer) {
 		return tables.add(customer);
@@ -160,6 +159,10 @@ inline double log_probability_ratio_old_cluster(
 		const chinese_restaurant_process<T>& prior,
 		Collection<T>& old_clusters)
 {
+#if !defined(NDEBUG)
+	if (!prior.tables.counts.table.contains(observation))
+		fprintf(stderr, "log_probability_ratio_old_cluster WARNING: This chinese_restaurant_process does not contain the given observation.\n");
+#endif
 	unsigned int count = prior.tables.counts.get(observation);
 	double value = lgamma(count - frequency) - lgamma(count);
 	if (count == frequency) {
@@ -672,7 +675,7 @@ const string* get_name(const hash_map<string, unsigned int>& names, unsigned int
 
 int main(int argc, const char** argv)
 {
-	FILE* in = fopen("simple_cat_articles.txt", "r");
+	FILE* in = fopen("flat_ontology_articles.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
 		return EXIT_FAILURE;
@@ -685,10 +688,14 @@ int main(int argc, const char** argv)
 	}
 	fclose(in);
 
+	hash_map<string, unsigned int> names(256);
+	if (!add_constants_to_string_map(names)) {
+		free_tokens(tokens); return EXIT_FAILURE;
+	}
+
 	unsigned int index = 0;
 	in_memory_article_store corpus;
 	fake_parser parser = fake_parser(PREDICATE_UNKNOWN);
-	hash_map<string, unsigned int> names(256);
 	while (index < tokens.length) {
 		unsigned int article_name = 0;
 		article& new_article = *((article*) alloca(sizeof(article)));
@@ -728,8 +735,16 @@ int main(int argc, const char** argv)
 	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
 	auto proof_prior = make_canonicalized_proof_prior(0.1, axiom_prior,
 			conjunction_prior, universal_introduction_prior, universal_elimination_prior);
-	read_article(names.get("bob"), corpus, parser, T, proof_prior);
+	const string** reverse_name_map = invert(names);
+	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
+	read_article(names.get("Bob"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Kate"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
 
+	for (unsigned int t = 0; t < 10000; t++)
+		do_mh_step(T, proof_prior);
+
+	free(reverse_name_map);
 	for (auto entry : names) free(entry.key);
 	return EXIT_SUCCESS;
 }

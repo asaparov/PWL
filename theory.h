@@ -91,6 +91,10 @@ struct concept
 			if (entry.value->reference_count == 0)
 				core::free(entry.value);
 		}
+		core::free(c.types);
+		core::free(c.negated_types);
+		core::free(c.relations);
+		core::free(c.negated_relations);
 	}
 };
 
@@ -153,7 +157,13 @@ struct theory
 	theory() : types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
 
 	~theory() {
-		for (Proof* proof : observations) {
+		for (auto entry : types) {
+			core::free(entry.value.key);
+			core::free(entry.value.value);
+		} for (auto entry : relations) {
+			core::free(entry.value.key);
+			core::free(entry.value.value);
+		} for (Proof* proof : observations) {
 			core::free(*proof);
 			if (proof->reference_count == 0)
 				core::free(proof);
@@ -170,21 +180,19 @@ struct theory
 		return universal_quantifications.length + ground_axiom_count;
 	}
 
-	bool add_formula(Formula* formula)
+	template<typename AxiomPrior>
+	bool add_formula(Formula* formula, unsigned int& new_constant, AxiomPrior& prior)
 	{
 		Formula* canonicalized = canonicalize(*formula);
 		if (canonicalized == NULL) return false;
 
-		Proof* new_proof = make_proof(canonicalized);
+		Proof* new_proof = make_proof(canonicalized, new_constant, prior);
+		core::free(*canonicalized);
+		if (canonicalized->reference_count == 0)
+			core::free(canonicalized);
 		if (new_proof == NULL) {
-			core::free(*canonicalized);
-			if (canonicalized->reference_count == 0)
-				core::free(canonicalized);
 			return false;
 		} else if (!observations.add(new_proof)) {
-			core::free(*canonicalized);
-			if (canonicalized->reference_count == 0)
-				core::free(canonicalized);
 			core::free(*new_proof);
 			if (new_proof->reference_count == 0)
 				core::free(new_proof);
@@ -193,20 +201,28 @@ struct theory
 		return true;
 	}
 
-	inline bool add_universal_quantification(Proof* axiom) {
-		if (!universal_quantifications.add(axiom)) return false;
+	template<typename AxiomPrior>
+	inline bool add_universal_quantification(Proof* axiom, AxiomPrior& prior) {
+		if (!universal_quantifications.add(axiom)) {
+			return false;
+		} if (!prior.add_axiom(axiom->formula)) {
+			universal_quantifications.length--;
+			return false;
+		}
 		axiom->reference_count++;
 		return true;
 	}
 
 	inline void remove_universal_quantification(unsigned int axiom_index) {
 		Proof* axiom = universal_quantifications[axiom_index];
+		prior.remove_axiom(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		universal_quantifications.remove(axiom_index);
 	}
 
-	template<bool Negated>
-	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom)
+	template<bool Negated, typename AxiomPrior>
+	inline bool add_unary_atom(unsigned int predicate,
+			unsigned int arg, Proof* axiom, AxiomPrior& prior)
 	{
 #if !defined(NDEBUG)
 		if (!ground_concepts.table.contains(arg))
@@ -230,6 +246,7 @@ struct theory
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.ensure_capacity(ground_types.size + 1)) return false;
 
+		if (!prior.add_axiom(axiom->formula)) return false;
 		add_sorted<false>(instances, arg);
 		ground_types.keys[ground_types.size] = predicate;
 		ground_types.values[ground_types.size++] = axiom;
@@ -238,8 +255,8 @@ struct theory
 		return true;
 	}
 
-	template<bool Negated>
-	inline bool add_binary_atom(relation rel, Proof* axiom)
+	template<bool Negated, typename AxiomPrior>
+	inline bool add_binary_atom(relation rel, Proof* axiom, AxiomPrior& prior)
 	{
 #if !defined(NDEBUG)
 		if (!ground_concepts.table.contains(rel.arg1))
@@ -294,20 +311,25 @@ struct theory
 		 || !ground_arg1.ensure_capacity(ground_arg1.size + 3)
 		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3)) return false;
 
+		if (!prior.add_axiom(axiom->formula)) return false;
+
 		if (rel.arg1 == rel.arg2) {
 			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
 			if (!contains) {
 				if (!array_init(both_arg_instance_pair.key, 8)) {
-					return false;
+					prior.remove_axiom(axiom->formula); return false;
 				} else if (!array_init(both_arg_instance_pair.value, 8)) {
-					core::free(both_arg_instance_pair.key); return false;
+					core::free(both_arg_instance_pair.key);
+					prior.remove_axiom(axiom->formula); return false;
 				}
 				relations.table.keys[bucket] = {rel.predicate, 0, 0};
 				relations.table.size++;
 			}
 
 			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
-			if (both_arg_instances.ensure_capacity(both_arg_instances.length + 1)) return false;
+			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1)) {
+				prior.remove_axiom(axiom->formula); return false;
+			}
 			both_arg_instances[both_arg_instances.length++] = rel.arg1;
 			insertion_sort(both_arg_instances);
 		}
@@ -458,13 +480,14 @@ struct theory
 	}
 
 private:
-	Proof* make_proof(Formula* canonicalized)
+	template<typename AxiomPrior>
+	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant, AxiomPrior& prior)
 	{
 		if (canonicalized->type == FormulaType::ATOM) {
-			return make_atom_proof<false>(canonicalized);
+			return make_atom_proof<false>(canonicalized, new_constant, prior);
 		} else if (canonicalized->type == FormulaType::NOT) {
 			if (canonicalized->unary.operand->type == FormulaType::ATOM) {
-				return make_atom_proof<true>(canonicalized);
+				return make_atom_proof<true>(canonicalized, new_constant, prior);
 			}
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			unsigned int variable = canonicalized->quantifier.variable;
@@ -486,13 +509,13 @@ private:
 						}
 
 						if (!ground_concepts.check_size()) return NULL;
-						unsigned int new_type = PREDICATE_COUNT + ground_concepts.table.size;
+						new_constant = PREDICATE_COUNT + ground_concepts.table.size;
 
 						bool contains; unsigned int bucket;
-						concept<ProofCalculus>& c = ground_concepts.get(new_type, contains, bucket);
+						concept<ProofCalculus>& c = ground_concepts.get(new_constant, contains, bucket);
 						if (!contains) {
 							if (!init(c)) return NULL;
-							ground_concepts.table.keys[bucket] = new_type;
+							ground_concepts.table.keys[bucket] = new_constant;
 							ground_concepts.table.size++;
 						}
 
@@ -500,14 +523,14 @@ private:
 						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 						if (new_axiom == NULL) return NULL;
 						new_axiom->reference_count++;
-						if (!universal_quantifications.add(new_axiom)) {
+						if (!add_universal_quantification(new_axiom, prior)) {
 							free(*new_axiom); free(new_axiom);
 							return NULL;
 						}
 						return new_axiom;
 
 						/*Formula* definition = Formula::new_for_all(variable, Formula::new_iff(
-								Formula::new_atom(new_type, Formula::new_variable(variable)), right));
+								Formula::new_atom(new_constant, Formula::new_variable(variable)), right));
 						if (definition == NULL) return NULL;
 						right->reference_count++;
 
@@ -527,7 +550,7 @@ private:
 						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 						if (new_axiom == NULL) return NULL;
 						new_axiom->reference_count++;
-						if (!universal_quantifications.add(new_axiom)) {
+						if (!add_universal_quantification(new_axiom, prior)) {
 							free(*new_axiom); free(new_axiom);
 							return NULL;
 						}
@@ -545,8 +568,8 @@ private:
 			}
 		} else if (canonicalized->type == FormulaType::AND) {
 			return ProofCalculus::new_conjunction_intro(
-					make_proof(canonicalized->binary.left),
-					make_proof(canonicalized->binary.right));
+					make_proof(canonicalized->binary.left, new_constant, prior),
+					make_proof(canonicalized->binary.right, new_constant, prior));
 		} else if (canonicalized->type == FormulaType::EXISTS) {
 			/* TODO: implement this */
 			fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
@@ -556,8 +579,8 @@ private:
 		return NULL;
 	}
 
-	template<bool Negated>
-	Proof* make_atom_proof(Formula* canonicalized)
+	template<bool Negated, typename AxiomPrior>
+	Proof* make_atom_proof(Formula* canonicalized, unsigned int& new_constant, AxiomPrior& prior)
 	{
 		bool contains; unsigned int bucket;
 		Formula* atom = (Negated ? canonicalized->unary.operand : canonicalized);
@@ -569,24 +592,24 @@ private:
 				if (atom->atom.arg1.constant == PREDICATE_UNKNOWN) {
 					/* this is a definition of an object */
 					if (!ground_concepts.check_size()) return NULL;
-					atom->atom.arg1.constant = PREDICATE_COUNT + ground_concepts.table.size;
+					new_constant = PREDICATE_COUNT + ground_concepts.table.size;
+					atom->atom.arg1.constant = new_constant;
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
 
-					concept<ProofCalculus>& c = ground_concepts.get(atom->atom.arg1.constant, contains, bucket);
+					concept<ProofCalculus>& c = ground_concepts.get(new_constant, contains, bucket);
 					if (!contains) {
 						if (!init(c)) {
 							free(*new_axiom); free(new_axiom);
 							return NULL;
 						}
-						ground_concepts.table.keys[bucket] = atom->atom.arg1.constant;
+						ground_concepts.table.keys[bucket] = new_constant;
 						ground_concepts.table.size++;
-					} if (!add_unary_atom<Negated>(atom->atom.predicate, atom->atom.arg1.constant, new_axiom)) {
+					} if (!add_unary_atom<Negated>(atom->atom.predicate, new_constant, new_axiom, prior)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
-					free(*new_axiom);
 					return new_axiom;
 				} else {
 					/* this is a formula of form `t(c)` */
@@ -598,7 +621,7 @@ private:
 						unsigned int i = 0;
 						if (consequent->type == FormulaType::AND) {
 							for (; i < consequent->array.length; i++) {
-								Term dst;
+								Term dst = Term::none();
 								if (unify(*consequent->array.operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
 									break;
 							}
@@ -632,7 +655,7 @@ private:
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!universal_quantifications.add(new_axiom)) {
+					if (!add_unary_atom<Negated>(atom->atom.predicate, atom->atom.arg1.constant, new_axiom, prior)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -660,7 +683,7 @@ private:
 					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
 						Proof* axiom = universal_quantifications[k];
 						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-						Term unifying_term;
+						Term unifying_term = Term::none();
 						unsigned int i = 0;
 						if (consequent->type == FormulaType::AND) {
 							for (; i < consequent->array.length; i++) {
@@ -697,7 +720,7 @@ private:
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!universal_quantifications.add(new_axiom)) {
+					if (!add_binary_atom<Negated>({atom->atom.predicate, atom->atom.arg1.constant, atom->atom.arg2.constant}, new_axiom, prior)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -723,8 +746,9 @@ private:
 				&& right->atom.arg1.variable == quantified_variable
 				&& right->atom.arg2.type == TermType::NONE;
 		} else if (right->type == FormulaType::AND) {
-			return valid_definition(right->binary.left, quantified_variable)
-				|| valid_definition(right->binary.right, quantified_variable);
+			for (unsigned int i = 0; i < right->array.length; i++)
+				if (valid_definition(right->array.operands[i], quantified_variable)) return true;
+			return false;
 		} else {
 			return false;
 		}
@@ -767,7 +791,10 @@ private:
 			for (unsigned int i = 0; i < constraint->array.length; i++) {
 				Formula* conjunct = constraint->array.operands[i];
 				if (!make_conjunct_proof<false>(conjunct, c, conjunct_proofs[i])) return false;
-				if (conjunct_proofs[i] == NULL) { proof = NULL; return true; }
+				if (conjunct_proofs[i] == NULL) {
+					proof = NULL; free(conjunct_proofs);
+					return true;
+				}
 			}
 			proof = ProofCalculus::new_conjunction_intro(make_array_view(conjunct_proofs, constraint->array.length));
 			free(conjunct_proofs);

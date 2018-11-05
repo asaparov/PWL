@@ -15,14 +15,15 @@ inline void free_logical_forms(fol_formula** logical_forms, unsigned int count)
 	}
 }
 
-template<typename ArticleSource,
-	typename Parser, typename ProofPrior>
+template<
+	typename ArticleSource, typename Parser,
+	typename ProofPrior, typename Printer>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const sentence& s,
 		theory<fol_formula, natural_deduction<fol_formula, true>>& T,
-		unsigned int article_name, ProofPrior& proof_prior)
+		unsigned int article_name, ProofPrior& proof_prior, Printer& printer)
 {
-	unsigned int parse_count;
+	unsigned int parse_count, new_constant;
 	fol_formula* logical_forms[2];
 	double log_probabilities[2];
 	while (true) {
@@ -35,7 +36,7 @@ bool read_sentence(
 			break;
 		} else if (parse_count > 0 && unrecognized.length == 1 && unrecognized[0].id == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			bool success = T.add_formula(logical_forms[0]) && parser.add_definition(s, logical_forms[0]);
+			bool success = T.add_formula(logical_forms[0], new_constant) && parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);
 			return success;
 		}
@@ -50,12 +51,11 @@ bool read_sentence(
 			}
 			next_article = unrecognized[1].id;
 		}
-		if (!read_article(unrecognized[0].id, articles, parser, T, proof_prior)) {
+		if (!read_article(next_article, articles, parser, T, proof_prior, printer)) {
 			free_logical_forms(logical_forms, parse_count);
 			return false;
 		}
 		free_logical_forms(logical_forms, parse_count);
-		continue;
 	}
 
 	if (parse_count == 0) {
@@ -68,7 +68,7 @@ bool read_sentence(
 	}
 
 	/* add the most probable logical form to the theory */
-	if (!T.add_formula(logical_forms[0])) {
+	if (!T.add_formula(logical_forms[0], new_constant)) {
 		free_logical_forms(logical_forms, parse_count);
 		return false;
 	}
@@ -80,14 +80,23 @@ bool read_sentence(
 	return true;
 }
 
-template<typename ArticleSource,
-	typename Parser, typename ProofPrior>
-bool read_article(unsigned int article_name, const ArticleSource& articles, Parser& parser,
-		theory<fol_formula, natural_deduction<fol_formula, true>>& T, ProofPrior& proof_prior)
+template<
+	typename ArticleSource, typename Parser,
+	typename ProofPrior, typename Printer>
+bool read_article(
+		unsigned int article_name, const ArticleSource& articles, Parser& parser,
+		theory<fol_formula, natural_deduction<fol_formula, true>>& T,
+		ProofPrior& proof_prior, Printer& printer)
 {
-	const article& doc = articles.get(article_name);
+	bool article_exists;
+	const article& doc = articles.get(article_name, article_exists);
+	if (!article_exists) {
+		print("read_article ERROR: No such article '", stderr); print(article_name, stderr, printer); print("'.\n", stderr);
+		return false;
+	}
+
 	for (unsigned int i = 0; i < doc.sentence_count; i++) {
-		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, proof_prior))
+		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, proof_prior, printer))
 			return false;
 	}
 	return true;

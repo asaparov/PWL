@@ -65,8 +65,11 @@ struct nd_step
 	array<nd_step<Formula, Canonical>*> children;
 
 	static inline void free(nd_step<Formula, Canonical>& step) {
-		core::free(step.children);
-		step.free();
+		step.reference_count--;
+		if (step.reference_count == 0) {
+			core::free(step.children);
+			step.free();
+		}
 	}
 
 	inline void get_subproofs(nd_step<Formula, Canonical>* const*& subproofs, unsigned int& length) {
@@ -175,6 +178,10 @@ private:
 		case nd_step_type::AXIOM:
 		case nd_step_type::FORMULA_PARAMETER:
 			core::free(*formula);
+#if !defined(NDEBUG)
+			if (children.length > 0 && formula->reference_count == 0)
+				fprintf(stderr, "nd_step.free WARNING: Detected double free.\n");
+#endif
 			if (formula->reference_count == 0)
 				core::free(formula);
 			return;
@@ -789,7 +796,6 @@ bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 		unsigned int operand_count;
 		const nd_step<Formula, Canonical>* const* operands;
 		node->get_subproofs(operands, operand_count);
-		if (operand_count == 0) continue;
 		if (!in_degrees.check_size(in_degrees.table.size + operand_count + 1))
 			return false;
 
@@ -801,6 +807,7 @@ bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 			degree = 0;
 		}
 
+		if (operand_count == 0) continue;
 		for (unsigned int i = 0; i < operand_count; i++) {
 			if (operands[i] == NULL) continue;
 
@@ -1266,6 +1273,7 @@ bool canonicalize(const nd_step<Formula, Canonical>& proof,
 		}
 	}
 
+	reverse(canonical_order);
 	return true;
 }
 
@@ -1350,7 +1358,7 @@ double log_probability(
 	case nd_step_type::UNIVERSAL_ELIMINATION:
 		/* TODO: we need to compute the prior on the term */
 		formula_counter++;
-		operand = map(current_step.operands[2], std::forward<ProofMap>(proof_map)...);
+		operand = map(current_step.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (operand->term.type == TermType::PARAMETER) {
 			if (available_parameters.ensure_capacity(available_parameters.length + 1)) exit(EXIT_FAILURE);
 			add_sorted<true>(available_parameters, operand->term.parameter);
