@@ -528,6 +528,11 @@ struct proof_substitution {
 	array_map<nd_step<Formula, Canonical>*, nd_step<Formula, Canonical>*> map;
 
 	static inline void free(proof_substitution<Formula, Canonical>& s) {
+		for (auto entry : s.map) {
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		}
 		core::free(s.map);
 	}
 };
