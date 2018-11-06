@@ -16,11 +16,17 @@ struct proof_transformations {
 	array_map<nd_step<Formula, true>*, proof_substitution<Formula, true>> transformed_proofs;
 
 	proof_transformations() : transformed_proofs(16) { }
+	~proof_transformations() { free(); }
 
 	static inline void free(proof_transformations<Formula>& t) {
-		for (auto entry : t.transformed_proofs)
-			core::free(entry.value);
+		t.free();
 		core::free(t.transformed_proofs);
+	}
+
+private:
+	inline void free() {
+		for (auto entry : transformed_proofs)
+			core::free(entry.value);
 	}
 };
 
@@ -561,11 +567,11 @@ bool propose_universal_intro(
 			fprintf(stderr, "propose_atom_generalization WARNING: Expected an axiom.\n");
 #endif
 
+		Proof* antecedent = (conjunct_steps.length == 1 ? conjunct_steps[0] : ProofCalculus::new_conjunction_intro(conjunct_steps));
 		Proof* new_step = ProofCalculus::new_implication_elim(
-				ProofCalculus::new_universal_elim(axiom_step, Formula::new_constant(concept_id)),
-				ProofCalculus::new_conjunction_intro(conjunct_steps));
+				ProofCalculus::new_universal_elim(axiom_step, Formula::new_constant(concept_id)), antecedent);
 		if (new_step == NULL) {
-			for (unsigned int i = k; i < conjunct_steps.length; i++) {
+			for (unsigned int i = 0; i < conjunct_steps.length; i++) {
 				free(*conjunct_steps[i]);
 				if (conjunct_steps[i]->reference_count == 0)
 					free(conjunct_steps[i]);
@@ -1072,25 +1078,27 @@ bool do_mh_universal_intro(
 	return true;
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename AxiomPrior>
 inline bool add_ground_axiom(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 1> consequent_atom,
-		unsigned int constant, nd_step<Formula, true>* axiom)
+		unsigned int constant, nd_step<Formula, true>* axiom,
+		AxiomPrior& prior)
 {
-	return T.template add_unary_atom<Negated>(consequent_atom.predicate, constant, axiom);
+	return T.template add_unary_atom<Negated>(consequent_atom.predicate, constant, axiom, prior);
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename AxiomPrior>
 inline bool add_ground_axiom(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 2> consequent_atom,
-		unsigned int constant, nd_step<Formula, true>* axiom)
+		unsigned int constant, nd_step<Formula, true>* axiom,
+		AxiomPrior& prior)
 {
 	relation rel = { consequent_atom.predicate,
 			(consequent_atom.args[0] == 0 ? constant : consequent_atom.args[0]),
 			(consequent_atom.args[1] == 0 ? constant : consequent_atom.args[1]) };
-	return T.template add_binary_atom<Negated>(rel, axiom);
+	return T.template add_binary_atom<Negated>(rel, axiom, prior);
 }
 
 template<typename Formula,
@@ -1110,14 +1118,10 @@ bool do_mh_universal_elim(
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
 
-		T.remove_universal_quantification(proposal.universal_axiom_index);
-		proof_prior.remove_axiom(T.universal_quantifications[proposal.universal_axiom_index]->formula);
+		T.remove_universal_quantification(proposal.universal_axiom_index, proof_prior.axiom_prior);
 		for (auto entry : proposal.new_grounded_axioms) {
-			if (!add_ground_axiom(T, proposal.consequent_atom, entry.key, entry.value)
-			 || !proof_prior.add_axiom(entry.value->formula))
-			{
+			if (!add_ground_axiom(T, proposal.consequent_atom, entry.key, entry.value, proof_prior.axiom_prior))
 				return false;
-			}
 		}
 	}
 	return true;

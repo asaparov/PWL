@@ -36,7 +36,8 @@ bool read_sentence(
 			break;
 		} else if (parse_count > 0 && unrecognized.length == 1 && unrecognized[0].id == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			bool success = T.add_formula(logical_forms[0], new_constant) && parser.add_definition(s, logical_forms[0], new_constant);
+			bool success = T.add_formula(logical_forms[0], new_constant, proof_prior.axiom_prior)
+						&& parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);
 			return success;
 		}
@@ -68,7 +69,7 @@ bool read_sentence(
 	}
 
 	/* add the most probable logical form to the theory */
-	if (!T.add_formula(logical_forms[0], new_constant)) {
+	if (!T.add_formula(logical_forms[0], new_constant, proof_prior.axiom_prior)) {
 		free_logical_forms(logical_forms, parse_count);
 		return false;
 	}

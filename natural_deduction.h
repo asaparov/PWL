@@ -42,7 +42,7 @@ enum class nd_step_type : uint_fast16_t
 };
 
 constexpr static unsigned int ND_OPERAND_COUNT = 3;
-constexpr static double LOG_ND_RULE_COUNT = log((double) nd_step_type::COUNT);
+static double LOG_ND_RULE_COUNT = log((double) nd_step_type::COUNT);
 
 template<typename Formula, bool Canonical>
 struct nd_step
@@ -526,6 +526,10 @@ proof_state_assumptions<Formula> make_proof_state_assumptions(proof_state<Formul
 template<typename Formula, bool Canonical>
 struct proof_substitution {
 	array_map<nd_step<Formula, Canonical>*, nd_step<Formula, Canonical>*> map;
+
+	static inline void free(proof_substitution<Formula, Canonical>& s) {
+		core::free(s.map);
+	}
 };
 
 template<typename Formula, bool Canonical>
@@ -561,7 +565,7 @@ bool check_proof(proof_state<Formula>& out,
 {
 	typedef typename Formula::Type FormulaType;
 
-	Formula* formula; Formula* second_operand; unsigned int parameter;
+	Formula* formula; Formula* second_operand;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		if (Canonical && !is_canonical(*proof.formula)) {
@@ -825,7 +829,7 @@ bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 			if (visited.contains(operand))
 				continue;
 			if (!stack.add(operand))
-				return NULL;
+				return false;
 		}
 	}
 
@@ -1287,7 +1291,7 @@ double log_probability(
 		unsigned int step_index,
 		unsigned int& formula_counter,
 		array<unsigned int>& available_parameters,
-		array_multiset<Formula*>& axioms,
+		array_multiset<Formula*, false>& axioms,
 		ConjunctionIntroductions& conjunction_introductions,
 		UniversalIntroductions& universal_introductions,
 		UniversalEliminations& universal_eliminations,
@@ -1445,7 +1449,7 @@ template<typename Formula, bool Canonical,
 	typename... ProofMap>
 inline double log_probability_helper(
 		const nd_step<Formula, Canonical>& proof,
-		array_multiset<Formula*>& axioms,
+		array_multiset<Formula*, false>& axioms,
 		ConjunctionIntroductions& conjunction_introductions,
 		UniversalIntroductions& universal_introductions,
 		UniversalEliminations& universal_eliminations,
@@ -1484,7 +1488,7 @@ double log_probability(
 	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
 	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
 
-	array_multiset<Formula*> axioms(16);
+	array_multiset<Formula*, false> axioms(16);
 	ConjunctionIntroductions conjunction_introductions;
 	UniversalIntroductions universal_introductions;
 	UniversalEliminations universal_eliminations;
@@ -1513,7 +1517,7 @@ double log_probability_ratio(
 	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
 
 	double value = 0.0;
-	array_multiset<Formula*> old_axioms(16), new_axioms(16);
+	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
 	for (const auto& entry : proofs) {
 		ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
 		UniversalIntroductions old_universal_introductions, new_universal_introductions;

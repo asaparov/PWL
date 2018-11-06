@@ -205,7 +205,7 @@ struct theory
 	inline bool add_universal_quantification(Proof* axiom, AxiomPrior& prior) {
 		if (!universal_quantifications.add(axiom)) {
 			return false;
-		} if (!prior.add_axiom(axiom->formula)) {
+		} if (!prior.add(axiom->formula)) {
 			universal_quantifications.length--;
 			return false;
 		}
@@ -213,9 +213,10 @@ struct theory
 		return true;
 	}
 
-	inline void remove_universal_quantification(unsigned int axiom_index) {
+	template<typename AxiomPrior>
+	inline void remove_universal_quantification(unsigned int axiom_index, AxiomPrior& prior) {
 		Proof* axiom = universal_quantifications[axiom_index];
-		prior.remove_axiom(axiom->formula);
+		prior.remove(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		universal_quantifications.remove(axiom_index);
 	}
@@ -246,7 +247,7 @@ struct theory
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.ensure_capacity(ground_types.size + 1)) return false;
 
-		if (!prior.add_axiom(axiom->formula)) return false;
+		if (!prior.add(axiom->formula)) return false;
 		add_sorted<false>(instances, arg);
 		ground_types.keys[ground_types.size] = predicate;
 		ground_types.values[ground_types.size++] = axiom;
@@ -311,16 +312,16 @@ struct theory
 		 || !ground_arg1.ensure_capacity(ground_arg1.size + 3)
 		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3)) return false;
 
-		if (!prior.add_axiom(axiom->formula)) return false;
+		if (!prior.add(axiom->formula)) return false;
 
 		if (rel.arg1 == rel.arg2) {
 			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
 			if (!contains) {
 				if (!array_init(both_arg_instance_pair.key, 8)) {
-					prior.remove_axiom(axiom->formula); return false;
+					prior.remove(axiom->formula); return false;
 				} else if (!array_init(both_arg_instance_pair.value, 8)) {
 					core::free(both_arg_instance_pair.key);
-					prior.remove_axiom(axiom->formula); return false;
+					prior.remove(axiom->formula); return false;
 				}
 				relations.table.keys[bucket] = {rel.predicate, 0, 0};
 				relations.table.size++;
@@ -328,7 +329,7 @@ struct theory
 
 			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
 			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1)) {
-				prior.remove_axiom(axiom->formula); return false;
+				prior.remove(axiom->formula); return false;
 			}
 			both_arg_instances[both_arg_instances.length++] = rel.arg1;
 			insertion_sort(both_arg_instances);
@@ -353,8 +354,8 @@ struct theory
 		return true;
 	}
 
-	template<bool Negated>
-	inline void remove_unary_atom(unsigned int predicate, unsigned int arg)
+	template<bool Negated, typename AxiomPrior>
+	inline void remove_unary_atom(unsigned int predicate, unsigned int arg, AxiomPrior& prior)
 	{
 #if !defined(NDEBUG)
 		if (!types.table.contains(predicate))
@@ -376,17 +377,18 @@ struct theory
 
 		index = ground_types.index_of(predicate);
 #if !defined(NDEBUG)
-		if (index == instances.length)
+		if (index == ground_types.size)
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_types` does not contain %u.\n", predicate);
 #endif
 		Proof* axiom = ground_types.values[index];
+		prior.remove(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		ground_types.remove_at(index);
 		ground_axiom_count--;
 	}
 
-	template<bool Negated>
-	inline void remove_binary_atom(relation rel)
+	template<bool Negated, typename AxiomPrior>
+	inline void remove_binary_atom(relation rel, AxiomPrior& prior)
 	{
 #if !defined(NDEBUG)
 		if (!relations.table.contains({0, rel.arg1, rel.arg2})
@@ -452,6 +454,7 @@ struct theory
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
 #endif
 		Proof* axiom = ground_arg1.values[index];
+		prior.remove(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		ground_arg1.remove_at(index);
 

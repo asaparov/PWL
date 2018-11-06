@@ -27,7 +27,7 @@ inline unsigned int size(const default_array<T>& array) {
 
 template<typename T>
 struct default_array_multiset {
-	array_multiset<T> a;
+	array_multiset<T, false> a;
 
 	default_array_multiset() : a(16) { }
 
@@ -56,23 +56,23 @@ unsigned int sum(const default_array_multiset<T>& multiset) {
 	return multiset.a.sum;
 }
 
-template<typename T>
-inline unsigned int size(const array_multiset<T>& multiset) {
+template<typename T, bool AutomaticallyFree>
+inline unsigned int size(const array_multiset<T, AutomaticallyFree>& multiset) {
 	return multiset.counts.size;
 }
 
-template<typename T>
-inline const T& get_key(const array_multiset<T>& multiset, unsigned int i) {
+template<typename T, bool AutomaticallyFree>
+inline const T& get_key(const array_multiset<T, AutomaticallyFree>& multiset, unsigned int i) {
 	return multiset.counts.keys[i];
 }
 
-template<typename T>
-inline unsigned int get_value(const array_multiset<T>& multiset, unsigned int i) {
+template<typename T, bool AutomaticallyFree>
+inline unsigned int get_value(const array_multiset<T, AutomaticallyFree>& multiset, unsigned int i) {
 	return multiset.counts.values[i];
 }
 
-template<typename T>
-unsigned int sum(const array_multiset<T>& multiset) {
+template<typename T, bool AutomaticallyFree>
+unsigned int sum(const array_multiset<T, AutomaticallyFree>& multiset) {
 	return multiset.sum;
 }
 
@@ -82,7 +82,7 @@ struct chinese_restaurant_process
 	typedef default_array_multiset<T> ObservationCollection;
 
 	double alpha, log_alpha;
-	hash_multiset<T> tables;
+	hash_multiset<T, false> tables;
 
 	chinese_restaurant_process(double alpha) :
 		alpha(alpha), log_alpha(log(alpha)), tables(64)
@@ -188,11 +188,11 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-template<template<typename> class MultisetType,
+template<typename MultisetType,
 	template<typename> class Collection, typename T>
 double log_probability_ratio(
-		const MultisetType<T>& old_observations,
-		const MultisetType<T>& new_observations,
+		const MultisetType& old_observations,
+		const MultisetType& new_observations,
 		const chinese_restaurant_process<T>& prior,
 		Collection<T>& old_clusters, Collection<T>& new_clusters)
 {
@@ -231,13 +231,13 @@ double log_probability_ratio(
 
 template<typename T>
 struct dummy_collection {
-	constexpr bool add(const T& i) { return true; }
+	constexpr bool add(const T& i) const { return true; }
 };
 
-template<template<typename> class MultisetType, typename T>
+template<typename MultisetType, typename T>
 inline double log_probability_ratio(
-		const MultisetType<T>& old_observations,
-		const MultisetType<T>& new_observations,
+		const MultisetType& old_observations,
+		const MultisetType& new_observations,
 		const chinese_restaurant_process<T>& prior)
 {
 	dummy_collection<T> old_clusters, new_clusters;
@@ -276,10 +276,10 @@ inline dirichlet_process<BaseDistribution> make_dirichlet_process(
 	return dirichlet_process<BaseDistribution>(alpha, base_distribution);
 }
 
-template<typename BaseDistribution, typename T>
+template<typename BaseDistribution, typename T, bool AutomaticallyFree>
 double log_probability_ratio(
-		const array_multiset<T>& old_observations,
-		const array_multiset<T>& new_observations,
+		const array_multiset<T, AutomaticallyFree>& old_observations,
+		const array_multiset<T, AutomaticallyFree>& new_observations,
 		const dirichlet_process<BaseDistribution>& prior)
 {
 	typedef typename BaseDistribution::ObservationCollection Clusters;
@@ -293,8 +293,8 @@ template<typename ConstantDistribution, typename PredicateDistribution>
 struct simple_constant_distribution
 {
 	struct constant_array {
-		array_multiset<unsigned int> constants;
-		array_multiset<unsigned int> predicates;
+		array_multiset<unsigned int, false> constants;
+		array_multiset<unsigned int, false> predicates;
 
 		constant_array() : constants(8), predicates(8) { }
 
@@ -490,7 +490,7 @@ double log_probability_atom(const fol_atom& atom,
 {
 	constants.add_predicate(atom.predicate);
 	if (atom.arg2.type == fol_term_type::NONE) {
-		constants.add_constant(atom.arg2.constant);
+		constants.add_constant(atom.arg1.constant);
 		return prior.log_unary_probability;
 	} else {
 		constants.add_constant(atom.arg1.constant);
