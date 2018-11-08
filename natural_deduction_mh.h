@@ -34,6 +34,7 @@ template<typename Formula>
 bool propose_transformation(
 		const theory<Formula, natural_deduction<Formula, true>>& T,
 		proof_transformations<Formula>& proposed_proofs,
+		array<nd_step<Formula, true>*>& new_observations,
 		nd_step<Formula, true>* old_step, nd_step<Formula, true>* new_step)
 {
 	typedef natural_deduction<Formula, true> ProofCalculus;
@@ -70,6 +71,10 @@ bool propose_transformation(
 			stack[stack.length++] = child;
 		}
 	}
+
+	/* check if `old_step` was an observation; if so, add `new_step` as a potential observation */
+	if (T.observations.contains(old_step))
+		return new_observations.add(new_step);
 	return true;
 }
 
@@ -314,6 +319,12 @@ struct universal_intro_proposal {
 	nd_step<Formula, true>* new_universal_quantification;
 	array<unsigned int>& old_grounded_axioms;
 	atom<Negated, Arity> consequent_atom;
+
+	~universal_intro_proposal() {
+		free(*new_universal_quantification);
+		if (new_universal_quantification->reference_count == 0)
+			free(new_universal_quantification);
+	}
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
@@ -557,6 +568,7 @@ bool propose_universal_intro(
 		}
 	}
 
+	array<Proof*> new_observations(8);
 	for (unsigned int k = 0; k < intersection.length; k++) {
 		const unsigned int concept_id = intersection[k];
 		concept<ProofCalculus>& instance = T.ground_concepts.get(concept_id);
@@ -581,7 +593,7 @@ bool propose_universal_intro(
 		}
 		new_step->reference_count++;
 
-		if (!propose_transformation(T, proposed_proofs, old_step, new_step)) {
+		if (!propose_transformation(T, proposed_proofs, new_observations, old_step, new_step)) {
 			free(*new_step);
 			if (new_step->reference_count == 0)
 				free(new_step);
@@ -595,7 +607,7 @@ bool propose_universal_intro(
 		}
 	}
 
-	return do_mh_universal_intro(T, proposed_proofs,
+	return do_mh_universal_intro(T, proposed_proofs, new_observations,
 			make_universal_intro_proposal(axiom_step, intersection, a),
 			log_proposal_probability_ratio, proof_prior);
 }
@@ -783,6 +795,7 @@ bool propose_universal_elim(
 		return true;
 	}
 
+	array<Proof*> new_observations(8);
 	hash_map<unsigned int, nd_step<Formula, true>*> new_grounded_axioms(16);
 	for (Proof* child : axiom->children) {
 		if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
@@ -818,7 +831,7 @@ bool propose_universal_elim(
 				}
 
 				/* propose `new_step` to substitute `grandchild` */
-				if (!propose_transformation(T, proposed_proofs, grandchild, new_step)) {
+				if (!propose_transformation(T, proposed_proofs, new_observations, grandchild, new_step)) {
 					free(*new_step); if (new_step->reference_count == 0) free(new_step);
 					free_proofs(new_axioms, consequent_length); free(new_axioms); return false;
 				}
@@ -839,7 +852,7 @@ bool propose_universal_elim(
 						}
 
 						/* propose `new_step` to substitute `grandchild` if we haven't already */
-						if (!propose_transformation(T, proposed_proofs, grandchild, new_step)) {
+						if (!propose_transformation(T, proposed_proofs, new_observations, grandchild, new_step)) {
 							free(*new_step); if (new_step->reference_count == 0) free(new_step);
 							free_proofs(new_axioms, consequent_length); free(new_axioms); return false;
 						}
@@ -869,7 +882,7 @@ bool propose_universal_elim(
 					}
 
 					/* propose `new_indexed_step` to substitute `descendant` */
-					if (!propose_transformation(T, proposed_proofs, descendant, new_indexed_step)) {
+					if (!propose_transformation(T, proposed_proofs, new_observations, descendant, new_indexed_step)) {
 						if (new_step != NULL) {
 							free(*new_step); if (new_step->reference_count == 0) free(new_step);
 						}
@@ -917,7 +930,7 @@ bool propose_universal_elim(
 			atom<false, 1> consequent_atom;
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = 0;
-			return do_mh_universal_elim(T, proposed_proofs,
+			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		} else {
@@ -925,7 +938,7 @@ bool propose_universal_elim(
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = (atomic_formula->atom.arg1.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg1.constant);
 			consequent_atom.args[1] = (atomic_formula->atom.arg2.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg2.constant);
-			return do_mh_universal_elim(T, proposed_proofs,
+			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		}
@@ -935,7 +948,7 @@ bool propose_universal_elim(
 			atom<true, 1> consequent_atom;
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = 0;
-			return do_mh_universal_elim(T, proposed_proofs,
+			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		} else {
@@ -943,7 +956,7 @@ bool propose_universal_elim(
 			consequent_atom.predicate = atomic_formula->atom.predicate;
 			consequent_atom.args[0] = (atomic_formula->atom.arg1.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg1.constant);
 			consequent_atom.args[1] = (atomic_formula->atom.arg2.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg2.constant);
-			return do_mh_universal_elim(T, proposed_proofs,
+			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		}
@@ -1060,6 +1073,7 @@ template<typename Formula,
 bool do_mh_universal_intro(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const proof_transformations<Formula>& proposed_proofs,
+		const array<nd_step<Formula, true>*>& new_observations,
 		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
 		double log_proposal_probability_ratio, ProofPrior& proof_prior)
 {
@@ -1067,6 +1081,8 @@ bool do_mh_universal_intro(
 	log_proposal_probability_ratio += log_probability_ratio(
 			proposed_proofs.transformed_proofs, proof_prior);
 
+	if (!T.observations.check_size(T.observations.size + new_observations.length))
+		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
@@ -1074,6 +1090,10 @@ bool do_mh_universal_intro(
 		if (!T.add_universal_quantification(proposal.new_universal_quantification, proof_prior.axiom_prior)) return false;
 		for (unsigned int concept : proposal.old_grounded_axioms)
 			remove_ground_axiom(T, proposal.consequent_atom, concept, proof_prior.axiom_prior);
+		for (auto proof : new_observations) {
+			T.observations.add(proof);
+			proof->reference_count++;
+		}
 	}
 	return true;
 }
@@ -1107,6 +1127,7 @@ template<typename Formula,
 bool do_mh_universal_elim(
 		theory<Formula, natural_deduction<Formula, true>>& T,
 		const proof_transformations<Formula>& proposed_proofs,
+		const array<nd_step<Formula, true>*>& new_observations,
 		const universal_elim_proposal<Formula, Negated, Arity>& proposal,
 		double log_proposal_probability_ratio, ProofPrior& proof_prior)
 {
@@ -1114,6 +1135,8 @@ bool do_mh_universal_elim(
 	log_proposal_probability_ratio += log_probability_ratio(
 			proposed_proofs.transformed_proofs, proof_prior);
 
+	if (!T.observations.check_size(T.observations.size + new_observations.length))
+		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
@@ -1122,6 +1145,10 @@ bool do_mh_universal_elim(
 		for (auto entry : proposal.new_grounded_axioms) {
 			if (!add_ground_axiom(T, proposal.consequent_atom, entry.key, entry.value, proof_prior.axiom_prior))
 				return false;
+		}
+		for (auto proof : new_observations) {
+			T.observations.add(proof);
+			proof->reference_count++;
 		}
 	}
 	return true;
