@@ -66,6 +66,20 @@ struct concept
 	array_map<relation, Proof*> relations;
 	array_map<relation, Proof*> negated_relations;
 
+	template<typename Stream, typename... Printer>
+	bool print_axioms(Stream& out, Printer&&... printer) const {
+		for (auto entry : types) {
+			if (!print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+		} for (auto entry : negated_types) {
+			if (!print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+		} for (auto entry : relations) {
+			if (!print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+		} for (auto entry : negated_relations) {
+			if (!print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+		}
+		return true;
+	}
+
 	static inline void move(const concept<ProofCalculus>& src, concept<ProofCalculus>& dst) {
 		core::move(src.types, dst.types);
 		core::move(src.negated_types, dst.negated_types);
@@ -131,6 +145,8 @@ struct theory
 	typedef typename Formula::TermType TermType;
 	typedef typename ProofCalculus::Proof Proof;
 
+	unsigned int new_constant_offset;
+
 	/* A map from `x` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
 	   theory `x(y_i)` and for any `z_i` there is an axiom in the theory
@@ -154,7 +170,8 @@ struct theory
 
 	hash_set<Proof*> observations;
 
-	theory() : types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
+	theory(unsigned int new_constant_offset) : new_constant_offset(new_constant_offset),
+			types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
 
 	~theory() {
 		for (auto entry : types) {
@@ -174,6 +191,16 @@ struct theory
 		} for (auto entry : ground_concepts) {
 			core::free(entry.value);
 		}
+	}
+
+	template<typename Stream, typename... Printer>
+	bool print_axioms(Stream& out, Printer&&... printer) const {
+		for (Proof* axiom : universal_quantifications) {
+			if (!print(*axiom->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+		} for (auto entry : ground_concepts) {
+			if (!entry.value.print_axioms(out, std::forward<Printer>(printer)...)) return false;
+		}
+		return true;
 	}
 
 	inline unsigned int axiom_count() const {
@@ -512,7 +539,7 @@ private:
 						}
 
 						if (!ground_concepts.check_size()) return NULL;
-						new_constant = PREDICATE_COUNT + ground_concepts.table.size;
+						new_constant = new_constant_offset + ground_concepts.table.size;
 
 						bool contains; unsigned int bucket;
 						concept<ProofCalculus>& c = ground_concepts.get(new_constant, contains, bucket);
@@ -595,7 +622,7 @@ private:
 				if (atom->atom.arg1.constant == PREDICATE_UNKNOWN) {
 					/* this is a definition of an object */
 					if (!ground_concepts.check_size()) return NULL;
-					new_constant = PREDICATE_COUNT + ground_concepts.table.size;
+					new_constant = new_constant_offset + ground_concepts.table.size;
 					atom->atom.arg1.constant = new_constant;
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;

@@ -116,6 +116,7 @@ struct chinese_restaurant_process
 		} else {
 			count++;
 		}
+		tables.sum++;
 		return true;
 	}
 
@@ -164,12 +165,12 @@ inline double log_probability_ratio_old_cluster(
 		fprintf(stderr, "log_probability_ratio_old_cluster WARNING: This chinese_restaurant_process does not contain the given observation.\n");
 #endif
 	unsigned int count = prior.tables.counts.get(observation);
-	double value = lgamma(count - frequency) - lgamma(count);
 	if (count == frequency) {
-		value -= prior.log_alpha;
 		old_clusters.add(observation);
+		return -lgamma(count) - prior.log_alpha;
+	} else {
+		return lgamma(count - frequency) - lgamma(count);
 	}
-	return value;
 }
 
 template<typename T, template<typename> class Collection>
@@ -202,7 +203,13 @@ double log_probability_ratio(
 		if (get_key(old_observations, i) == get_key(new_observations, j)) {
 			unsigned int count = prior.tables.counts.get(get_key(old_observations, i));
 			int diff = (int) get_value(new_observations, j) - (int) get_value(old_observations, i);
-			value += lgamma(count + diff) - lgamma(count);
+			if (count + diff == 0) {
+				/* this cluster is being removed */
+				old_clusters.add(get_key(old_observations, i));
+				value += -lgamma(count) - prior.log_alpha;
+			} else {
+				value += lgamma(count + diff) - lgamma(count);
+			}
 			i++; j++;
 		} else if (get_key(old_observations, i) < get_key(new_observations, j)) {
 			value += log_probability_ratio_old_cluster(
@@ -725,7 +732,7 @@ int main(int argc, const char** argv)
 	free_tokens(tokens);
 
 	/* read the articles */
-	theory<fol_formula, natural_deduction<fol_formula, true>> T;
+	theory<fol_formula, natural_deduction<fol_formula, true>> T(names.table.size + 1);
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
 	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.5, 0.3, 0.4, 0.2, 0.4);
@@ -740,9 +747,14 @@ int main(int argc, const char** argv)
 	read_article(names.get("Bob"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Kate"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
 
-	for (unsigned int t = 0; t < 10000; t++)
+	for (unsigned int t = 0; t < 10000; t++) {
 		do_mh_step(T, proof_prior);
+		T.print_axioms(stdout, parser.get_printer(printer));
+		print('\n', stdout); fflush(stdout);
+	}
 
 	free(reverse_name_map);
 	for (auto entry : names) free(entry.key);

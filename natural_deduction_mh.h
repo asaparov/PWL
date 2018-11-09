@@ -1081,6 +1081,11 @@ bool do_mh_universal_intro(
 	log_proposal_probability_ratio += log_probability_ratio(
 			proposed_proofs.transformed_proofs, proof_prior);
 
+#if !defined(NDEBUG)
+	if (isnan(log_proposal_probability_ratio))
+		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
+#endif
+
 	if (!T.observations.check_size(T.observations.size + new_observations.length))
 		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
@@ -1134,6 +1139,11 @@ bool do_mh_universal_elim(
 	/* compute the proof portion of the prior for both current and proposed theories */
 	log_proposal_probability_ratio += log_probability_ratio(
 			proposed_proofs.transformed_proofs, proof_prior);
+
+#if !defined(NDEBUG)
+	if (isnan(log_proposal_probability_ratio))
+		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
+#endif
 
 	if (!T.observations.check_size(T.observations.size + new_observations.length))
 		return false;

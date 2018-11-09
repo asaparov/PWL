@@ -64,9 +64,10 @@ inline bool visit_constant(unsigned int constant, const constant_subtracter& sub
 struct fake_parser {
 	hash_map<sentence, sentence_label> table;
 	hash_map<token, unsigned int> learned_tokens;
+	hash_map<unsigned int, unsigned int> reverse_symbol_map;
 	unsigned int unknown_id;
 
-	fake_parser(unsigned int unknown_id) : table(64), learned_tokens(32), unknown_id(unknown_id) { }
+	fake_parser(unsigned int unknown_id) : table(64), learned_tokens(32), reverse_symbol_map(32), unknown_id(unknown_id) { }
 
 	~fake_parser() {
 		for (auto entry : table) {
@@ -119,8 +120,32 @@ struct fake_parser {
 		if (!contains) return false;
 		for (const auto& entry : label.labels)
 			if (!learned_tokens.put({entry.key}, new_constant)) return false;
+		if (label.labels.size > 0)
+			return reverse_symbol_map.put(new_constant, label.labels.values[0]);
 		return true;
 	}
+
+	template<typename Printer>
+	struct printer {
+		Printer& constant_printer;
+		const hash_map<unsigned int, unsigned int>& reverse_map;
+
+		printer(Printer& constant_printer, const hash_map<unsigned int, unsigned int>& reverse_symbol_map) :
+				constant_printer(constant_printer), reverse_map(reverse_symbol_map) { }
+	};
+
+	template<typename Printer>
+	inline printer<Printer> get_printer(Printer& constant_printer) const {
+		return printer<Printer>(constant_printer, reverse_symbol_map);
+	}
 };
+
+template<typename Stream, typename Printer>
+inline bool print(unsigned int constant, Stream& out, const fake_parser::printer<Printer>& printer) {
+	bool contains;
+	unsigned int value = printer.reverse_map.get(constant, contains);
+	if (contains) constant = value;
+	return print(constant, out, printer.constant_printer);
+}
 
 #endif /* FAKE_PARSER_H_ */

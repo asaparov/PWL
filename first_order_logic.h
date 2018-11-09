@@ -117,24 +117,53 @@ inline bool operator < (const fol_term& first, const fol_term& second) {
 }
 
 template<typename Stream>
+inline bool print_subscript(unsigned int number, Stream& out) {
+	static const char* subscripts[] = { "₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉" };
+	while (number > 0) {
+		if (!print(subscripts[number % 10], out)) return false;
+		number /= 10;
+	}
+	return true;
+}
+
+enum class fol_formula_syntax {
+	TPTP,
+	CLASSIC
+};
+
+template<fol_formula_syntax Syntax, typename Stream>
 inline bool print_variable(unsigned int variable, Stream& out) {
-	return print('$', out) + print(variable, out);
+	switch (Syntax) {
+	case fol_formula_syntax::TPTP:
+		return print('$', out) + print(variable, out);
+	case fol_formula_syntax::CLASSIC:
+		return print('x', out) && print_subscript(variable, out);
+	}
+	fprintf(stderr, "print_variable ERROR: Unrecognized fol_formula_syntax.\n");
+	return false;
 }
 
-template<typename Stream>
+template<fol_formula_syntax Syntax, typename Stream>
 inline bool print_parameter(unsigned int parameter, Stream& out) {
-	return print('#', out) + print(parameter, out);
+	switch (Syntax) {
+	case fol_formula_syntax::TPTP:
+		return print('#', out) + print(parameter, out);
+	case fol_formula_syntax::CLASSIC:
+		return print('a', out) && print_subscript(parameter, out);
+	}
+	fprintf(stderr, "print_parameter ERROR: Unrecognized fol_formula_syntax.\n");
+	return false;
 }
 
-template<typename Stream, typename... Printer>
+template<fol_formula_syntax Syntax = fol_formula_syntax::CLASSIC, typename Stream, typename... Printer>
 bool print(const fol_term& term, Stream& out, Printer&&... printer) {
 	switch (term.type) {
 	case fol_term_type::VARIABLE:
-		return print_variable(term.variable, out);
+		return print_variable<Syntax>(term.variable, out);
 	case fol_term_type::CONSTANT:
 		return print(term.constant, out, std::forward<Printer>(printer)...);
 	case fol_term_type::PARAMETER:
-		return print_parameter(term.parameter, out);
+		return print_parameter<Syntax>(term.parameter, out);
 	case fol_term_type::NONE:
 		break;
 	}
@@ -405,11 +434,71 @@ inline void fol_quantifier::free(fol_quantifier& formula) {
 		core::free(formula.operand);
 }
 
-char and_separator[] = " & ";
-char or_separator[] = " | ";
-char iff_separator[] = " <=> ";
+template<fol_formula_syntax Syntax> struct and_symbol;
+template<fol_formula_syntax Syntax> struct or_symbol;
+template<fol_formula_syntax Syntax> struct if_then_symbol;
+template<fol_formula_syntax Syntax> struct iff_symbol;
+template<fol_formula_syntax Syntax> struct not_symbol;
+template<fol_formula_syntax Syntax> struct true_symbol;
+template<fol_formula_syntax Syntax> struct false_symbol;
 
-template<typename Stream, typename... Printer>
+template<> struct and_symbol<fol_formula_syntax::TPTP> { static const char symbol[]; };
+template<> struct or_symbol<fol_formula_syntax::TPTP> { static const char symbol[]; };
+template<> struct iff_symbol<fol_formula_syntax::TPTP> { static const char symbol[]; };
+template<> struct if_then_symbol<fol_formula_syntax::TPTP> { static const char symbol[]; };
+template<> struct not_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
+template<> struct true_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
+template<> struct false_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
+
+template<> struct and_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct or_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct iff_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct if_then_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct not_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct true_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct false_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+
+const char and_symbol<fol_formula_syntax::TPTP>::symbol[] = " & ";
+const char or_symbol<fol_formula_syntax::TPTP>::symbol[] = " | ";
+const char iff_symbol<fol_formula_syntax::TPTP>::symbol[] = " <=> ";
+const char if_then_symbol<fol_formula_syntax::TPTP>::symbol[] = " => ";
+const char not_symbol<fol_formula_syntax::TPTP>::symbol = '~';
+const char true_symbol<fol_formula_syntax::TPTP>::symbol = 'T';
+const char false_symbol<fol_formula_syntax::TPTP>::symbol = 'F';
+
+const char and_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " ∧ ";
+const char or_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " ∨ ";
+const char iff_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " ↔ ";
+const char if_then_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " → ";
+const char not_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "¬";
+const char true_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "⊤";
+const char false_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "⊥";
+
+template<fol_formula_syntax Syntax, typename Stream>
+inline bool print_for_all(unsigned int quantified_variable, Stream& out) {
+	switch (Syntax) {
+	case fol_formula_syntax::TPTP:
+		return print("![", out) && print_variable<Syntax>(quantified_variable, out) && print("]:", out);
+	case fol_formula_syntax::CLASSIC:
+		return print("∀", out) && print_variable<Syntax>(quantified_variable, out);
+	}
+	fprintf(stderr, "print_for_all ERROR: Unrecognized fol_formula_syntax.\n");
+	return false;
+}
+
+template<fol_formula_syntax Syntax, typename Stream>
+inline bool print_exists(unsigned int quantified_variable, Stream& out) {
+	switch (Syntax) {
+	case fol_formula_syntax::TPTP:
+		return print("?[", out) && print_variable<Syntax>(quantified_variable, out) && print("]:", out);
+	case fol_formula_syntax::CLASSIC:
+		return print("∃", out) && print_variable<Syntax>(quantified_variable, out);
+	}
+	fprintf(stderr, "print_exists ERROR: Unrecognized fol_formula_syntax.\n");
+	return false;
+}
+
+template<fol_formula_syntax Syntax = fol_formula_syntax::CLASSIC, typename Stream, typename... Printer>
 bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
 {
 	switch (formula.type) {
@@ -429,33 +518,33 @@ bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
 		return print(')', out);
 
 	case fol_formula_type::TRUE:
-		return print('T', out);
+		return print(true_symbol<Syntax>::symbol, out);
 
 	case fol_formula_type::FALSE:
-		return print('F', out);
+		return print(false_symbol<Syntax>::symbol, out);
 
 	case fol_formula_type::NOT:
-		return print('~', out) && print(*formula.unary.operand, out, std::forward<Printer>(printer)...);
+		return print(not_symbol<Syntax>::symbol, out) && print(*formula.unary.operand, out, std::forward<Printer>(printer)...);
 
 	case fol_formula_type::AND:
-		return print<fol_formula*, '(', ')', and_separator>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<fol_formula*, '(', ')', and_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::OR:
-		return print<fol_formula*, '(', ')', or_separator>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<fol_formula*, '(', ')', or_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::IF_THEN:
 		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
-			&& print(" => ", out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+			&& print(if_then_symbol<Syntax>::symbol, out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case fol_formula_type::IFF:
-		return print<fol_formula*, '(', ')', iff_separator>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<fol_formula*, '(', ')', iff_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::FOR_ALL:
-		return print("![", out) && print_variable(formula.quantifier.variable, out) && print("]:", out)
+		return print_for_all<Syntax>(formula.quantifier.variable, out)
 			&& print(*formula.quantifier.operand, out, std::forward<Printer>(printer)...);
 
 	case fol_formula_type::EXISTS:
-		return print("?[", out) && print_variable(formula.quantifier.variable, out) && print("]:", out)
+		return print_exists<Syntax>(formula.quantifier.variable, out)
 			&& print(*formula.quantifier.operand, out, std::forward<Printer>(printer)...);
 	}
 

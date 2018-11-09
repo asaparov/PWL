@@ -3,3 +3,5 @@ mammal: A mammal:mammal is a vertebrate animal. {![x]:(mammal(x) => (vertebrate(
 Bob: Bob:bob is a cat:cat. {cat(bob)} Bob:bob is a mammal:mammal. {mammal(bob)}
 Kate: Kate:kate is a cat:cat. {cat(kate)} Kate:kate is a mammal:mammal. {mammal(kate)}
 Sam: Sam:sam is a cat:cat. {cat(sam)} Sam:sam is a mammal:mammal. {mammal(sam)}
+Byron: Byron:byron is a cat:cat. {cat(byron)} Byron:byron is a mammal:mammal. {mammal(byron)}
+Alex: Alex:alex is a cat:cat. {cat(alex)} Alex:alex is a mammal:mammal. {mammal(alex)}
