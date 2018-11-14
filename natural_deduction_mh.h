@@ -11,6 +11,32 @@ constexpr double LOG_2 = 0.69314718055994530941723212145817656807550013436025525
 
 using namespace core;
 
+template<typename T, bool AutomaticallyFree, bool OtherAutomaticallyFree>
+inline bool add(hash_multiset<T, AutomaticallyFree>& multiset, const array_multiset<T, OtherAutomaticallyFree>& items)
+{
+	return multiset.add(items);
+}
+
+template<typename T, bool AutomaticallyFree, bool OtherAutomaticallyFree>
+void subtract(hash_multiset<T, AutomaticallyFree>& multiset, const array_multiset<T, OtherAutomaticallyFree>& items)
+{
+	for (unsigned int i = 0; i < items.counts.size; i++) {
+		bool contains; unsigned int bucket;
+		unsigned int& count = multiset.counts.get(items.counts.keys[i], contains, bucket);
+#if !defined(NDEBUG)
+		if (count < items.counts.values[i]) {
+			fprintf(stderr, "subtract WARNING: Attempted to remove more items from a bin than it contains.\n");
+			count = 0;
+		} else count -= items.counts.values[i];
+#else
+		count -= items.counts.values[i];
+#endif
+		if (count == 0)
+			multiset.counts.remove_at(bucket);
+	}
+	multiset.sum -= items.sum;
+}
+
 template<typename Formula>
 struct proof_transformations {
 	array_map<nd_step<Formula, true>*, proof_substitution<Formula, true>> transformed_proofs;
@@ -1097,22 +1123,30 @@ bool do_mh_universal_intro(
 		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
 #endif
 
-//fprintf(stderr, "%lf\n", log_proposal_probability_ratio);
 	if (!T.observations.check_size(T.observations.size + new_observations.length))
 		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+//fprintf(stderr, "%u, accepted universal introduction (%u)\n", iteration, T.observations.size);
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
 
 		if (!T.add_universal_quantification(proposal.new_universal_quantification)) return false;
 		for (unsigned int concept : proposal.old_grounded_axioms)
 			remove_ground_axiom(T, proposal.consequent_atom, concept);
+		for (auto entry : proposed_proofs.transformed_proofs) {
+			bool contains;
+			unsigned int bucket = T.observations.index_of(entry.key, contains);
+			if (contains) {
+				T.observations.remove_at(bucket);
+				free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+			}
+		}
 		for (auto proof : new_observations) {
 			T.observations.add(proof);
 			proof->reference_count++;
 		}
-		T.proof_axioms.subtract(old_axioms);
-		if (!T.proof_axioms.add(new_axioms))
+		subtract(T.proof_axioms, old_axioms);
+		if (!add(T.proof_axioms, new_axioms))
 			return false;
 	}
 	return true;
@@ -1159,10 +1193,10 @@ bool do_mh_universal_elim(
 		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
 #endif
 
-//fprintf(stderr, "%lf\n", log_proposal_probability_ratio);
 	if (!T.observations.check_size(T.observations.size + new_observations.length))
 		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+//fprintf(stderr, "%u, accepted universal elimination (%u)\n", iteration, T.observations.size);
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
 
@@ -1171,12 +1205,20 @@ bool do_mh_universal_elim(
 			if (!add_ground_axiom(T, proposal.consequent_atom, entry.key, entry.value))
 				return false;
 		}
+		for (auto entry : proposed_proofs.transformed_proofs) {
+			bool contains;
+			unsigned int bucket = T.observations.index_of(entry.key, contains);
+			if (contains) {
+				T.observations.remove_at(bucket);
+				free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+			}
+		}
 		for (auto proof : new_observations) {
 			T.observations.add(proof);
 			proof->reference_count++;
 		}
-		T.proof_axioms.subtract(old_axioms);
-		if (!T.proof_axioms.add(new_axioms))
+		subtract(T.proof_axioms, old_axioms);
+		if (!add(T.proof_axioms, new_axioms))
 			return false;
 	}
 	return true;
@@ -1191,7 +1233,7 @@ bool do_mh_step(
 
 	double log_proposal_probability_ratio = 0.0;
 
-	/* TODO: select an axiom from `T` uniformly at random */
+	/* select an axiom from `T` uniformly at random */
 	unsigned int axiom_count = T.axiom_count();
 	unsigned int random = sample_uniform(axiom_count);
 	if (!log_cache<double>::instance().ensure_size(axiom_count)) return false;

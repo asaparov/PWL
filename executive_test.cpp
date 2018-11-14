@@ -175,6 +175,10 @@ inline double log_probability_ratio_new_cluster(
 {
 	bool contains;
 	unsigned int count = tables.counts.get(observation, contains);
+#if !defined(NDEBUG)
+	if (contains && count == 0)
+		fprintf(stderr, "log_probability_ratio_new_cluster WARNING: The hash_multiset has an observation with zero count.\n");
+#endif
 	if (contains) {
 		return lgamma(count + frequency) - lgamma(count);
 	} else {
@@ -802,9 +806,15 @@ int main(int argc, const char** argv)
 	unsigned int all_mammals_are_cats_count = 0;
 	unsigned int neither_count = 0;
 	constexpr unsigned int iterations = 10000000;
+	timer stopwatch;
 	for (unsigned int t = 0; t < iterations; t++) {
 		//T.print_axioms(stdout, parser.get_printer(printer));
 		//print('\n', stdout); fflush(stdout);
+		if (stopwatch.milliseconds() > 1000) {
+			fprintf(stderr, "all_cats_are_mammals: %lf\n", (double) all_cats_are_mammals_count / t);
+			fprintf(stderr, "all_mammals_are_cats: %lf\n", (double) all_mammals_are_cats_count / t);
+			stopwatch.start();
+		}
 		do_mh_step(T, proof_prior);
 
 		bool has_all_cats_are_mammals = contains_axiom(T, all_cats_are_mammals);
