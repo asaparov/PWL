@@ -788,6 +788,54 @@ bool check_proof(proof_state<Formula>& out,
 	return false;
 }
 
+template<typename Formula, bool Canonical, typename Visitor>
+bool visit(const nd_step<Formula, Canonical>* proof, Visitor& visitor)
+{
+	array<const nd_step<Formula, Canonical>*> stack(64);
+	hash_set<const nd_step<Formula, Canonical>*> visited(128);
+	if (!stack.add(proof)) return false;
+	while (stack.length > 0)
+	{
+		const nd_step<Formula, Canonical>* node = stack.pop();
+		if (!visited.add(node)) return false;
+
+		unsigned int operand_count;
+		const nd_step<Formula, Canonical>* const* operands;
+		node->get_subproofs(operands, operand_count);
+
+		if (!visit_node(node, visitor)) return false;
+
+		if (operand_count == 0) continue;
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
+
+			if (visited.contains(operands[i]))
+				continue;
+			if (!stack.add(operands[i]))
+				return false;
+		}
+	}
+	return true;
+}
+
+template<typename Collection>
+struct axiom_collector {
+	Collection& axioms;
+};
+
+template<typename Formula, bool Canonical, typename Collection>
+inline bool visit_node(const nd_step<Formula, Canonical>* proof, axiom_collector<Collection>& collector) {
+	if (proof->type == nd_step_type::AXIOM)
+		return collector.axioms.add(proof->formula);
+	return true;
+}
+
+template<typename Formula, bool Canonical, typename Collection>
+inline bool get_axioms(const nd_step<Formula, Canonical>* proof, Collection& axioms) {
+	axiom_collector<Collection> collector = {axioms};
+	return visit(proof, collector);
+}
+
 template<typename Formula, bool Canonical, typename... ProofMap>
 bool compute_in_degrees(const nd_step<Formula, Canonical>* proof,
 		hash_map<const nd_step<Formula, Canonical>*, unsigned int>& in_degrees,
@@ -1388,36 +1436,35 @@ double log_probability(
 template<typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior>
+	typename UniversalEliminationPrior,
+	typename ProofLengthPrior>
 struct canonicalized_proof_prior
 {
-	double log_stop_probability;
-	double log_continue_probability;
 	AxiomPrior axiom_prior;
 	ConjunctionIntroductionPrior conjunction_introduction_prior;
 	UniversalIntroductionPrior universal_introduction_prior;
 	UniversalEliminationPrior universal_elimination_prior;
+	ProofLengthPrior proof_length_prior;
 
-	canonicalized_proof_prior(double stop_probability,
+	canonicalized_proof_prior(
 			const AxiomPrior& axiom_prior,
 			const ConjunctionIntroductionPrior& conjunction_introduction_prior,
 			const UniversalIntroductionPrior& universal_introduction_prior,
-			const UniversalEliminationPrior& universal_elimination_prior) :
-		log_stop_probability(log(stop_probability)),
-		log_continue_probability(log(1.0 - stop_probability)),
+			const UniversalEliminationPrior& universal_elimination_prior,
+			const ProofLengthPrior& proof_length_prior) :
 		axiom_prior(axiom_prior),
 		conjunction_introduction_prior(conjunction_introduction_prior),
 		universal_introduction_prior(universal_introduction_prior),
-		universal_elimination_prior(universal_elimination_prior)
+		universal_elimination_prior(universal_elimination_prior),
+		proof_length_prior(proof_length_prior)
 	{ }
 
 	canonicalized_proof_prior(const canonicalized_proof_prior& src) :
-		log_stop_probability(src.log_stop_probability),
-		log_continue_probability(src.log_continue_probability),
 		axiom_prior(src.axiom_prior),
 		conjunction_introduction_prior(src.conjunction_introduction_prior),
 		universal_introduction_prior(src.universal_introduction_prior),
-		universal_elimination_prior(src.universal_elimination_prior)
+		universal_elimination_prior(src.universal_elimination_prior),
+		proof_length_prior(src.proof_length_prior)
 	{ }
 
 	template<typename Formula>
@@ -1434,23 +1481,25 @@ struct canonicalized_proof_prior
 template<typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
-	typename UniversalEliminationPrior>
-inline canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>
+	typename UniversalEliminationPrior,
+	typename ProofLengthPrior>
+inline canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>
 make_canonicalized_proof_prior(
-		double stop_probability,
 		const AxiomPrior& axiom_prior,
 		const ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		const UniversalIntroductionPrior& universal_introduction_prior,
-		const UniversalEliminationPrior& universal_elimination_prior)
+		const UniversalEliminationPrior& universal_elimination_prior,
+		const ProofLengthPrior& proof_length_prior)
 {
-	return canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>(
-			stop_probability, axiom_prior, conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior);
+	return canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>(
+			axiom_prior, conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior, proof_length_prior);
 }
 
 template<typename Formula, bool Canonical,
 	typename ConjunctionIntroductions,
 	typename UniversalIntroductions,
 	typename UniversalEliminations,
+	typename ProofLengthPrior,
 	typename... ProofMap>
 inline double log_probability_helper(
 		const nd_step<Formula, Canonical>& proof,
@@ -1458,7 +1507,7 @@ inline double log_probability_helper(
 		ConjunctionIntroductions& conjunction_introductions,
 		UniversalIntroductions& universal_introductions,
 		UniversalEliminations& universal_eliminations,
-		double log_continue_probability, double log_stop_probability,
+		ProofLengthPrior& proof_length_prior,
 		ProofMap&&... proof_map)
 {
 	array<const nd_step<Formula, Canonical>*> canonical_order(64);
@@ -1467,7 +1516,7 @@ inline double log_probability_helper(
 		exit(EXIT_FAILURE);
 	}
 
-	double value = (canonical_order.length - 1) * log_continue_probability + log_stop_probability;
+	double value = log_probability(canonical_order.length, proof_length_prior);
 	unsigned int formula_counter = 0;
 	array<unsigned int> available_parameters(16);
 	log_cache<double>::instance().ensure_size(canonical_order.length);
@@ -1483,10 +1532,11 @@ template<typename Formula,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
+	typename ProofLengthPrior,
 	typename... ProofMap>
 double log_probability(
 		const nd_step<Formula, Canonical>& proof,
-		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
+		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>& prior,
 		ProofMap&&... proof_map)
 {
 	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
@@ -1497,9 +1547,9 @@ double log_probability(
 	ConjunctionIntroductions conjunction_introductions;
 	UniversalIntroductions universal_introductions;
 	UniversalEliminations universal_eliminations;
-	double value = log_probability_helper(
-			proof, axioms, conjunction_introductions, universal_introductions, universal_eliminations,
-			prior.log_continue_probability, prior.log_stop_probability, std::forward<ProofMap>(proof_map)...);
+	double value = log_probability_helper(proof, axioms,
+			conjunction_introductions, universal_introductions, universal_eliminations, prior.log_continue_probability,
+			prior.log_stop_probability, prior.proof_length_prior, std::forward<ProofMap>(proof_map)...);
 	return value + log_probability(axioms, prior.axiom_prior)
 		 + log_probability(conjunction_introductions, prior.conjunction_introduction_prior)
 		 + log_probability(universal_introductions, prior.universal_introduction_prior)
@@ -1511,10 +1561,15 @@ template<typename Formula,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
+	typename ProofLengthPrior,
+	typename MultisetType,
 	typename... AxiomPriorParameters>
 double log_probability_ratio(
 		const array_map<nd_step<Formula, Canonical>*, proof_substitution<Formula, Canonical>>& proofs,
-		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior>& prior,
+		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>& prior,
+		const MultisetType& proof_axioms,
+		array_multiset<Formula*, false>& old_axioms,
+		array_multiset<Formula*, false>& new_axioms,
 		AxiomPriorParameters&&... axiom_prior_parameters)
 {
 	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
@@ -1522,15 +1577,14 @@ double log_probability_ratio(
 	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
 
 	double value = 0.0;
-	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
 	for (const auto& entry : proofs) {
 		ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
 		UniversalIntroductions old_universal_introductions, new_universal_introductions;
 		UniversalEliminations old_universal_eliminations, new_universal_eliminations;
 		value -= log_probability_helper(*entry.key, old_axioms, old_conjunction_introductions,
-				old_universal_introductions, old_universal_eliminations, prior.log_continue_probability, prior.log_stop_probability);
+				old_universal_introductions, old_universal_eliminations, prior.proof_length_prior);
 		value += log_probability_helper(*entry.key, new_axioms, new_conjunction_introductions,
-				new_universal_introductions, new_universal_eliminations, prior.log_continue_probability, prior.log_stop_probability, entry.value);
+				new_universal_introductions, new_universal_eliminations, prior.proof_length_prior, entry.value);
 
 		value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
 		value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
@@ -1539,8 +1593,8 @@ double log_probability_ratio(
 
 	sort(old_axioms.counts.keys, old_axioms.counts.values, old_axioms.counts.size);
 	sort(new_axioms.counts.keys, new_axioms.counts.values, new_axioms.counts.size);
-	return value + log_probability_ratio(old_axioms, new_axioms, prior.axiom_prior,
-			std::forward<AxiomPriorParameters>(axiom_prior_parameters)...);
+	return value + log_probability_ratio(proof_axioms, old_axioms, new_axioms,
+			prior.axiom_prior, std::forward<AxiomPriorParameters>(axiom_prior_parameters)...);
 }
 
 #endif /* NATURAL_DEDUCTION_H_ */

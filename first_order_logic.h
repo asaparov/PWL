@@ -965,7 +965,7 @@ inline fol_formula* substitute(fol_formula& src,
 {
 	const term_substituter<VariableShift> substituter = {src_term, dst_term};
 	fol_formula* formula = apply_to_terms(src, substituter);
-	if (formula != &src)
+	if (formula == &src)
 		formula->reference_count++;
 	return formula;
 }
@@ -1004,7 +1004,7 @@ inline fol_formula* substitute(
 {
 	index_substituter<VariableShift> substituter = {fol_term::none(), dst_term, term_indices, term_index_count, 0};
 	fol_formula* formula = substitute(src, substituter);
-	if (formula != &src)
+	if (formula == &src)
 		formula->reference_count++;
 	return formula;
 }

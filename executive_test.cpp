@@ -1,6 +1,17 @@
 #include "executive.h"
 #include "fake_parser.h"
 
+struct poisson_distribution {
+	double lambda, log_lambda;
+
+	poisson_distribution(double lambda) : lambda(lambda), log_lambda(log(lambda)) { }
+	poisson_distribution(const poisson_distribution& src) : lambda(src.lambda), log_lambda(src.log_lambda) { }
+};
+
+inline double log_probability(unsigned int k, const poisson_distribution& prior) {
+	return k * prior.log_lambda - prior.lambda - lgamma(k + 1);
+}
+
 template<typename T>
 struct default_array {
 	array<T> a;
@@ -82,158 +93,42 @@ struct chinese_restaurant_process
 	typedef default_array_multiset<T> ObservationCollection;
 
 	double alpha, log_alpha;
-	hash_multiset<T, false> tables;
 
 	chinese_restaurant_process(double alpha) :
-		alpha(alpha), log_alpha(log(alpha)), tables(64)
+		alpha(alpha), log_alpha(log(alpha))
 	{ }
 
 	chinese_restaurant_process(const chinese_restaurant_process<T>& src) :
-		alpha(src.alpha), log_alpha(log(alpha)), tables(src.tables.counts.table.capacity)
-	{
-		if (!tables.counts.put_all(src.tables.counts))
-			exit(EXIT_FAILURE);
-		tables.sum = src.tables.sum;
-	}
+		alpha(src.alpha), log_alpha(log(alpha))
+	{ }
 
 	~chinese_restaurant_process() { }
-
-	inline bool add(const T& customer) {
-		return tables.add(customer);
-	}
-
-	template<typename BaseDistribution>
-	inline bool add(const T& customer, BaseDistribution& base_distribution) {
-		if (!tables.counts.check_size()) return false;
-
-		bool contains; unsigned int bucket;
-		unsigned int& count = tables.counts.get(customer, contains, bucket);
-		if (!contains) {
-			if (!base_distribution.add(customer)) return false;
-			tables.counts.table.keys[bucket] = customer;
-			tables.counts.table.size++;
-			count = 1;
-		} else {
-			count++;
-		}
-		tables.sum++;
-		return true;
-	}
-
-	inline void remove(const T& customer) {
-		bool contains; unsigned int bucket;
-		unsigned int& count = tables.counts.get(customer, contains, bucket);
-#if !defined(NDEBUG)
-		if (!contains || count == 0) {
-			fprintf(stderr, "chinese_restaurant_process.remove WARNING: Given customer is not seated.\n");
-			return;
-		}
-#endif
-		if (count == 1)
-			tables.counts.remove_at(bucket);
-		else count--;
-		tables.sum--;
-	}
-
-	template<typename BaseDistribution>
-	inline void remove(const T& customer, BaseDistribution& base_distribution) {
-		bool contains; unsigned int bucket;
-		unsigned int& count = tables.counts.get(customer, contains, bucket);
-#if !defined(NDEBUG)
-		if (!contains || count == 0) {
-			fprintf(stderr, "chinese_restaurant_process.remove WARNING: Given customer is not seated.\n");
-			return;
-		}
-#endif
-		if (count == 1) {
-			tables.counts.remove_at(bucket);
-			base_distribution.remove(customer);
-		}
-		else count--;
-		tables.sum--;
-	}
 };
 
-template<typename T, template<typename> class Collection>
-inline double log_probability_ratio_old_cluster(
-		const T& observation, unsigned int frequency,
+template<typename MultisetType,
+	template<typename> class Collection, typename T>
+double log_probability(
+		const MultisetType& observations,
 		const chinese_restaurant_process<T>& prior,
-		Collection<T>& old_clusters)
+		Collection<T>& clusters)
 {
-#if !defined(NDEBUG)
-	if (!prior.tables.counts.table.contains(observation))
-		fprintf(stderr, "log_probability_ratio_old_cluster WARNING: This chinese_restaurant_process does not contain the given observation.\n");
-#endif
-	unsigned int count = prior.tables.counts.get(observation);
-	if (count == frequency) {
-		old_clusters.add(observation);
-		return -lgamma(count) - prior.log_alpha;
-	} else {
-		return lgamma(count - frequency) - lgamma(count);
+	double value = 0.0;
+	for (unsigned int i = 0; i < size(observations); i++) {
+		clusters.add(get_key(observations, i));
+		value += prior.log_alpha + lgamma(get_value(observations, i));
 	}
-}
-
-template<typename T, template<typename> class Collection>
-inline double log_probability_ratio_new_cluster(
-		const T& observation, unsigned int frequency,
-		const chinese_restaurant_process<T>& prior,
-		Collection<T>& new_clusters)
-{
-	bool contains;
-	unsigned int count = prior.tables.counts.get(observation, contains);
-	if (contains) {
-		return lgamma(count + frequency) - lgamma(count);
-	} else {
-		new_clusters.add(observation);
-		return prior.log_alpha + lgamma(frequency);
-	}
+	return value + lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
 }
 
 template<typename MultisetType,
 	template<typename> class Collection, typename T>
-double log_probability_ratio(
+inline double log_probability_ratio(
 		const MultisetType& old_observations,
 		const MultisetType& new_observations,
 		const chinese_restaurant_process<T>& prior,
 		Collection<T>& old_clusters, Collection<T>& new_clusters)
 {
-	unsigned int i = 0, j = 0; double value = 0.0;
-	while (i < size(old_observations) && j < size(new_observations))
-	{
-		if (get_key(old_observations, i) == get_key(new_observations, j)) {
-			unsigned int count = prior.tables.counts.get(get_key(old_observations, i));
-			int diff = (int) get_value(new_observations, j) - (int) get_value(old_observations, i);
-			if (count + diff == 0) {
-				/* this cluster is being removed */
-				old_clusters.add(get_key(old_observations, i));
-				value += -lgamma(count) - prior.log_alpha;
-			} else {
-				value += lgamma(count + diff) - lgamma(count);
-			}
-			i++; j++;
-		} else if (get_key(old_observations, i) < get_key(new_observations, j)) {
-			value += log_probability_ratio_old_cluster(
-					get_key(old_observations, i), get_value(old_observations, i), prior, old_clusters);
-			i++;
-		} else {
-			value += log_probability_ratio_new_cluster(
-					get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters);
-			j++;
-		}
-	}
-
-	while (i < size(old_observations)) {
-		value += log_probability_ratio_old_cluster(
-				get_key(old_observations, i), get_value(old_observations, i), prior, old_clusters);
-		i++;
-	} while (j < size(new_observations)) {
-		value += log_probability_ratio_new_cluster(
-				get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters);
-		j++;
-	}
-
-	return value + lgamma(prior.alpha + prior.tables.sum)
-		 - lgamma(prior.alpha + prior.tables.sum - sum(old_observations) + sum(new_observations));
+	return log_probability(new_observations, prior, new_clusters) - log_probability(old_observations, prior, old_clusters);
 }
 
 template<typename T>
@@ -251,6 +146,102 @@ inline double log_probability_ratio(
 	return log_probability_ratio(old_observations, new_observations, prior, old_clusters, new_clusters);
 }
 
+template<bool AutomaticallyFree, typename T, template<typename> class Collection>
+inline double log_probability_ratio_old_cluster(
+		const hash_multiset<T, AutomaticallyFree>& tables,
+		const T& observation, unsigned int frequency,
+		const chinese_restaurant_process<T>& prior,
+		Collection<T>& old_clusters)
+{
+#if !defined(NDEBUG)
+	if (!tables.counts.table.contains(observation))
+		fprintf(stderr, "log_probability_ratio_old_cluster WARNING: This chinese_restaurant_process does not contain the given observation.\n");
+#endif
+	unsigned int count = tables.counts.get(observation);
+	if (count == frequency) {
+		old_clusters.add(observation);
+		return -lgamma(count) - prior.log_alpha;
+	} else {
+		return lgamma(count - frequency) - lgamma(count);
+	}
+}
+
+template<bool AutomaticallyFree, typename T, template<typename> class Collection>
+inline double log_probability_ratio_new_cluster(
+		const hash_multiset<T, AutomaticallyFree>& tables,
+		const T& observation, unsigned int frequency,
+		const chinese_restaurant_process<T>& prior,
+		Collection<T>& new_clusters)
+{
+	bool contains;
+	unsigned int count = tables.counts.get(observation, contains);
+	if (contains) {
+		return lgamma(count + frequency) - lgamma(count);
+	} else {
+		new_clusters.add(observation);
+		return prior.log_alpha + lgamma(frequency);
+	}
+}
+
+template<bool AutomaticallyFree, typename MultisetType,
+	template<typename> class Collection, typename T>
+double log_probability_ratio(
+		const hash_multiset<T, AutomaticallyFree>& tables,
+		const MultisetType& old_observations,
+		const MultisetType& new_observations,
+		const chinese_restaurant_process<T>& prior,
+		Collection<T>& old_clusters, Collection<T>& new_clusters)
+{
+	unsigned int i = 0, j = 0; double value = 0.0;
+	while (i < size(old_observations) && j < size(new_observations))
+	{
+		if (get_key(old_observations, i) == get_key(new_observations, j)) {
+			unsigned int count = tables.counts.get(get_key(old_observations, i));
+			int diff = (int) get_value(new_observations, j) - (int) get_value(old_observations, i);
+			if (count + diff == 0) {
+				/* this cluster is being removed */
+				old_clusters.add(get_key(old_observations, i));
+				value += -lgamma(count) - prior.log_alpha;
+			} else {
+				value += lgamma(count + diff) - lgamma(count);
+			}
+			i++; j++;
+		} else if (get_key(old_observations, i) < get_key(new_observations, j)) {
+			value += log_probability_ratio_old_cluster(tables,
+					get_key(old_observations, i), get_value(old_observations, i), prior, old_clusters);
+			i++;
+		} else {
+			value += log_probability_ratio_new_cluster(tables,
+					get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters);
+			j++;
+		}
+	}
+
+	while (i < size(old_observations)) {
+		value += log_probability_ratio_old_cluster(tables,
+				get_key(old_observations, i), get_value(old_observations, i), prior, old_clusters);
+		i++;
+	} while (j < size(new_observations)) {
+		value += log_probability_ratio_new_cluster(tables,
+				get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters);
+		j++;
+	}
+
+	return value + lgamma(prior.alpha + tables.sum)
+		 - lgamma(prior.alpha + tables.sum - sum(old_observations) + sum(new_observations));
+}
+
+template<typename MultisetType, typename T>
+inline double log_probability_ratio(
+		const hash_multiset<T>& tables,
+		const MultisetType& old_observations,
+		const MultisetType& new_observations,
+		const chinese_restaurant_process<T>& prior)
+{
+	dummy_collection<T> old_clusters, new_clusters;
+	return log_probability_ratio(tables, old_observations, new_observations, prior, old_clusters, new_clusters);
+}
+
 template<typename BaseDistribution>
 struct dirichlet_process
 {
@@ -266,14 +257,6 @@ struct dirichlet_process
 	dirichlet_process(const dirichlet_process<BaseDistribution>& src) :
 		restaurant(src.restaurant), base_distribution(src.base_distribution)
 	{ }
-
-	inline bool add(const ObservationType& customer) {
-		return restaurant.add(customer, base_distribution);
-	}
-
-	inline void remove(const ObservationType& customer) {
-		restaurant.remove(customer, base_distribution);
-	}
 };
 
 template<typename BaseDistribution>
@@ -283,8 +266,9 @@ inline dirichlet_process<BaseDistribution> make_dirichlet_process(
 	return dirichlet_process<BaseDistribution>(alpha, base_distribution);
 }
 
-template<typename BaseDistribution, typename T, bool AutomaticallyFree>
+template<typename MultisetType, typename T, bool AutomaticallyFree, typename BaseDistribution>
 double log_probability_ratio(
+		const MultisetType& restaurant_tables,
 		const array_multiset<T, AutomaticallyFree>& old_observations,
 		const array_multiset<T, AutomaticallyFree>& new_observations,
 		const dirichlet_process<BaseDistribution>& prior)
@@ -292,8 +276,8 @@ double log_probability_ratio(
 	typedef typename BaseDistribution::ObservationCollection Clusters;
 
 	Clusters old_clusters, new_clusters;
-	return log_probability_ratio(old_observations, new_observations, prior.restaurant, old_clusters, new_clusters)
-		 + log_probability_ratio(prior.restaurant.tables.counts.table, prior.base_distribution, old_clusters, new_clusters);
+	return log_probability_ratio(restaurant_tables, old_observations, new_observations, prior.restaurant, old_clusters, new_clusters)
+		 + log_probability_ratio(restaurant_tables.counts.table, prior.base_distribution, old_clusters, new_clusters);
 }
 
 template<typename ConstantDistribution, typename PredicateDistribution>
@@ -610,9 +594,11 @@ double log_probability(
 		const pair<Collection<const T>, Collection<const T>>& observation,
 		const uniform_subset_distribution<T>& prior)
 {
+	if (size(observation.key) < 2)
+		return -std::numeric_limits<double>::infinity();
 	log_cache<double>::instance().ensure_size(size(observation.value));
 	return -log_cache<double>::instance().get(size(observation.value)) * size(observation.key)
-		 + size(observation.key) * prior.log_continue_probability + prior.log_stop_probability;
+		 + (size(observation.key) - 2) * prior.log_continue_probability + prior.log_stop_probability;
 }
 
 template<template<typename> class ObservationCollection,
@@ -680,6 +666,55 @@ const string* get_name(const hash_map<string, unsigned int>& names, unsigned int
 	return NULL;
 }
 
+template<typename Formula, typename ProofCalculus>
+bool contains_axiom(const theory<Formula, ProofCalculus>& T, const Formula* formula)
+{
+	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::TermType TermType;
+	typedef typename ProofCalculus::Proof Proof;
+
+	if (formula == NULL) {
+		fprintf(stderr, "contains_axiom WARNING: `formula` is null.\n");
+		return false;
+	}
+
+	bool contains;
+	if (formula->type == FormulaType::FOR_ALL) {
+		for (const Proof* axiom : T.universal_quantifications)
+			if (*axiom->formula == *formula) return true;
+		return false;
+	} else if (formula->type == FormulaType::ATOM) {
+		if (formula->atom.arg2.type == TermType::NONE) {
+			/* `formula` is an atom of form `f(a)` */
+			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(formula->atom.predicate, contains);
+			if (!contains) return false;
+			return types.key.contains(formula->atom.arg1.constant);
+		} else {
+			/* `formula` is an atom of form `f(a,b)` */
+			relation rel = { 0, formula->atom.arg1.constant, formula->atom.arg2.constant };
+			const pair<array<unsigned int>, array<unsigned int>>& relations = T.relations.get(rel, contains);
+			if (!contains) return false;
+			return relations.key.contains(formula->atom.predicate);
+		}
+	} else if (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::ATOM) {
+		formula = formula->unary.operand;
+		if (formula->atom.arg2.type == TermType::NONE) {
+			/* `formula` is an atom of form `~f(a)` */
+			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(formula->atom.predicate, contains);
+			if (!contains) return false;
+			return types.value.contains(formula->atom.arg1.constant);
+		} else {
+			/* `formula` is an atom of form `~f(a,b)` */
+			relation rel = { 0, formula->atom.arg1.constant, formula->atom.arg2.constant };
+			const pair<array<unsigned int>, array<unsigned int>>& relations = T.relations.get(rel, contains);
+			if (!contains) return false;
+			return relations.value.contains(formula->atom.predicate);
+		}
+	} else {
+		return false;
+	}
+}
+
 int main(int argc, const char** argv)
 {
 	FILE* in = fopen("flat_ontology_articles.txt", "r");
@@ -735,13 +770,13 @@ int main(int argc, const char** argv)
 	theory<fol_formula, natural_deduction<fol_formula, true>> T(names.table.size + 1);
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
-	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.5, 0.3, 0.4, 0.2, 0.4);
-	auto axiom_prior = make_dirichlet_process(1.0, theory_element_prior);
-	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula, true>*>(0.5);
+	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
+	auto axiom_prior = make_dirichlet_process(1.0e-4, theory_element_prior);
+	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula, true>*>(0.1);
 	auto universal_introduction_prior = uniform_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
-	auto proof_prior = make_canonicalized_proof_prior(0.1, axiom_prior,
-			conjunction_prior, universal_introduction_prior, universal_elimination_prior);
+	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
+			universal_introduction_prior, universal_elimination_prior, poisson_distribution(1.0));
 	const string** reverse_name_map = invert(names);
 	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
 	read_article(names.get("Bob"), corpus, parser, T, proof_prior, printer);
@@ -750,12 +785,40 @@ int main(int argc, const char** argv)
 	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
 
-	for (unsigned int t = 0; t < 10000; t++) {
+	fol_formula* all_cats_are_mammals = fol_formula::new_for_all(1,
+			fol_formula::new_if_then(
+				fol_formula::new_atom(parser.symbol_map.get(names.get("cat")), fol_formula::new_variable(1)),
+				fol_formula::new_atom(parser.symbol_map.get(names.get("mammal")), fol_formula::new_variable(1))
+			)
+		);
+	fol_formula* all_mammals_are_cats = fol_formula::new_for_all(1,
+			fol_formula::new_if_then(
+				fol_formula::new_atom(parser.symbol_map.get(names.get("mammal")), fol_formula::new_variable(1)),
+				fol_formula::new_atom(parser.symbol_map.get(names.get("cat")), fol_formula::new_variable(1))
+			)
+		);
+
+	unsigned int all_cats_are_mammals_count = 0;
+	unsigned int all_mammals_are_cats_count = 0;
+	unsigned int neither_count = 0;
+	constexpr unsigned int iterations = 10000000;
+	for (unsigned int t = 0; t < iterations; t++) {
+		//T.print_axioms(stdout, parser.get_printer(printer));
+		//print('\n', stdout); fflush(stdout);
 		do_mh_step(T, proof_prior);
-		T.print_axioms(stdout, parser.get_printer(printer));
-		print('\n', stdout); fflush(stdout);
+
+		bool has_all_cats_are_mammals = contains_axiom(T, all_cats_are_mammals);
+		bool has_all_mammals_are_cats = contains_axiom(T, all_mammals_are_cats);
+		if (has_all_cats_are_mammals) all_cats_are_mammals_count++;
+		if (has_all_mammals_are_cats) all_mammals_are_cats_count++;
+		if (!has_all_cats_are_mammals && !has_all_mammals_are_cats) neither_count++;
 	}
 
+	fprintf(stderr, "all_cats_are_mammals: %lf\n", (double) all_cats_are_mammals_count / iterations);
+	fprintf(stderr, "all_mammals_are_cats: %lf\n", (double) all_mammals_are_cats_count / iterations);
+
+	free(*all_cats_are_mammals); free(all_cats_are_mammals);
+	free(*all_mammals_are_cats); free(all_mammals_are_cats);
 	free(reverse_name_map);
 	for (auto entry : names) free(entry.key);
 	return EXIT_SUCCESS;

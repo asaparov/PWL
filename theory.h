@@ -2,6 +2,7 @@
 #define THEORY_H_
 
 #include <core/array.h>
+#include <math/multiset.h>
 
 #include "array_view.h"
 
@@ -169,9 +170,11 @@ struct theory
 	array<Proof*> universal_quantifications;
 
 	hash_set<Proof*> observations;
+	hash_multiset<Formula*, false> proof_axioms;
 
 	theory(unsigned int new_constant_offset) : new_constant_offset(new_constant_offset),
-			types(64), relations(64), ground_concepts(64), ground_axiom_count(0), universal_quantifications(32), observations(64) { }
+			types(64), relations(64), ground_concepts(64), ground_axiom_count(0),
+			universal_quantifications(32), observations(64), proof_axioms(64) { }
 
 	~theory() {
 		for (auto entry : types) {
@@ -207,13 +210,12 @@ struct theory
 		return universal_quantifications.length + ground_axiom_count;
 	}
 
-	template<typename AxiomPrior>
-	bool add_formula(Formula* formula, unsigned int& new_constant, AxiomPrior& prior)
+	bool add_formula(Formula* formula, unsigned int& new_constant)
 	{
 		Formula* canonicalized = canonicalize(*formula);
 		if (canonicalized == NULL) return false;
 
-		Proof* new_proof = make_proof(canonicalized, new_constant, prior);
+		Proof* new_proof = make_proof(canonicalized, new_constant);
 		core::free(*canonicalized);
 		if (canonicalized->reference_count == 0)
 			core::free(canonicalized);
@@ -225,32 +227,33 @@ struct theory
 				core::free(new_proof);
 			return false;
 		}
+
+		/* add the axioms in the new proof to `proof_axioms` */
+		if (!get_axioms(new_proof, proof_axioms)) {
+			observations.remove(new_proof);
+			core::free(*new_proof);
+			if (new_proof->reference_count == 0)
+				core::free(new_proof);
+			return false;
+		}
 		return true;
 	}
 
-	template<typename AxiomPrior>
-	inline bool add_universal_quantification(Proof* axiom, AxiomPrior& prior) {
-		if (!universal_quantifications.add(axiom)) {
+	inline bool add_universal_quantification(Proof* axiom) {
+		if (!universal_quantifications.add(axiom))
 			return false;
-		} if (!prior.add(axiom->formula)) {
-			universal_quantifications.length--;
-			return false;
-		}
 		axiom->reference_count++;
 		return true;
 	}
 
-	template<typename AxiomPrior>
-	inline void remove_universal_quantification(unsigned int axiom_index, AxiomPrior& prior) {
+	inline void remove_universal_quantification(unsigned int axiom_index) {
 		Proof* axiom = universal_quantifications[axiom_index];
-		prior.remove(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		universal_quantifications.remove(axiom_index);
 	}
 
-	template<bool Negated, typename AxiomPrior>
-	inline bool add_unary_atom(unsigned int predicate,
-			unsigned int arg, Proof* axiom, AxiomPrior& prior)
+	template<bool Negated>
+	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom)
 	{
 #if !defined(NDEBUG)
 		if (!ground_concepts.table.contains(arg))
@@ -274,7 +277,6 @@ struct theory
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.ensure_capacity(ground_types.size + 1)) return false;
 
-		if (!prior.add(axiom->formula)) return false;
 		add_sorted<false>(instances, arg);
 		ground_types.keys[ground_types.size] = predicate;
 		ground_types.values[ground_types.size++] = axiom;
@@ -283,8 +285,8 @@ struct theory
 		return true;
 	}
 
-	template<bool Negated, typename AxiomPrior>
-	inline bool add_binary_atom(relation rel, Proof* axiom, AxiomPrior& prior)
+	template<bool Negated>
+	inline bool add_binary_atom(relation rel, Proof* axiom)
 	{
 #if !defined(NDEBUG)
 		if (!ground_concepts.table.contains(rel.arg1))
@@ -339,25 +341,22 @@ struct theory
 		 || !ground_arg1.ensure_capacity(ground_arg1.size + 3)
 		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3)) return false;
 
-		if (!prior.add(axiom->formula)) return false;
-
 		if (rel.arg1 == rel.arg2) {
 			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
 			if (!contains) {
 				if (!array_init(both_arg_instance_pair.key, 8)) {
-					prior.remove(axiom->formula); return false;
+					return false;
 				} else if (!array_init(both_arg_instance_pair.value, 8)) {
 					core::free(both_arg_instance_pair.key);
-					prior.remove(axiom->formula); return false;
+					return false;
 				}
 				relations.table.keys[bucket] = {rel.predicate, 0, 0};
 				relations.table.size++;
 			}
 
 			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
-			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1)) {
-				prior.remove(axiom->formula); return false;
-			}
+			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1))
+				return false;
 			both_arg_instances[both_arg_instances.length++] = rel.arg1;
 			insertion_sort(both_arg_instances);
 		}
@@ -381,8 +380,8 @@ struct theory
 		return true;
 	}
 
-	template<bool Negated, typename AxiomPrior>
-	inline void remove_unary_atom(unsigned int predicate, unsigned int arg, AxiomPrior& prior)
+	template<bool Negated>
+	inline void remove_unary_atom(unsigned int predicate, unsigned int arg)
 	{
 #if !defined(NDEBUG)
 		if (!types.table.contains(predicate))
@@ -408,14 +407,13 @@ struct theory
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_types` does not contain %u.\n", predicate);
 #endif
 		Proof* axiom = ground_types.values[index];
-		prior.remove(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		ground_types.remove_at(index);
 		ground_axiom_count--;
 	}
 
-	template<bool Negated, typename AxiomPrior>
-	inline void remove_binary_atom(relation rel, AxiomPrior& prior)
+	template<bool Negated>
+	inline void remove_binary_atom(relation rel)
 	{
 #if !defined(NDEBUG)
 		if (!relations.table.contains({0, rel.arg1, rel.arg2})
@@ -481,7 +479,6 @@ struct theory
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
 #endif
 		Proof* axiom = ground_arg1.values[index];
-		prior.remove(axiom->formula);
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		ground_arg1.remove_at(index);
 
@@ -510,14 +507,13 @@ struct theory
 	}
 
 private:
-	template<typename AxiomPrior>
-	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant, AxiomPrior& prior)
+	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant)
 	{
 		if (canonicalized->type == FormulaType::ATOM) {
-			return make_atom_proof<false>(canonicalized, new_constant, prior);
+			return make_atom_proof<false>(canonicalized, new_constant);
 		} else if (canonicalized->type == FormulaType::NOT) {
 			if (canonicalized->unary.operand->type == FormulaType::ATOM) {
-				return make_atom_proof<true>(canonicalized, new_constant, prior);
+				return make_atom_proof<true>(canonicalized, new_constant);
 			}
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			unsigned int variable = canonicalized->quantifier.variable;
@@ -550,10 +546,16 @@ private:
 						}
 
 						/* TODO: definitions of new concepts should be biconditionals */
-						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+						Formula* definition = Formula::new_for_all(variable, Formula::new_if_then(
+								Formula::new_atom(new_constant, Formula::new_variable(variable)), right));
+						if (definition == NULL) return NULL;
+						right->reference_count++;
+
+						Proof* new_axiom = ProofCalculus::new_axiom(definition);
+						free(*definition); if (definition->reference_count == 0) free(definition);
 						if (new_axiom == NULL) return NULL;
 						new_axiom->reference_count++;
-						if (!add_universal_quantification(new_axiom, prior)) {
+						if (!add_universal_quantification(new_axiom)) {
 							free(*new_axiom); free(new_axiom);
 							return NULL;
 						}
@@ -580,7 +582,7 @@ private:
 						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 						if (new_axiom == NULL) return NULL;
 						new_axiom->reference_count++;
-						if (!add_universal_quantification(new_axiom, prior)) {
+						if (!add_universal_quantification(new_axiom)) {
 							free(*new_axiom); free(new_axiom);
 							return NULL;
 						}
@@ -598,8 +600,8 @@ private:
 			}
 		} else if (canonicalized->type == FormulaType::AND) {
 			return ProofCalculus::new_conjunction_intro(
-					make_proof(canonicalized->binary.left, new_constant, prior),
-					make_proof(canonicalized->binary.right, new_constant, prior));
+					make_proof(canonicalized->binary.left, new_constant),
+					make_proof(canonicalized->binary.right, new_constant));
 		} else if (canonicalized->type == FormulaType::EXISTS) {
 			/* TODO: implement this */
 			fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
@@ -609,8 +611,8 @@ private:
 		return NULL;
 	}
 
-	template<bool Negated, typename AxiomPrior>
-	Proof* make_atom_proof(Formula* canonicalized, unsigned int& new_constant, AxiomPrior& prior)
+	template<bool Negated>
+	Proof* make_atom_proof(Formula* canonicalized, unsigned int& new_constant)
 	{
 		bool contains; unsigned int bucket;
 		Formula* atom = (Negated ? canonicalized->unary.operand : canonicalized);
@@ -636,7 +638,7 @@ private:
 						}
 						ground_concepts.table.keys[bucket] = new_constant;
 						ground_concepts.table.size++;
-					} if (!add_unary_atom<Negated>(atom->atom.predicate, new_constant, new_axiom, prior)) {
+					} if (!add_unary_atom<Negated>(atom->atom.predicate, new_constant, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -685,7 +687,7 @@ private:
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_unary_atom<Negated>(atom->atom.predicate, atom->atom.arg1.constant, new_axiom, prior)) {
+					if (!add_unary_atom<Negated>(atom->atom.predicate, atom->atom.arg1.constant, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -750,7 +752,7 @@ private:
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_binary_atom<Negated>({atom->atom.predicate, atom->atom.arg1.constant, atom->atom.arg2.constant}, new_axiom, prior)) {
+					if (!add_binary_atom<Negated>({atom->atom.predicate, atom->atom.arg1.constant, atom->atom.arg2.constant}, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -767,8 +769,7 @@ private:
 		}
 	}
 
-	inline bool valid_definition(const Formula* right,
-			unsigned int quantified_variable)
+	inline bool valid_definition(const Formula* right, unsigned int quantified_variable)
 	{
 		if (right->type == FormulaType::ATOM) {
 			return right->atom.predicate != PREDICATE_UNKNOWN

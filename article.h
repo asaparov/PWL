@@ -32,6 +32,11 @@ inline bool operator != (const token& first, const token& second) {
 	return first.id != second.id;
 }
 
+template<typename Stream, typename... Printer>
+inline bool print(const token& t, Stream& out, Printer&&... printer) {
+	return print(t.id, out, std::forward<Printer>(printer)...);
+}
+
 struct sentence {
 	token* tokens;
 	unsigned int length;
@@ -70,6 +75,16 @@ inline bool operator == (const sentence& first, const sentence& second) {
 	if (first.length != second.length) return false;
 	for (unsigned int i = 0; i < first.length; i++)
 		if (first.tokens[i] != second.tokens[i]) return false;
+	return true;
+}
+
+template<typename Stream, typename... Printer>
+bool print(const sentence& s, Stream& out, Printer&&... printer) {
+	if (s.length == 0) return true;
+	if (!print(s.tokens[0], out, std::forward<Printer>(printer)...)) return false;
+	for (unsigned int i = 1; i < s.length; i++) {
+		if (!print(' ', out) || !print(s.tokens[i], out, std::forward<Printer>(printer)...)) return false;
+	}
 	return true;
 }
 

@@ -29,14 +29,18 @@ bool read_sentence(
 	while (true) {
 		/* attempt to parse the sentence */
 		array<token> unrecognized = array<token>(16);
-		if (!parser.template parse<2>(s, logical_forms, log_probabilities, parse_count, T, unrecognized)) return false;
+		if (!parser.template parse<2>(s, logical_forms, log_probabilities, parse_count, T, unrecognized)) {
+			print("read_sentence ERROR: Unable to parse sentence '", stderr); print(s, stderr, printer); print("'.\n", stderr);
+			return false;
+		}
 
 		/* read the article on the unrecognized word */
 		if (unrecognized.length == 0) {
 			break;
 		} else if (parse_count > 0 && unrecognized.length == 1 && unrecognized[0].id == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			bool success = T.add_formula(logical_forms[0], new_constant, proof_prior.axiom_prior)
+			new_constant = 0;
+			bool success = T.add_formula(logical_forms[0], new_constant)
 						&& parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);
 			return success;
@@ -69,13 +73,14 @@ bool read_sentence(
 	}
 
 	/* add the most probable logical form to the theory */
-	if (!T.add_formula(logical_forms[0], new_constant, proof_prior.axiom_prior)) {
+	if (!T.add_formula(logical_forms[0], new_constant)) {
 		free_logical_forms(logical_forms, parse_count);
 		return false;
 	}
 
-	for (unsigned int t = 0; t < 10; t++)
-		if (!do_mh_step(T, proof_prior)) return false;
+// TODO: uncomment this; and also add it after the earlier call to `add_formula` too
+//	for (unsigned int t = 0; t < 10; t++)
+//		if (!do_mh_step(T, proof_prior)) return false;
 
 	free_logical_forms(logical_forms, parse_count);
 	return true;

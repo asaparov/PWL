@@ -10,7 +10,7 @@ struct constant_relabeler {
 
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant, constant_relabeler& relabeler) {
 	bool contains;
-	unsigned int dst = relabeler.map.get(src_constant, contains);
+	const unsigned int& dst = relabeler.map.get(src_constant, contains);
 	if (contains) {
 		dst_constant = dst;
 		return true;
@@ -19,8 +19,17 @@ inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant
 	}
 }
 
+unsigned int debug = 0;
+
 inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate, constant_relabeler& relabeler) {
-	return clone_predicate(src_predicate, dst_predicate);
+	bool contains;
+	const unsigned int& dst = relabeler.map.get(src_predicate, contains);
+	if (contains) {
+		dst_predicate = dst;
+		return true;
+	} else {
+		return clone_predicate(src_predicate, dst_predicate);
+	}
 }
 
 inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable, constant_relabeler& relabeler) {
@@ -64,10 +73,11 @@ inline bool visit_constant(unsigned int constant, const constant_subtracter& sub
 struct fake_parser {
 	hash_map<sentence, sentence_label> table;
 	hash_map<token, unsigned int> learned_tokens;
+	hash_map<unsigned int, unsigned int> symbol_map;
 	hash_map<unsigned int, unsigned int> reverse_symbol_map;
 	unsigned int unknown_id;
 
-	fake_parser(unsigned int unknown_id) : table(64), learned_tokens(32), reverse_symbol_map(32), unknown_id(unknown_id) { }
+	fake_parser(unsigned int unknown_id) : table(64), learned_tokens(32), symbol_map(32), reverse_symbol_map(32), unknown_id(unknown_id) { }
 
 	~fake_parser() {
 		for (auto entry : table) {
@@ -117,11 +127,21 @@ struct fake_parser {
 	{
 		bool contains;
 		sentence_label& label = table.get(s, contains);
-		if (!contains) return false;
-		for (const auto& entry : label.labels)
-			if (!learned_tokens.put({entry.key}, new_constant)) return false;
+		if (!contains || !learned_tokens.check_size(learned_tokens.table.size + label.labels.size))
+			return false;
+
+		unsigned int bucket;
+		for (const auto& entry : label.labels) {
+			unsigned int& token = learned_tokens.get({entry.key}, contains, bucket);
+			if (!contains) {
+				learned_tokens.table.keys[bucket] = {entry.key};
+				learned_tokens.table.size++;
+				token = new_constant;
+			}
+		}
+
 		if (label.labels.size > 0)
-			return reverse_symbol_map.put(new_constant, label.labels.values[0]);
+			return symbol_map.put(label.labels.values[0], new_constant) && reverse_symbol_map.put(new_constant, label.labels.values[0]);
 		return true;
 	}
 
