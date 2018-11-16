@@ -600,7 +600,7 @@ double log_probability(
 {
 	if (size(observation.key) < 2)
 		return -std::numeric_limits<double>::infinity();
-	log_cache<double>::instance().ensure_size(size(observation.value));
+	log_cache<double>::instance().ensure_size(size(observation.value) + 1);
 	return -log_cache<double>::instance().get(size(observation.value)) * size(observation.key)
 		 + (size(observation.key) - 2) * prior.log_continue_probability + prior.log_stop_probability;
 }
@@ -637,7 +637,7 @@ double log_probability(
 		const pair<T, Collection<T>>& observation,
 		const uniform_distribution<T>& prior)
 {
-	log_cache<double>::instance().ensure_size(size(observation.value));
+	log_cache<double>::instance().ensure_size(size(observation.value) + 1);
 	return -log_cache<double>::instance().get(size(observation.value));
 }
 
@@ -775,7 +775,7 @@ int main(int argc, const char** argv)
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
 	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
-	auto axiom_prior = make_dirichlet_process(1.0e-4, theory_element_prior);
+	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula, true>*>(0.1);
 	auto universal_introduction_prior = uniform_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
@@ -788,47 +788,53 @@ int main(int argc, const char** argv)
 	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
 
-	fol_formula* all_cats_are_mammals = fol_formula::new_for_all(1,
+	array_map<fol_formula*, unsigned int> tracked_logical_forms(2);
+	tracked_logical_forms.put(
+		fol_formula::new_for_all(1,
 			fol_formula::new_if_then(
 				fol_formula::new_atom(parser.symbol_map.get(names.get("cat")), fol_formula::new_variable(1)),
 				fol_formula::new_atom(parser.symbol_map.get(names.get("mammal")), fol_formula::new_variable(1))
 			)
-		);
-	fol_formula* all_mammals_are_cats = fol_formula::new_for_all(1,
+		), 0);
+	tracked_logical_forms.put(
+		fol_formula::new_for_all(1,
 			fol_formula::new_if_then(
 				fol_formula::new_atom(parser.symbol_map.get(names.get("mammal")), fol_formula::new_variable(1)),
 				fol_formula::new_atom(parser.symbol_map.get(names.get("cat")), fol_formula::new_variable(1))
 			)
-		);
+		), 0);
 
-	unsigned int all_cats_are_mammals_count = 0;
-	unsigned int all_mammals_are_cats_count = 0;
-	unsigned int neither_count = 0;
-	constexpr unsigned int iterations = 10000000;
+	constexpr unsigned int iterations = 10000;
 	timer stopwatch;
+	auto scribe = parser.get_printer(printer);
 	for (unsigned int t = 0; t < iterations; t++) {
-		//T.print_axioms(stdout, parser.get_printer(printer));
+		//printf("[%u]\n", t);
+		//T.print_axioms(stdout, scribe);
 		//print('\n', stdout); fflush(stdout);
 		if (stopwatch.milliseconds() > 1000) {
-			fprintf(stderr, "all_cats_are_mammals: %lf\n", (double) all_cats_are_mammals_count / t);
-			fprintf(stderr, "all_mammals_are_cats: %lf\n", (double) all_mammals_are_cats_count / t);
+			print("[iteration ", stdout); print(t, stdout); print("]\n", stdout);
+			for (const auto& entry : tracked_logical_forms) {
+				print("p(", stdout); print(*entry.key, stdout, scribe); print(" ∈ T) ≈ ", stdout); print((double) entry.value / t, stdout); print('\n', stdout);
+			}
 			stopwatch.start();
 		}
 		do_mh_step(T, proof_prior);
 
-		bool has_all_cats_are_mammals = contains_axiom(T, all_cats_are_mammals);
-		bool has_all_mammals_are_cats = contains_axiom(T, all_mammals_are_cats);
-		if (has_all_cats_are_mammals) all_cats_are_mammals_count++;
-		if (has_all_mammals_are_cats) all_mammals_are_cats_count++;
-		if (!has_all_cats_are_mammals && !has_all_mammals_are_cats) neither_count++;
+		for (auto entry : tracked_logical_forms)
+			if (contains_axiom(T, entry.key)) entry.value++;
 	}
 
-	fprintf(stderr, "all_cats_are_mammals: %lf\n", (double) all_cats_are_mammals_count / iterations);
-	fprintf(stderr, "all_mammals_are_cats: %lf\n", (double) all_mammals_are_cats_count / iterations);
+	print("[iteration ", stdout); print(iterations, stdout); print("]\n", stdout);
+	for (const auto& entry : tracked_logical_forms) {
+		print("p(", stdout); print(*entry.key, stdout, scribe); print(" ∈ T) ≈ ", stdout); print((double) entry.value / iterations, stdout); print('\n', stdout);
+	}
 
-	free(*all_cats_are_mammals); free(all_cats_are_mammals);
-	free(*all_mammals_are_cats); free(all_mammals_are_cats);
+	for (auto entry : tracked_logical_forms) {
+		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+	}
 	free(reverse_name_map);
 	for (auto entry : names) free(entry.key);
 	return EXIT_SUCCESS;

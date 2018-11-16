@@ -182,12 +182,24 @@ template<bool Negated, unsigned int Arity>
 struct atom {
 	unsigned int predicate;
 	unsigned int args[Arity];
+
+	atom() { }
+	atom(unsigned int predicate, const unsigned int (&arg_array)[Arity]) : predicate(predicate) {
+		for (unsigned int i = 0; i < Arity; i++)
+			args[i] = arg_array[i];
+	}
+
+	inline atom<!Negated, Arity> operator ! () const {
+		return atom<!Negated, Arity>(predicate, args);
+	}
 };
 
 template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, typename... Terms,
 	typename std::enable_if<Index == Arity>::type* = nullptr>
 inline Formula* new_lifted_atom_helper(const atom<Negated, Arity> a, Terms&&... args) {
-	return Formula::new_atom(a.predicate, std::forward<Terms>(args)...);
+	Formula* atom = Formula::new_atom(a.predicate, std::forward<Terms>(args)...);
+	if (Negated) return Formula::new_not(atom);
+	else return atom;
 }
 
 template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, typename... Terms,
@@ -203,20 +215,20 @@ inline Formula* new_lifted_atom(const atom<Negated, Arity> a) {
 }
 
 template<bool Negated, typename Formula>
-inline const array<unsigned int>& get_negated_set(
+inline const array<unsigned int>& get_concept_set(
 		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 1> a)
 {
-	return (Negated ? T.types.get(a.predicate).key : T.types.get(a.predicate).value);
+	return (Negated ? T.types.get(a.predicate).value : T.types.get(a.predicate).key);
 }
 
 template<bool Negated, typename Formula>
-const array<unsigned int>& get_negated_set(
+const array<unsigned int>& get_concept_set(
 		const theory<Formula, natural_deduction<Formula, true>>& T,
 		const atom<Negated, 2> a)
 {
 	relation r = { a.predicate, a.args[0], a.args[1] };
-	return (Negated ? T.relations.get(r).key : T.relations.get(r).value);
+	return (Negated ? T.relations.get(r).value : T.relations.get(r).key);
 }
 
 template<bool Negated, typename Formula>
@@ -446,7 +458,7 @@ bool propose_universal_intro(
 			 rather than adding a trivial proof of the literal. */
 
 	/* compute the set of constants for which the selected axiom is true */
-	const array<unsigned int>& negated_set = get_negated_set(T, a);
+	const array<unsigned int>& negated_set = get_concept_set(T, !a);
 
 	/* find other ground axioms that are connected to this constant */
 	const concept<ProofCalculus>& c = T.ground_concepts.get(concept_id);
@@ -501,12 +513,15 @@ bool propose_universal_intro(
 	if (has_intersection(intersection.data, intersection.length, negated_set.data, negated_set.length))
 		return true;
 
+	/* we only consider concepts that have the axiom `a` */
+	set_intersect(intersection, get_concept_set(T, a));
+
 	/* compute the probability of the inverse proposal */
 	unsigned int new_axiom_count = T.axiom_count() + 1;
 	if (Arity == 2 && a.args[0] == a.args[1]) new_axiom_count -= 3 * intersection.length;
 	else if (Arity == 2) new_axiom_count -= 2 * intersection.length;
 	else new_axiom_count -= intersection.length;
-	if (!log_cache<double>::instance().ensure_size(new_axiom_count)) return false;
+	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) return false;
 	log_proposal_probability_ratio += -log_cache<double>::instance().get(new_axiom_count);
 
 	/* we've finished constructing the new universally-quantified formula,
@@ -947,7 +962,7 @@ bool propose_universal_elim(
 	if (is_consequent_symmetric) new_axiom_count += new_grounded_axioms.table.size * 3;
 	else if (is_consequent_binary) new_axiom_count += new_grounded_axioms.table.size * 2;
 	else new_axiom_count += new_grounded_axioms.table.size;
-	if (!log_cache<double>::instance().ensure_size(new_axiom_count)) return false;
+	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) return false;
 	double* log_probabilities = (double*) calloc(intersection.length, sizeof(double));
 	for (unsigned int i = 0; i < intersection.length; i++) {
 		const concept<ProofCalculus>& c = T.ground_concepts.get(intersection[i]);
@@ -1236,7 +1251,7 @@ bool do_mh_step(
 	/* select an axiom from `T` uniformly at random */
 	unsigned int axiom_count = T.axiom_count();
 	unsigned int random = sample_uniform(axiom_count);
-	if (!log_cache<double>::instance().ensure_size(axiom_count)) return false;
+	if (!log_cache<double>::instance().ensure_size(axiom_count + 1)) return false;
 	log_proposal_probability_ratio -= -log_cache<double>::instance().get(axiom_count);
 	if (random < T.ground_axiom_count) {
 		/* we've selected a grounded axiom */

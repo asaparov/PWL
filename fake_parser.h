@@ -19,8 +19,6 @@ inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant
 	}
 }
 
-unsigned int debug = 0;
-
 inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate, constant_relabeler& relabeler) {
 	bool contains;
 	const unsigned int& dst = relabeler.map.get(src_predicate, contains);

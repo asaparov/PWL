@@ -1519,7 +1519,7 @@ inline double log_probability_helper(
 	double value = log_probability(canonical_order.length, proof_length_prior);
 	unsigned int formula_counter = 0;
 	array<unsigned int> available_parameters(16);
-	log_cache<double>::instance().ensure_size(canonical_order.length);
+	log_cache<double>::instance().ensure_size(canonical_order.length + 1);
 	for (unsigned int i = 0; i < canonical_order.length; i++)
 		value += log_probability(canonical_order.data, i, formula_counter,
 				available_parameters, axioms, conjunction_introductions, universal_introductions,

@@ -5,3 +5,5 @@ Kate: Kate:kate is a cat:cat. {cat(kate)} Kate:kate is a mammal:mammal. {mammal(
 Sam: Sam:sam is a cat:cat. {cat(sam)} Sam:sam is a mammal:mammal. {mammal(sam)}
 Byron: Byron:byron is a cat:cat. {cat(byron)} Byron:byron is a mammal:mammal. {mammal(byron)}
 Alex: Alex:alex is a cat:cat. {cat(alex)} Alex:alex is a mammal:mammal. {mammal(alex)}
+Lee: Lee:lee is a mammal:mammal. {mammal(lee)}
+Amy: Amy:amy is a mammal:mammal. {mammal(amy)}
