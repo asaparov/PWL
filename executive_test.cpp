@@ -788,8 +788,8 @@ int main(int argc, const char** argv)
 	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
+	//read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
+	//read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
 
 	array_map<fol_formula*, unsigned int> tracked_logical_forms(2);
 	tracked_logical_forms.put(
@@ -807,7 +807,7 @@ int main(int argc, const char** argv)
 			)
 		), 0);
 
-	constexpr unsigned int iterations = 10000;
+	constexpr unsigned int iterations = 1000000;
 	timer stopwatch;
 	auto scribe = parser.get_printer(printer);
 	for (unsigned int t = 0; t < iterations; t++) {
@@ -817,7 +817,7 @@ int main(int argc, const char** argv)
 		if (stopwatch.milliseconds() > 1000) {
 			print("[iteration ", stdout); print(t, stdout); print("]\n", stdout);
 			for (const auto& entry : tracked_logical_forms) {
-				print("p(", stdout); print(*entry.key, stdout, scribe); print(" ∈ T) ≈ ", stdout); print((double) entry.value / t, stdout); print('\n', stdout);
+				print("p(", stdout); print(*entry.key, stdout, scribe); print(" axiom) ≈ ", stdout); print((double) entry.value / t, stdout); print('\n', stdout);
 			}
 			stopwatch.start();
 		}
@@ -829,7 +829,7 @@ int main(int argc, const char** argv)
 
 	print("[iteration ", stdout); print(iterations, stdout); print("]\n", stdout);
 	for (const auto& entry : tracked_logical_forms) {
-		print("p(", stdout); print(*entry.key, stdout, scribe); print(" ∈ T) ≈ ", stdout); print((double) entry.value / iterations, stdout); print('\n', stdout);
+		print("p(", stdout); print(*entry.key, stdout, scribe); print(" axiom) ≈ ", stdout); print((double) entry.value / iterations, stdout); print('\n', stdout);
 	}
 
 	for (auto entry : tracked_logical_forms) {

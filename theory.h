@@ -228,6 +228,9 @@ struct theory
 			return false;
 		}
 
+if (!check_proof(*new_proof, canonicalized))
+fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
+
 		/* add the axioms in the new proof to `proof_axioms` */
 		if (!get_axioms(new_proof, proof_axioms)) {
 			observations.remove(new_proof);
