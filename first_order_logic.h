@@ -980,7 +980,7 @@ struct index_substituter {
 };
 
 template<int VariableShift>
-inline bool substitute(const fol_term& src, fol_term& dst, index_substituter<VariableShift>& substituter)
+inline bool apply(const fol_term& src, fol_term& dst, index_substituter<VariableShift>& substituter)
 {
 	if (substituter.term_index_count > 0 && *substituter.term_indices == substituter.current_term_index) {
 		if (substituter.src.type == fol_term_type::NONE) {
@@ -999,11 +999,11 @@ inline bool substitute(const fol_term& src, fol_term& dst, index_substituter<Var
 
 template<int VariableShift>
 inline fol_formula* substitute(
-		const fol_formula& src, const unsigned int* term_indices,
+		fol_formula& src, const unsigned int* term_indices,
 		unsigned int term_index_count, const fol_term& dst_term)
 {
 	index_substituter<VariableShift> substituter = {fol_term::none(), dst_term, term_indices, term_index_count, 0};
-	fol_formula* formula = substitute(src, substituter);
+	fol_formula* formula = apply_to_terms(src, substituter);
 	if (formula == &src)
 		formula->reference_count++;
 	return formula;
@@ -1148,23 +1148,23 @@ inline void new_fol_array_helper(fol_formula** operands, fol_formula* arg, Args&
 }
 
 template<fol_formula_type Operator, typename... Args>
-inline fol_formula* new_fol_array(Args&&... args)
+inline fol_formula* new_fol_array(fol_formula* arg, Args&&... args)
 {
 	fol_formula* formula;
 	if (!new_fol_formula(formula)) return NULL;
 	formula->reference_count = 1;
 	formula->type = Operator;
-	formula->array.length = sizeof...(Args);
-	formula->array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * sizeof...(Args));
+	formula->array.length = 1 + sizeof...(Args);
+	formula->array.operands = (fol_formula**) malloc(sizeof(fol_formula*) * (1 + sizeof...(Args)));
 	if (formula->array.operands == NULL) {
 		free(formula); return NULL;
 	}
-	new_fol_array_helper<Operator, 0>(formula->array.operands, std::forward<Args>(args)...);
+	new_fol_array_helper<Operator, 0>(formula->array.operands, arg, std::forward<Args>(args)...);
 	return formula;
 }
 
 template<fol_formula_type Operator, template<typename> class Array>
-inline fol_formula* new_fol_array(Array<fol_formula*>& operands)
+inline fol_formula* new_fol_array(const Array<fol_formula*>& operands)
 {
 	fol_formula* formula;
 	if (!new_fol_formula(formula)) return NULL;
