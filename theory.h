@@ -216,6 +216,12 @@ struct theory
 		if (canonicalized == NULL) return false;
 
 		Proof* new_proof = make_proof(canonicalized, new_constant);
+array_map<unsigned int, unsigned int> constant_map(1);
+constant_map.put(PREDICATE_UNKNOWN, new_constant);
+Formula* expected_formula = relabel_constants(canonicalized, constant_map);
+if (!check_proof(*new_proof, expected_formula))
+	fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
+core::free(*expected_formula); core::free(expected_formula);
 		core::free(*canonicalized);
 		if (canonicalized->reference_count == 0)
 			core::free(canonicalized);
@@ -227,9 +233,6 @@ struct theory
 				core::free(new_proof);
 			return false;
 		}
-
-if (!check_proof(*new_proof, canonicalized))
-fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 
 		/* add the axioms in the new proof to `proof_axioms` */
 		if (!get_axioms(new_proof, proof_axioms)) {

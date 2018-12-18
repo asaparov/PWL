@@ -990,7 +990,7 @@ bool check_proof(const nd_step<Formula, Canonical>& proof,
 		const Formula* expected_conclusion, ProofMap&&... proof_map)
 {
 	Formula* actual_conclusion = compute_proof_conclusion(proof, std::forward<ProofMap>(proof_map)...);
-	bool success = (*actual_conclusion != *expected_conclusion);
+	bool success = (*actual_conclusion == *expected_conclusion);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
 	free(*actual_conclusion);

@@ -3341,7 +3341,9 @@ bool is_canonical(const fol_formula& src) {
 		fprintf(stderr, "is_canonical ERROR: Unable to canonicalize formula.\n");
 		exit(EXIT_FAILURE);
 	}
-	return src == *canonicalized;
+	bool result = (src == *canonicalized);
+	free(*canonicalized); free(canonicalized);
+	return result;
 }
 
 
