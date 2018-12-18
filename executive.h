@@ -43,6 +43,9 @@ bool read_sentence(
 			bool success = T.add_formula(logical_forms[0], new_constant)
 						&& parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);
+
+			for (unsigned int t = 0; t < 10; t++)
+				if (!do_mh_step(T, proof_prior)) return false;
 			return success;
 		}
 
@@ -78,9 +81,8 @@ bool read_sentence(
 		return false;
 	}
 
-// TODO: uncomment this; and also add it after the earlier call to `add_formula` too
-//	for (unsigned int t = 0; t < 10; t++)
-//		if (!do_mh_step(T, proof_prior)) return false;
+	for (unsigned int t = 0; t < 10; t++)
+		if (!do_mh_step(T, proof_prior)) return false;
 
 	free_logical_forms(logical_forms, parse_count);
 	return true;
