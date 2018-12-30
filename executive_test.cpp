@@ -551,6 +551,7 @@ double log_probability_helper(const fol_formula* formula,
 	case fol_formula_type::EXISTS:
 	case fol_formula_type::TRUE:
 	case fol_formula_type::FALSE:
+	case fol_formula_type::EQUALS:
 		return -std::numeric_limits<double>::infinity();
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized fol_formula_type.\n");
@@ -670,8 +671,8 @@ const string* get_name(const hash_map<string, unsigned int>& names, unsigned int
 	return NULL;
 }
 
-template<typename Formula, typename ProofCalculus>
-bool contains_axiom(const theory<Formula, ProofCalculus>& T, const Formula* formula)
+template<typename Formula, typename ProofCalculus, typename Canonicalizer>
+bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, const Formula* formula)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
@@ -771,12 +772,12 @@ int main(int argc, const char** argv)
 	free_tokens(tokens);
 
 	/* read the articles */
-	theory<fol_formula, natural_deduction<fol_formula, true>> T(names.table.size + 1);
+	theory<fol_formula, natural_deduction<fol_formula>, standard_canonicalizer<true>> T(names.table.size + 1);
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
 	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
-	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula, true>*>(0.1);
+	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula>*>(0.1);
 	auto universal_introduction_prior = uniform_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
@@ -788,8 +789,8 @@ int main(int argc, const char** argv)
 	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
-	//read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
-	//read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
 
 	array_map<fol_formula*, unsigned int> tracked_logical_forms(2);
 	tracked_logical_forms.put(

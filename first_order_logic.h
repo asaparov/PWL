@@ -174,6 +174,7 @@ bool print(const fol_term& term, Stream& out, Printer&&... printer) {
 
 enum class fol_formula_type {
 	ATOM,
+	EQUALS,
 
 	AND,
 	OR,
@@ -205,6 +206,23 @@ struct fol_atom {
 inline bool operator == (const fol_atom& first, const fol_atom& second) {
 	return first.predicate == second.predicate
 		&& first.arg1 == second.arg1
+		&& first.arg2 == second.arg2;
+}
+
+struct fol_equals {
+	fol_term arg1;
+	fol_term arg2;
+
+	static inline void move(const fol_equals& src, fol_equals& dst) {
+		dst.arg1 = src.arg1;
+		dst.arg2 = src.arg2;
+	}
+
+	static inline void free(fol_equals& equals) { }
+};
+
+inline bool operator == (const fol_equals& first, const fol_equals& second) {
+	return first.arg1 == second.arg1
 		&& first.arg2 == second.arg2;
 }
 
@@ -249,6 +267,7 @@ struct fol_formula
 	unsigned int reference_count;
 	union {
 		fol_atom atom;
+		fol_equals equals;
 		fol_unary_formula unary;
 		fol_binary_formula binary;
 		fol_array_formula array;
@@ -264,6 +283,7 @@ struct fol_formula
 	static fol_formula* new_atom(unsigned int predicate, fol_term arg1, fol_term arg2);
 	static inline fol_formula* new_atom(unsigned int predicate, fol_term arg1);
 	static inline fol_formula* new_atom(unsigned int predicate);
+	static inline fol_formula* new_equals(fol_term arg1, fol_term arg2);
 	static fol_formula* new_true();
 	static fol_formula* new_false();
 	template<typename... Args> static inline fol_formula* new_and(Args&&... args);
@@ -312,6 +332,8 @@ bool operator == (const fol_formula& first, const fol_formula& second)
 	switch (first.type) {
 	case fol_formula_type::ATOM:
 		return first.atom == second.atom;
+	case fol_formula_type::EQUALS:
+		return first.equals == second.equals;
 	case fol_formula_type::NOT:
 		return first.unary == second.unary;
 	case fol_formula_type::IF_THEN:
@@ -341,6 +363,8 @@ inline void fol_formula::move(const fol_formula& src, fol_formula& dst) {
 	switch (src.type) {
 	case fol_formula_type::ATOM:
 		core::move(src.atom, dst.atom); return;
+	case fol_formula_type::EQUALS:
+		core::move(src.equals, dst.equals); return;
 	case fol_formula_type::NOT:
 		core::move(src.unary, dst.unary); return;
 	case fol_formula_type::IF_THEN:
@@ -384,6 +408,8 @@ inline void fol_formula::free_helper() {
 		switch (type) {
 		case fol_formula_type::ATOM:
 			core::free(atom); return;
+		case fol_formula_type::EQUALS:
+			core::free(equals); return;
 		case fol_formula_type::NOT:
 			core::free(unary); return;
 		case fol_formula_type::IF_THEN:
@@ -439,6 +465,7 @@ template<fol_formula_syntax Syntax> struct or_symbol;
 template<fol_formula_syntax Syntax> struct if_then_symbol;
 template<fol_formula_syntax Syntax> struct iff_symbol;
 template<fol_formula_syntax Syntax> struct not_symbol;
+template<fol_formula_syntax Syntax> struct equals_symbol;
 template<fol_formula_syntax Syntax> struct true_symbol;
 template<fol_formula_syntax Syntax> struct false_symbol;
 
@@ -447,6 +474,7 @@ template<> struct or_symbol<fol_formula_syntax::TPTP> { static const char symbol
 template<> struct iff_symbol<fol_formula_syntax::TPTP> { static const char symbol[]; };
 template<> struct if_then_symbol<fol_formula_syntax::TPTP> { static const char symbol[]; };
 template<> struct not_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
+template<> struct equals_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
 template<> struct true_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
 template<> struct false_symbol<fol_formula_syntax::TPTP> { static const char symbol; };
 
@@ -455,6 +483,7 @@ template<> struct or_symbol<fol_formula_syntax::CLASSIC> { static const char sym
 template<> struct iff_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
 template<> struct if_then_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
 template<> struct not_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
+template<> struct equals_symbol<fol_formula_syntax::CLASSIC> { static const char symbol; };
 template<> struct true_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
 template<> struct false_symbol<fol_formula_syntax::CLASSIC> { static const char symbol[]; };
 
@@ -463,6 +492,7 @@ const char or_symbol<fol_formula_syntax::TPTP>::symbol[] = " | ";
 const char iff_symbol<fol_formula_syntax::TPTP>::symbol[] = " <=> ";
 const char if_then_symbol<fol_formula_syntax::TPTP>::symbol[] = " => ";
 const char not_symbol<fol_formula_syntax::TPTP>::symbol = '~';
+const char equals_symbol<fol_formula_syntax::TPTP>::symbol = '=';
 const char true_symbol<fol_formula_syntax::TPTP>::symbol = 'T';
 const char false_symbol<fol_formula_syntax::TPTP>::symbol = 'F';
 
@@ -471,6 +501,7 @@ const char or_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " ∨ ";
 const char iff_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " ↔ ";
 const char if_then_symbol<fol_formula_syntax::CLASSIC>::symbol[] = " → ";
 const char not_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "¬";
+const char equals_symbol<fol_formula_syntax::CLASSIC>::symbol = '=';
 const char true_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "⊥";
 
@@ -516,6 +547,11 @@ bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
 		}
 
 		return print(')', out);
+
+	case fol_formula_type::EQUALS:
+		return print(formula.equals.arg1, out, std::forward<Printer>(printer)...)
+			&& print(equals_symbol<Syntax>::symbol, out)
+			&& print(formula.equals.arg2, out, std::forward<Printer>(printer)...);
 
 	case fol_formula_type::TRUE:
 		return print(true_symbol<Syntax>::symbol, out);
@@ -563,6 +599,7 @@ inline bool new_fol_formula(fol_formula*& new_formula) {
 
 constexpr bool visit_constant(unsigned int constant) { return true; }
 constexpr bool visit_predicate(unsigned int predicate) { return true; }
+constexpr bool visit_equals(const fol_formula& formula) { return true; }
 constexpr bool visit_variable(unsigned int variable) { return true; }
 constexpr bool visit_parameter(unsigned int parameter) { return true; }
 constexpr bool visit_true(const fol_formula& formula) { return true; }
@@ -571,16 +608,16 @@ constexpr bool visit_false(const fol_formula& formula) { return true; }
 template<fol_formula_type Operator>
 constexpr bool visit_operator(const fol_formula& formula) { return true; }
 
-template<typename Term, typename... Visiter,
+template<typename Term, typename... Visitor,
 	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Term>::type>::type, fol_term>::value>::type* = nullptr>
-inline bool visit(Term&& term, Visiter&&... visiter) {
+inline bool visit(Term&& term, Visitor&&... visitor) {
 	switch (term.type) {
 	case fol_term_type::CONSTANT:
-		return visit_constant(term.constant, std::forward<Visiter>(visiter)...);
+		return visit_constant(term.constant, std::forward<Visitor>(visitor)...);
 	case fol_term_type::VARIABLE:
-		return visit_variable(term.variable, std::forward<Visiter>(visiter)...);
+		return visit_variable(term.variable, std::forward<Visitor>(visitor)...);
 	case fol_term_type::PARAMETER:
-		return visit_parameter(term.parameter, std::forward<Visiter>(visiter)...);
+		return visit_parameter(term.parameter, std::forward<Visitor>(visitor)...);
 	case fol_term_type::NONE:
 		return true;
 	}
@@ -588,55 +625,59 @@ inline bool visit(Term&& term, Visiter&&... visiter) {
 	return false;
 }
 
-template<typename Atom, typename... Visiter,
+template<typename Atom, typename... Visitor,
 	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Atom>::type>::type, fol_atom>::value>::type* = nullptr>
-inline bool visit(Atom&& atom, Visiter&&... visiter) {
-	return visit_predicate(atom.predicate, std::forward<Visiter>(visiter)...)
-		&& visit(atom.arg1, std::forward<Visiter>(visiter)...)
-		&& visit(atom.arg2, std::forward<Visiter>(visiter)...);
+inline bool visit(Atom&& atom, Visitor&&... visitor) {
+	return visit_predicate(atom.predicate, std::forward<Visitor>(visitor)...)
+		&& visit(atom.arg1, std::forward<Visitor>(visitor)...)
+		&& visit(atom.arg2, std::forward<Visitor>(visitor)...);
 }
 
-template<typename Formula, typename... Visiter,
+template<typename Formula, typename... Visitor,
 	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Formula>::type>::type, fol_formula>::value>::type* = nullptr>
-bool visit(Formula&& formula, Visiter&&... visiter)
+bool visit(Formula&& formula, Visitor&&... visitor)
 {
 	switch (formula.type) {
 	case fol_formula_type::ATOM:
-		return visit(formula.atom, std::forward<Visiter>(visiter)...);
+		return visit(formula.atom, std::forward<Visitor>(visitor)...);
+	case fol_formula_type::EQUALS:
+		return visit_equals(formula, std::forward<Visitor>(visitor)...)
+			&& visit(formula.equals.arg1, std::forward<Visitor>(visitor)...)
+			&& visit(formula.equals.arg2, std::forward<Visitor>(visitor)...);
 	case fol_formula_type::NOT:
-		return visit_operator<fol_formula_type::NOT>(formula, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.unary.operand, std::forward<Visiter>(visiter)...);
+		return visit_operator<fol_formula_type::NOT>(formula, std::forward<Visitor>(visitor)...)
+			&& visit(*formula.unary.operand, std::forward<Visitor>(visitor)...);
 	case fol_formula_type::AND:
-		if (!visit_operator<fol_formula_type::AND>(formula, std::forward<Visiter>(visiter)...)) return false;
+		if (!visit_operator<fol_formula_type::AND>(formula, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < formula.array.length; i++)
-			if (!visit(*formula.array.operands[i], std::forward<Visiter>(visiter)...)) return false;
+			if (!visit(*formula.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
 	case fol_formula_type::OR:
-		if (!visit_operator<fol_formula_type::OR>(formula, std::forward<Visiter>(visiter)...)) return false;
+		if (!visit_operator<fol_formula_type::OR>(formula, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < formula.array.length; i++)
-			if (!visit(*formula.array.operands[i], std::forward<Visiter>(visiter)...)) return false;
+			if (!visit(*formula.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
 	case fol_formula_type::IF_THEN:
-		return visit_operator<fol_formula_type::IF_THEN>(formula, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.left, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.binary.right, std::forward<Visiter>(visiter)...);
+		return visit_operator<fol_formula_type::IF_THEN>(formula, std::forward<Visitor>(visitor)...)
+			&& visit(*formula.binary.left, std::forward<Visitor>(visitor)...)
+			&& visit(*formula.binary.right, std::forward<Visitor>(visitor)...);
 	case fol_formula_type::IFF:
-		if (!visit_operator<fol_formula_type::IFF>(formula, std::forward<Visiter>(visiter)...)) return false;
+		if (!visit_operator<fol_formula_type::IFF>(formula, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < formula.array.length; i++)
-			if (!visit(*formula.array.operands[i], std::forward<Visiter>(visiter)...)) return false;
+			if (!visit(*formula.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
 	case fol_formula_type::FOR_ALL:
-		return visit_operator<fol_formula_type::FOR_ALL>(formula, std::forward<Visiter>(visiter)...)
-			&& visit_variable(formula.quantifier.variable, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.quantifier.operand, std::forward<Visiter>(visiter)...);
+		return visit_operator<fol_formula_type::FOR_ALL>(formula, std::forward<Visitor>(visitor)...)
+			&& visit_variable(formula.quantifier.variable, std::forward<Visitor>(visitor)...)
+			&& visit(*formula.quantifier.operand, std::forward<Visitor>(visitor)...);
 	case fol_formula_type::EXISTS:
-		return visit_operator<fol_formula_type::EXISTS>(formula, std::forward<Visiter>(visiter)...)
-			&& visit_variable(formula.quantifier.variable, std::forward<Visiter>(visiter)...)
-			&& visit(*formula.quantifier.operand, std::forward<Visiter>(visiter)...);
+		return visit_operator<fol_formula_type::EXISTS>(formula, std::forward<Visitor>(visitor)...)
+			&& visit_variable(formula.quantifier.variable, std::forward<Visitor>(visitor)...)
+			&& visit(*formula.quantifier.operand, std::forward<Visitor>(visitor)...);
 	case fol_formula_type::TRUE:
-		return visit_true(formula, std::forward<Visiter>(visiter)...);
+		return visit_true(formula, std::forward<Visitor>(visitor)...);
 	case fol_formula_type::FALSE:
-		return visit_false(formula, std::forward<Visiter>(visiter)...);
+		return visit_false(formula, std::forward<Visitor>(visitor)...);
 	}
 	fprintf(stderr, "visit ERROR: Unrecognized fol_formula_type.\n");
 	return false;
@@ -649,6 +690,7 @@ struct parameter_comparator {
 constexpr bool visit_constant(unsigned int constant, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_predicate(unsigned int predicate, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_comparator& visitor) { return true; }
+constexpr bool visit_equals(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_true(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_false(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
 
@@ -671,6 +713,7 @@ struct parameter_collector {
 constexpr bool visit_constant(unsigned int constant, const parameter_collector& visitor) { return true; }
 constexpr bool visit_predicate(unsigned int predicate, const parameter_collector& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_collector& visitor) { return true; }
+constexpr bool visit_equals(const fol_formula& formula, const parameter_collector& visitor) { return true; }
 constexpr bool visit_true(const fol_formula& formula, const parameter_collector& visitor) { return true; }
 constexpr bool visit_false(const fol_formula& formula, const parameter_collector& visitor) { return true; }
 
@@ -738,6 +781,9 @@ bool clone(const fol_formula& src, fol_formula& dst, Cloner&&... cloner)
 	switch (src.type) {
 	case fol_formula_type::ATOM:
 		return clone(src.atom, dst.atom, std::forward<Cloner>(cloner)...);
+	case fol_formula_type::EQUALS:
+		return clone(src.equals.arg1, dst.equals.arg1, std::forward<Cloner>(cloner)...)
+			&& clone(src.equals.arg2, dst.equals.arg2, std::forward<Cloner>(cloner)...);
 	case fol_formula_type::NOT:
 		if (!new_fol_formula(dst.unary.operand)) return false;
 		if (!clone(*src.unary.operand, *dst.unary.operand, std::forward<Cloner>(cloner)...)) {
@@ -808,12 +854,19 @@ inline bool apply_to_terms(const fol_atom& src, fol_atom& dst, Function&&... fun
 }
 
 template<typename... Function>
+inline bool apply_to_terms(const fol_equals& src, fol_equals& dst, Function&&... function)
+{
+	return apply(src.arg1, dst.arg1, std::forward<Function>(function)...)
+		&& apply(src.arg2, dst.arg2, std::forward<Function>(function)...);
+}
+
+template<typename... Function>
 fol_formula* apply_to_terms(fol_formula& src, Function&&... function)
 {
 	fol_formula* new_formula;
 	fol_formula** new_formulas;
 	fol_formula* left; fol_formula* right;
-	fol_atom atom;
+	fol_atom atom; fol_equals equals;
 	bool changed;
 	switch (src.type) {
 	case fol_formula_type::ATOM:
@@ -831,6 +884,22 @@ fol_formula* apply_to_terms(fol_formula& src, Function&&... function)
 			new_formula->reference_count = 1;
 			return new_formula;
 		}
+	case fol_formula_type::EQUALS:
+		if (!apply_to_terms(src.equals, equals, std::forward<Function>(function)...)) {
+			return NULL;
+		} else if (equals == src.equals) {
+			free(equals);
+			return &src;
+		} else {
+			if (!new_fol_formula(new_formula)) {
+				free(equals); return NULL;
+			}
+			new_formula->equals = equals;
+			new_formula->type = fol_formula_type::EQUALS;
+			new_formula->reference_count = 1;
+			return new_formula;
+		}
+
 	case fol_formula_type::NOT:
 		left = apply_to_terms(*src.unary.operand, std::forward<Function>(function)...);
 		if (left == NULL) {
@@ -1032,6 +1101,14 @@ inline bool unify(
 		&& unify(first.arg2, second.arg2, src_term, dst_term);
 }
 
+inline bool unify(
+		const fol_equals& first, const fol_equals& second,
+		const fol_term& src_term, fol_term& dst_term)
+{
+	return unify(first.arg1, second.arg1, src_term, dst_term)
+		&& unify(first.arg2, second.arg2, src_term, dst_term);
+}
+
 bool unify(
 		const fol_formula& first, const fol_formula& second,
 		const fol_term& src_term, fol_term& dst_term)
@@ -1040,6 +1117,8 @@ bool unify(
 	switch (first.type) {
 	case fol_formula_type::ATOM:
 		return unify(first.atom, second.atom, src_term, dst_term);
+	case fol_formula_type::EQUALS:
+		return unify(first.equals, second.equals, src_term, dst_term);
 	case fol_formula_type::NOT:
 		return unify(*first.unary.operand, *second.unary.operand, src_term, dst_term);
 	case fol_formula_type::IF_THEN:
@@ -1122,6 +1201,18 @@ inline fol_formula* fol_formula::new_atom(unsigned int predicate, fol_term arg1)
 
 inline fol_formula* fol_formula::new_atom(unsigned int predicate) {
 	return new_atom(predicate, fol_term::none(), fol_term::none());
+}
+
+inline fol_formula* fol_formula::new_equals(
+		fol_term arg1, fol_term arg2)
+{
+	fol_formula* equals;
+	if (!new_fol_formula(equals)) return NULL;
+	equals->reference_count = 1;
+	equals->type = fol_formula_type::EQUALS;
+	equals->equals.arg1 = arg1;
+	equals->equals.arg2 = arg2;
+	return equals;
 }
 
 inline fol_formula* fol_formula::new_true() {
@@ -1280,6 +1371,16 @@ inline int_fast8_t compare(
 	exit(EXIT_FAILURE);
 }
 
+inline int_fast8_t compare_terms(
+		const fol_term& first_arg1, const fol_term& first_arg2,
+		const fol_term& second_arg1, const fol_term& second_arg2)
+{
+	int_fast8_t result = compare(first_arg1, second_arg1);
+	if (result != 0) return result;
+
+	return compare(first_arg2, second_arg2);
+}
+
 inline int_fast8_t compare(
 		const fol_atom& first,
 		const fol_atom& second)
@@ -1287,10 +1388,14 @@ inline int_fast8_t compare(
 	if (first.predicate < second.predicate) return -1;
 	else if (first.predicate > second.predicate) return 1;
 
-	int_fast8_t result = compare(first.arg1, second.arg1);
-	if (result != 0) return result;
+	return compare_terms(first.arg1, first.arg2, second.arg1, second.arg2);
+}
 
-	return compare(first.arg2, second.arg2);
+inline int_fast8_t compare(
+		const fol_equals& first,
+		const fol_equals& second)
+{
+	return compare_terms(first.arg1, first.arg2, second.arg1, second.arg2);
 }
 
 inline int_fast8_t compare(
@@ -1340,6 +1445,8 @@ int_fast8_t compare(
 	switch (first.type) {
 	case fol_formula_type::ATOM:
 		return compare(first.atom, second.atom);
+	case fol_formula_type::EQUALS:
+		return compare(first.equals, second.equals);
 	case fol_formula_type::NOT:
 		return compare(first.unary, second.unary);
 	case fol_formula_type::IF_THEN:
@@ -1418,6 +1525,13 @@ inline bool relabel_variables(fol_atom& atom,
 		&& relabel_variables(atom.arg2, variable_map);
 }
 
+inline bool relabel_variables(fol_equals& equals,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	return relabel_variables(equals.arg1, variable_map)
+		&& relabel_variables(equals.arg2, variable_map);
+}
+
 inline bool relabel_variables(fol_quantifier& quantifier,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
@@ -1449,6 +1563,8 @@ bool relabel_variables(fol_formula& formula,
 		return relabel_variables(formula.quantifier, variable_map);
 	case fol_formula_type::ATOM:
 		return relabel_variables(formula.atom, variable_map);
+	case fol_formula_type::EQUALS:
+		return relabel_variables(formula.equals, variable_map);
 	case fol_formula_type::TRUE:
 	case fol_formula_type::FALSE:
 		return true;
@@ -1468,6 +1584,8 @@ struct fol_scope;
 bool operator == (const fol_scope&, const fol_scope&);
 int_fast8_t compare(const fol_scope&, const fol_scope&);
 void shift_variables(fol_scope&, unsigned int);
+
+template<bool AllConstantsDistinct>
 bool canonicalize_scope(const fol_formula&, fol_scope&, array_map<unsigned int, unsigned int>&);
 
 
@@ -1528,6 +1646,7 @@ struct fol_scope {
 	array<unsigned int> variables;
 	union {
 		fol_atom atom;
+		fol_equals equals;
 		fol_scope* unary;
 		fol_commutative_scope commutative;
 		fol_noncommutative_scope noncommutative;
@@ -1562,6 +1681,8 @@ struct fol_scope {
 			fol_quantifier_scope::move(src.quantifier, dst.quantifier); return;
 		case fol_formula_type::ATOM:
 			fol_atom::move(src.atom, dst.atom); return;
+		case fol_formula_type::EQUALS:
+			fol_equals::move(src.equals, dst.equals); return;
 		case fol_formula_type::NOT:
 			dst.unary = src.unary; return;
 		case fol_formula_type::TRUE:
@@ -1599,6 +1720,8 @@ private:
 			new (&quantifier) fol_quantifier_scope(); return true;
 		case fol_formula_type::ATOM:
 			new (&atom) fol_atom(); return true;
+		case fol_formula_type::EQUALS:
+			new (&equals) fol_equals(); return true;
 		case fol_formula_type::NOT:
 		case fol_formula_type::TRUE:
 		case fol_formula_type::FALSE:
@@ -1628,6 +1751,8 @@ private:
 			quantifier.~fol_quantifier_scope(); return true;
 		case fol_formula_type::ATOM:
 			atom.~fol_atom(); return true;
+		case fol_formula_type::EQUALS:
+			equals.~fol_equals(); return true;
 		case fol_formula_type::NOT:
 			core::free(*unary); core::free(unary); return true;
 		case fol_formula_type::TRUE:
@@ -1717,6 +1842,8 @@ inline bool operator == (const fol_scope& first, const fol_scope& second)
 		return first.quantifier == second.quantifier;
 	case fol_formula_type::ATOM:
 		return first.atom == second.atom;
+	case fol_formula_type::EQUALS:
+		return first.equals == second.equals;
 	case fol_formula_type::NOT:
 		return *first.unary == *second.unary;
 	case fol_formula_type::TRUE:
@@ -1793,6 +1920,8 @@ int_fast8_t compare(
 	switch (first.type) {
 	case fol_formula_type::ATOM:
 		return compare(first.atom, second.atom);
+	case fol_formula_type::EQUALS:
+		return compare(first.equals, second.equals);
 	case fol_formula_type::NOT:
 		return compare(*first.unary, *second.unary);
 	case fol_formula_type::AND:
@@ -1842,6 +1971,11 @@ inline void shift_variables(fol_atom& atom, unsigned int removed_variable) {
 	shift_variables(atom.arg2, removed_variable);
 }
 
+inline void shift_variables(fol_equals& equals, unsigned int removed_variable) {
+	shift_variables(equals.arg1, removed_variable);
+	shift_variables(equals.arg2, removed_variable);
+}
+
 inline void shift_variables(fol_commutative_scope& scope, unsigned int removed_variable) {
 	for (fol_scope& child : scope.children)
 		shift_variables(child, removed_variable);
@@ -1868,6 +2002,8 @@ void shift_variables(fol_scope& scope, unsigned int removed_variable) {
 	switch (scope.type) {
 	case fol_formula_type::ATOM:
 		return shift_variables(scope.atom, removed_variable);
+	case fol_formula_type::EQUALS:
+		return shift_variables(scope.equals, removed_variable);
 	case fol_formula_type::NOT:
 		return shift_variables(*scope.unary, removed_variable);
 	case fol_formula_type::AND:
@@ -2102,6 +2238,15 @@ inline fol_formula* scope_to_formula(const fol_scope& scope)
 		new_formula->type = fol_formula_type::ATOM;
 		new_formula->reference_count = 1;
 		new_formula->atom = scope.atom;
+		return new_formula;
+	case fol_formula_type::EQUALS:
+		if (!new_fol_formula(new_formula)) {
+			fprintf(stderr, "scope_to_formula ERROR: Out of memory.\n");
+			return NULL;
+		}
+		new_formula->type = fol_formula_type::EQUALS;
+		new_formula->reference_count = 1;
+		new_formula->equals = scope.equals;
 		return new_formula;
 	case fol_formula_type::TRUE:
 		FOL_TRUE.reference_count++;
@@ -2619,7 +2764,7 @@ inline bool are_negations(fol_scope& left, fol_scope& right) {
 	return false;
 }
 
-template<fol_formula_type Operator>
+template<fol_formula_type Operator, bool AllConstantsDistinct>
 bool canonicalize_commutative_scope(
 		const fol_array_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
@@ -2633,7 +2778,7 @@ bool canonicalize_commutative_scope(
 
 	fol_scope& next = *((fol_scope*) alloca(sizeof(fol_scope)));
 	for (unsigned int i = 0; i < src.length; i++) {
-		if (!canonicalize_scope(*src.operands[i], next, variable_map)) {
+		if (!canonicalize_scope<AllConstantsDistinct>(*src.operands[i], next, variable_map)) {
 			free(out); return false;
 		}
 
@@ -2709,22 +2854,23 @@ bool canonicalize_commutative_scope(
 	return true;
 }
 
+template<bool AllConstantsDistinct>
 bool canonicalize_conditional_scope(
 		const fol_binary_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	fol_scope& left = *((fol_scope*) alloca(sizeof(fol_scope)));
-	if (!canonicalize_scope(*src.left, left, variable_map)) return false;
+	if (!canonicalize_scope<AllConstantsDistinct>(*src.left, left, variable_map)) return false;
 
 	if (left.type == fol_formula_type::FALSE) {
 		free(left);
 		return init(out, fol_formula_type::TRUE);
 	} else if (left.type == fol_formula_type::TRUE) {
 		free(left);
-		return canonicalize_scope(*src.right, out, variable_map);
+		return canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map);
 	}
 
-	if (!canonicalize_scope(*src.right, out, variable_map))
+	if (!canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map))
 		return false;
 
 	if (out == left) {
@@ -3191,7 +3337,7 @@ bool process_conditional_quantifier_scope(
 	return true;
 }
 
-template<fol_formula_type QuantifierType>
+template<fol_formula_type QuantifierType, bool AllConstantsDistinct>
 bool canonicalize_quantifier_scope(
 		const fol_quantifier& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
@@ -3206,7 +3352,7 @@ bool canonicalize_quantifier_scope(
 		fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
 		return false;
 	} else if (!new_variable(src.variable, quantifier_variable, variable_map)
-			|| !canonicalize_scope(*src.operand, *operand, variable_map))
+			|| !canonicalize_scope<AllConstantsDistinct>(*src.operand, *operand, variable_map))
 	{
 		free(operand); return false;
 	}
@@ -3229,11 +3375,12 @@ bool canonicalize_quantifier_scope(
 	return true;
 }
 
+template<bool AllConstantsDistinct>
 inline bool canonicalize_negation_scope(
 		const fol_unary_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
-	if (!canonicalize_scope(*src.operand, out, variable_map))
+	if (!canonicalize_scope<AllConstantsDistinct>(*src.operand, out, variable_map))
 		return false;
 	if (!negate_scope(out)) {
 		free(out); return false;
@@ -3295,26 +3442,65 @@ inline bool canonicalize_atom(const fol_atom& src, fol_scope& out,
 	return true;
 }
 
+template<bool AllConstantsDistinct>
+inline bool canonicalize_equals(const fol_equals& src, fol_scope& out,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	if (!init(out, fol_formula_type::EQUALS)) return false;
+
+	if (!canonicalize_term(src.arg1, out.equals.arg1, variable_map, out.variables)
+	 || !canonicalize_term(src.arg2, out.equals.arg2, variable_map, out.variables)) {
+		return false;
+	}
+
+	if (out.equals.arg1 == out.equals.arg2) {
+		free(out);
+		return init(out, fol_formula_type::TRUE);
+	} else if (AllConstantsDistinct) {
+		switch (out.equals.arg1.type) {
+		case fol_term_type::CONSTANT:
+			if (out.equals.arg2.type == fol_term_type::CONSTANT) {
+				free(out);
+				/* since we consider the case `out.equals.arg1 == out.equals.arg2` earlier, the two constants must differ */
+				return init(out, fol_formula_type::FALSE);
+			} else {
+				return true;
+			}
+		case fol_term_type::PARAMETER:
+		case fol_term_type::VARIABLE:
+		case fol_term_type::NONE:
+			return init(out, fol_formula_type::FALSE);
+		}
+		fprintf(stderr, "canonicalize_equals ERROR: Unrecognized fol_term_type.\n");
+		return false;
+	}
+
+	return true;
+}
+
+template<bool AllConstantsDistinct>
 bool canonicalize_scope(const fol_formula& src, fol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
 	switch (src.type) {
 	case fol_formula_type::AND:
-		return canonicalize_commutative_scope<fol_formula_type::AND>(src.array, out, variable_map);
+		return canonicalize_commutative_scope<fol_formula_type::AND, AllConstantsDistinct>(src.array, out, variable_map);
 	case fol_formula_type::OR:
-		return canonicalize_commutative_scope<fol_formula_type::OR>(src.array, out, variable_map);
+		return canonicalize_commutative_scope<fol_formula_type::OR, AllConstantsDistinct>(src.array, out, variable_map);
 	case fol_formula_type::IFF:
-		return canonicalize_commutative_scope<fol_formula_type::IFF>(src.array, out, variable_map);
+		return canonicalize_commutative_scope<fol_formula_type::IFF, AllConstantsDistinct>(src.array, out, variable_map);
 	case fol_formula_type::IF_THEN:
-		return canonicalize_conditional_scope(src.binary, out, variable_map);
+		return canonicalize_conditional_scope<AllConstantsDistinct>(src.binary, out, variable_map);
 	case fol_formula_type::FOR_ALL:
-		return canonicalize_quantifier_scope<fol_formula_type::FOR_ALL>(src.quantifier, out, variable_map);
+		return canonicalize_quantifier_scope<fol_formula_type::FOR_ALL, AllConstantsDistinct>(src.quantifier, out, variable_map);
 	case fol_formula_type::EXISTS:
-		return canonicalize_quantifier_scope<fol_formula_type::EXISTS>(src.quantifier, out, variable_map);
+		return canonicalize_quantifier_scope<fol_formula_type::EXISTS, AllConstantsDistinct>(src.quantifier, out, variable_map);
 	case fol_formula_type::NOT:
-		return canonicalize_negation_scope(src.unary, out, variable_map);
+		return canonicalize_negation_scope<AllConstantsDistinct>(src.unary, out, variable_map);
 	case fol_formula_type::ATOM:
 		return canonicalize_atom(src.atom, out, variable_map);
+	case fol_formula_type::EQUALS:
+		return canonicalize_equals<AllConstantsDistinct>(src.equals, out, variable_map);
 	case fol_formula_type::TRUE:
 		return init(out, fol_formula_type::TRUE);
 	case fol_formula_type::FALSE:
@@ -3324,24 +3510,50 @@ bool canonicalize_scope(const fol_formula& src, fol_scope& out,
 	return false;
 }
 
-inline fol_formula* canonicalize(const fol_formula& src)
+struct identity_canonicalizer { };
+
+inline fol_formula* canonicalize(fol_formula& src,
+		const identity_canonicalizer& canonicalizer)
+{
+	src.reference_count++;
+	return &src;
+}
+
+template<bool AllConstantsDistinct>
+struct standard_canonicalizer { };
+
+template<bool AllConstantsDistinct>
+inline fol_formula* canonicalize(const fol_formula& src,
+		const standard_canonicalizer<AllConstantsDistinct>& canonicalizer)
 {
 	array_map<unsigned int, unsigned int> variable_map(16);
 	fol_scope& scope = *((fol_scope*) alloca(sizeof(fol_scope)));
-	if (!canonicalize_scope(src, scope, variable_map))
+	if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map))
 		return NULL;
 	fol_formula* canonicalized = scope_to_formula(scope);
 	free(scope);
 	return canonicalized;
 }
 
-bool is_canonical(const fol_formula& src) {
-	fol_formula* canonicalized = canonicalize(src);
+template<typename Canonicalizer>
+bool is_canonical(const fol_formula& src, Canonicalizer& canonicalizer) {
+	fol_formula* canonicalized = canonicalize(src, canonicalizer);
 	if (canonicalized == NULL) {
 		fprintf(stderr, "is_canonical ERROR: Unable to canonicalize formula.\n");
 		exit(EXIT_FAILURE);
 	}
-	return src == *canonicalized;
+	bool canonical = (src == *canonicalized);
+	free(*canonicalized);
+	if (canonicalized->reference_count == 0)
+		free(canonicalized);
+	return canonical;
+}
+
+template<>
+constexpr bool is_canonical<identity_canonicalizer>(
+		const fol_formula& src, identity_canonicalizer& canonicalizer)
+{
+	return true;
 }
 
 
@@ -3364,6 +3576,7 @@ enum class tptp_token_type {
 	IFF,
 	FOR_ALL,
 	EXISTS,
+	EQUALS,
 
 	IDENTIFIER
 };
@@ -3399,6 +3612,8 @@ inline bool print(tptp_token_type type, Stream& stream) {
 		return print('!', stream);
 	case tptp_token_type::EXISTS:
 		return print('?', stream);
+	case tptp_token_type::EQUALS:
+		return print('=', stream);
 	case tptp_token_type::IDENTIFIER:
 		return print("IDENTIFIER", stream);
 	}
@@ -3450,12 +3665,15 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	{
 		return tptp_emit_symbol(tokens, current, next);
 	} else if (next == '=') {
+		fpos_t pos;
+		fgetpos(input, &pos);
 		next = fgetwc(input);
 		if (next != '>') {
-			read_error("Expected '>' after '='", current);
-			return false;
-		} if (!emit_token(tokens, current, current + 2, tptp_token_type::IF_THEN))
-			return false;
+			fsetpos(input, &pos);
+			if (!emit_token(tokens, current, current + 1, tptp_token_type::EQUALS)) return false;
+		} else {
+			if (!emit_token(tokens, current, current + 2, tptp_token_type::IF_THEN)) return false;
+		}
 		current.column++;
 	} else if (next == '<') {
 		next = fgetwc(input);
@@ -3569,6 +3787,25 @@ bool tptp_interpret(
 	hash_map<string, unsigned int>&,
 	array_map<string, unsigned int>&);
 
+inline bool tptp_interpret_argument(
+	const string& identifier, fol_term& next_term,
+	hash_map<string, unsigned int>& names,
+	array_map<string, unsigned int>& variables)
+{
+	bool contains;
+	unsigned int variable = variables.get(identifier, contains);
+	if (contains) {
+		/* this argument is a variable */
+		next_term.variable = variable;
+		next_term.type = fol_term_type::VARIABLE;
+	} else {
+		if (!get_token(identifier, next_term.constant, names))
+			return false;
+		next_term.type = fol_term_type::CONSTANT;
+	}
+	return true;
+}
+
 bool tptp_interpret_argument_list(
 	const array<tptp_token>& tokens,
 	unsigned int& index,
@@ -3587,20 +3824,9 @@ bool tptp_interpret_argument_list(
 				"identifier in list of arguments in atomic formula"))
 			return false;
 
-		bool contains;
-		fol_term& next_term = terms[terms.length];
-		unsigned int variable = variables.get(tokens[index].text, contains);
-		if (contains) {
-			/* this argument is a variable */
-			next_term.variable = variable;
-			next_term.type = fol_term_type::VARIABLE;
-		} else {
-			if (!get_token(tokens[index].text, next_term.constant, names))
-				return false;
-			next_term.type = fol_term_type::CONSTANT;
-		}
-		terms.length++;
-		index++;
+		if (!tptp_interpret_argument(tokens[index].text, terms[terms.length], names, variables))
+			return false;
+		index++; terms.length++;
 
 		if (index >= tokens.length) {
 			read_error("Unexpected end of input", tokens.last().end);
@@ -3760,34 +3986,49 @@ bool tptp_interpret_unary_formula(
 			formula.reference_count = 1;
 			index++;
 		} else {
-			/* this is an atomic formula of the form P(T_1,...,T_n) */
-			unsigned int predicate;
-			if (variables.contains(tokens[index].text)) {
-				fprintf(stderr, "WARNING at %d:%d: Predicate '", tokens[index].start.line, tokens[index].start.column);
-				print(tokens[index].text, stderr); print("' is also a variable.\n", stderr);
-			} if (!get_token(tokens[index].text, predicate, names))
-				return false;
+			/* this is an atomic formula */
+			const tptp_token& identifier = tokens[index];
 			index++;
-
-			array<fol_term> terms = array<fol_term>(2);
-			if (!tptp_interpret_argument_list(tokens, index, names, variables, terms))
-				return false;
-			if (terms.length == 0) {
-				formula.atom.arg1.type = fol_term_type::NONE;
-				formula.atom.arg2.type = fol_term_type::NONE;
-			} else if (terms.length == 1) {
-				formula.atom.arg1 = terms[0];
-				formula.atom.arg2.type = fol_term_type::NONE;
-			} else if (terms.length == 2) {
-				formula.atom.arg1 = terms[0];
-				formula.atom.arg2 = terms[1];
+			if (index < tokens.length && tokens[index].type == tptp_token_type::EQUALS) {
+				/* this is an atomic formula of the form x = y */
+				if (!tptp_interpret_argument(identifier.text, formula.equals.arg1, names, variables))
+					return false;
+				index++;
+				if (!expect_token(tokens, index, tptp_token_type::IDENTIFIER, "constant or variable on right-side of equality")
+				 || !tptp_interpret_argument(tokens[index].text, formula.equals.arg2, names, variables))
+					return false;
+				index++;
+				formula.type = fol_formula_type::EQUALS;
+				formula.reference_count = 1;
 			} else {
-				read_error("Atomic formulas with arity greater than 2 are not supported", tokens[index - 1].end);
-				return false;
+				/* this is an atomic formula of the form P(T_1,...,T_n) */
+				unsigned int predicate;
+				if (variables.contains(identifier.text)) {
+					fprintf(stderr, "WARNING at %d:%d: Predicate '", identifier.start.line, identifier.start.column);
+					print(identifier.text, stderr); print("' is also a variable.\n", stderr);
+				} if (!get_token(identifier.text, predicate, names))
+					return false;
+
+				array<fol_term> terms = array<fol_term>(2);
+				if (!tptp_interpret_argument_list(tokens, index, names, variables, terms))
+					return false;
+				if (terms.length == 0) {
+					formula.atom.arg1.type = fol_term_type::NONE;
+					formula.atom.arg2.type = fol_term_type::NONE;
+				} else if (terms.length == 1) {
+					formula.atom.arg1 = terms[0];
+					formula.atom.arg2.type = fol_term_type::NONE;
+				} else if (terms.length == 2) {
+					formula.atom.arg1 = terms[0];
+					formula.atom.arg2 = terms[1];
+				} else {
+					read_error("Atomic formulas with arity greater than 2 are not supported", tokens[index - 1].end);
+					return false;
+				}
+				formula.atom.predicate = predicate;
+				formula.type = fol_formula_type::ATOM;
+				formula.reference_count = 1;
 			}
-			formula.atom.predicate = predicate;
-			formula.type = fol_formula_type::ATOM;
-			formula.reference_count = 1;
 		}
 
 	} else {

@@ -138,7 +138,9 @@ inline void add_sorted(array<T>& list, const T& element) {
 	list.length++;
 }
 
-template<typename Formula, typename ProofCalculus>
+template<typename Formula,
+	typename ProofCalculus,
+	typename Canonicalizer>
 struct theory
 {
 	typedef typename Formula::Type FormulaType;
@@ -172,9 +174,12 @@ struct theory
 	hash_set<Proof*> observations;
 	hash_multiset<Formula*, false> proof_axioms;
 
-	theory(unsigned int new_constant_offset) : new_constant_offset(new_constant_offset),
-			types(64), relations(64), ground_concepts(64), ground_axiom_count(0),
-			universal_quantifications(32), observations(64), proof_axioms(64) { }
+	standard_canonicalizer<true> canonicalizer;
+
+	theory(unsigned int new_constant_offset) :
+			new_constant_offset(new_constant_offset), types(64), relations(64),
+			ground_concepts(64), ground_axiom_count(0), universal_quantifications(32),
+			observations(64), proof_axioms(64) { }
 
 	~theory() {
 		for (auto entry : types) {
@@ -212,10 +217,16 @@ struct theory
 
 	bool add_formula(Formula* formula, unsigned int& new_constant)
 	{
-		Formula* canonicalized = canonicalize(*formula);
+		Formula* canonicalized = canonicalize(*formula, canonicalizer);
 		if (canonicalized == NULL) return false;
 
 		Proof* new_proof = make_proof(canonicalized, new_constant);
+array_map<unsigned int, unsigned int> constant_map(1);
+constant_map.put(PREDICATE_UNKNOWN, new_constant);
+fol_formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
+if (!check_proof(*new_proof, expected_conclusion, canonicalizer))
+fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
+free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(expected_conclusion);
 		core::free(*canonicalized);
 		if (canonicalized->reference_count == 0)
 			core::free(canonicalized);
@@ -227,9 +238,6 @@ struct theory
 				core::free(new_proof);
 			return false;
 		}
-
-if (!check_proof(*new_proof, canonicalized))
-fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 
 		/* add the axioms in the new proof to `proof_axioms` */
 		if (!get_axioms(new_proof, proof_axioms)) {

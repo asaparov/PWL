@@ -15,12 +15,11 @@ inline void free_logical_forms(fol_formula** logical_forms, unsigned int count)
 	}
 }
 
-template<
-	typename ArticleSource, typename Parser,
-	typename ProofPrior, typename Printer>
+template<typename ArticleSource, typename Parser,
+	typename Canonicalizer, typename ProofPrior, typename Printer>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const sentence& s,
-		theory<fol_formula, natural_deduction<fol_formula, true>>& T,
+		theory<fol_formula, natural_deduction<fol_formula>, Canonicalizer>& T,
 		unsigned int article_name, ProofPrior& proof_prior, Printer& printer)
 {
 	unsigned int parse_count, new_constant;
@@ -86,12 +85,11 @@ bool read_sentence(
 	return true;
 }
 
-template<
-	typename ArticleSource, typename Parser,
-	typename ProofPrior, typename Printer>
+template<typename ArticleSource, typename Parser,
+	typename Canonicalizer, typename ProofPrior, typename Printer>
 bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
-		theory<fol_formula, natural_deduction<fol_formula, true>>& T,
+		theory<fol_formula, natural_deduction<fol_formula>, Canonicalizer>& T,
 		ProofPrior& proof_prior, Printer& printer)
 {
 	bool article_exists;

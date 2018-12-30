@@ -39,7 +39,7 @@ void subtract(hash_multiset<T, AutomaticallyFree>& multiset, const array_multise
 
 template<typename Formula>
 struct proof_transformations {
-	array_map<nd_step<Formula, true>*, proof_substitution<Formula, true>> transformed_proofs;
+	array_map<nd_step<Formula>*, proof_substitution<Formula>> transformed_proofs;
 
 	proof_transformations() : transformed_proofs(16) { }
 	~proof_transformations() { free(); }
@@ -56,14 +56,14 @@ private:
 	}
 };
 
-template<typename Formula>
+template<typename Formula, typename Canonicalizer>
 bool propose_transformation(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		proof_transformations<Formula>& proposed_proofs,
-		array<nd_step<Formula, true>*>& new_observations,
-		nd_step<Formula, true>* old_step, nd_step<Formula, true>* new_step)
+		array<nd_step<Formula>*>& new_observations,
+		nd_step<Formula>* old_step, nd_step<Formula>* new_step)
 {
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	array<Proof*> stack(16);
@@ -86,7 +86,7 @@ bool propose_transformation(
 				proposed_proofs.transformed_proofs.size++;
 			}
 
-			proof_substitution<Formula, true>& value = proposed_proofs.transformed_proofs.values[index];
+			proof_substitution<Formula>& value = proposed_proofs.transformed_proofs.values[index];
 			value.map.put(old_step, new_step);
 			new_step->reference_count++;
 		}
@@ -105,10 +105,10 @@ bool propose_transformation(
 	return true;
 }
 
-template<bool FirstSample, typename Formula>
+template<bool FirstSample, typename Formula, typename Canonicalizer>
 bool select_axiom(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
-		const concept<natural_deduction<Formula, true>>& c,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const concept<natural_deduction<Formula>>& c,
 		array<pair<uint_fast8_t, unsigned int>>& axiom_indices,
 		array<unsigned int>& selected_types, array<unsigned int>& selected_negated_types,
 		array<relation>& selected_relations, array<relation>& selected_negated_relations,
@@ -156,8 +156,8 @@ bool select_axiom(
 
 template<typename Formula, bool Negated>
 inline bool get_axiom(
-		const array_map<unsigned int, nd_step<Formula, true>*>& types,
-		unsigned int predicate, array<nd_step<Formula, true>*>& conjunct_steps)
+		const array_map<unsigned int, nd_step<Formula>*>& types,
+		unsigned int predicate, array<nd_step<Formula>*>& conjunct_steps)
 {
 #if !defined(NDEBUG)
 	if (!types.contains(predicate))
@@ -168,8 +168,8 @@ inline bool get_axiom(
 
 template<typename Formula, bool Negated>
 inline bool get_axiom(
-		const array_map<relation, nd_step<Formula, true>*>& relations,
-		relation rel, array<nd_step<Formula, true>*>& conjunct_steps)
+		const array_map<relation, nd_step<Formula>*>& relations,
+		relation rel, array<nd_step<Formula>*>& conjunct_steps)
 {
 #if !defined(NDEBUG)
 	if (!relations.contains(rel))
@@ -214,17 +214,17 @@ inline Formula* new_lifted_atom(const atom<Negated, Arity> a) {
 	return new_lifted_atom_helper<Formula, 0>(a);
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename Canonicalizer>
 inline const array<unsigned int>& get_concept_set(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> a)
 {
 	return (Negated ? T.types.get(a.predicate).value : T.types.get(a.predicate).key);
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename Canonicalizer>
 const array<unsigned int>& get_concept_set(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> a)
 {
 	relation r = { a.predicate, a.args[0], a.args[1] };
@@ -232,11 +232,11 @@ const array<unsigned int>& get_concept_set(
 }
 
 template<bool Negated, typename Formula>
-nd_step<Formula, true>* get_proof(
-		concept<natural_deduction<Formula, true>>& c,
+nd_step<Formula>* get_proof(
+		concept<natural_deduction<Formula>>& c,
 		const atom<Negated, 1> a)
 {
-	array_map<unsigned int, nd_step<Formula, true>*>& proofs = Negated ? c.negated_types : c.types;
+	array_map<unsigned int, nd_step<Formula>*>& proofs = Negated ? c.negated_types : c.types;
 	unsigned int index = proofs.index_of(a.predicate);
 #if !defined(NDEBUG)
 	if (index == proofs.size) {
@@ -248,11 +248,11 @@ nd_step<Formula, true>* get_proof(
 }
 
 template<bool Negated, typename Formula>
-nd_step<Formula, true>* get_proof(
-		concept<natural_deduction<Formula, true>>& c,
+nd_step<Formula>* get_proof(
+		concept<natural_deduction<Formula>>& c,
 		const atom<Negated, 2> a)
 {
-	array_map<relation, nd_step<Formula, true>*>& proofs = Negated ? c.negated_relations : c.relations;
+	array_map<relation, nd_step<Formula>*>& proofs = Negated ? c.negated_relations : c.relations;
 	relation r = { a.predicate, a.args[0], a.args[1] };
 	unsigned int index = proofs.index_of(r);
 #if !defined(NDEBUG)
@@ -264,9 +264,10 @@ nd_step<Formula, true>* get_proof(
 	return proofs.values[index];
 }
 
-template<bool FirstSample, bool Negated, typename Formula>
+template<bool FirstSample, bool Negated,
+	typename Formula, typename Canonicalizer>
 inline void get_satisfying_concepts_helper(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const Formula* literal, array<unsigned int>& intersection)
 {
 	typedef typename Formula::TermType TermType;
@@ -289,9 +290,9 @@ inline void get_satisfying_concepts_helper(
 	}
 }
 
-template<bool FirstSample, typename Formula>
+template<bool FirstSample, typename Formula, typename Canonicalizer>
 bool get_satisfying_concepts(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const Formula* formula, array<unsigned int>& intersection)
 {
 	typedef typename Formula::Type FormulaType;
@@ -355,7 +356,7 @@ bool is_subset(const Formula* first, const Formula* second)
 
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_intro_proposal {
-	nd_step<Formula, true>* new_universal_quantification;
+	nd_step<Formula>* new_universal_quantification;
 	array<unsigned int>& old_grounded_axioms;
 	atom<Negated, Arity> consequent_atom;
 
@@ -368,7 +369,7 @@ struct universal_intro_proposal {
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline universal_intro_proposal<Formula, Negated, Arity> make_universal_intro_proposal(
-		nd_step<Formula, true>* new_universal_quantification,
+		nd_step<Formula>* new_universal_quantification,
 		array<unsigned int>& old_grounded_axioms,
 		atom<Negated, Arity> consequent_atom)
 {
@@ -386,8 +387,8 @@ inline void free_formulas(array<Formula*>& formulas) {
 
 template<typename Formula>
 bool get_conjunct_step(const Formula* atom,
-		const concept<natural_deduction<Formula, true>>& instance,
-		array<nd_step<Formula, true>*>& conjunct_steps)
+		const concept<natural_deduction<Formula>>& instance,
+		array<nd_step<Formula>*>& conjunct_steps)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
@@ -435,16 +436,18 @@ bool get_conjunct_step(const Formula* atom,
 	return true;
 }
 
-template<bool Negated, unsigned int Arity, typename Formula, typename ProofPrior>
+template<bool Negated, unsigned int Arity,
+	typename Formula, typename ProofPrior,
+	typename Canonicalizer>
 bool propose_universal_intro(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, Arity> a,
 		unsigned int concept_id,
 		double& log_proposal_probability_ratio,
 		ProofPrior& proof_prior)
 {
 	typedef typename Formula::Type FormulaType;
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	proof_transformations<Formula> proposed_proofs;
@@ -567,13 +570,13 @@ bool propose_universal_intro(
 		free_formulas(conjuncts);
 	}
 
-	Formula* canonicalized = canonicalize(*axiom);
+	Formula* canonicalized = canonicalize(*axiom, T.canonicalizer);
 	free(*axiom); if (axiom->reference_count == 0) free(axiom);
 	if (canonicalized == NULL)
 		return false;
 
 	Formula* antecedent = canonicalized->quantifier.operand->binary.left;
-	nd_step<Formula, true>* axiom_step = ProofCalculus::new_axiom(canonicalized);
+	nd_step<Formula>* axiom_step = ProofCalculus::new_axiom(canonicalized);
 	free(*canonicalized);
 	if (canonicalized->reference_count == 0)
 		free(canonicalized);
@@ -596,7 +599,7 @@ bool propose_universal_intro(
 		}
 	}
 
-	array<nd_step<Formula, true>*> conjunct_steps(antecedent_length * intersection.length);
+	array<nd_step<Formula>*> conjunct_steps(antecedent_length * intersection.length);
 	for (unsigned int concept_id : intersection) {
 		const concept<ProofCalculus>& instance = T.ground_concepts.get(concept_id);
 
@@ -661,7 +664,7 @@ bool propose_universal_intro(
 }
 
 template<typename Formula>
-void free_proofs(nd_step<Formula, true>** proofs, unsigned int count) {
+void free_proofs(nd_step<Formula>** proofs, unsigned int count) {
 	for (unsigned int i = 0; i < count; i++) {
 		if (proofs[i] == NULL) continue;
 		free(*proofs[i]);
@@ -670,19 +673,19 @@ void free_proofs(nd_step<Formula, true>** proofs, unsigned int count) {
 	}
 }
 
-template<typename Formula>
+template<typename Formula, typename Canonicalizer>
 inline bool make_grounded_conjunct(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
-		const concept<natural_deduction<Formula, true>>& c,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const concept<natural_deduction<Formula>>& c,
 		Formula* lifted_conjunct, unsigned int variable,
 		typename Formula::Term constant,
-		nd_step<Formula, true>** new_axioms,
+		nd_step<Formula>** new_axioms,
 		unsigned int i,
-		hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms)
+		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 
 	if (new_axioms[i] != NULL) return true;
 
@@ -743,17 +746,17 @@ inline bool make_grounded_conjunct(
 	return true;
 }
 
-template<typename Formula>
+template<typename Formula, typename Canonicalizer>
 bool make_grounded_conjunction(
-		const theory<Formula, natural_deduction<Formula, true>>& T,
-		const concept<natural_deduction<Formula, true>>& c,
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const concept<natural_deduction<Formula>>& c,
 		Formula** conjuncts, unsigned int conjunct_count,
 		unsigned int variable, typename Formula::Term constant,
-		nd_step<Formula, true>** new_axioms,
-		hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms,
-		nd_step<Formula, true>*& new_step)
+		nd_step<Formula>** new_axioms,
+		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms,
+		nd_step<Formula>*& new_step)
 {
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 
 	for (unsigned int i = 0; i < conjunct_count; i++) {
 		if (!make_grounded_conjunct(T, c, conjuncts[i], variable, constant, new_axioms, i, new_grounded_axioms)) {
@@ -783,29 +786,29 @@ bool make_grounded_conjunction(
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_elim_proposal {
 	unsigned int universal_axiom_index;
-	hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms;
+	hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms;
 	atom<Negated, Arity> consequent_atom;
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_proposal(
 		unsigned int universal_axiom_index,
-		hash_map<unsigned int, nd_step<Formula, true>*>& new_grounded_axioms,
+		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms,
 		atom<Negated, Arity> consequent_atom)
 {
 	return {universal_axiom_index, new_grounded_axioms, consequent_atom};
 }
 
-template<typename Formula, typename ProofPrior>
+template<typename Formula, typename ProofPrior, typename Canonicalizer>
 bool propose_universal_elim(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int axiom_index,
 		double& log_proposal_probability_ratio,
 		ProofPrior& proof_prior)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	proof_transformations<Formula> proposed_proofs;
@@ -848,7 +851,7 @@ bool propose_universal_elim(
 	}
 
 	array<Proof*> new_observations(8);
-	hash_map<unsigned int, nd_step<Formula, true>*> new_grounded_axioms(16);
+	hash_map<unsigned int, nd_step<Formula>*> new_grounded_axioms(16);
 	for (Proof* child : axiom->children) {
 		if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
 		 || child->operands[1]->term.type != TermType::CONSTANT)
@@ -1021,7 +1024,7 @@ bool propose_universal_elim(
 template<typename Formula>
 bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 {
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	hash_map<Proof*, Proof*> transformations(32);
@@ -1099,17 +1102,17 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 	return true;
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename Canonicalizer>
 inline void remove_ground_axiom(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> consequent_atom, unsigned int constant)
 {
 	T.template remove_unary_atom<Negated>(consequent_atom.predicate, constant);
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename Canonicalizer>
 inline void remove_ground_axiom(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> consequent_atom, unsigned int constant)
 {
 	relation rel = { consequent_atom.predicate,
@@ -1119,12 +1122,13 @@ inline void remove_ground_axiom(
 }
 
 template<typename Formula,
+	typename Canonicalizer,
 	bool Negated, unsigned int Arity,
 	typename ProofPrior>
 bool do_mh_universal_intro(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
-		const array<nd_step<Formula, true>*>& new_observations,
+		const array<nd_step<Formula>*>& new_observations,
 		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
 		double log_proposal_probability_ratio, ProofPrior& proof_prior)
 {
@@ -1167,20 +1171,20 @@ bool do_mh_universal_intro(
 	return true;
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename Canonicalizer>
 inline bool add_ground_axiom(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> consequent_atom,
-		unsigned int constant, nd_step<Formula, true>* axiom)
+		unsigned int constant, nd_step<Formula>* axiom)
 {
 	return T.template add_unary_atom<Negated>(consequent_atom.predicate, constant, axiom);
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, typename Canonicalizer>
 inline bool add_ground_axiom(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> consequent_atom,
-		unsigned int constant, nd_step<Formula, true>* axiom)
+		unsigned int constant, nd_step<Formula>* axiom)
 {
 	relation rel = { consequent_atom.predicate,
 			(consequent_atom.args[0] == 0 ? constant : consequent_atom.args[0]),
@@ -1189,12 +1193,13 @@ inline bool add_ground_axiom(
 }
 
 template<typename Formula,
+	typename Canonicalizer,
 	bool Negated, unsigned int Arity,
 	typename ProofPrior>
 bool do_mh_universal_elim(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
-		const array<nd_step<Formula, true>*>& new_observations,
+		const array<nd_step<Formula>*>& new_observations,
 		const universal_elim_proposal<Formula, Negated, Arity>& proposal,
 		double log_proposal_probability_ratio, ProofPrior& proof_prior)
 {
@@ -1239,12 +1244,12 @@ bool do_mh_universal_elim(
 	return true;
 }
 
-template<typename Formula, typename ProofPrior>
+template<typename Formula, typename ProofPrior, typename Canonicalizer>
 bool do_mh_step(
-		theory<Formula, natural_deduction<Formula, true>>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		ProofPrior& proof_prior)
 {
-	typedef natural_deduction<Formula, true> ProofCalculus;
+	typedef natural_deduction<Formula> ProofCalculus;
 
 	double log_proposal_probability_ratio = 0.0;
 

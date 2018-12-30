@@ -98,7 +98,7 @@ bool fol_test_canonicalization(const char* filename = "canonicalization_test.txt
 	const string** name_ids = invert(names);
 	string_map_scribe printer = { name_ids, names.table.size + 1 };
 	for (unsigned int i = 0; i < formulas.length; i += 2) {
-		fol_formula* canonicalized = canonicalize(*formulas[i]);
+		fol_formula* canonicalized = canonicalize(*formulas[i], standard_canonicalizer<true>());
 		if (canonicalized == NULL) {
 			fprintf(stderr, "ERROR: Unable to canonicalize example %u.\n", i / 2);
 			continue;
