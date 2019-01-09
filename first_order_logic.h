@@ -3453,6 +3453,9 @@ inline bool canonicalize_equals(const fol_equals& src, fol_scope& out,
 		return false;
 	}
 
+	if (out.equals.arg2 < out.equals.arg1)
+		swap(out.equals.arg1, out.equals.arg2);
+
 	if (out.equals.arg1 == out.equals.arg2) {
 		free(out);
 		return init(out, fol_formula_type::TRUE);
@@ -3469,7 +3472,7 @@ inline bool canonicalize_equals(const fol_equals& src, fol_scope& out,
 		case fol_term_type::PARAMETER:
 		case fol_term_type::VARIABLE:
 		case fol_term_type::NONE:
-			return init(out, fol_formula_type::FALSE);
+			return true;
 		}
 		fprintf(stderr, "canonicalize_equals ERROR: Unrecognized fol_term_type.\n");
 		return false;
@@ -3578,7 +3581,8 @@ enum class tptp_token_type {
 	EXISTS,
 	EQUALS,
 
-	IDENTIFIER
+	IDENTIFIER,
+	SEMICOLON
 };
 
 typedef lexical_token<tptp_token_type> tptp_token;
@@ -3614,6 +3618,8 @@ inline bool print(tptp_token_type type, Stream& stream) {
 		return print('?', stream);
 	case tptp_token_type::EQUALS:
 		return print('=', stream);
+	case tptp_token_type::SEMICOLON:
+		return print(';', stream);
 	case tptp_token_type::IDENTIFIER:
 		return print("IDENTIFIER", stream);
 	}
@@ -3650,6 +3656,8 @@ bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char sym
 		return emit_token(tokens, start, start + 1, tptp_token_type::FOR_ALL);
 	case '?':
 		return emit_token(tokens, start, start + 1, tptp_token_type::EXISTS);
+	case ';':
+		return emit_token(tokens, start, start + 1, tptp_token_type::SEMICOLON);
 	default:
 		fprintf(stderr, "tptp_emit_symbol ERROR: Unexpected symbol.\n");
 		return false;
@@ -3661,7 +3669,7 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 {
 	if (next == ',' || next == ':' || next == '(' || next == ')'
 	 || next == '[' || next == ']' || next == '&' || next == '|'
-	 || next == '~' || next == '!' || next == '?')
+	 || next == '~' || next == '!' || next == '?' || next == ';')
 	{
 		return tptp_emit_symbol(tokens, current, next);
 	} else if (next == '=') {
@@ -3722,7 +3730,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			if (next == ',' || next == ':' || next == '(' || next == ')'
 			 || next == '[' || next == ']' || next == '&' || next == '|'
 			 || next == '~' || next == '!' || next == '?' || next == '='
-			 || next == '<')
+			 || next == '<' || next == ';')
 			{
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER)
 				 || !tptp_lex_symbol(tokens, input, next, current))
@@ -3744,7 +3752,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			if (next == ',' || next == ':' || next == '(' || next == ')'
 			 || next == '[' || next == ']' || next == '&' || next == '|'
 			 || next == '~' || next == '!' || next == '?' || next == '='
-			 || next == '<')
+			 || next == '<' || next == ';')
 			{
 				if (!tptp_lex_symbol(tokens, input, next, current))
 					return false;

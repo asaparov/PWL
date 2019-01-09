@@ -26,10 +26,11 @@ bool read_formulas(
 			fprintf(stderr, "ERROR: Unable to parse first-order formula.\n");
 			for (auto entry : variables) free(entry.key);
 			free(formula); free_tokens(tokens); return false;
-		} else if (!formulas.add(formula)) {
+		} else if (!expect_token(tokens, index, tptp_token_type::SEMICOLON, "semicolon at end of first-order formula") || !formulas.add(formula)) {
 			free(*formula); free(formula);
 			free_tokens(tokens); return false;
 		}
+		index++;
 
 		if (variables.size != 0)
 			fprintf(stderr, "WARNING: Variable map is not empty.\n");
@@ -48,7 +49,7 @@ void cleanup(
 	}
 }
 
-bool fol_test_simple(const char* filename = "logical_forms.txt")
+bool fol_test_simple(const char* filename = "fol_logical_forms.txt")
 {
 	setlocale(LC_CTYPE, "en_US.UTF-8");
 	FILE* in = open_file(filename, "r");
@@ -74,7 +75,7 @@ bool fol_test_simple(const char* filename = "logical_forms.txt")
 	return true;
 }
 
-bool fol_test_canonicalization(const char* filename = "canonicalization_test.txt")
+bool fol_test_canonicalization(const char* filename = "fol_canonicalization_test.txt")
 {
 	setlocale(LC_CTYPE, "en_US.UTF-8");
 	FILE* in = open_file(filename, "r");
