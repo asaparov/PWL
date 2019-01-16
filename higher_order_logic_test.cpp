@@ -184,7 +184,7 @@ bool hol_test_canonicalization(const char* filename = "hol_canonicalization_test
 	const string** name_ids = invert(names);
 	string_map_scribe printer = { name_ids, names.table.size + 1 };
 	for (unsigned int i = 0; i < terms.length; i += 2) {
-		hol_term* canonicalized = canonicalize(*terms[i], standard_canonicalizer<true>());
+		hol_term* canonicalized = canonicalize(*terms[i], standard_canonicalizer<true, false>());
 		if (canonicalized == NULL) {
 			fprintf(stderr, "ERROR: Unable to canonicalize example %u.\n", i / 2);
 			continue;
@@ -245,26 +245,24 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 			}
 		}
 
-		array<hol_type> type_variables(8);
-		array<hol_type> types(16);
+		type_map types(16);
 		array_map<unsigned int, hol_type> constant_types(8);
 		array_map<unsigned int, hol_type> variable_types(8);
 		array_map<unsigned int, hol_type> parameter_types(8);
+
+		/*array<hol_type> type_variables(8);
 		if (!init(type_variables[0], hol_type_kind::ANY)) {
 			cleanup(names, examples); free(name_ids);
 			return false;
 		}
 		type_variables.length++;
 
-		/*print(CONSOLE_BOLD "Example ", stdout); print(i, stdout); print(":" CONSOLE_RESET "\n", stdout);
-		success = compute_type<false>(term, types, hol_type(0), constant_types, variable_types, parameter_types, type_variables);
+		print(CONSOLE_BOLD "Example ", stdout); print(i, stdout); print(":" CONSOLE_RESET "\n", stdout);
+		hol_type type(0);
+		success = compute_type<false>(term, types, type, constant_types, variable_types, parameter_types, type_variables);
 
 		if (success) {
-			if (types.length == 0) {
-				fprintf(stderr, "ERROR: 'compute_type' returned no types.\n");
-			} else {
-				print("Term type: ", stdout); print(types.last(), stdout); print('\n', stdout);
-			}
+			print("Term type: ", stdout); print(type, stdout); print('\n', stdout);
 
 			if (constant_types.size > 0) {
 				print("Constant types:\n", stdout);
@@ -283,7 +281,7 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 			fprintf(stderr, "ERROR: On example %u, 'compute_type' returned false.\n", i);
 		}
 
-		free_elements(type_variables); free_elements(types);
+		free_elements(type_variables);
 		for (unsigned int j = 0; j < constant_types.size; j++) free(constant_types.values[j]);
 		for (unsigned int j = 0; j < variable_types.size; j++) free(variable_types.values[j]);
 		for (unsigned int j = 0; j < parameter_types.size; j++) free(parameter_types.values[j]);*/
@@ -296,14 +294,12 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 		if (success) {
 			if (!expect_success)
 				fprintf(stderr, "ERROR: On example %u, expected 'compute_type' to return false, but it returned true.\n", i);
-			if (types.length == 0) {
-				fprintf(stderr, "ERROR: On example %u, 'compute_type' returned no types.\n", i);
-			} else if (types.last() != term_type) {
-				print("ERROR: Computed term type differs from expected term type.\n", stderr);
-				print("  Computed type: ", stderr); print_type(types.last(), stderr, type_variables); print('\n', stderr);
-				print("  Expected type: ", stderr); print_type(term_type, stderr, type_variables); print('\n', stderr);
+			if (types.types.get(&term) != term_type) {
+				fprintf(stderr, "ERROR: On example %u, computed term type differs from expected term type.\n", i);
+				print("  Computed type: ", stderr); print(types.types.get(&term), stderr); print('\n', stderr);
+				print("  Expected type: ", stderr); print(term_type, stderr); print('\n', stderr);
 			} /*else {
-				print("Term type: ", stdout); print(types.last(), stdout); print('\n', stdout);	
+				print("Term type: ", stdout); print(type, stdout); print('\n', stdout);	
 			}*/
 
 			/*if (constant_types.size > 0) {
@@ -326,8 +322,8 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 					} else if (computed_type != expected_type) {
 						fprintf(stderr, "ERROR: On example %u, the computed type of '", i);
 						print(term, stderr, printer); print("' does not match the expected type.\n", stderr);
-						print("  Computed type: ", stderr); print_type(computed_type, stderr, type_variables); print('\n', stderr);
-						print("  Expected type: ", stderr); print_type(expected_type, stderr, type_variables); print('\n', stderr);
+						print("  Computed type: ", stderr); print(computed_type, stderr); print('\n', stderr);
+						print("  Expected type: ", stderr); print(expected_type, stderr); print('\n', stderr);
 					}
 				}
 			}
@@ -336,7 +332,6 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 				fprintf(stderr, "ERROR: On example %u, 'compute_type' returned false.\n", i);
 		}
 
-		free_elements(types);
 		for (unsigned int j = 0; j < constant_types.size; j++) free(constant_types.values[j]);
 		for (unsigned int j = 0; j < variable_types.size; j++) free(variable_types.values[j]);
 		for (unsigned int j = 0; j < parameter_types.size; j++) free(parameter_types.values[j]);
@@ -349,5 +344,5 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 
 int main(int argc, const char** argv)
 {
-	hol_test_compute_type();
+	hol_test_canonicalization();
 }

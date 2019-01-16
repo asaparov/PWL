@@ -31,6 +31,7 @@ enum class hol_term_type {
 	OR,
 	IF_THEN,
 	EQUALS,
+	IFF, /* this is only used in canonicalization */
 	NOT,
 
 	FOR_ALL,
@@ -218,6 +219,7 @@ bool operator == (const hol_term& first, const hol_term& second)
 		return first.ternary == second.ternary;
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		return first.array == second.array;
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
@@ -255,6 +257,7 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 		core::move(src.ternary, dst.ternary); return;
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		core::move(src.array, dst.array); return;
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
@@ -306,6 +309,7 @@ inline void hol_term::free_helper() {
 			core::free(ternary); return;
 		case hol_term_type::AND:
 		case hol_term_type::OR:
+		case hol_term_type::IFF:
 			core::free(array); return;
 		case hol_term_type::FOR_ALL:
 		case hol_term_type::EXISTS:
@@ -367,6 +371,13 @@ inline void hol_quantifier::free(hol_quantifier& term) {
 		core::free(term.operand);
 }
 
+
+/* forward declarations for hol_term printing */
+
+template<hol_term_syntax Syntax = hol_term_syntax::CLASSIC, typename Stream, typename... Printer>
+bool print(const hol_term&, Stream&, Printer&&...);
+
+
 template<hol_term_syntax Syntax> struct and_symbol;
 template<hol_term_syntax Syntax> struct or_symbol;
 template<hol_term_syntax Syntax> struct if_then_symbol;
@@ -407,6 +418,24 @@ const char equals_symbol<hol_term_syntax::CLASSIC>::symbol = '=';
 const char true_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊥";
 
+template<hol_term_syntax Syntax, typename Stream, typename... Printer>
+inline bool print_iff(const hol_array_term& term, Stream& out, Printer&&... printer) {
+	if (term.length < 2) {
+		fprintf(stderr, "print_iff ERROR: IFF term has fewer than two operands.\n");
+		return false;
+	}
+
+	for (unsigned int i = 0; i < term.length - 1; i++) {
+		if (!print('(', out) || !print<Syntax>(*term.operands[i], out, std::forward<Printer>(printer)...)
+		 || !print(equals_symbol<Syntax>::symbol, out))
+			return false;
+	}
+	if (!print<Syntax>(*term.operands[term.length - 1], out, std::forward<Printer>(printer)...)) return false;
+	for (unsigned int i = 0; i < term.length - 1; i++)
+		if (!print(')', out)) return false;
+	return true;
+}
+
 template<hol_term_syntax Syntax, typename Stream>
 inline bool print_for_all(unsigned int quantified_variable, Stream& out) {
 	switch (Syntax) {
@@ -443,7 +472,7 @@ inline bool print_lambda(unsigned int quantified_variable, Stream& out) {
 	return false;
 }
 
-template<hol_term_syntax Syntax = hol_term_syntax::CLASSIC, typename Stream, typename... Printer>
+template<hol_term_syntax Syntax, typename Stream, typename... Printer>
 bool print(const hol_term& term, Stream& out, Printer&&... printer)
 {
 	switch (term.type) {
@@ -470,6 +499,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 
 	case hol_term_type::OR:
 		return print<hol_term*, '(', ')', or_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+
+	case hol_term_type::IFF:
+		return print_iff<Syntax>(term.array, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::IF_THEN:
 		return print('(', out) && print(*term.binary.left, out, std::forward<Printer>(printer)...)
@@ -545,6 +577,11 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return true;
 	case hol_term_type::OR:
 		if (!visit_operator<hol_term_type::OR>(term, std::forward<Visitor>(visitor)...)) return false;
+		for (unsigned int i = 0; i < term.array.length; i++)
+			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
+		return true;
+	case hol_term_type::IFF:
+		if (!visit_operator<hol_term_type::IFF>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
@@ -702,6 +739,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return true;
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		dst.array.operands = (hol_term**) malloc(sizeof(hol_term*) * src.array.length);
 		if (dst.array.operands == NULL) return false;
 		for (unsigned int i = 0; i < src.array.length; i++) {
@@ -848,6 +886,7 @@ hol_term* default_apply(hol_term& src, Function&&... function)
 
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		new_terms = (hol_term**) malloc(sizeof(hol_term*) * src.array.length);
 		if (new_terms == NULL) return NULL;
 		changed = false;
@@ -937,6 +976,8 @@ inline hol_term* apply(hol_term& src, Function&&... function)
 		return apply<hol_term_type::AND>(src, std::forward<Function>(function)...);
 	case hol_term_type::OR:
 		return apply<hol_term_type::OR>(src, std::forward<Function>(function)...);
+	case hol_term_type::IFF:
+		return apply<hol_term_type::IFF>(src, std::forward<Function>(function)...);
 	case hol_term_type::FOR_ALL:
 		return apply<hol_term_type::FOR_ALL>(src, std::forward<Function>(function)...);
 	case hol_term_type::EXISTS:
@@ -1064,6 +1105,7 @@ bool unify(
 			&& unify(*first.ternary.third, *second.ternary.third, src_term, dst_term);
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		if (first.array.length != second.array.length) return false;
 		for (unsigned int i = 0; i < first.array.length; i++)
 			if (!unify(*first.array.operands[i], *second.array.operands[i], src_term, dst_term)) return false;
@@ -1611,6 +1653,7 @@ inline bool unify_variable(
 		unsigned int first, const hol_type& second,
 		hol_type& out, array<hol_type>& type_variables)
 {
+	unsigned int var;
 	switch (second.kind) {
 	case hol_type_kind::ANY:
 		return init(out, first);
@@ -1631,17 +1674,20 @@ inline bool unify_variable(
 		free(type_variables[first]);
 		return init(type_variables[first], out);
 	case hol_type_kind::VARIABLE:
-		if (second.variable == first)
-			return init(out, second.variable);
-		if (!unify(type_variables[first], type_variables[second.variable], out, type_variables))
+		var = second.variable;
+		if (first == var) return init(out, var);
+		while (type_variables[var].kind == hol_type_kind::VARIABLE) {
+			var = type_variables[var].variable;
+			if (first == var) return init(out, var);
+		}
+
+		if (!unify_variable(first, type_variables[var], out, type_variables))
 			return false;
 		if (out.kind == hol_type_kind::NONE)
 			return init(out, hol_type_kind::NONE);
-		free(type_variables[first]);
-		free(type_variables[second.variable]);
-		move(out, type_variables[second.variable]);
-		return init(type_variables[first], second.variable)
-			&& init(out, second.variable);
+		free(type_variables[var]);
+		move(out, type_variables[var]);
+		return init(out, var);
 	}
 	fprintf(stderr, "unify_variable ERROR: Unrecognized hol_type_kind.\n");
 	return false;
@@ -1668,28 +1714,36 @@ bool unify(const hol_type& first, const hol_type& second,
 
 inline bool expect_type(
 		const hol_type& actual_type,
-		const hol_type& expected_type,
+		hol_type& expected_type,
 		array<hol_type>& type_variables)
 {
 	hol_type& temp = *((hol_type*) alloca(sizeof(hol_type)));
 	if (!unify(actual_type, expected_type, temp, type_variables))
 		return false;
-	if (temp.kind == hol_type_kind::NONE) {
+	swap(expected_type, temp); free(temp);
+	if (expected_type.kind == hol_type_kind::NONE) {
 		print("ERROR: Term is not well-typed.\n", stderr);
 		print("  Computed type: ", stderr); print_type(actual_type, stderr, type_variables); print('\n', stderr);
 		print("  Expected type: ", stderr); print_type(expected_type, stderr, type_variables); print('\n', stderr);
-		free(temp); return false;
+		return false;
 	}
-	free(temp);
 	return true;
 }
 
-inline bool compute_type(unsigned int symbol,
-		array<hol_type>& types, const hol_type& expected_type,
+template<hol_term_type Type, typename ComputedTypes>
+inline bool compute_type(
+		unsigned int symbol, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& symbol_types,
 		array<hol_type>& type_variables)
 {
-	if (!symbol_types.ensure_capacity(symbol_types.size + 1))
+	static_assert(Type == hol_term_type::CONSTANT
+			   || Type == hol_term_type::VARIABLE
+			   || Type == hol_term_type::PARAMETER,
+			"Type must be either: CONSTANT, VARIABLE, PARAMETER.");
+
+	if (!types.template push<Type>(term)
+	 || !symbol_types.ensure_capacity(symbol_types.size + 1))
 		return false;
 
 	unsigned int index = symbol_types.index_of(symbol);
@@ -1706,54 +1760,69 @@ inline bool compute_type(unsigned int symbol,
 			free(new_type); return false;
 		} else {
 			swap(new_type, symbol_types.values[index]);
-			free(new_type);
-			return types.add(symbol_types.values[index]);
+			free(new_type); free(expected_type);
+			if (!init(expected_type, symbol_types.values[index])) {
+				expected_type.kind = hol_type_kind::ANY; /* make sure `expected_type` is valid since its destructor will be called */
+				return false;
+			}
+			return types.template add<Type>(term, symbol_types.values[index]);
 		}
 	} else {
 		symbol_types.keys[index] = symbol;
-		if (!init(symbol_types.values[index], expected_type) || !types.add(expected_type))
+		if (!init(symbol_types.values[index], expected_type))
 			return false;
 		symbol_types.size++;
-		return types.add(expected_type);
+		return types.template add<Type>(term, expected_type);
 	}
 }
 
-template<bool PolymorphicEquality>
-inline bool compute_type(const hol_array_term& term,
-		array<hol_type>& types, const hol_type& expected_type,
+template<hol_term_type Type, bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_type(
+		const hol_array_term& array_term, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
-	if (!expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables))
+	static_assert(Type == hol_term_type::AND
+			   || Type == hol_term_type::OR
+			   || Type == hol_term_type::IFF,
+			"Type must be either: AND, OR, IFF.");
+
+	if (!types.template push<Type>(term)
+	 || !expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables))
 		return false;
-	for (unsigned int i = 0; i < term.length; i++) {
-		if (!compute_type<PolymorphicEquality>(*term.operands[i], types, HOL_BOOLEAN_TYPE,
+	for (unsigned int i = 0; i < array_term.length; i++) {
+		if (!compute_type<PolymorphicEquality>(*array_term.operands[i], types, expected_type,
 				constant_types, variable_types, parameter_types, type_variables))
 		{
 			return false;
 		}
 	}
-	return types.add(HOL_BOOLEAN_TYPE);
+	return types.template add<Type>(term, HOL_BOOLEAN_TYPE);
 }
 
-template<bool PolymorphicEquality>
-inline bool compute_equals_type(const hol_binary_term& equals,
-		array<hol_type>& types, const hol_type& expected_type,
+template<bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_equals_type(
+		const hol_binary_term& equals, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
 	unsigned int type_variable = type_variables.length;
-	if (!expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+	if (!types.template push<hol_term_type::EQUALS>(term)
+		|| !expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
 		|| !type_variables.ensure_capacity(type_variables.length + 1)
 		|| !init(type_variables[type_variable], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
+
+	hol_type first_type(type_variable);
 	if (!compute_type<PolymorphicEquality>(*equals.left, types,
-			hol_type(type_variable), constant_types, variable_types, parameter_types, type_variables))
+			first_type, constant_types, variable_types, parameter_types, type_variables))
 		return false;
 	if (PolymorphicEquality) {
 		type_variable = type_variables.length;
@@ -1762,20 +1831,28 @@ inline bool compute_equals_type(const hol_binary_term& equals,
 			return false;
 		type_variables.length++;
 	}
+
+	hol_type second_type(type_variable);
 	return compute_type<PolymorphicEquality>(*equals.right, types,
-			hol_type(type_variable), constant_types, variable_types, parameter_types, type_variables)
-		&& types.add(HOL_BOOLEAN_TYPE);
+			second_type, constant_types, variable_types, parameter_types, type_variables)
+		&& types.template add<hol_term_type::EQUALS>(term, HOL_BOOLEAN_TYPE, first_type, second_type);
 }
 
-template<bool PolymorphicEquality>
-inline bool compute_type(const hol_quantifier& quantifier,
-		array<hol_type>& types, const hol_type& expected_type,
+template<hol_term_type Type, bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_type(
+		const hol_quantifier& quantifier, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
-	if (!variable_types.ensure_capacity(variable_types.size + 1)
+	static_assert(Type == hol_term_type::FOR_ALL
+			   || Type == hol_term_type::EXISTS,
+			"Type must be either: FOR_ALL, EXISTS.");
+
+	if (!types.template push<Type>(term)
+	 || !variable_types.ensure_capacity(variable_types.size + 1)
 	 || !type_variables.ensure_capacity(type_variables.length + 1)
 	 || !expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables))
 	{
@@ -1797,7 +1874,7 @@ inline bool compute_type(const hol_quantifier& quantifier,
 		return false;
 	variable_types.size++;
 
-	if (!compute_type<PolymorphicEquality>(*quantifier.operand, types, HOL_BOOLEAN_TYPE,
+	if (!compute_type<PolymorphicEquality>(*quantifier.operand, types, expected_type,
 	 		constant_types, variable_types, parameter_types, type_variables))
 	{
 		return false;
@@ -1809,11 +1886,12 @@ inline bool compute_type(const hol_quantifier& quantifier,
 		fprintf(stderr, "compute_type WARNING: Quantified term is not well-formed.\n");
 #endif
 	variable_types.size--;
-	if (!types.ensure_capacity(types.length + 2))
+	if (!types.template add<Type>(term, HOL_BOOLEAN_TYPE, variable_types.values[variable_types.size])) {
+		free(variable_types.values[variable_types.size]);
 		return false;
-	move(variable_types.values[variable_types.size], types[types.length]);
-	types.length++;
-	return types.add(HOL_BOOLEAN_TYPE);
+	}
+	free(variable_types.values[variable_types.size]);
+	return true;
 }
 
 inline bool get_function_child_types(unsigned int type_variable,
@@ -1878,14 +1956,17 @@ inline bool get_function_child_types(const hol_type& type,
 	return false;
 }
 
-template<bool PolymorphicEquality>
-inline bool compute_lambda_type(const hol_quantifier& quantifier,
-		array<hol_type>& types, const hol_type& expected_type,
+template<bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_lambda_type(
+		const hol_quantifier& quantifier, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
+	if (!types.template push<hol_term_type::LAMBDA>(term)) return false;
+
 	hol_type& left_type = *((hol_type*) alloca(sizeof(hol_type)));
 	hol_type& right_type = *((hol_type*) alloca(sizeof(hol_type)));
 	if (!get_function_child_types(expected_type, type_variables, left_type, right_type))
@@ -1902,8 +1983,7 @@ inline bool compute_lambda_type(const hol_quantifier& quantifier,
 	unsigned int old_variable_types_size = variable_types.size;
 #endif
 	variable_types.keys[variable_types.size] = quantifier.variable;
-	if (!init(variable_types.values[variable_types.size], left_type))
-		return false;
+	move(left_type, variable_types.values[variable_types.size]);
 	variable_types.size++;
 
 	if (!compute_type<PolymorphicEquality>(*quantifier.operand, types, right_type, constant_types, variable_types, parameter_types, type_variables))
@@ -1915,72 +1995,80 @@ inline bool compute_lambda_type(const hol_quantifier& quantifier,
 		fprintf(stderr, "compute_lambda_type WARNING: Lambda term is not well-formed.\n");
 #endif
 	variable_types.size--;
-	if (!types.add(hol_type(variable_types.values[variable_types.size], types.last())))
+	free(expected_type);
+	if (!init(expected_type, variable_types.values[variable_types.size], right_type)) {
+		expected_type.kind = hol_type_kind::ANY; /* make sure `expected_type` is valid since its destructor will be called */
+		free(variable_types.values[variable_types.size]); free(right_type);
 		return false;
-	free(variable_types.values[variable_types.size]);
-	return true;
+	}
+	free(variable_types.values[variable_types.size]); free(right_type);
+	return types.template add<hol_term_type::LAMBDA>(term, expected_type);
 }
 
-template<bool PolymorphicEquality>
-inline bool compute_apply_type(const hol_binary_term& apply,
-		array<hol_type>& types, const hol_type& expected_type,
+template<bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_apply_type(
+		const hol_binary_term& apply, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
-	if (!type_variables.ensure_capacity(type_variables.length + 1)
+	if (!types.template push<hol_term_type::UNARY_APPLICATION>(term)
+	 || !type_variables.ensure_capacity(type_variables.length + 1)
 	 || !init(type_variables[type_variables.length], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
-	if (!compute_type<PolymorphicEquality>(*apply.left, types,
-			hol_type(hol_type(type_variables.length - 1), expected_type),
+	hol_type type(hol_type(type_variables.length - 1), expected_type);
+	if (!compute_type<PolymorphicEquality>(*apply.left, types, type,
 			constant_types, variable_types, parameter_types, type_variables))
 	{
 		return false;
 	}
 
-	const hol_type* arg_type = types.last().function.left;
-	const hol_type* return_type = types.last().function.right;
+	hol_type& arg_type = *type.function.left;
+	swap(expected_type, *type.function.right);
 
-	return compute_type<PolymorphicEquality>(*apply.right, types, *arg_type, constant_types, variable_types, parameter_types, type_variables)
-		&& types.add(*return_type);
+	return compute_type<PolymorphicEquality>(*apply.right, types, arg_type, constant_types, variable_types, parameter_types, type_variables)
+		&& types.template add<hol_term_type::UNARY_APPLICATION>(term, expected_type);
 }
 
-template<bool PolymorphicEquality>
-inline bool compute_apply_type(const hol_ternary_term& apply,
-		array<hol_type>& types, const hol_type& expected_type,
+template<bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_apply_type(
+		const hol_ternary_term& apply, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
-	if (!type_variables.ensure_capacity(type_variables.length + 2)
+	if (!types.template push<hol_term_type::BINARY_APPLICATION>(term)
+	 || !type_variables.ensure_capacity(type_variables.length + 2)
 	 || !init(type_variables[type_variables.length], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
 	if (!init(type_variables[type_variables.length], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
-	if (!compute_type<PolymorphicEquality>(*apply.first, types,
-			hol_type(hol_type(type_variables.length - 1), hol_type(hol_type(type_variables.length - 2), expected_type)),
+	hol_type type(hol_type(type_variables.length - 1), hol_type(hol_type(type_variables.length - 2), expected_type));
+	if (!compute_type<PolymorphicEquality>(*apply.first, types, type,
 			constant_types, variable_types, parameter_types, type_variables))
 	{
 		return false;
 	}
 
-	const hol_type* arg1_type = types.last().function.left;
-	const hol_type* arg2_type = types.last().function.right->function.left;
-	const hol_type* return_type = types.last().function.right->function.right;
+	hol_type& arg1_type = *type.function.left;
+	hol_type& arg2_type = *type.function.right->function.left;
+	swap(expected_type, *type.function.right->function.right);
 
-	return compute_type<PolymorphicEquality>(*apply.second, types, *arg1_type, constant_types, variable_types, parameter_types, type_variables)
-		&& compute_type<PolymorphicEquality>(*apply.third, types, *arg2_type, constant_types, variable_types, parameter_types, type_variables)
-		&& types.add(*return_type);
+	return compute_type<PolymorphicEquality>(*apply.second, types, arg1_type, constant_types, variable_types, parameter_types, type_variables)
+		&& compute_type<PolymorphicEquality>(*apply.third, types, arg2_type, constant_types, variable_types, parameter_types, type_variables)
+		&& types.template add<hol_term_type::BINARY_APPLICATION>(term, expected_type);
 }
 
-template<bool PolymorphicEquality>
+template<bool PolymorphicEquality, typename ComputedTypes>
 bool compute_type(const hol_term& term,
-		array<hol_type>& types, const hol_type& expected_type,
+		ComputedTypes& types, hol_type& expected_type,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types,
@@ -1988,47 +2076,60 @@ bool compute_type(const hol_term& term,
 {
 	switch (term.type) {
 	case hol_term_type::CONSTANT:
-		return compute_type(term.constant, types, expected_type, constant_types, type_variables);
+		return compute_type<hol_term_type::CONSTANT>(term.constant, term, types, expected_type, constant_types, type_variables);
 	case hol_term_type::VARIABLE:
-		return compute_type(term.variable, types, expected_type, variable_types, type_variables);
+		return compute_type<hol_term_type::VARIABLE>(term.variable, term, types, expected_type, variable_types, type_variables);
 	case hol_term_type::PARAMETER:
-		return compute_type(term.parameter, types, expected_type, parameter_types, type_variables);
+		return compute_type<hol_term_type::PARAMETER>(term.parameter, term, types, expected_type, parameter_types, type_variables);
 	case hol_term_type::UNARY_APPLICATION:
-		return compute_apply_type<PolymorphicEquality>(term.binary, types,
+		return compute_apply_type<PolymorphicEquality>(term.binary, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::BINARY_APPLICATION:
-		return compute_apply_type<PolymorphicEquality>(term.ternary, types,
+		return compute_apply_type<PolymorphicEquality>(term.ternary, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::NOT:
-		return expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+		return types.template push<hol_term_type::NOT>(term)
+			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.unary.operand, types,
-					HOL_BOOLEAN_TYPE, constant_types, variable_types, parameter_types, type_variables)
-			&& types.add(HOL_BOOLEAN_TYPE);
+					expected_type, constant_types, variable_types, parameter_types, type_variables)
+			&& types.template add<hol_term_type::NOT>(term, HOL_BOOLEAN_TYPE);
 	case hol_term_type::IF_THEN:
-		return expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+		return types.template push<hol_term_type::IF_THEN>(term)
+			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.binary.left, types,
-					HOL_BOOLEAN_TYPE, constant_types, variable_types, parameter_types, type_variables)
+					expected_type, constant_types, variable_types, parameter_types, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.binary.right, types,
-					HOL_BOOLEAN_TYPE, constant_types, variable_types, parameter_types, type_variables)
-			&& types.add(HOL_BOOLEAN_TYPE);
+					expected_type, constant_types, variable_types, parameter_types, type_variables)
+			&& types.template add<hol_term_type::IF_THEN>(term, HOL_BOOLEAN_TYPE);
 	case hol_term_type::EQUALS:
-		return compute_equals_type<PolymorphicEquality>(term.binary, types,
+		return compute_equals_type<PolymorphicEquality>(term.binary, term, types,
 					expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::AND:
+		return compute_type<hol_term_type::AND, PolymorphicEquality>(term.array, term, types,
+				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::OR:
-		return compute_type<PolymorphicEquality>(term.array, types,
+		return compute_type<hol_term_type::OR, PolymorphicEquality>(term.array, term, types,
+				expected_type, constant_types, variable_types, parameter_types, type_variables);
+	case hol_term_type::IFF:
+		return compute_type<hol_term_type::IFF, PolymorphicEquality>(term.array, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::FOR_ALL:
+		return compute_type<hol_term_type::FOR_ALL, PolymorphicEquality>(term.quantifier, term, types,
+				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::EXISTS:
-		return compute_type<PolymorphicEquality>(term.quantifier, types,
+		return compute_type<hol_term_type::EXISTS, PolymorphicEquality>(term.quantifier, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::LAMBDA:
-		return compute_lambda_type<PolymorphicEquality>(term.quantifier, types,
+		return compute_lambda_type<PolymorphicEquality>(term.quantifier, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::TRUE:
+		return types.template push<hol_term_type::TRUE>(term)
+			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& types.template add<hol_term_type::TRUE>(term, HOL_BOOLEAN_TYPE);
 	case hol_term_type::FALSE:
-		return expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
-			&& types.add(HOL_BOOLEAN_TYPE);
+		return types.template push<hol_term_type::FALSE>(term)
+			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& types.template add<hol_term_type::FALSE>(term, HOL_BOOLEAN_TYPE);
 	}
 	fprintf(stderr, "compute_type ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -2106,9 +2207,9 @@ inline void free_elements(array<T>& list) {
 		free(element);
 }
 
-template<bool PolymorphicEquality>
+template<bool PolymorphicEquality, typename ComputedTypes>
 inline bool compute_type(
-		const hol_term& term, array<hol_type>& types,
+		const hol_term& term, ComputedTypes& types,
 		array_map<unsigned int, hol_type>& constant_types,
 		array_map<unsigned int, hol_type>& variable_types,
 		array_map<unsigned int, hol_type>& parameter_types)
@@ -2116,15 +2217,15 @@ inline bool compute_type(
 	array<hol_type> type_variables(8);
 	if (!init(type_variables[0], hol_type_kind::ANY)) return false;
 	type_variables.length++;
-	if (!compute_type<PolymorphicEquality>(term, types, hol_type(0), constant_types, variable_types, parameter_types, type_variables))
+	hol_type type(0);
+	if (!compute_type<PolymorphicEquality>(term, types, type, constant_types, variable_types, parameter_types, type_variables))
 		return false;
 
 	array<pair<unsigned int, bool>> visited_variables(8);
-	for (hol_type& type : types) {
-		if (!flatten_type_variable<true>(type, visited_variables, type_variables)) {
-			free_elements(type_variables); return false;
-		}
-	} for (auto entry : constant_types) {
+	if (!types.apply([&](hol_type& type){ return flatten_type_variable<true>(type, visited_variables, type_variables); })) {
+		free_elements(type_variables); return false;
+	}
+	for (auto entry : constant_types) {
 		if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) {
 			free_elements(type_variables); return false;
 		}
@@ -2140,6 +2241,113 @@ inline bool compute_type(
 	free_elements(type_variables);
 	return true;
 }
+
+template<bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_type(
+		const hol_term& term, ComputedTypes& types)
+{
+	array_map<unsigned int, hol_type> constant_types(8);
+	array_map<unsigned int, hol_type> variable_types(8);
+	array_map<unsigned int, hol_type> parameter_types(8);
+	bool success = compute_type<PolymorphicEquality>(term, types, constant_types, variable_types, parameter_types);
+	for (unsigned int j = 0; j < constant_types.size; j++) free(constant_types.values[j]);
+	for (unsigned int j = 0; j < variable_types.size; j++) free(variable_types.values[j]);
+	for (unsigned int j = 0; j < parameter_types.size; j++) free(parameter_types.values[j]);
+	return success;
+}
+
+struct type_map {
+	array_map<const hol_term*, hol_type> types;
+
+	type_map(unsigned int initial_capacity) : types(initial_capacity) { }
+
+	~type_map() {
+		for (auto entry : types) free(entry.value);
+	}
+
+	template<hol_term_type Type>
+	constexpr bool push(const hol_term& term) const { return true; }
+
+	template<hol_term_type Type, typename... Args>
+	inline bool add(const hol_term& term, const hol_type& type, Args&&... extra_types) {
+		return types.put(&term, type);
+	}
+
+	template<typename Function>
+	inline bool apply(Function function) {
+		for (auto entry : types)
+			if (!function(entry.value)) return false;
+		return true;
+	}
+
+	inline void clear() {
+		for (auto entry : types) free(entry.value);
+		types.clear();
+	}
+};
+
+struct equals_arg_types {
+	array_map<const hol_term*, pair<hol_type, hol_type>> types;
+
+	equals_arg_types(unsigned int initial_capacity) : types(initial_capacity) { }
+
+	~equals_arg_types() { free_helper(); }
+
+	template<hol_term_type Type>
+	constexpr bool push(const hol_term& term) const { return true; }
+
+	template<hol_term_type Type, typename... Args,
+		typename std::enable_if<Type != hol_term_type::EQUALS>::type* = nullptr>
+	constexpr bool add(const hol_term& term, const hol_type& type, Args&&... extra_types) {
+		return true;
+	}
+
+	template<hol_term_type Type,
+		typename std::enable_if<Type == hol_term_type::EQUALS>::type* = nullptr>
+	inline bool add(const hol_term& term, const hol_type& type,
+			const hol_type& first_arg_type, const hol_type& second_arg_type)
+	{
+		if (!types.ensure_capacity(types.size + 1)) return false;
+
+		unsigned int index;
+		pair<hol_type, hol_type>& arg_types = types.get(&term, index);
+		if (index == types.size) {
+			if (!init(arg_types.key, first_arg_type)) {
+				return false;
+			} else if (!init(arg_types.value, second_arg_type)) {
+				free(arg_types.key);
+				return false;
+			}
+			types.keys[index] = &term;
+			types.size++;
+			return true;
+		} else {
+			fprintf(stderr, "equals_arg_types.add ERROR: We've already seen this term.\n");
+			return false;
+		}
+	}
+
+	template<typename Function>
+	inline bool apply(Function function) {
+		for (auto entry : types)
+			if (!function(entry.value.key)
+			 || !function(entry.value.value)) return false;
+		return true;
+	}
+
+	inline void clear() {
+		free_helper();
+		types.clear();
+	}
+
+private:
+	void free_helper() {
+		for (auto entry : types) {
+			free(entry.value.key);
+			free(entry.value.value);
+		}
+	}
+};
 
 
 /**
@@ -2230,6 +2438,7 @@ int_fast8_t compare(
 		return compare(first.ternary, second.ternary);
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		return compare(first.array, second.array);
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
@@ -2311,6 +2520,7 @@ bool relabel_variables(hol_term& term,
 			&& relabel_variables(*term.ternary.third, variable_map);
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!relabel_variables(*term.array.operands[i], variable_map)) return false;
 		return true;
@@ -2341,7 +2551,7 @@ int_fast8_t compare(const hol_scope&, const hol_scope&);
 void shift_variables(hol_scope&, unsigned int);
 
 template<bool AllConstantsDistinct>
-bool canonicalize_scope(const hol_term&, hol_scope&, array_map<unsigned int, unsigned int>&);
+bool canonicalize_scope(const hol_term&, hol_scope&, array_map<unsigned int, unsigned int>&, const equals_arg_types&);
 
 
 template<unsigned int Arity>
@@ -2452,6 +2662,7 @@ struct hol_scope {
 			dst.parameter = src.parameter; return;
 		case hol_term_type::AND:
 		case hol_term_type::OR:
+		case hol_term_type::IFF:
 			hol_commutative_scope::move(src.commutative, dst.commutative); return;
 		case hol_term_type::IF_THEN:
 			hol_noncommutative_scope::move(src.noncommutative, dst.noncommutative); return;
@@ -2492,6 +2703,7 @@ private:
 		switch (type) {
 		case hol_term_type::AND:
 		case hol_term_type::OR:
+		case hol_term_type::IFF:
 			new (&commutative) hol_commutative_scope(); return true;
 		case hol_term_type::IF_THEN:
 			new (&noncommutative) hol_noncommutative_scope(); return true;
@@ -2527,6 +2739,7 @@ private:
 		switch (type) {
 		case hol_term_type::AND:
 		case hol_term_type::OR:
+		case hol_term_type::IFF:
 			commutative.~hol_commutative_scope(); return true;
 		case hol_term_type::IF_THEN:
 			noncommutative.~hol_noncommutative_scope(); return true;
@@ -2629,6 +2842,7 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 	switch (first.type) {
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		return first.commutative == second.commutative;
 	case hol_term_type::IF_THEN:
 		return first.noncommutative == second.noncommutative;
@@ -2738,6 +2952,7 @@ int_fast8_t compare(
 		return compare(*first.unary, *second.unary);
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		return compare(first.commutative, second.commutative);
 	case hol_term_type::IF_THEN:
 		return compare(first.noncommutative, second.noncommutative);
@@ -2821,6 +3036,7 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 		shift_variables(*scope.unary, removed_variable); return;
 	case hol_term_type::AND:
 	case hol_term_type::OR:
+	case hol_term_type::IFF:
 		shift_variables(scope.commutative, removed_variable); return;
 	case hol_term_type::IF_THEN:
 		shift_variables(scope.noncommutative, removed_variable); return;
@@ -2956,6 +3172,58 @@ inline hol_term* scope_to_term(
 	return new_term;
 }
 
+template<bool Negated>
+inline hol_term* iff_scope_to_term(const hol_scope* scope,
+		unsigned int scope_length, hol_term* first)
+{
+	if (scope_length == 0) return first;
+
+	for (unsigned int i = scope_length; i > 0; i--) {
+		hol_term* next = scope_to_term<Negated>(scope[i - 1]);
+		if (next == NULL) {
+			free(*first); if (first->reference_count == 0) free(first);
+			return NULL;
+		}
+
+		hol_term* new_right;
+		if (!new_hol_term(new_right)) {
+			free(*first); if (first->reference_count == 0) free(first);
+			free(*next); if (next->reference_count == 0) free(next);
+			return NULL;
+		}
+		new_right->type = hol_term_type::EQUALS;
+		new_right->reference_count = 1;
+		new_right->binary.left = next;
+		new_right->binary.right = first;
+		first = new_right;
+	}
+	return first;
+}
+
+inline hol_term* iff_scope_to_term(
+		const hol_scope* scope, unsigned int scope_length,
+		const hol_scope* negated, unsigned int negated_length)
+{
+	if (scope_length == 1 && negated_length == 0)
+		return scope_to_term<false>(scope[0]);
+	else if (scope_length == 0 && negated_length == 1)
+		return scope_to_term<true>(negated[0]);
+
+	hol_term* right;
+	if (negated_length > 0) {
+		right = scope_to_term<true>(negated[negated_length - 1]);
+		negated_length--;
+	} else {
+		right = scope_to_term<false>(scope[scope_length - 1]);
+		scope_length--;
+	}
+	if (right == NULL) return NULL;
+
+	right = iff_scope_to_term<true>(negated, negated_length, right);
+	if (right == NULL) return NULL;
+	return iff_scope_to_term<false>(scope, scope_length, right);
+}
+
 template<hol_term_type QuantifierType>
 inline hol_term* scope_to_term(const hol_quantifier_scope& scope)
 {
@@ -3042,6 +3310,24 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 		return scope_to_term<hol_term_type::OR>(
 				scope.commutative.children.data, scope.commutative.children.length,
 				scope.commutative.negated.data, scope.commutative.negated.length);
+	case hol_term_type::IFF:
+		if (scope.commutative.children.length > 0 && scope.commutative.children.last().type == hol_term_type::FALSE) {
+			first = iff_scope_to_term(
+					scope.commutative.children.data, scope.commutative.children.length - 1,
+					scope.commutative.negated.data, scope.commutative.negated.length);
+			if (!new_hol_term(new_term)) {
+				free(*first); if (first->reference_count == 0) free(first);
+				return NULL;
+			}
+			new_term->type = hol_term_type::NOT;
+			new_term->reference_count = 1;
+			new_term->unary.operand = first;
+			return new_term;
+		} else {
+			return iff_scope_to_term(
+					scope.commutative.children.data, scope.commutative.children.length,
+					scope.commutative.negated.data, scope.commutative.negated.length);
+		}
 	case hol_term_type::IF_THEN:
 		first = scope_to_term<hol_term_type::AND>(
 				scope.noncommutative.left.data, scope.noncommutative.left.length,
@@ -3170,6 +3456,11 @@ bool add_to_scope_helper(
 	unsigned int i;
 	if (scope_contains(subscope, negated, i)) {
 		found_negation = true;
+		if (Operator == hol_term_type::IFF) {
+			free(negated[i]);
+			shift_left(negated.data + i, negated.length - i - 1);
+			negated.length--;
+		}
 		free(subscope);
 		return true;
 	}
@@ -3178,6 +3469,11 @@ bool add_to_scope_helper(
 	/* add `subscope` into the correct (sorted) position in `children` */
 	if (scope_contains(subscope, children, i)) {
 		/* we found an operand in `children` that is identical to `subscope` */
+		if (Operator == hol_term_type::IFF) {
+			free(children[i]);
+			shift_left(children.data + i, children.length - i - 1);
+			children.length--;
+		}
 		free(subscope);
 		return true;
 	}
@@ -3204,6 +3500,12 @@ bool add_to_scope(
 		free(subscope.variables);
 		free(subscope.unary);
 		return true;
+	} else if (subscope.type == hol_term_type::IFF && subscope.commutative.children.length > 0
+			&& subscope.commutative.children.last().type == hol_term_type::FALSE)
+	{
+		free(subscope.commutative.children.last());
+		subscope.commutative.children.length--;
+		return add_to_scope_helper<Operator>(subscope, negated, children, found_negation);
 	} else {
 		return add_to_scope_helper<Operator>(subscope, children, negated, found_negation);
 	}
@@ -3219,13 +3521,29 @@ bool add_to_scope(
 {
 	/* check if `subscope` is the negation of any operand in `scope.commutative.children` */
 	if (subscope.type == hol_term_type::NOT) {
-		move_variables(subscope.variables, variables);
+		if (Operator != hol_term_type::IFF)
+			move_variables(subscope.variables, variables);
 		if (!add_to_scope_helper<Operator>(*subscope.unary, negated, children, found_negation)) return false;
+		if (Operator == hol_term_type::IFF)
+			recompute_variables(children, negated, variables);
 		free(subscope.variables);
 		free(subscope.unary);
+	} else if (subscope.type == hol_term_type::IFF && subscope.commutative.children.length > 0
+			&& subscope.commutative.children.last().type == hol_term_type::FALSE)
+	{
+		free(subscope.commutative.children.last());
+		subscope.commutative.children.length--;
+		if (Operator != hol_term_type::IFF)
+			move_variables(subscope.variables, variables);
+		if (!add_to_scope_helper<Operator>(subscope, negated, children, found_negation)) return false;
+		if (Operator == hol_term_type::IFF)
+			recompute_variables(children, negated, variables);
 	} else {
-		move_variables(subscope.variables, variables);
+		if (Operator != hol_term_type::IFF)
+			move_variables(subscope.variables, variables);
 		if (!add_to_scope_helper<Operator>(subscope, children, negated, found_negation)) return false;
+		if (Operator == hol_term_type::IFF)
+			recompute_variables(children, negated, variables);
 	}
 	return true;
 }
@@ -3237,8 +3555,9 @@ unsigned int intersection_size(
 {
 	static_assert(Operator == hol_term_type::AND
 			   || Operator == hol_term_type::OR
-			   || Operator == hol_term_type::IF_THEN,
-			"Operator must be either: AND, OR, IF_THEN.");
+			   || Operator == hol_term_type::IF_THEN
+			   || Operator == hol_term_type::IFF,
+			"Operator must be either: AND, OR, IF_THEN, IFF.");
 
 	unsigned int intersection_count = 0;
 	unsigned int i = 0, j = 0, first_index = 0, second_index = 0;
@@ -3246,14 +3565,32 @@ unsigned int intersection_size(
 	{
 		auto result = compare(first[i], second[j]);
 		if (result == 0) {
-			return 1;
+			if (Operator == hol_term_type::AND || Operator == hol_term_type::OR || Operator == hol_term_type::IF_THEN) {
+				return 1;
+			} else if (Operator == hol_term_type::IFF) {
+				free(first[i]); free(second[j]);
+				i++; j++; intersection_count++;
+			}
 		} else if (result < 0) {
+			if (Operator == hol_term_type::IFF) move(first[i], first[first_index]);
 			i++; first_index++;
 		} else {
+			if (Operator == hol_term_type::IFF) move(second[j], second[second_index]);
 			j++; second_index++;
 		}
 	}
 
+	if (Operator != hol_term_type::IFF) return intersection_count;
+
+	while (i < first.length) {
+		move(first[i], first[first_index]);
+		i++; first_index++;
+	} while (j < second.length) {
+		move(second[j], second[second_index]);
+		j++; second_index++;
+	}
+	first.length = first_index;
+	second.length = second_index;
 	return intersection_count;
 }
 
@@ -3265,8 +3602,9 @@ unsigned int intersection_size(
 {
 	static_assert(Operator == hol_term_type::AND
 			   || Operator == hol_term_type::OR
-			   || Operator == hol_term_type::IF_THEN,
-			"Operator must be either: AND, OR, IF_THEN.");
+			   || Operator == hol_term_type::IF_THEN
+			   || Operator == hol_term_type::IFF,
+			"Operator must be either: AND, OR, IF_THEN, IFF.");
 
 	unsigned int intersection_count = 0;
 	unsigned int i = 0, j = 0, first_index = 0, second_index = 0;
@@ -3279,8 +3617,14 @@ unsigned int intersection_size(
 
 		auto result = compare(first[i], second[j]);
 		if (result == 0) {
-			return 1;
+			if (Operator == hol_term_type::AND || Operator == hol_term_type::OR || Operator == hol_term_type::IF_THEN) {
+				return 1;
+			} else if (Operator == hol_term_type::IFF) {
+				free(first[i]); free(second[j]);
+				i++; j++; intersection_count++;
+			}
 		} else if (result < 0) {
+			if (Operator == hol_term_type::IFF) move(first[i], first[first_index]);
 			i++; first_index++;
 		} else {
 			move(second[j], second[second_index]);
@@ -3289,6 +3633,7 @@ unsigned int intersection_size(
 	}
 
 	while (i < first.length) {
+		if (Operator == hol_term_type::IFF) move(first[i], first[first_index]);
 		i++; first_index++;
 	} while (j < second.length) {
 		move(second[j], second[second_index]);
@@ -3305,17 +3650,23 @@ void merge_scopes(array<hol_scope>& dst,
 	array<hol_scope>& second)
 {
 	static_assert(Operator == hol_term_type::AND
-			   || Operator == hol_term_type::OR,
-			"Operator must be either: AND, OR.");
+			   || Operator == hol_term_type::OR
+			   || Operator == hol_term_type::IFF,
+			"Operator must be either: AND, OR, IFF.");
 
 	unsigned int i = 0, j = 0;
 	while (i < first.length && j < second.length)
 	{
 		auto result = compare(first[i], second[j]);
 		if (result == 0) {
-			move(first[i], dst[dst.length]);
-			free(second[j]);
-			dst.length++; i++; j++;
+			if (Operator == hol_term_type::IFF) {
+				free(first[i]); free(second[j]);
+				i++; j++;
+			} else {
+				move(first[i], dst[dst.length]);
+				free(second[j]);
+				dst.length++; i++; j++;
+			}
 		} else if (result < 0) {
 			move(first[i], dst[dst.length]);
 			dst.length++; i++;
@@ -3342,8 +3693,9 @@ void merge_scopes(array<hol_scope>& dst,
 	unsigned int& new_second_index)
 {
 	static_assert(Operator == hol_term_type::AND
-			   || Operator == hol_term_type::OR,
-			"Operator must be either: AND, OR.");
+			   || Operator == hol_term_type::OR
+			   || Operator == hol_term_type::IFF,
+			"Operator must be either: AND, OR, IFF.");
 
 	unsigned int i = 0, j = 0;
 	new_second_index = skip_second_index;
@@ -3357,9 +3709,14 @@ void merge_scopes(array<hol_scope>& dst,
 
 		auto result = compare(first[i], second[j]);
 		if (result == 0) {
-			move(first[i], dst[dst.length]);
-			free(second[j]);
-			dst.length++; i++; j++;
+			if (Operator == hol_term_type::IFF) {
+				free(first[i]); free(second[j]);
+				i++; j++;
+			} else {
+				move(first[i], dst[dst.length]);
+				free(second[j]);
+				dst.length++; i++; j++;
+			}
 		} else if (result < 0) {
 			move(first[i], dst[dst.length]);
 			dst.length++; i++;
@@ -3401,9 +3758,16 @@ inline void merge_scopes(
 		for (hol_scope& child : src) free(child);
 		for (hol_scope& child : src_negated) free(child);
 		found_negation = true; return;
+	} else if (Operator == hol_term_type::IFF && intersection_count % 2 == 1) {
+		found_negation = true;
 	} else {
 		found_negation = false;
 	}
+
+	if (Operator == hol_term_type::IFF
+	 && src.length == 0 && dst.length == 0
+	 && src_negated.length == 0 && dst_negated.length == 0)
+		return; /* this happens if the elements of `src` are all negations of the elements of `dst` (and vice versa) */
 
 	/* merge the two scopes */
 	array<hol_scope> both = array<hol_scope>(max((size_t) 1, src.length + dst.length));
@@ -3433,9 +3797,16 @@ inline void merge_scopes(
 		for (hol_scope& child : src) free(child);
 		for (hol_scope& child : src_negated) free(child);
 		found_negation = true; return;
+	} else if (Operator == hol_term_type::IFF && intersection_count % 2 == 1) {
+		found_negation = true;
 	} else {
 		found_negation = false;
 	}
+
+	if (Operator == hol_term_type::IFF
+	 && src.length == 0 && dst.length == 0
+	 && src_negated.length == 0 && dst_negated.length == 0)
+		return; /* this happens if the elements of `src` are all negations of the elements of `dst` (and vice versa) */
 
 	/* merge the two scopes */
 	array<hol_scope> both = array<hol_scope>(max((size_t) 1, src.length + dst.length));
@@ -3445,6 +3816,21 @@ inline void merge_scopes(
 	array<hol_scope> both_negated = array<hol_scope>(max((size_t) 1, src_negated.length + dst_negated.length));
 	merge_scopes<Operator>(both_negated, src_negated, dst_negated);
 	swap(both_negated, dst_negated);
+}
+
+inline bool negate_iff(hol_scope& scope)
+{
+	if (!scope.commutative.children.ensure_capacity(scope.commutative.children.length + 1)) {
+		return false;
+	} else if (scope.commutative.children.length > 0 && scope.commutative.children.last().type == hol_term_type::FALSE) {
+		free(scope.commutative.children.last());
+		scope.commutative.children.length--;
+	} else {
+		if (!init(scope.commutative.children[scope.commutative.children.length], hol_term_type::FALSE))
+			return false;
+		scope.commutative.children.length++;
+	}
+	return true;
 }
 
 bool negate_scope(hol_scope& scope)
@@ -3458,6 +3844,8 @@ bool negate_scope(hol_scope& scope)
 		free(scope.variables);
 		move(*operand, scope);
 		free(operand);
+	} else if (scope.type == hol_term_type::IFF) {
+		return negate_iff(scope);
 	} else {
 		hol_scope* operand = (hol_scope*) malloc(sizeof(hol_scope));
 		if (operand == NULL) {
@@ -3475,26 +3863,54 @@ bool negate_scope(hol_scope& scope)
 	return true;
 }
 
-inline bool are_negations(const hol_scope& left, const hol_scope& right)
+inline bool are_negations(hol_scope& left, hol_scope& right)
 {
-	return ((left.type == hol_term_type::NOT && *left.unary == right)
-		 || (right.type == hol_term_type::NOT && *right.unary == left));
+	if ((left.type == hol_term_type::NOT && *left.unary == right)
+	 || (right.type == hol_term_type::NOT && *right.unary == left))
+		return true;
+	if (left.type == hol_term_type::IFF && right.type == hol_term_type::IFF) {
+		if (left.commutative.children.length > 0 && left.commutative.children.last().type == hol_term_type::FALSE) {
+			/* `left` is a negated IFF expression */
+			if (right.commutative.children.length > 0 && right.commutative.children.last().type == hol_term_type::FALSE) {
+				/* `right` is a negated IFF expression */
+				return false;
+			} else {
+				left.commutative.children.length--;
+				bool negated = (left == right);
+				left.commutative.children.length++;
+				return negated;
+			}
+		} else {
+			if (right.commutative.children.length > 0 && right.commutative.children.last().type == hol_term_type::FALSE) {
+				/* `right` is a negated IFF expression */
+				right.commutative.children.length--;
+				bool negated = (left == right);
+				right.commutative.children.length++;
+				return negated;
+			} else {
+				return false;
+			}
+		}
+	}
+	return false;
 }
 
 template<hol_term_type Operator, bool AllConstantsDistinct>
 bool canonicalize_commutative_scope(
 		const hol_array_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	static_assert(Operator == hol_term_type::AND
-			   || Operator == hol_term_type::OR,
-			"Operator is not a commutative operator.");
+			   || Operator == hol_term_type::OR
+			   || Operator == hol_term_type::IFF,
+			"Operator must be either: AND, OR, IFF.");
 
 	if (!init(out, Operator)) return false;
 
 	hol_scope& next = *((hol_scope*) alloca(sizeof(hol_scope)));
 	for (unsigned int i = 0; i < src.length; i++) {
-		if (!canonicalize_scope<AllConstantsDistinct>(*src.operands[i], next, variable_map)) {
+		if (!canonicalize_scope<AllConstantsDistinct>(*src.operands[i], next, variable_map, types)) {
 			free(out); return false;
 		}
 
@@ -3503,6 +3919,8 @@ bool canonicalize_commutative_scope(
 			if (Operator == hol_term_type::AND) {
 				free(out);
 				return init(out, hol_term_type::FALSE);
+			} else if (Operator == hol_term_type::IFF) {
+				if (!negate_iff(out)) return false;
 			}
 		} else if (next.type == hol_term_type::TRUE) {
 			free(next);
@@ -3516,7 +3934,9 @@ bool canonicalize_commutative_scope(
 					next.commutative.negated, out.commutative.negated, found_negation);
 			free(next.commutative.children);
 			free(next.commutative.negated);
-			move_variables(next.variables, out.variables);
+			if (Operator == hol_term_type::IFF)
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			else move_variables(next.variables, out.variables);
 			free(next.variables);
 			if (found_negation) {
 				if (Operator == hol_term_type::AND) {
@@ -3525,6 +3945,9 @@ bool canonicalize_commutative_scope(
 				} else if (Operator == hol_term_type::OR) {
 					free(out);
 					return init(out, hol_term_type::TRUE);
+				} else if (Operator == hol_term_type::IFF) {
+					recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+					if (!negate_iff(out)) return false;
 				}
 			}
 		} else {
@@ -3536,6 +3959,8 @@ bool canonicalize_commutative_scope(
 					free(out); return init(out, hol_term_type::FALSE);
 				} else if (Operator == hol_term_type::OR) {
 					free(out); return init(out, hol_term_type::TRUE);
+				} else if (Operator == hol_term_type::IFF) {
+					if (!negate_iff(out)) return false;
 				}
 			}
 		}
@@ -3543,7 +3968,7 @@ bool canonicalize_commutative_scope(
 
 	if (out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
 		free(out);
-		if (Operator == hol_term_type::AND)
+		if (Operator == hol_term_type::AND || Operator == hol_term_type::IFF)
 			return init(out, hol_term_type::TRUE);
 		else return init(out, hol_term_type::FALSE);
 	} else if (out.commutative.children.length == 1 && out.commutative.negated.length == 0) {
@@ -3564,20 +3989,21 @@ bool canonicalize_commutative_scope(
 template<bool AllConstantsDistinct>
 bool canonicalize_conditional_scope(
 		const hol_binary_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	hol_scope& left = *((hol_scope*) alloca(sizeof(hol_scope)));
-	if (!canonicalize_scope<AllConstantsDistinct>(*src.left, left, variable_map)) return false;
+	if (!canonicalize_scope<AllConstantsDistinct>(*src.left, left, variable_map, types)) return false;
 
 	if (left.type == hol_term_type::FALSE) {
 		free(left);
 		return init(out, hol_term_type::TRUE);
 	} else if (left.type == hol_term_type::TRUE) {
 		free(left);
-		return canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map);
+		return canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map, types);
 	}
 
-	if (!canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map))
+	if (!canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map, types))
 		return false;
 
 	if (out == left) {
@@ -3648,6 +4074,19 @@ bool canonicalize_conditional_scope(
 			move(*out.unary, temp.noncommutative.right_negated[0]);
 			temp.noncommutative.right_negated.length++;
 			free(out.variables); free(out.unary);
+			move(temp, out);
+		} else if (out.type == hol_term_type::IFF && out.commutative.children.length > 0
+				&& out.commutative.children.last().type == hol_term_type::FALSE)
+		{
+			hol_scope& temp = *((hol_scope*) alloca(sizeof(hol_scope)));
+			if (!init(temp, hol_term_type::IF_THEN, out.variables)) {
+				free(out); free(left);
+				return false;
+			}
+			free(out.commutative.children.last());
+			out.commutative.children.length--;
+			move(out, temp.noncommutative.right_negated[0]);
+			temp.noncommutative.right_negated.length++;
 			move(temp, out);
 		} else if (out.type != hol_term_type::IF_THEN) {
 			hol_scope& temp = *((hol_scope*) alloca(sizeof(hol_scope)));
@@ -4034,7 +4473,8 @@ bool process_conditional_quantifier_scope(
 template<hol_term_type QuantifierType, bool AllConstantsDistinct>
 bool canonicalize_quantifier_scope(
 		const hol_quantifier& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	static_assert(QuantifierType == hol_term_type::FOR_ALL
 			   || QuantifierType == hol_term_type::EXISTS
@@ -4047,7 +4487,7 @@ bool canonicalize_quantifier_scope(
 		fprintf(stderr, "canonicalize_quantifier_scope ERROR: Out of memory.\n");
 		return false;
 	} else if (!new_variable(src.variable, quantifier_variable, variable_map)
-			|| !canonicalize_scope<AllConstantsDistinct>(*src.operand, *operand, variable_map))
+			|| !canonicalize_scope<AllConstantsDistinct>(*src.operand, *operand, variable_map, types))
 	{
 		free(operand); return false;
 	}
@@ -4073,9 +4513,10 @@ bool canonicalize_quantifier_scope(
 template<bool AllConstantsDistinct>
 inline bool canonicalize_negation_scope(
 		const hol_unary_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
-	if (!canonicalize_scope<AllConstantsDistinct>(*src.operand, out, variable_map))
+	if (!canonicalize_scope<AllConstantsDistinct>(*src.operand, out, variable_map, types))
 		return false;
 	if (!negate_scope(out)) {
 		free(out); return false;
@@ -4086,7 +4527,8 @@ inline bool canonicalize_negation_scope(
 template<hol_term_type Type, bool AllConstantsDistinct>
 bool canonicalize_nary_scope(
 		const hol_binary_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	hol_scope* left = (hol_scope*) malloc(sizeof(hol_scope));
 	if (left == NULL) {
@@ -4097,9 +4539,9 @@ bool canonicalize_nary_scope(
 	if (right == NULL) {
 		fprintf(stderr, "canonicalize_nary_scope ERROR: Out of memory.\n");
 		free(left); return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.left, *left, variable_map)) {
+	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.left, *left, variable_map, types)) {
 		free(left); free(right); return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.right, *right, variable_map)) {
+	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.right, *right, variable_map, types)) {
 		free(*left); free(left);
 		free(right); return false;
 	}
@@ -4119,7 +4561,8 @@ bool canonicalize_nary_scope(
 template<hol_term_type Type, bool AllConstantsDistinct>
 bool canonicalize_nary_scope(
 		const hol_ternary_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	hol_scope* first = (hol_scope*) malloc(sizeof(hol_scope));
 	if (first == NULL) {
@@ -4135,13 +4578,13 @@ bool canonicalize_nary_scope(
 	if (third == NULL) {
 		fprintf(stderr, "canonicalize_nary_scope ERROR: Out of memory.\n");
 		free(first); free(second); return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.first, *first, variable_map)) {
+	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.first, *first, variable_map, types)) {
 		free(first); free(second);
 		free(third); return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.second, *second, variable_map)) {
+	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.second, *second, variable_map, types)) {
 		free(*first); free(first);
 		free(second); free(third); return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.third, *third, variable_map)) {
+	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.third, *third, variable_map, types)) {
 		free(*first); free(first);
 		free(*second); free(second);
 		free(third); return false;
@@ -4162,125 +4605,205 @@ bool canonicalize_nary_scope(
 	return true;
 }
 
-template<bool AllConstantsDistinct, bool PolymorphicEquality = false /* TODO: remove this default value */>
+template<bool AllConstantsDistinct>
 bool canonicalize_equals_scope(
-		const hol_binary_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		const hol_term& src, hol_scope& out,
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	hol_scope* left = (hol_scope*) malloc(sizeof(hol_scope));
 	if (left == NULL) {
 		fprintf(stderr, "canonicalize_equals_scope ERROR: Out of memory.\n");
 		return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.left, *left, variable_map)) {
+	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.binary.left, *left, variable_map, types)) {
 		free(left); return false;
 	}
 
-	bool negated = false;
-	if (!PolymorphicEquality && left->type == hol_term_type::TRUE) {
+	const pair<hol_type, hol_type>& arg_types = types.types.get(&src);
+	bool is_left_boolean = (arg_types.key.kind == hol_type_kind::CONSTANT && arg_types.key.constant == hol_constant_type::BOOLEAN);
+	bool is_right_boolean = (arg_types.value.kind == hol_type_kind::CONSTANT && arg_types.value.constant == hol_constant_type::BOOLEAN);
+	if (is_right_boolean && left->type == hol_term_type::FALSE) {
 		free(*left); free(left);
-		return canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map);
-	} else if (!PolymorphicEquality && left->type == hol_term_type::FALSE) {
-		free(*left); free(left);
-		if (!canonicalize_scope<AllConstantsDistinct>(*src.right, out, variable_map))
+		if (!canonicalize_scope<AllConstantsDistinct>(*src.binary.right, out, variable_map, types))
 			return false;
+		if (!negate_scope(out)) { free(out); return false; }
+		return true;
+	} else if (is_right_boolean && left->type == hol_term_type::TRUE) {
+		free(*left); free(left);
+		return canonicalize_scope<AllConstantsDistinct>(*src.binary.right, out, variable_map, types);
+	} else if (is_right_boolean && left->type == hol_term_type::IFF) {
+
+		hol_scope* right = (hol_scope*) malloc(sizeof(hol_scope));
+		if (right == NULL) {
+			fprintf(stderr, "canonicalize_equals_scope ERROR: Out of memory.\n");
+			free(*left); free(left); return false;
+		} else if (!canonicalize_scope<AllConstantsDistinct>(*src.binary.right, *right, variable_map, types)) {
+			free(*left); free(left);
+			free(right); return false;
+		}
+
+		if (right->type == hol_term_type::FALSE) {
+			move(*left, out); free(left);
+			free(*right); free(right);
+			if (!negate_iff(out)) { free(out); return false; }
+			return true;
+		} else if (right->type == hol_term_type::TRUE) {
+			move(*left, out); free(left);
+			free(*right); free(right);
+			return true;
+		} else if (right->type == hol_term_type::IFF) {
+			bool found_negation;
+			move(*left, out); free(left);
+			merge_scopes<hol_term_type::IFF>(right->commutative.children, out.commutative.children,
+					right->commutative.negated, out.commutative.negated, found_negation);
+			free(right->commutative.children);
+			free(right->commutative.negated);
+			recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+			free(right->variables); free(right);
+			if (found_negation) {
+				recompute_variables(out.commutative.children, out.commutative.negated, out.variables);
+				if (!negate_iff(out)) { free(out); return false; }
+			}
+		} else {
+			bool found_negation;
+			swap(*left, out); free(left);
+			if (!add_to_scope<hol_term_type::IFF>(*right, out.commutative.children, out.commutative.negated, out.variables, found_negation)) {
+				free(*right); free(right);
+				free(out); return false;
+			} else if (found_negation) {
+				if (!negate_iff(out)) { free(out); return false; }
+			}
+			free(right);
+		}
+	} else {
+
+		hol_scope* right = (hol_scope*) malloc(sizeof(hol_scope));
+		if (right == NULL) {
+			fprintf(stderr, "canonicalize_equals_scope ERROR: Out of memory.\n");
+			free(*left); free(left); return false;
+		} else if (!canonicalize_scope<AllConstantsDistinct>(*src.binary.right, *right, variable_map, types)) {
+			free(*left); free(left);
+			free(right); return false;
+		}
+
+		if (is_left_boolean && right->type == hol_term_type::FALSE) {
+			move(*left, out); free(left);
+			free(*right); free(right);
+			if (!negate_scope(out)) { free(out); return false; }
+			return true;
+		} else if (is_left_boolean && right->type == hol_term_type::TRUE) {
+			move(*left, out); free(left);
+			free(*right); free(right);
+			return true;
+		} else if (is_left_boolean && right->type == hol_term_type::IFF) {
+			bool found_negation;
+			move(*right, out); free(right);
+			if (!add_to_scope<hol_term_type::IFF>(*left, out.commutative.children, out.commutative.negated, out.variables, found_negation)) {
+				free(*left); free(left);
+				free(out); return false;
+			} else if (found_negation) {
+				if (!negate_iff(out)) { free(out); return false; }
+			}
+			free(left);
+		} else if (*right == *left) {
+			free(*left); free(left);
+			free(*right); free(right);
+			return init(out, hol_term_type::TRUE);
+		} else if (AllConstantsDistinct && left->type == hol_term_type::CONSTANT
+				&& right->type == hol_term_type::CONSTANT && left->constant != right->constant)
+		{
+			free(*left); free(left);
+			free(*right); free(right);
+			return init(out, hol_term_type::FALSE);
+		} else {
+			/* if the types of `left` and `right` are BOOLEAN, then construct
+			   an IFF node containing them; otherwise, create an EQUALS node */
+			if (is_left_boolean && is_right_boolean) {
+				/* child types are BOOLEAN, so construct a IFF node */
+				bool first_negation, second_negation;
+				if (!init(out, hol_term_type::IFF)) {
+					free(*left); free(left);
+					free(*right); free(right); return false;
+				} else if (!add_to_scope<hol_term_type::IFF>(*left, out.commutative.children, out.commutative.negated, out.variables, first_negation)) {
+					free(*left); free(left);
+					free(*right); free(right);
+					free(out); return false;
+				}
+				free(left);
+				if (!add_to_scope<hol_term_type::IFF>(*right, out.commutative.children, out.commutative.negated, out.variables, second_negation)) {
+					free(*right); free(right);
+					free(out); return false;
+				}
+				free(right);
+				if (first_negation ^ second_negation) {
+					if (!negate_iff(out)) { free(out); return false; }
+				}
+			} else {
+				/* child types are not known to be BOOLEAN, so construct an EQUALS node */
+				if (!init(out, hol_term_type::EQUALS)) {
+					free(*left); free(left);
+					free(*right); free(right); return false;
+				} else if (compare(*left, *right) > 0) {
+					swap(left, right);
+				}
+				out.binary.operands[0] = left;
+				out.binary.operands[1] = right;
+				move_variables(left->variables, out.variables);
+				move_variables(right->variables, out.variables);
+				return true;
+			}
+		}
+	}
+
+	if (out.commutative.children.length == 0 && out.commutative.negated.length == 0) {
+		free(out);
+		return init(out, hol_term_type::TRUE);
+	} else if (out.commutative.children.length == 1 && out.commutative.negated.length == 0) {
+		hol_scope& temp = *((hol_scope*) alloca(sizeof(hol_scope)));
+		move(out.commutative.children[0], temp);
+		out.commutative.children.clear();
+		free(out); move(temp, out);
+	} else if (out.commutative.children.length == 0 && out.commutative.negated.length == 1) {
+		hol_scope& temp = *((hol_scope*) alloca(sizeof(hol_scope)));
+		move(out.commutative.negated[0], temp);
+		out.commutative.negated.clear();
+		free(out); move(temp, out);
 		if (!negate_scope(out)) {
 			free(out); return false;
 		}
-		return true;
-	} else if (!PolymorphicEquality && left->type == hol_term_type::NOT) {
-		hol_scope* operand = left->unary;
-		left->type = hol_term_type::TRUE;
-		free(*left); free(left);
-		left = operand;
-		negated = true;
 	}
-
-	hol_scope* right = (hol_scope*) malloc(sizeof(hol_scope));
-	if (right == NULL) {
-		fprintf(stderr, "canonicalize_equals_scope ERROR: Out of memory.\n");
-		return false;
-	} else if (!canonicalize_scope<AllConstantsDistinct>(*src.right, *right, variable_map)) {
-		free(*left); free(left);
-		free(right); return false;
-	}
-
-	if (!PolymorphicEquality && right->type == hol_term_type::TRUE) {
-		free(*right); free(right);
-		move(*left, out); free(left);
-		return (negated ? negate_scope(out) : true);
-	} else if (!PolymorphicEquality && right->type == hol_term_type::FALSE) {
-		negated = !negated;
-		free(*right); free(right);
-		move(*left, out); free(left);
-		return (negated ? negate_scope(out) : true);
-	} else if (!PolymorphicEquality && right->type == hol_term_type::NOT) {
-		hol_scope* operand = right->unary;
-		right->type = hol_term_type::TRUE;
-		free(*right); free(right);
-		right = operand;
-		negated = !negated;
-	}
-
-	if (*left == *right) {
-		free(*left); free(left);
-		free(*right); free(right);
-		return init(out, negated ? hol_term_type::FALSE : hol_term_type::TRUE);
-	} else if (PolymorphicEquality
-			&& ((left->type == hol_term_type::TRUE && right->type == hol_term_type::FALSE)
-			 || (left->type == hol_term_type::FALSE && right->type == hol_term_type::TRUE)))
-	{
-		free(*left); free(left);
-		free(*right); free(right);
-		return init(out, hol_term_type::FALSE);
-	} else if (AllConstantsDistinct && left->type == hol_term_type::CONSTANT
-			&& right->type == hol_term_type::CONSTANT && left->constant != right->constant)
-	{
-		free(*left); free(left);
-		free(*right); free(right);
-		return init(out, negated ? hol_term_type::TRUE : hol_term_type::FALSE);
-	} else {
-		if (compare(*left, *right) > 0)
-			swap(left, right);
-
-		if (!init(out, hol_term_type::EQUALS)) {
-			free(*left); free(left);
-			free(*right); free(*right);
-			return false;
-		}
-		out.binary.operands[0] = left;
-		out.binary.operands[1] = right;
-		move_variables(left->variables, out.variables);
-		move_variables(right->variables, out.variables);
-		return (negated ? negate_scope(out) : true);
-	}
+	return true;
 }
 
 template<bool AllConstantsDistinct>
 bool canonicalize_scope(const hol_term& src, hol_scope& out,
-		array_map<unsigned int, unsigned int>& variable_map)
+		array_map<unsigned int, unsigned int>& variable_map,
+		const equals_arg_types& types)
 {
 	unsigned int index;
 	switch (src.type) {
 	case hol_term_type::AND:
-		return canonicalize_commutative_scope<hol_term_type::AND, AllConstantsDistinct>(src.array, out, variable_map);
+		return canonicalize_commutative_scope<hol_term_type::AND, AllConstantsDistinct>(src.array, out, variable_map, types);
 	case hol_term_type::OR:
-		return canonicalize_commutative_scope<hol_term_type::OR, AllConstantsDistinct>(src.array, out, variable_map);
+		return canonicalize_commutative_scope<hol_term_type::OR, AllConstantsDistinct>(src.array, out, variable_map, types);
+	case hol_term_type::IFF:
+		return canonicalize_commutative_scope<hol_term_type::IFF, AllConstantsDistinct>(src.array, out, variable_map, types);
 	case hol_term_type::IF_THEN:
-		return canonicalize_conditional_scope<AllConstantsDistinct>(src.binary, out, variable_map);
+		return canonicalize_conditional_scope<AllConstantsDistinct>(src.binary, out, variable_map, types);
 	case hol_term_type::FOR_ALL:
-		return canonicalize_quantifier_scope<hol_term_type::FOR_ALL, AllConstantsDistinct>(src.quantifier, out, variable_map);
+		return canonicalize_quantifier_scope<hol_term_type::FOR_ALL, AllConstantsDistinct>(src.quantifier, out, variable_map, types);
 	case hol_term_type::EXISTS:
-		return canonicalize_quantifier_scope<hol_term_type::EXISTS, AllConstantsDistinct>(src.quantifier, out, variable_map);
+		return canonicalize_quantifier_scope<hol_term_type::EXISTS, AllConstantsDistinct>(src.quantifier, out, variable_map, types);
 	case hol_term_type::LAMBDA:
-		return canonicalize_quantifier_scope<hol_term_type::LAMBDA, AllConstantsDistinct>(src.quantifier, out, variable_map);
+		return canonicalize_quantifier_scope<hol_term_type::LAMBDA, AllConstantsDistinct>(src.quantifier, out, variable_map, types);
 	case hol_term_type::NOT:
-		return canonicalize_negation_scope<AllConstantsDistinct>(src.unary, out, variable_map);
+		return canonicalize_negation_scope<AllConstantsDistinct>(src.unary, out, variable_map, types);
 	case hol_term_type::EQUALS:
-		return canonicalize_equals_scope<AllConstantsDistinct>(src.binary, out, variable_map);
+		return canonicalize_equals_scope<AllConstantsDistinct>(src, out, variable_map, types);
 	case hol_term_type::UNARY_APPLICATION:
-		return canonicalize_nary_scope<hol_term_type::UNARY_APPLICATION, AllConstantsDistinct>(src.binary, out, variable_map);
+		return canonicalize_nary_scope<hol_term_type::UNARY_APPLICATION, AllConstantsDistinct>(src.binary, out, variable_map, types);
 	case hol_term_type::BINARY_APPLICATION:
-		return canonicalize_nary_scope<hol_term_type::BINARY_APPLICATION, AllConstantsDistinct>(src.ternary, out, variable_map);
+		return canonicalize_nary_scope<hol_term_type::BINARY_APPLICATION, AllConstantsDistinct>(src.ternary, out, variable_map, types);
 	case hol_term_type::CONSTANT:
 		if (!init(out, hol_term_type::CONSTANT)) return false;
 		out.constant = src.constant; return true;
@@ -4327,16 +4850,20 @@ inline hol_term* canonicalize(hol_term& src,
 	return &src;
 }
 
-template<bool AllConstantsDistinct>
+template<bool AllConstantsDistinct, bool PolymorphicEquality>
 struct standard_canonicalizer { };
 
-template<bool AllConstantsDistinct>
+template<bool AllConstantsDistinct, bool PolymorphicEquality>
 inline hol_term* canonicalize(const hol_term& src,
-		const standard_canonicalizer<AllConstantsDistinct>& canonicalizer)
+		const standard_canonicalizer<AllConstantsDistinct, PolymorphicEquality>& canonicalizer)
 {
+	equals_arg_types types(16);
+	if (!compute_type<PolymorphicEquality>(src, types))
+		return NULL;
+
 	array_map<unsigned int, unsigned int> variable_map(16);
 	hol_scope& scope = *((hol_scope*) alloca(sizeof(hol_scope)));
-	if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map))
+	if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map, types))
 		return NULL;
 	hol_term* canonicalized = scope_to_term(scope);
 	free(scope);
