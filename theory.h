@@ -223,7 +223,7 @@ struct theory
 		Proof* new_proof = make_proof(canonicalized, new_constant);
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put(PREDICATE_UNKNOWN, new_constant);
-fol_formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
+Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
 if (!check_proof(*new_proof, expected_conclusion, canonicalizer))
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(expected_conclusion);
