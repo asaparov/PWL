@@ -598,7 +598,6 @@ inline bool new_fol_formula(fol_formula*& new_formula) {
 }
 
 constexpr bool visit_constant(unsigned int constant) { return true; }
-constexpr bool visit_predicate(unsigned int predicate) { return true; }
 constexpr bool visit_equals(const fol_formula& formula) { return true; }
 constexpr bool visit_variable(unsigned int variable) { return true; }
 constexpr bool visit_parameter(unsigned int parameter) { return true; }
@@ -628,7 +627,7 @@ inline bool visit(Term&& term, Visitor&&... visitor) {
 template<typename Atom, typename... Visitor,
 	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Atom>::type>::type, fol_atom>::value>::type* = nullptr>
 inline bool visit(Atom&& atom, Visitor&&... visitor) {
-	return visit_predicate(atom.predicate, std::forward<Visitor>(visitor)...)
+	return visit_constant(atom.predicate, std::forward<Visitor>(visitor)...)
 		&& visit(atom.arg1, std::forward<Visitor>(visitor)...)
 		&& visit(atom.arg2, std::forward<Visitor>(visitor)...);
 }
@@ -688,7 +687,6 @@ struct parameter_comparator {
 };
 
 constexpr bool visit_constant(unsigned int constant, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_predicate(unsigned int predicate, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_equals(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_true(const fol_formula& formula, const parameter_comparator& visitor) { return true; }
@@ -711,7 +709,6 @@ struct parameter_collector {
 };
 
 constexpr bool visit_constant(unsigned int constant, const parameter_collector& visitor) { return true; }
-constexpr bool visit_predicate(unsigned int predicate, const parameter_collector& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_collector& visitor) { return true; }
 constexpr bool visit_equals(const fol_formula& formula, const parameter_collector& visitor) { return true; }
 constexpr bool visit_true(const fol_formula& formula, const parameter_collector& visitor) { return true; }
@@ -731,11 +728,6 @@ inline bool get_parameters(const fol_formula& src, array<unsigned int>& paramete
 
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
 	dst_constant = src_constant;
-	return true;
-}
-
-inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate) {
-	dst_predicate = src_predicate;
 	return true;
 }
 
@@ -768,7 +760,7 @@ inline bool clone(const fol_term& src, fol_term& dst, Cloner&&... cloner) {
 
 template<typename... Cloner>
 inline bool clone(const fol_atom& src, fol_atom& dst, Cloner&&... cloner) {
-	return clone_predicate(src.predicate, dst.predicate, std::forward<Cloner>(cloner)...)
+	return clone_constant(src.predicate, dst.predicate, std::forward<Cloner>(cloner)...)
 		&& clone(src.arg1, dst.arg1, std::forward<Cloner>(cloner)...)
 		&& clone(src.arg2, dst.arg2, std::forward<Cloner>(cloner)...);
 }

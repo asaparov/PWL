@@ -3,10 +3,12 @@
 
 #include "article.h"
 #include "natural_deduction_mh.h"
+#include "higher_order_logic.h"
 
 constexpr double PERPLEXITY_THRESHOLD = 10.0;
 
-inline void free_logical_forms(fol_formula** logical_forms, unsigned int count)
+template<typename Formula>
+inline void free_logical_forms(Formula** logical_forms, unsigned int count)
 {
 	for (unsigned int i = 0; i < count; i++) {
 		free(*logical_forms[i]);
@@ -19,11 +21,11 @@ template<typename ArticleSource, typename Parser,
 	typename Canonicalizer, typename ProofPrior, typename Printer>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const sentence& s,
-		theory<fol_formula, natural_deduction<fol_formula>, Canonicalizer>& T,
+		theory<hol_term, natural_deduction<hol_term>, Canonicalizer>& T,
 		unsigned int article_name, ProofPrior& proof_prior, Printer& printer)
 {
 	unsigned int parse_count, new_constant;
-	fol_formula* logical_forms[2];
+	hol_term* logical_forms[2];
 	double log_probabilities[2];
 	while (true) {
 		/* attempt to parse the sentence */
@@ -91,7 +93,7 @@ template<typename ArticleSource, typename Parser,
 	typename Canonicalizer, typename ProofPrior, typename Printer>
 bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
-		theory<fol_formula, natural_deduction<fol_formula>, Canonicalizer>& T,
+		theory<hol_term, natural_deduction<hol_term>, Canonicalizer>& T,
 		ProofPrior& proof_prior, Printer& printer)
 {
 	bool article_exists;

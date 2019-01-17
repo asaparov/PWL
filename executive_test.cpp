@@ -370,11 +370,11 @@ inline bool visit_predicate(unsigned int predicate, const constant_adder<Constan
 
 template<typename ConstantDistribution> constexpr bool visit_variable(unsigned int variable, const constant_adder<ConstantDistribution>& visitor) { return true; }
 template<typename ConstantDistribution> constexpr bool visit_parameter(unsigned int parameter, const constant_adder<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_true(const fol_formula& formula, const constant_adder<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_false(const fol_formula& formula, const constant_adder<ConstantDistribution>& visitor) { return true; }
+template<typename ConstantDistribution> constexpr bool visit_true(const hol_term& term, const constant_adder<ConstantDistribution>& visitor) { return true; }
+template<typename ConstantDistribution> constexpr bool visit_false(const hol_term& term, const constant_adder<ConstantDistribution>& visitor) { return true; }
 
-template<fol_formula_type Operator, typename ConstantDistribution>
-constexpr bool visit_operator(const fol_formula& formula, const constant_adder<ConstantDistribution>& visitor) { return true; }
+template<hol_term_type Operator, typename ConstantDistribution>
+constexpr bool visit_operator(const hol_term& term, const constant_adder<ConstantDistribution>& visitor) { return true; }
 
 template<typename ConstantDistribution>
 struct constant_remover {
@@ -395,17 +395,17 @@ inline bool visit_predicate(unsigned int predicate, const constant_remover<Const
 
 template<typename ConstantDistribution> constexpr bool visit_variable(unsigned int variable, const constant_remover<ConstantDistribution>& visitor) { return true; }
 template<typename ConstantDistribution> constexpr bool visit_parameter(unsigned int parameter, const constant_remover<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_true(const fol_formula& formula, const constant_remover<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_false(const fol_formula& formula, const constant_remover<ConstantDistribution>& visitor) { return true; }
+template<typename ConstantDistribution> constexpr bool visit_true(const hol_term& term, const constant_remover<ConstantDistribution>& visitor) { return true; }
+template<typename ConstantDistribution> constexpr bool visit_false(const hol_term& term, const constant_remover<ConstantDistribution>& visitor) { return true; }
 
-template<fol_formula_type Operator, typename ConstantDistribution>
-constexpr bool visit_operator(const fol_formula& formula, const constant_remover<ConstantDistribution>& visitor) { return true; }
+template<hol_term_type Operator, typename ConstantDistribution>
+constexpr bool visit_operator(const hol_term& term, const constant_remover<ConstantDistribution>& visitor) { return true; }
 
 template<typename ConstantDistribution>
-struct simple_fol_formula_distribution
+struct simple_hol_term_distribution
 {
-	typedef fol_formula* ObservationType;
-	typedef default_array<fol_formula*> ObservationCollection;
+	typedef hol_term* ObservationType;
+	typedef default_array<hol_term*> ObservationCollection;
 
 	double log_ground_literal_probability;
 	double log_universal_probability;
@@ -423,7 +423,7 @@ struct simple_fol_formula_distribution
 
 	ConstantDistribution constant_distribution;
 
-	simple_fol_formula_distribution(const ConstantDistribution& constant_distribution,
+	simple_hol_term_distribution(const ConstantDistribution& constant_distribution,
 			double ground_literal_probability, double negation_probability,
 			double unary_probability, double antecedent_stop_probability,
 			double consequent_stop_probability) :
@@ -440,7 +440,7 @@ struct simple_fol_formula_distribution
 		constant_distribution(constant_distribution)
 	{ }
 
-	simple_fol_formula_distribution(const simple_fol_formula_distribution<ConstantDistribution>& src) :
+	simple_hol_term_distribution(const simple_hol_term_distribution<ConstantDistribution>& src) :
 		log_ground_literal_probability(src.log_ground_literal_probability),
 		log_universal_probability(src.log_universal_probability),
 		log_negation_probability(src.log_negation_probability),
@@ -454,78 +454,95 @@ struct simple_fol_formula_distribution
 		constant_distribution(src.constant_distribution)
 	{ }
 
-	inline bool add(fol_formula* formula) {
+	inline bool add(hol_term* term) {
 		constant_adder<ConstantDistribution> adder = { constant_distribution };
-		return visit(*formula, adder);
+		return visit(*term, adder);
 	}
 
-	inline bool remove(fol_formula* formula) {
+	inline bool remove(hol_term* term) {
 		constant_remover<ConstantDistribution> remover = { constant_distribution };
-		return visit(*formula, remover);
+		return visit(*term, remover);
 	}
 };
 
 template<typename ConstantDistribution>
-inline simple_fol_formula_distribution<ConstantDistribution> make_simple_fol_formula_distribution(
+inline simple_hol_term_distribution<ConstantDistribution> make_simple_hol_term_distribution(
 		const ConstantDistribution& constant_distribution,
 		double ground_literal_probability, double negation_probability,
 		double unary_probability, double antecedent_stop_probability,
 		double consequent_stop_probability)
 {
-	return simple_fol_formula_distribution<ConstantDistribution>(
+	return simple_hol_term_distribution<ConstantDistribution>(
 			constant_distribution, ground_literal_probability,
 			negation_probability, unary_probability,
 			antecedent_stop_probability, consequent_stop_probability);
 }
 
 template<typename ConstantDistribution>
-double log_probability_atom(const fol_atom& atom,
-		const simple_fol_formula_distribution<ConstantDistribution>& prior,
+double log_probability_atom(const hol_term* function, const hol_term* arg1,
+		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
-	constants.add_predicate(atom.predicate);
-	if (atom.arg2.type == fol_term_type::NONE) {
-		constants.add_constant(atom.arg1.constant);
-		return prior.log_unary_probability;
-	} else {
-		constants.add_constant(atom.arg1.constant);
-		constants.add_constant(atom.arg2.constant);
-		return prior.log_binary_probability;
-	}
+	if (function->type != hol_term_type::CONSTANT || arg1->type != hol_term_type::CONSTANT)
+		return std::numeric_limits<double>::infinity();
+
+	constants.add_predicate(function->constant);
+	constants.add_predicate(arg1->constant);
+	return prior.log_unary_probability;
 }
 
 template<typename ConstantDistribution>
-double log_probability_literal(const fol_formula* literal,
-		const simple_fol_formula_distribution<ConstantDistribution>& prior,
+double log_probability_atom(
+		const hol_term* function, const hol_term* arg1, const hol_term* arg2,
+		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
-	if (literal->type == fol_formula_type::ATOM) {
-		return prior.log_positive_probability + log_probability_atom(literal->atom, prior, constants);
-	} else if (literal->type == fol_formula_type::NOT && literal->unary.operand->type == fol_formula_type::ATOM) {
-		return prior.log_negation_probability + log_probability_atom(literal->unary.operand->atom, prior, constants);
+	if (function->type != hol_term_type::CONSTANT || arg1->type != hol_term_type::CONSTANT || arg2->type != hol_term_type::CONSTANT)
+		return std::numeric_limits<double>::infinity();
+
+	constants.add_predicate(function->constant);
+	constants.add_predicate(arg1->constant);
+	constants.add_predicate(arg2->constant);
+	return prior.log_unary_probability;
+}
+
+template<typename ConstantDistribution>
+double log_probability_literal(const hol_term* literal,
+		const simple_hol_term_distribution<ConstantDistribution>& prior,
+		typename ConstantDistribution::ObservationCollection& constants)
+{
+	if (literal->type == hol_term_type::UNARY_APPLICATION) {
+		return prior.log_positive_probability + log_probability_atom(literal->binary.left, literal->binary.right, prior, constants);
+	} else if (literal->type == hol_term_type::BINARY_APPLICATION) {
+		return prior.log_positive_probability + log_probability_atom(literal->ternary.first, literal->ternary.second, literal->ternary.third, prior, constants);
+	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::UNARY_APPLICATION) {
+		return prior.log_negation_probability + log_probability_atom(literal->unary.operand->binary.left, literal->unary.operand->binary.right, prior, constants);
+	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::BINARY_APPLICATION) {
+		return prior.log_negation_probability + log_probability_atom(literal->unary.operand->ternary.first, literal->unary.operand->ternary.second, literal->unary.operand->ternary.third, prior, constants);
 	} else {
 		return std::numeric_limits<double>::infinity();
 	}
 }
 
 template<typename ConstantDistribution>
-double log_probability_helper(const fol_formula* formula,
-		const simple_fol_formula_distribution<ConstantDistribution>& prior,
+double log_probability_helper(const hol_term* term,
+		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	double value;
-	const fol_formula* antecedent;
-	const fol_formula* consequent;
-	switch (formula->type)
+	const hol_term* antecedent;
+	const hol_term* consequent;
+	switch (term->type)
 	{
-	case fol_formula_type::ATOM:
-	case fol_formula_type::NOT:
+	case hol_term_type::UNARY_APPLICATION:
+	case hol_term_type::BINARY_APPLICATION:
+	case hol_term_type::NOT:
 		return prior.log_ground_literal_probability + log_probability_literal(formula, prior, constants);
-	case fol_formula_type::FOR_ALL:
-		if (formula->quantifier.operand->type == fol_formula_type::IF_THEN) {
+	case hol_term_type::FOR_ALL:
+		if (formula->quantifier.operand->type == hol_term_type::IF_THEN) {
 			antecedent = formula->quantifier.operand->binary.left;
 			consequent = formula->quantifier.operand->binary.right;
-			if (antecedent->type == fol_formula_type::AND) {
+			if (antecedent->type == hol_term_type::AND) {
 				value = (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < antecedent->array.length; i++)
 					value += log_probability_literal(antecedent->array.operands[i], prior, constants);
@@ -533,7 +550,7 @@ double log_probability_helper(const fol_formula* formula,
 				value = prior.log_antecedent_stop_probability + log_probability_literal(antecedent, prior, constants);
 			}
 
-			if (consequent->type == fol_formula_type::AND) {
+			if (consequent->type == hol_term_type::AND) {
 				value = (consequent->array.length - 1) * prior.log_consequent_continue_probability + prior.log_consequent_stop_probability;
 				for (unsigned int i = 0; i < consequent->array.length; i++)
 					value += log_probability_literal(consequent->array.operands[i], prior, constants);
@@ -544,17 +561,21 @@ double log_probability_helper(const fol_formula* formula,
 		} else {
 			return -std::numeric_limits<double>::infinity();
 		}
-	case fol_formula_type::AND:
-	case fol_formula_type::OR:
-	case fol_formula_type::IF_THEN:
-	case fol_formula_type::IFF:
-	case fol_formula_type::EXISTS:
-	case fol_formula_type::TRUE:
-	case fol_formula_type::FALSE:
-	case fol_formula_type::EQUALS:
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IF_THEN:
+	case hol_term_type::IFF:
+	case hol_term_type::EQUALS:
+	case hol_term_type::EXISTS:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+	case hol_term_type::LAMBDA:
+	case hol_term_type::CONSTANT:
+	case hol_term_type::VARIABLE:
+	case hol_term_type::PARAMETER:
 		return -std::numeric_limits<double>::infinity();
 	}
-	fprintf(stderr, "log_probability ERROR: Unrecognized fol_formula_type.\n");
+	fprintf(stderr, "log_probability ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -562,16 +583,16 @@ template<typename ConstantDistribution,
 	template<typename> class ObservationCollection,
 	template<typename> class Collection>
 double log_probability_ratio(
-		const ObservationCollection<fol_formula*>& observations,
-		const simple_fol_formula_distribution<ConstantDistribution>& prior,
-		const Collection<fol_formula*>& old_clusters,
-		const Collection<fol_formula*>& new_clusters)
+		const ObservationCollection<hol_term*>& observations,
+		const simple_hol_term_distribution<ConstantDistribution>& prior,
+		const Collection<hol_term*>& old_clusters,
+		const Collection<hol_term*>& new_clusters)
 {
 	double value = 0.0;
 	typename ConstantDistribution::ObservationCollection old_constants, new_constants;
-	for (fol_formula* formula : new_clusters)
+	for (hol_term* formula : new_clusters)
 		value += log_probability_helper(formula, prior, new_constants);
-	for (fol_formula* formula : old_clusters)
+	for (hol_term* formula : old_clusters)
 		value -= log_probability_helper(formula, prior, old_constants);
 	return value + log_probability_ratio(old_constants, new_constants, prior.constant_distribution);
 }
@@ -772,14 +793,14 @@ int main(int argc, const char** argv)
 	free_tokens(tokens);
 
 	/* read the articles */
-	theory<fol_formula, natural_deduction<fol_formula>, standard_canonicalizer<true>> T(names.table.size + 1);
+	theory<hol_term, natural_deduction<hol_term>, standard_canonicalizer<true, false>> T(names.table.size + 1);
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
-	auto theory_element_prior = make_simple_fol_formula_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
+	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
-	auto conjunction_prior = uniform_subset_distribution<const nd_step<fol_formula>*>(0.1);
+	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = uniform_distribution<unsigned int>();
-	auto universal_elimination_prior = chinese_restaurant_process<fol_term>(1.0);
+	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0);
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
 			universal_introduction_prior, universal_elimination_prior, poisson_distribution(1.0));
 	const string** reverse_name_map = invert(names);
@@ -792,19 +813,19 @@ int main(int argc, const char** argv)
 	read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
 
-	array_map<fol_formula*, unsigned int> tracked_logical_forms(2);
+	array_map<hol_term*, unsigned int> tracked_logical_forms(2);
 	tracked_logical_forms.put(
-		fol_formula::new_for_all(1,
-			fol_formula::new_if_then(
-				fol_formula::new_atom(parser.symbol_map.get(names.get("cat")), fol_formula::new_variable(1)),
-				fol_formula::new_atom(parser.symbol_map.get(names.get("mammal")), fol_formula::new_variable(1))
+		hol_term::new_for_all(1,
+			hol_term::new_if_then(
+				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), hol_term::new_variable(1)),
+				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), hol_term::new_variable(1))
 			)
 		), 0);
 	tracked_logical_forms.put(
-		fol_formula::new_for_all(1,
-			fol_formula::new_if_then(
-				fol_formula::new_atom(parser.symbol_map.get(names.get("mammal")), fol_formula::new_variable(1)),
-				fol_formula::new_atom(parser.symbol_map.get(names.get("cat")), fol_formula::new_variable(1))
+		hol_term::new_for_all(1,
+			hol_term::new_if_then(
+				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), hol_term::new_variable(1)),
+				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), hol_term::new_variable(1))
 			)
 		), 0);
 

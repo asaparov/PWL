@@ -4,8 +4,6 @@
 #include <core/lex.h>
 #include <cstdint>
 
-#include "first_order_logic.h"
-
 using namespace core;
 
 struct token {
@@ -327,16 +325,17 @@ bool article_interpret_sentence(
 	return true;
 }
 
+template<typename Formula>
 struct sentence_label {
-	fol_formula* logical_form;
+	Formula* logical_form;
 	array_map<unsigned int, unsigned int> labels;
 
-	static inline void move(const sentence_label& src, sentence_label& dst) {
+	static inline void move(const sentence_label<Formula>& src, sentence_label<Formula>& dst) {
 		dst.logical_form = src.logical_form;
 		core::move(src.labels, dst.labels);
 	}
 
-	static inline void free(sentence_label& label) {
+	static inline void free(sentence_label<Formula>& label) {
 		if (label.logical_form->reference_count > 0) {
 			core::free(*label.logical_form);
 			if (label.logical_form->reference_count == 0)
@@ -348,8 +347,9 @@ struct sentence_label {
 	}
 };
 
-inline bool init(sentence_label& label) {
-	label.logical_form = (fol_formula*) malloc(sizeof(fol_formula));
+template<typename Formula>
+inline bool init(sentence_label<Formula>& label) {
+	label.logical_form = (Formula*) malloc(sizeof(Formula));
 	if (label.logical_form == NULL) {
 		fprintf(stderr, "init ERROR: Insufficient memory for sentence_label.logical_form.\n");
 		return false;
@@ -361,7 +361,8 @@ inline bool init(sentence_label& label) {
 	return true;
 }
 
-inline bool operator != (const sentence_label& first, const sentence_label& second) {
+template<typename Formula>
+inline bool operator != (const sentence_label<Formula>& first, const sentence_label<Formula>& second) {
 	if (*first.logical_form != *second.logical_form)
 		return true;
 	if (first.labels.size != second.labels.size)
@@ -372,11 +373,12 @@ inline bool operator != (const sentence_label& first, const sentence_label& seco
 	return false;
 }
 
+template<typename Formula>
 bool article_interpret(
 		const array<article_token>& tokens,
 		unsigned int& index,
 		article& out, unsigned int& article_name,
-		hash_map<sentence, sentence_label>& logical_forms,
+		hash_map<sentence, sentence_label<Formula>>& logical_forms,
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int start = index;
@@ -402,7 +404,7 @@ bool article_interpret(
 	if (!array_init(sentences, 8))
 		return false;
 	while (true) {
-		sentence_label& new_label = *((sentence_label*) alloca(sizeof(sentence_label)));
+		sentence_label<Formula>& new_label = *((sentence_label<Formula>*) alloca(sizeof(sentence_label<Formula>)));
 		if (!init(new_label)) {
 			for (sentence& s : sentences) free(s);
 			free(sentences); return false;
@@ -442,7 +444,7 @@ bool article_interpret(
 			free_tokens(formula_tokens);
 
 			bool contains; unsigned int bucket;
-			sentence_label& value = logical_forms.get(sentences.last(), contains, bucket);
+			sentence_label<Formula>& value = logical_forms.get(sentences.last(), contains, bucket);
 			if (!contains) {
 				if (!init(logical_forms.table.keys[bucket], sentences.last())) {
 					for (sentence& s : sentences) free(s);
@@ -474,10 +476,11 @@ bool article_interpret(
 	return true;
 }
 
+template<typename Formula>
 bool articles_interpret(
 		const array<article_token>& tokens,
 		in_memory_article_store& articles,
-		hash_map<sentence, sentence_label>& logical_forms,
+		hash_map<sentence, sentence_label<Formula>>& logical_forms,
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int index = 0;

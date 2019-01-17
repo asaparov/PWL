@@ -126,7 +126,7 @@ struct hol_quantifier {
 struct hol_term
 {
 	typedef hol_term_type Type;
-	typedef hol_term Term;
+	typedef hol_term* Term;
 	typedef hol_term_type TermType;
 
 	hol_term_type type;
@@ -148,6 +148,9 @@ struct hol_term
 	static hol_term* new_variable(unsigned int variable);
 	static hol_term* new_constant(unsigned int constant);
 	static hol_term* new_parameter(unsigned int parameter);
+	static hol_term* new_atom(unsigned int predicate, hol_term* arg1, hol_term* arg2);
+	static inline hol_term* new_atom(unsigned int predicate, hol_term* arg1);
+	static inline hol_term* new_atom(unsigned int predicate);
 	static hol_term* new_true();
 	static hol_term* new_false();
 	static hol_term* new_apply(hol_term* function, hol_term* arg);
@@ -628,7 +631,6 @@ struct parameter_comparator {
 };
 
 constexpr bool visit_constant(unsigned int constant, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_predicate(unsigned int predicate, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_equals(const hol_term& term, const parameter_comparator& visitor) { return true; }
 constexpr bool visit_true(const hol_term& term, const parameter_comparator& visitor) { return true; }
@@ -651,7 +653,6 @@ struct parameter_collector {
 };
 
 constexpr bool visit_constant(unsigned int constant, const parameter_collector& visitor) { return true; }
-constexpr bool visit_predicate(unsigned int predicate, const parameter_collector& visitor) { return true; }
 constexpr bool visit_variable(unsigned int variable, const parameter_collector& visitor) { return true; }
 constexpr bool visit_equals(const hol_term& term, const parameter_collector& visitor) { return true; }
 constexpr bool visit_true(const hol_term& term, const parameter_collector& visitor) { return true; }
@@ -1166,6 +1167,20 @@ hol_term* hol_term::new_parameter(unsigned int parameter) {
 	term->type = hol_term_type::PARAMETER;
 	term->parameter = parameter;
 	return term;
+}
+
+
+hol_term* hol_term::new_atom(unsigned int predicate, hol_term* arg1, hol_term* arg2) {
+	return hol_term::new_apply(hol_term::new_constant(predicate), arg1, arg2);
+}
+
+inline hol_term* hol_term::new_atom(unsigned int predicate, hol_term* arg1) {
+	return hol_term::new_apply(hol_term::new_constant(predicate), arg1);
+
+}
+
+inline hol_term* hol_term::new_atom(unsigned int predicate) {
+	return hol_term::new_constant(predicate);
 }
 
 inline hol_term* hol_term::new_true() {

@@ -2,7 +2,6 @@
 #define FAKE_PARSER_H_
 
 #include "article.h"
-#include "first_order_logic.h"
 
 struct constant_relabeler {
 	const array_map<unsigned int, unsigned int>& map;
@@ -19,17 +18,6 @@ inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant
 	}
 }
 
-inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate, constant_relabeler& relabeler) {
-	bool contains;
-	const unsigned int& dst = relabeler.map.get(src_predicate, contains);
-	if (contains) {
-		dst_predicate = dst;
-		return true;
-	} else {
-		return clone_predicate(src_predicate, dst_predicate);
-	}
-}
-
 inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable, constant_relabeler& relabeler) {
 	return clone_variable(src_variable, dst_variable);
 }
@@ -38,11 +26,15 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return clone_parameter(src_parameter, dst_parameter);
 }
 
-inline fol_formula* relabel_constants(const fol_formula* src,
+template<typename Formula>
+inline Formula* relabel_constants(const Formula* src,
 		const array_map<unsigned int, unsigned int>& constant_map)
 {
-	fol_formula* dst;
-	if (!new_fol_formula(dst)) return NULL;
+	Formula* dst = (Formula*) malloc(sizeof(Formula));
+	if (dst == NULL) {
+		fprintf(stderr, "relabel_constants ERROR: Out of memory.\n");
+		return NULL;
+	}
 
 	constant_relabeler relabeler = {constant_map};
 	if (!clone(*src, *dst, relabeler)) {
@@ -68,8 +60,9 @@ inline bool visit_constant(unsigned int constant, const constant_subtracter& sub
 	return true;
 }
 
+template<typename Formula>
 struct fake_parser {
-	hash_map<sentence, sentence_label> table;
+	hash_map<sentence, sentence_label<Formula>> table;
 	hash_map<token, unsigned int> learned_tokens;
 	hash_map<unsigned int, unsigned int> symbol_map;
 	hash_map<unsigned int, unsigned int> reverse_symbol_map;
@@ -85,14 +78,14 @@ struct fake_parser {
 	}
 
 	template<unsigned int K, typename TheoryType>
-	bool parse(const sentence& s, fol_formula** logical_forms,
+	bool parse(const sentence& s, Formula** logical_forms,
 			double* log_probabilities, unsigned int& parse_count,
 			const TheoryType& T, array<token>& unrecognized) const
 	{
 		static_assert(K > 0, "`K` must be at least 1.");
 
 		bool contains;
-		const sentence_label& parse = table.get(s, contains);
+		const sentence_label<Formula>& parse = table.get(s, contains);
 		if (!contains) {
 			parse_count = 0;
 			return true;
@@ -109,7 +102,7 @@ struct fake_parser {
 			}
 		}
 
-		fol_formula* out = relabel_constants(parse.logical_form, constant_map);
+		Formula* out = relabel_constants(parse.logical_form, constant_map);
 		if (out == NULL) {
 			fprintf(stderr, "fake_parser.parse ERROR: Failed to relabel unknown constants.\n");
 			return false;
@@ -121,10 +114,10 @@ struct fake_parser {
 		return true;
 	}
 
-	bool add_definition(const sentence& s, const fol_formula* definition, unsigned int new_constant)
+	bool add_definition(const sentence& s, const Formula* definition, unsigned int new_constant)
 	{
 		bool contains;
-		sentence_label& label = table.get(s, contains);
+		sentence_label<Formula>& label = table.get(s, contains);
 		if (!contains || !learned_tokens.check_size(learned_tokens.table.size + label.labels.size))
 			return false;
 
@@ -158,8 +151,8 @@ struct fake_parser {
 	}
 };
 
-template<typename Stream, typename Printer>
-inline bool print(unsigned int constant, Stream& out, const fake_parser::printer<Printer>& printer) {
+template<typename Formula, typename Stream, typename Printer>
+inline bool print(unsigned int constant, Stream& out, const typename fake_parser<Formula>::template printer<Printer>& printer) {
 	bool contains;
 	unsigned int value = printer.reverse_map.get(constant, contains);
 	if (contains) constant = value;
