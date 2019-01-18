@@ -731,6 +731,11 @@ inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant
 	return true;
 }
 
+inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate) {
+	dst_predicate = src_predicate;
+	return true;
+}
+
 inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable) {
 	dst_variable = src_variable;
 	return true;
@@ -760,7 +765,7 @@ inline bool clone(const fol_term& src, fol_term& dst, Cloner&&... cloner) {
 
 template<typename... Cloner>
 inline bool clone(const fol_atom& src, fol_atom& dst, Cloner&&... cloner) {
-	return clone_constant(src.predicate, dst.predicate, std::forward<Cloner>(cloner)...)
+	return clone_predicate(src.predicate, dst.predicate, std::forward<Cloner>(cloner)...)
 		&& clone(src.arg1, dst.arg1, std::forward<Cloner>(cloner)...)
 		&& clone(src.arg2, dst.arg2, std::forward<Cloner>(cloner)...);
 }
@@ -3695,18 +3700,6 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	return true;
 }
 
-inline bool append_to_token(
-	array<char>& token, wint_t next, std::mbstate_t& shift)
-{
-	if (!token.ensure_capacity(token.length + MB_CUR_MAX))
-		return false;
-	size_t written = wcrtomb(token.data + token.length, next, &shift);
-	if (written == static_cast<std::size_t>(-1))
-		return false;
-	token.length += written;
-	return true;
-}
-
 template<typename Stream>
 bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = position(1, 1)) {
 	position current = start;
@@ -4145,6 +4138,28 @@ bool tptp_interpret(
 	} else {
 		move(*left, formula); free(left);
 	}
+	return true;
+}
+
+template<typename Stream>
+inline bool parse(Stream& in, fol_formula& formula,
+		hash_map<string, unsigned int>& names,
+		position start = position(1, 1))
+{
+	array<tptp_token> tokens = array<tptp_token>(128);
+	if (!tptp_lex(tokens, in, start)) {
+		read_error("Unable to parse first-order formula (lexical analysis failed)", start);
+		free_tokens(tokens); return false;
+	}
+
+	unsigned int index = 0;
+	array_map<string, unsigned int> variables = array_map<string, unsigned int>(16);
+	if (!tptp_interpret(tokens, index, formula, names, variables)) {
+		read_error("Unable to parse first-order formula", start);
+		for (auto entry : variables) free(entry.key);
+		free_tokens(tokens); return false;
+	}
+	free_tokens(tokens);
 	return true;
 }
 

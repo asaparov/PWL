@@ -174,7 +174,7 @@ struct theory
 	hash_set<Proof*> observations;
 	hash_multiset<Formula*, false> proof_axioms;
 
-	standard_canonicalizer<true> canonicalizer;
+	Canonicalizer canonicalizer;
 
 	theory(unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), types(64), relations(64),

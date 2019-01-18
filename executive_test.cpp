@@ -354,54 +354,6 @@ inline double log_probability_ratio(
 }
 
 template<typename ConstantDistribution>
-struct constant_adder {
-	ConstantDistribution& constant_distribution;
-};
-
-template<typename ConstantDistribution>
-inline bool visit_constant(unsigned int constant, const constant_adder<ConstantDistribution>& visitor) {
-	return visitor.constant_distribution.add_constant(constant);
-}
-
-template<typename ConstantDistribution>
-inline bool visit_predicate(unsigned int predicate, const constant_adder<ConstantDistribution>& visitor) {
-	return visitor.constant_distribution.add_predicate(predicate);
-}
-
-template<typename ConstantDistribution> constexpr bool visit_variable(unsigned int variable, const constant_adder<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_parameter(unsigned int parameter, const constant_adder<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_true(const hol_term& term, const constant_adder<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_false(const hol_term& term, const constant_adder<ConstantDistribution>& visitor) { return true; }
-
-template<hol_term_type Operator, typename ConstantDistribution>
-constexpr bool visit_operator(const hol_term& term, const constant_adder<ConstantDistribution>& visitor) { return true; }
-
-template<typename ConstantDistribution>
-struct constant_remover {
-	ConstantDistribution& constant_distribution;
-};
-
-template<typename ConstantDistribution>
-inline bool visit_constant(unsigned int constant, const constant_remover<ConstantDistribution>& visitor) {
-	visitor.constant_distribution.remove_constant(constant);
-	return true;
-}
-
-template<typename ConstantDistribution>
-inline bool visit_predicate(unsigned int predicate, const constant_remover<ConstantDistribution>& visitor) {
-	visitor.constant_distribution.remove_predicate(predicate);
-	return true;
-}
-
-template<typename ConstantDistribution> constexpr bool visit_variable(unsigned int variable, const constant_remover<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_parameter(unsigned int parameter, const constant_remover<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_true(const hol_term& term, const constant_remover<ConstantDistribution>& visitor) { return true; }
-template<typename ConstantDistribution> constexpr bool visit_false(const hol_term& term, const constant_remover<ConstantDistribution>& visitor) { return true; }
-
-template<hol_term_type Operator, typename ConstantDistribution>
-constexpr bool visit_operator(const hol_term& term, const constant_remover<ConstantDistribution>& visitor) { return true; }
-
-template<typename ConstantDistribution>
 struct simple_hol_term_distribution
 {
 	typedef hol_term* ObservationType;
@@ -453,16 +405,6 @@ struct simple_hol_term_distribution
 		log_consequent_stop_probability(src.log_consequent_stop_probability),
 		constant_distribution(src.constant_distribution)
 	{ }
-
-	inline bool add(hol_term* term) {
-		constant_adder<ConstantDistribution> adder = { constant_distribution };
-		return visit(*term, adder);
-	}
-
-	inline bool remove(hol_term* term) {
-		constant_remover<ConstantDistribution> remover = { constant_distribution };
-		return visit(*term, remover);
-	}
 };
 
 template<typename ConstantDistribution>
@@ -537,11 +479,11 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
 	case hol_term_type::NOT:
-		return prior.log_ground_literal_probability + log_probability_literal(formula, prior, constants);
+		return prior.log_ground_literal_probability + log_probability_literal(term, prior, constants);
 	case hol_term_type::FOR_ALL:
-		if (formula->quantifier.operand->type == hol_term_type::IF_THEN) {
-			antecedent = formula->quantifier.operand->binary.left;
-			consequent = formula->quantifier.operand->binary.right;
+		if (term->quantifier.operand->type == hol_term_type::IF_THEN) {
+			antecedent = term->quantifier.operand->binary.left;
+			consequent = term->quantifier.operand->binary.right;
 			if (antecedent->type == hol_term_type::AND) {
 				value = (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < antecedent->array.length; i++)
@@ -763,7 +705,7 @@ int main(int argc, const char** argv)
 
 	unsigned int index = 0;
 	in_memory_article_store corpus;
-	fake_parser parser = fake_parser(PREDICATE_UNKNOWN);
+	fake_parser<hol_term> parser = fake_parser<hol_term>(PREDICATE_UNKNOWN);
 	while (index < tokens.length) {
 		unsigned int article_name = 0;
 		article& new_article = *((article*) alloca(sizeof(article)));

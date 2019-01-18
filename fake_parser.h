@@ -14,7 +14,20 @@ inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant
 		dst_constant = dst;
 		return true;
 	} else {
-		return clone_constant(src_constant, dst_constant);
+		dst_constant = src_constant;
+		return true;
+	}
+}
+
+inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate, constant_relabeler& relabeler) {
+	bool contains;
+	const unsigned int& dst = relabeler.map.get(src_predicate, contains);
+	if (contains) {
+		dst_predicate = dst;
+		return true;
+	} else {
+		dst_predicate = src_predicate;
+		return true;
 	}
 }
 
@@ -43,22 +56,14 @@ inline Formula* relabel_constants(const Formula* src,
 	return dst;
 }
 
-struct constant_subtracter {
-	array<unsigned int>& constants;
+template<typename Formula, typename Printer>
+struct fake_parser_printer {
+	Printer& constant_printer;
+	const hash_map<unsigned int, unsigned int>& reverse_map;
+
+	fake_parser_printer(Printer& constant_printer, const hash_map<unsigned int, unsigned int>& reverse_symbol_map) :
+			constant_printer(constant_printer), reverse_map(reverse_symbol_map) { }
 };
-
-constexpr bool visit_predicate(unsigned int predicate, const constant_subtracter& subtracter) { return true; }
-constexpr bool visit_variable(unsigned int variable, const constant_subtracter& subtracter) { return true; }
-
-template<fol_formula_type Operator>
-constexpr bool visit_operator(const fol_formula_type& formula, const constant_subtracter& subtracter) { return true; }
-
-inline bool visit_constant(unsigned int constant, const constant_subtracter& subtracter) {
-	unsigned int index = subtracter.constants.index_of(constant);
-	if (index < subtracter.constants.length)
-		subtracter.constants.remove(index);
-	return true;
-}
 
 template<typename Formula>
 struct fake_parser {
@@ -137,22 +142,13 @@ struct fake_parser {
 	}
 
 	template<typename Printer>
-	struct printer {
-		Printer& constant_printer;
-		const hash_map<unsigned int, unsigned int>& reverse_map;
-
-		printer(Printer& constant_printer, const hash_map<unsigned int, unsigned int>& reverse_symbol_map) :
-				constant_printer(constant_printer), reverse_map(reverse_symbol_map) { }
-	};
-
-	template<typename Printer>
-	inline printer<Printer> get_printer(Printer& constant_printer) const {
-		return printer<Printer>(constant_printer, reverse_symbol_map);
+	inline fake_parser_printer<Formula, Printer> get_printer(Printer& constant_printer) const {
+		return fake_parser_printer<Formula, Printer>(constant_printer, reverse_symbol_map);
 	}
 };
 
-template<typename Formula, typename Stream, typename Printer>
-inline bool print(unsigned int constant, Stream& out, const typename fake_parser<Formula>::template printer<Printer>& printer) {
+template<typename Stream, typename Formula, typename Printer>
+inline bool print(unsigned int constant, Stream& out, const fake_parser_printer<Formula, Printer>& printer) {
 	bool contains;
 	unsigned int value = printer.reverse_map.get(constant, contains);
 	if (contains) constant = value;

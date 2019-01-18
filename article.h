@@ -418,30 +418,16 @@ bool article_interpret(
 
 		if (index < tokens.length && tokens[index].type == article_token_type::FORMULA) {
 			/* parse the formula */
-			array<tptp_token> formula_tokens = array<tptp_token>(128);
 			memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
 			in.buffer = tokens[index].text.data;
 			in.length = tokens[index].text.length;
 			in.position = 0; in.shift = {0};
-			if (!tptp_lex(formula_tokens, in, tokens[index].start + 1)
-			 || !logical_forms.check_size())
-			{
-				read_error("Unable to parse first-order formula (lexical analysis failed)", tokens[index].start);
+			if (!logical_forms.check_size()
+			 || !parse(in, *new_label.logical_form, names, tokens[index].start + 1)) {
 				for (sentence& s : sentences) free(s);
-				free(sentences); free(new_label); free_tokens(formula_tokens);
+				free(sentences); free(new_label);
 				return false;
 			}
-
-			unsigned int formula_index = 0;
-			array_map<string, unsigned int> variables = array_map<string, unsigned int>(16);
-			if (!tptp_interpret(formula_tokens, formula_index, *new_label.logical_form, names, variables)) {
-				read_error("Unable to parse first-order formula", tokens[index].start);
-				for (auto entry : variables) free(entry.key);
-				for (sentence& s : sentences) free(s);
-				free(sentences); free(new_label); free_tokens(formula_tokens);
-				return false;
-			}
-			free_tokens(formula_tokens);
 
 			bool contains; unsigned int bucket;
 			sentence_label<Formula>& value = logical_forms.get(sentences.last(), contains, bucket);
@@ -449,7 +435,6 @@ bool article_interpret(
 				if (!init(logical_forms.table.keys[bucket], sentences.last())) {
 					for (sentence& s : sentences) free(s);
 					free(sentences); free(new_label);
-					free_tokens(formula_tokens);
 					return false;
 				}
 				move(new_label, value);
@@ -458,7 +443,6 @@ bool article_interpret(
 				read_error("A different logical form was previously mapped to this sentence", tokens[index].start);
 				for (sentence& s : sentences) free(s);
 				free(sentences); free(new_label);
-				free_tokens(formula_tokens);
 				return false;
 			}
 			index++;

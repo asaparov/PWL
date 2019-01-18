@@ -550,14 +550,8 @@ inline bool new_hol_term(hol_term*& new_term) {
 	return true;
 }
 
-constexpr bool visit_constant(unsigned int constant) { return true; }
-constexpr bool visit_variable(unsigned int variable) { return true; }
-constexpr bool visit_parameter(unsigned int parameter) { return true; }
-constexpr bool visit_true(const hol_term& term) { return true; }
-constexpr bool visit_false(const hol_term& term) { return true; }
-
-template<hol_term_type Operator>
-constexpr bool visit_operator(const hol_term& term) { return true; }
+template<hol_term_type Type>
+constexpr bool visit(const hol_term& term) { return true; }
 
 template<typename Term, typename... Visitor,
 	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Term>::type>::type, hol_term>::value>::type* = nullptr>
@@ -565,62 +559,59 @@ bool visit(Term&& term, Visitor&&... visitor)
 {
 	switch (term.type) {
 	case hol_term_type::CONSTANT:
-		return visit_constant(term.constant, std::forward<Visitor>(visitor)...);
+		return visit<hol_term_type::CONSTANT>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::VARIABLE:
-		return visit_variable(term.variable, std::forward<Visitor>(visitor)...);
+		return visit<hol_term_type::VARIABLE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::PARAMETER:
-		return visit_parameter(term.parameter, std::forward<Visitor>(visitor)...);
+		return visit<hol_term_type::PARAMETER>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::NOT:
-		return visit_operator<hol_term_type::NOT>(term, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::NOT>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.unary.operand, std::forward<Visitor>(visitor)...);
 	case hol_term_type::AND:
-		if (!visit_operator<hol_term_type::AND>(term, std::forward<Visitor>(visitor)...)) return false;
+		if (!visit<hol_term_type::AND>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
 	case hol_term_type::OR:
-		if (!visit_operator<hol_term_type::OR>(term, std::forward<Visitor>(visitor)...)) return false;
+		if (!visit<hol_term_type::OR>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
 	case hol_term_type::IFF:
-		if (!visit_operator<hol_term_type::IFF>(term, std::forward<Visitor>(visitor)...)) return false;
+		if (!visit<hol_term_type::IFF>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
 		return true;
 	case hol_term_type::IF_THEN:
-		return visit_operator<hol_term_type::IF_THEN>(term, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::IF_THEN>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.left, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...);
 	case hol_term_type::EQUALS:
-		return visit_operator<hol_term_type::EQUALS>(term, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::EQUALS>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.left, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...);
 	case hol_term_type::UNARY_APPLICATION:
-		return visit_operator<hol_term_type::UNARY_APPLICATION>(term, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::UNARY_APPLICATION>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.left, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...);
 	case hol_term_type::BINARY_APPLICATION:
-		return visit_operator<hol_term_type::BINARY_APPLICATION>(term, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::BINARY_APPLICATION>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.ternary.first, std::forward<Visitor>(visitor)...)
 			&& visit(*term.ternary.second, std::forward<Visitor>(visitor)...)
 			&& visit(*term.ternary.third, std::forward<Visitor>(visitor)...);
 	case hol_term_type::FOR_ALL:
-		return visit_operator<hol_term_type::FOR_ALL>(term, std::forward<Visitor>(visitor)...)
-			&& visit_variable(term.quantifier.variable, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::FOR_ALL>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...);
 	case hol_term_type::EXISTS:
-		return visit_operator<hol_term_type::EXISTS>(term, std::forward<Visitor>(visitor)...)
-			&& visit_variable(term.quantifier.variable, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::EXISTS>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...);
 	case hol_term_type::LAMBDA:
-		return visit_operator<hol_term_type::LAMBDA>(term, std::forward<Visitor>(visitor)...)
-			&& visit_variable(term.quantifier.variable, std::forward<Visitor>(visitor)...)
+		return visit<hol_term_type::LAMBDA>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...);
 	case hol_term_type::TRUE:
-		return visit_true(term, std::forward<Visitor>(visitor)...);
+		return visit<hol_term_type::TRUE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::FALSE:
-		return visit_false(term, std::forward<Visitor>(visitor)...);
+		return visit<hol_term_type::TRUE>(term, std::forward<Visitor>(visitor)...);
 	}
 	fprintf(stderr, "visit ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -630,18 +621,12 @@ struct parameter_comparator {
 	unsigned int parameter;
 };
 
-constexpr bool visit_constant(unsigned int constant, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_variable(unsigned int variable, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_equals(const hol_term& term, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_true(const hol_term& term, const parameter_comparator& visitor) { return true; }
-constexpr bool visit_false(const hol_term& term, const parameter_comparator& visitor) { return true; }
-
-inline bool visit_parameter(unsigned int parameter, const parameter_comparator& visitor) {
-	return visitor.parameter == parameter;
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, const parameter_comparator& visitor) {
+	if (Type == hol_term_type::PARAMETER)
+		return visitor.parameter == term.parameter;
+	else return true;
 }
-
-template<hol_term_type Operator>
-constexpr bool visit_operator(const hol_term& term, const parameter_comparator& visitor) { return true; }
 
 inline bool contains_parameter(const hol_term& src, unsigned int parameter) {
 	parameter_comparator visitor = {parameter};
@@ -652,18 +637,12 @@ struct parameter_collector {
 	array<unsigned int>& parameters;
 };
 
-constexpr bool visit_constant(unsigned int constant, const parameter_collector& visitor) { return true; }
-constexpr bool visit_variable(unsigned int variable, const parameter_collector& visitor) { return true; }
-constexpr bool visit_equals(const hol_term& term, const parameter_collector& visitor) { return true; }
-constexpr bool visit_true(const hol_term& term, const parameter_collector& visitor) { return true; }
-constexpr bool visit_false(const hol_term& term, const parameter_collector& visitor) { return true; }
-
-inline bool visit_parameter(unsigned int parameter, const parameter_collector& visitor) {
-	return visitor.parameters.add(parameter);
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, const parameter_collector& visitor) {
+	if (Type == hol_term_type::PARAMETER)
+		return visitor.parameters.add(term.parameter);
+	else return true;
 }
-
-template<hol_term_type Operator>
-constexpr bool visit_operator(const hol_term& term, const parameter_collector& visitor) { return true; }
 
 inline bool get_parameters(const hol_term& src, array<unsigned int>& parameters) {
 	parameter_collector visitor = {parameters};
@@ -2465,6 +2444,13 @@ int_fast8_t compare(
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
+}
+
+inline int_fast8_t compare(
+		const hol_term* first,
+		const hol_term* second)
+{
+	return compare(*first, *second);
 }
 
 inline bool operator < (
@@ -5054,18 +5040,6 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	return true;
 }
 
-inline bool append_to_token(
-	array<char>& token, wint_t next, std::mbstate_t& shift)
-{
-	if (!token.ensure_capacity(token.length + MB_CUR_MAX))
-		return false;
-	size_t written = wcrtomb(token.data + token.length, next, &shift);
-	if (written == static_cast<std::size_t>(-1))
-		return false;
-	token.length += written;
-	return true;
-}
-
 template<typename Stream>
 bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = position(1, 1)) {
 	position current = start;
@@ -5500,6 +5474,28 @@ bool tptp_interpret(
 	} else {
 		move(*left, term); free(left);
 	}
+	return true;
+}
+
+template<typename Stream>
+inline bool parse(Stream& in, hol_term& term,
+		hash_map<string, unsigned int>& names,
+		position start = position(1, 1))
+{
+	array<tptp_token> tokens = array<tptp_token>(128);
+	if (!tptp_lex(tokens, in, start)) {
+		read_error("Unable to parse higher-order formula (lexical analysis failed)", start);
+		free_tokens(tokens); return false;
+	}
+
+	unsigned int index = 0;
+	array_map<string, unsigned int> variables = array_map<string, unsigned int>(16);
+	if (!tptp_interpret(tokens, index, term, names, variables)) {
+		read_error("Unable to parse higher-order formula", start);
+		for (auto entry : variables) free(entry.key);
+		free_tokens(tokens); return false;
+	}
+	free_tokens(tokens);
 	return true;
 }
 
