@@ -3,7 +3,6 @@
 
 #include "article.h"
 #include "natural_deduction_mh.h"
-#include "higher_order_logic.h"
 
 constexpr double PERPLEXITY_THRESHOLD = 10.0;
 
@@ -17,15 +16,15 @@ inline void free_logical_forms(Formula** logical_forms, unsigned int count)
 	}
 }
 
-template<typename ArticleSource, typename Parser,
+template<typename ArticleSource, typename Parser, typename Formula,
 	typename Canonicalizer, typename ProofPrior, typename Printer>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const sentence& s,
-		theory<hol_term, natural_deduction<hol_term>, Canonicalizer>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int article_name, ProofPrior& proof_prior, Printer& printer)
 {
 	unsigned int parse_count, new_constant;
-	hol_term* logical_forms[2];
+	Formula* logical_forms[2];
 	double log_probabilities[2];
 	while (true) {
 		/* attempt to parse the sentence */
@@ -45,8 +44,8 @@ bool read_sentence(
 						&& parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);
 
-			for (unsigned int t = 0; t < 10; t++)
-				if (!do_mh_step(T, proof_prior)) return false;
+			//for (unsigned int t = 0; t < 10; t++)
+			//	if (!do_mh_step(T, proof_prior)) return false;
 			return success;
 		}
 
@@ -82,18 +81,18 @@ bool read_sentence(
 		return false;
 	}
 
-	for (unsigned int t = 0; t < 10; t++)
-		if (!do_mh_step(T, proof_prior)) return false;
+	//for (unsigned int t = 0; t < 10; t++)
+	//	if (!do_mh_step(T, proof_prior)) return false;
 
 	free_logical_forms(logical_forms, parse_count);
 	return true;
 }
 
-template<typename ArticleSource, typename Parser,
+template<typename ArticleSource, typename Parser, typename Formula,
 	typename Canonicalizer, typename ProofPrior, typename Printer>
 bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
-		theory<hol_term, natural_deduction<hol_term>, Canonicalizer>& T,
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		ProofPrior& proof_prior, Printer& printer)
 {
 	bool article_exists;

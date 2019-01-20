@@ -520,22 +520,23 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 private:
 	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant)
 	{
-		if (canonicalized->type == FormulaType::ATOM) {
-			return make_atom_proof<false>(canonicalized, new_constant);
+		unsigned int predicate; Term* arg1; Term* arg2;
+		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
+			return make_atom_proof<false>(canonicalized, predicate, arg1, arg2, new_constant);
 		} else if (canonicalized->type == FormulaType::NOT) {
-			if (canonicalized->unary.operand->type == FormulaType::ATOM) {
-				return make_atom_proof<true>(canonicalized, new_constant);
+			if (is_atomic(*canonicalized->unary.operand, predicate, arg1, arg2)) {
+				return make_atom_proof<true>(canonicalized, predicate, arg1, arg2, new_constant);
 			}
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			unsigned int variable = canonicalized->quantifier.variable;
 			if (canonicalized->quantifier.operand->type == FormulaType::IF_THEN) {
 				const Formula* left = canonicalized->quantifier.operand->binary.left;
-				if (left->type == FormulaType::ATOM
-				 && left->atom.arg1.type == TermType::VARIABLE
-				 && left->atom.arg1.variable == variable
-				 && left->atom.arg2.type == TermType::NONE)
+				Term const* arg1; Term const* arg2;
+				bool atomic = is_atomic(*left, predicate, arg1, arg2);
+				if (atomic && arg1->type == TermType::VARIABLE
+				 && arg1->variable == variable && arg2 ==  NULL)
 				{
-					if (left->atom.predicate == PREDICATE_UNKNOWN) {
+					if (predicate == PREDICATE_UNKNOWN) {
 						/* this is a definition of a type */
 						Formula* right = canonicalized->quantifier.operand->binary.right;
 
@@ -599,7 +600,7 @@ private:
 						}
 						return new_axiom;
 					}
-				} else if (left->type == FormulaType::ATOM) {
+				} else if (is_atomic(*left)) {
 					/* TODO: implement this */
 					fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
 					return NULL;
@@ -623,20 +624,19 @@ private:
 	}
 
 	template<bool Negated>
-	Proof* make_atom_proof(Formula* canonicalized, unsigned int& new_constant)
+	Proof* make_atom_proof(Formula* canonicalized, unsigned int predicate,
+			Term* arg1, Term* arg2, unsigned int& new_constant)
 	{
 		bool contains; unsigned int bucket;
-		Formula* atom = (Negated ? canonicalized->unary.operand : canonicalized);
-		if (atom->atom.arg1.type == TermType::CONSTANT
-		 && atom->atom.arg2.type == TermType::NONE)
+		if (arg1->type == TermType::CONSTANT && arg2 == NULL)
 		{
 			/* this is a unary formula */
-			if (atom->atom.predicate != PREDICATE_UNKNOWN) {
-				if (atom->atom.arg1.constant == PREDICATE_UNKNOWN) {
+			if (predicate != PREDICATE_UNKNOWN) {
+				if (arg1->constant == PREDICATE_UNKNOWN) {
 					/* this is a definition of an object */
 					if (!ground_concepts.check_size()) return NULL;
 					new_constant = new_constant_offset + ground_concepts.table.size;
-					atom->atom.arg1.constant = new_constant;
+					arg1->constant = new_constant;
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
@@ -649,7 +649,7 @@ private:
 						}
 						ground_concepts.table.keys[bucket] = new_constant;
 						ground_concepts.table.size++;
-					} if (!add_unary_atom<Negated>(atom->atom.predicate, new_constant, new_axiom)) {
+					} if (!add_unary_atom<Negated>(predicate, new_constant, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -664,9 +664,13 @@ private:
 						unsigned int i = 0;
 						if (consequent->type == FormulaType::AND) {
 							for (; i < consequent->array.length; i++) {
-								Term dst = Term::none();
-								if (unify(*consequent->array.operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), dst))
+								Term const* dst = NULL;
+								Term* variable = Formula::new_variable(axiom->formula->quantifier.variable);
+								if (unify(*consequent->array.operands[i], *canonicalized, variable, dst)) {
+									free(*variable); if (variable->reference_count == 0) free(variable);
 									break;
+								}
+								free(*variable); if (variable->reference_count == 0) free(variable);
 							}
 							if (i == consequent->array.length) continue;
 						} else if (*consequent != *canonicalized) {
@@ -676,16 +680,16 @@ private:
 
 						/* check if the antecedent is satisfied by `c` */
 						Proof* proof;
-						if (!make_universal_elim_proof(consequent, ground_concepts.get(atom->atom.arg1.constant), proof))
+						if (!make_universal_elim_proof(consequent, ground_concepts.get(arg1->constant), proof))
 							return NULL;
 						if (proof != NULL) {
 							proof->reference_count++;
 							Proof* new_proof;
 							if (i == consequent->array.length) {
-								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof);
+								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof);
 							} else {
 								new_proof = ProofCalculus::new_conjunction_elim(
-										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, atom->atom.arg1), proof),
+										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof),
 										make_array_view(&i, 1));
 							}
 							free(*proof); if (proof->reference_count == 0) free(proof);
@@ -698,7 +702,7 @@ private:
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_unary_atom<Negated>(atom->atom.predicate, atom->atom.arg1.constant, new_axiom)) {
+					if (!add_unary_atom<Negated>(predicate, arg1->constant, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -709,14 +713,14 @@ private:
 				fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
 				return NULL;
 			}
-		} else if (atom->atom.arg1.type == TermType::CONSTANT
-				&& atom->atom.arg2.type == TermType::CONSTANT)
+		} else if (arg1->type == TermType::CONSTANT
+				&& arg2->type == TermType::CONSTANT)
 		{
 			/* this is a binary formula */
-			if (atom->atom.predicate != PREDICATE_UNKNOWN)
+			if (predicate != PREDICATE_UNKNOWN)
 			{
-				if (atom->atom.arg1.constant == PREDICATE_UNKNOWN
-				 || atom->atom.arg2.constant == PREDICATE_UNKNOWN) {
+				if (arg1->constant == PREDICATE_UNKNOWN
+				 || arg2->constant == PREDICATE_UNKNOWN) {
 					fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
 					return NULL;
 				} else {
@@ -726,12 +730,16 @@ private:
 					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
 						Proof* axiom = universal_quantifications[k];
 						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-						Term unifying_term = Term::none();
+						Term const* unifying_term = NULL;
 						unsigned int i = 0;
 						if (consequent->type == FormulaType::AND) {
 							for (; i < consequent->array.length; i++) {
-								if (unify(*consequent->array.operands[i], *canonicalized, Formula::new_variable(axiom->formula->quantifier.variable), unifying_term))
+								Term* variable = Formula::new_variable(axiom->formula->quantifier.variable);
+								if (unify(*consequent->array.operands[i], *canonicalized, variable, unifying_term)) {
+									free(*variable); if (variable->reference_count == 0) free(variable);
 									break;
+								}
+								free(*variable); if (variable->reference_count == 0) free(variable);
 							}
 							if (i == consequent->array.length) continue;
 						} else if (*consequent != *canonicalized) {
@@ -741,16 +749,16 @@ private:
 
 						/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
 						Proof* proof;
-						if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term.constant), proof))
+						if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term->constant), proof))
 							return NULL;
 						if (proof != NULL) {
 							proof->reference_count++;
 							Proof* new_proof;
 							if (i == consequent->array.length) {
-								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonicalized->atom.arg1), proof);
+								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof);
 							} else {
 								new_proof = ProofCalculus::new_conjunction_elim(
-										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, canonicalized->atom.arg1), proof),
+										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof),
 										make_array_view(&i, 1));
 							}
 							free(*proof); if (proof->reference_count == 0) free(proof);
@@ -763,7 +771,7 @@ private:
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_binary_atom<Negated>({atom->atom.predicate, atom->atom.arg1.constant, atom->atom.arg2.constant}, new_axiom)) {
+					if (!add_binary_atom<Negated>({predicate, arg1->constant, arg2->constant}, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -782,11 +790,12 @@ private:
 
 	inline bool valid_definition(const Formula* right, unsigned int quantified_variable)
 	{
-		if (right->type == FormulaType::ATOM) {
-			return right->atom.predicate != PREDICATE_UNKNOWN
-				&& right->atom.arg1.type == TermType::VARIABLE
-				&& right->atom.arg1.variable == quantified_variable
-				&& right->atom.arg2.type == TermType::NONE;
+		unsigned int predicate; Term const* arg1; Term const* arg2;
+		if (is_atomic(*right, predicate, arg1, arg2)) {
+			return predicate != PREDICATE_UNKNOWN
+				&& arg1->type == TermType::VARIABLE
+				&& arg1->variable == quantified_variable
+				&& arg2 == NULL;
 		} else if (right->type == FormulaType::AND) {
 			for (unsigned int i = 0; i < right->array.length; i++)
 				if (valid_definition(right->array.operands[i], quantified_variable)) return true;
@@ -799,18 +808,19 @@ private:
 	template<bool Negated>
 	bool make_conjunct_proof(Formula* constraint, const concept<ProofCalculus>& c, Proof*& proof) const
 	{
-		if (constraint->type == FormulaType::ATOM) {
+		unsigned int predicate; Term* arg1; Term* arg2;
+		if (is_atomic(*constraint, predicate, arg1, arg2)) {
 			bool contains;
-			if (constraint->atom.arg2.type == TermType::NONE) {
+			if (arg2 == NULL) {
 				/* `constraint` is a unary literal */
-				proof = (Negated ? c.negated_types.get(constraint->atom.predicate, contains) : c.types.get(constraint->atom.predicate, contains));
+				proof = (Negated ? c.negated_types.get(predicate, contains) : c.types.get(predicate, contains));
 				if (!contains) proof = NULL;
 				return true;
 			} else {
 				/* `constraint` is a binary literal */
-				relation r = { constraint->atom.predicate,
-						(constraint->atom.arg1.type == TermType::VARIABLE ? 0 : constraint->atom.arg1.constant),
-						(constraint->atom.arg2.type == TermType::VARIABLE ? 0 : constraint->atom.arg2.constant) };
+				relation r = { predicate,
+						(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
+						(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
 				proof = (Negated ? c.negated_relations.get(r, contains) : c.relations.get(r, contains));
 				if (!contains) proof = NULL;
 				return true;

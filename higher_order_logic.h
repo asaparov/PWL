@@ -126,7 +126,7 @@ struct hol_quantifier {
 struct hol_term
 {
 	typedef hol_term_type Type;
-	typedef hol_term* Term;
+	typedef hol_term Term;
 	typedef hol_term_type TermType;
 
 	hol_term_type type;
@@ -143,7 +143,12 @@ struct hol_term
 	};
 
 	hol_term(hol_term_type type) : type(type), reference_count(1) { }
+	//hol_term(const hol_term& src) : type(src.type), reference_count(1) { if (!init_helper(src)) exit(EXIT_FAILURE); }
 	~hol_term() { free_helper(); }
+
+	//inline void operator = (const hol_term& src) {
+	//	if (!init_helper(src)) exit(EXIT_FAILURE);
+	//}
 
 	static hol_term* new_variable(unsigned int variable);
 	static hol_term* new_constant(unsigned int constant);
@@ -158,6 +163,7 @@ struct hol_term
 	template<typename... Args> static inline hol_term* new_and(Args&&... args);
 	template<typename... Args> static inline hol_term* new_or(Args&&... args);
 	static inline hol_term* new_equals(hol_term* first, hol_term* second);
+	template<typename... Args> static inline hol_term* new_iff(Args&&... args);
 	static hol_term* new_if_then(hol_term* first, hol_term* second);
 	static hol_term* new_not(hol_term* operand);
 	static inline hol_term* new_for_all(unsigned int variable, hol_term* operand);
@@ -165,10 +171,67 @@ struct hol_term
 	static inline hol_term* new_lambda(unsigned int variable, hol_term* operand);
 
 	static inline void move(const hol_term& src, hol_term& dst);
+	static inline void swap(hol_term& first, hol_term& second);
 	static inline void free(hol_term& term) { term.free_helper(); }
 
 private:
 	void free_helper();
+
+	inline bool init_helper(const hol_term& src) {
+		switch (src.type) {
+		case hol_term_type::VARIABLE:
+			variable = src.variable; return true;
+		case hol_term_type::CONSTANT:
+			constant = src.constant; return true;
+		case hol_term_type::PARAMETER:
+			parameter = src.parameter; return true;
+		case hol_term_type::NOT:
+			unary.operand = src.unary.operand;
+			unary.operand->reference_count++;
+			return true;
+		case hol_term_type::IF_THEN:
+		case hol_term_type::EQUALS:
+		case hol_term_type::UNARY_APPLICATION:
+			binary.left = src.binary.left;
+			binary.right = src.binary.right;
+			binary.left->reference_count++;
+			binary.right->reference_count++;
+			return true;
+		case hol_term_type::BINARY_APPLICATION:
+			ternary.first = src.ternary.first;
+			ternary.second = src.ternary.second;
+			ternary.third = src.ternary.third;
+			ternary.first->reference_count++;
+			ternary.second->reference_count++;
+			ternary.third->reference_count++;
+			return true;
+		case hol_term_type::AND:
+		case hol_term_type::OR:
+		case hol_term_type::IFF:
+			array.length = src.array.length;
+			array.operands = (hol_term**) malloc(sizeof(hol_term**) * src.array.length);
+			if (array.operands == NULL) {
+				fprintf(stderr, "hol_term.init_helper ERROR: Insufficient memory for `array.operands.`\n");
+				return false;
+			}
+			for (unsigned int i = 0; i < src.array.length; i++) {
+				array.operands[i] = src.array.operands[i];
+				array.operands[i]->reference_count++;
+			}
+			return true;
+		case hol_term_type::FOR_ALL:
+		case hol_term_type::EXISTS:
+		case hol_term_type::LAMBDA:
+			quantifier.variable = src.quantifier.variable;
+			quantifier.operand = src.quantifier.operand;
+			quantifier.operand->reference_count++;
+		case hol_term_type::TRUE:
+		case hol_term_type::FALSE:
+			return true;
+		}
+		fprintf(stderr, "hol_term.init_helper ERROR: Unrecognized hol_term_type.\n");
+		return false;
+	}
 };
 
 thread_local hol_term HOL_TRUE(hol_term_type::TRUE);
@@ -273,6 +336,13 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 	fprintf(stderr, "hol_term.move ERROR: Unrecognized hol_term_type.\n");
 }
 
+inline void hol_term::swap(hol_term& first, hol_term& second) {
+	char* first_data = (char*) &first;
+	char* second_data = (char*) &second;
+	for (unsigned int i = 0; i < sizeof(hol_term); i++)
+		core::swap(first_data[i], second_data[i]);
+}
+
 inline void hol_unary_term::move(const hol_unary_term& src, hol_unary_term& dst) {
 	dst.operand = src.operand;
 }
@@ -372,6 +442,72 @@ inline void hol_quantifier::free(hol_quantifier& term) {
 	core::free(*term.operand);
 	if (term.operand->reference_count == 0)
 		core::free(term.operand);
+}
+
+inline bool is_atomic(
+		const hol_term& term, unsigned int& predicate,
+		hol_term const*& arg1, hol_term const*& arg2)
+{
+	if (term.type == hol_term_type::UNARY_APPLICATION) {
+		if (term.binary.left->type != hol_term_type::CONSTANT) return false;
+		predicate = term.binary.left->constant;
+		arg1 = term.binary.right;
+		arg2 = NULL;
+		return true;
+	} else if (term.type == hol_term_type::BINARY_APPLICATION) {
+		if (term.ternary.first->type != hol_term_type::CONSTANT) return false;
+		predicate = term.ternary.first->constant;
+		arg1 = term.ternary.second;
+		arg2 = term.ternary.third;
+		return true;
+	}
+	return false;
+}
+
+inline bool is_atomic(const hol_term& term,
+		hol_term const*& arg1, hol_term const*& arg2)
+{
+	unsigned int predicate;
+	return is_atomic(term, predicate, arg1, arg2);
+}
+
+inline bool is_atomic(const hol_term& term) {
+	unsigned int predicate;
+	hol_term const* arg1; hol_term const* arg2;
+	return is_atomic(term, predicate, arg1, arg2);
+}
+
+inline bool is_atomic(
+		hol_term& term, unsigned int& predicate,
+		hol_term*& arg1, hol_term*& arg2)
+{
+	if (term.type == hol_term_type::UNARY_APPLICATION) {
+		if (term.binary.left->type != hol_term_type::CONSTANT) return false;
+		predicate = term.binary.left->constant;
+		arg1 = term.binary.right;
+		arg2 = NULL;
+		return true;
+	} else if (term.type == hol_term_type::BINARY_APPLICATION) {
+		if (term.ternary.first->type != hol_term_type::CONSTANT) return false;
+		predicate = term.ternary.first->constant;
+		arg1 = term.ternary.second;
+		arg2 = term.ternary.third;
+		return true;
+	}
+	return false;
+}
+
+inline bool is_atomic(hol_term& term,
+		hol_term*& arg1, hol_term*& arg2)
+{
+	unsigned int predicate;
+	return is_atomic(term, predicate, arg1, arg2);
+}
+
+inline bool is_atomic(hol_term& term) {
+	unsigned int predicate;
+	hol_term* arg1; hol_term* arg2;
+	return is_atomic(term, predicate, arg1, arg2);
 }
 
 
@@ -761,25 +897,24 @@ inline bool clone(const hol_term* src, hol_term* dst, Cloner&&... cloner)
 
 /* NOTE: this function assumes `src.type == Type` */
 template<hol_term_type Type, typename... Function>
-hol_term* default_apply(hol_term& src, Function&&... function)
+hol_term* apply(hol_term* src, Function&&... function)
 {
 	hol_term* new_term;
 	hol_term** new_terms;
 	hol_term* first; hol_term* second; hol_term* third;
 	bool changed;
-	unsigned int symbol;
 	switch (Type) {
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
 	case hol_term_type::PARAMETER:
-		return &src;
+		return src;
 
 	case hol_term_type::NOT:
-		first = apply(*src.unary.operand, std::forward<Function>(function)...);
+		first = apply(src->unary.operand, std::forward<Function>(function)...);
 		if (first == NULL) {
 			return NULL;
-		} else if (first == src.unary.operand) {
-			return &src;
+		} else if (first == src->unary.operand) {
+			return src;
 		} else {
 			if (!new_hol_term(new_term)) {
 				free(*first); if (first->reference_count == 0) free(first);
@@ -794,61 +929,61 @@ hol_term* default_apply(hol_term& src, Function&&... function)
 	case hol_term_type::IF_THEN:
 	case hol_term_type::EQUALS:
 	case hol_term_type::UNARY_APPLICATION:
-		first = apply(*src.binary.left, std::forward<Function>(function)...);
+		first = apply(src->binary.left, std::forward<Function>(function)...);
 		if (first == NULL) return NULL;
-		second = apply(*src.binary.right, std::forward<Function>(function)...);
+		second = apply(src->binary.right, std::forward<Function>(function)...);
 		if (second == NULL) {
-			if (first != src.binary.left) {
+			if (first != src->binary.left) {
 				free(*first); if (first->reference_count == 0) free(first);
 			}
 			return NULL;
-		} else if (first == src.binary.left && second == src.binary.right) {
-			return &src;
+		} else if (first == src->binary.left && second == src->binary.right) {
+			return src;
 		} else {
 			if (!new_hol_term(new_term)) {
-				if (first != src.binary.left) {
+				if (first != src->binary.left) {
 					free(*first); if (first->reference_count == 0) free(first);
-				} if (second != src.binary.right) {
+				} if (second != src->binary.right) {
 					free(*second); if (second->reference_count == 0) free(second);
 				}
 				return NULL;
 			}
 			new_term->binary.left = first;
 			new_term->binary.right = second;
-			if (first == src.binary.left) first->reference_count++;
-			if (second == src.binary.right) second->reference_count++;
+			if (first == src->binary.left) first->reference_count++;
+			if (second == src->binary.right) second->reference_count++;
 			new_term->type = Type;
 			new_term->reference_count = 1;
 			return new_term;
 		}
 
 	case hol_term_type::BINARY_APPLICATION:
-		first = apply(*src.ternary.first, std::forward<Function>(function)...);
+		first = apply(src->ternary.first, std::forward<Function>(function)...);
 		if (first == NULL) return NULL;
-		second = apply(*src.ternary.second, std::forward<Function>(function)...);
+		second = apply(src->ternary.second, std::forward<Function>(function)...);
 		if (second == NULL) {
-			if (first != src.ternary.first) {
+			if (first != src->ternary.first) {
 				free(*first); if (first->reference_count == 0) free(first);
 			}
 			return NULL;
 		}
-		third = apply(*src.ternary.third, std::forward<Function>(function)...);
+		third = apply(src->ternary.third, std::forward<Function>(function)...);
 		if (third == NULL) {
-			if (first != src.ternary.first) {
+			if (first != src->ternary.first) {
 				free(*first); if (first->reference_count == 0) free(first);
-			} if (second != src.ternary.second) {
+			} if (second != src->ternary.second) {
 				free(*second); if (second->reference_count == 0) free(second);
 			}
 			return NULL;
-		} else if (first == src.ternary.first && second == src.ternary.second && third == src.ternary.third) {
-			return &src;
+		} else if (first == src->ternary.first && second == src->ternary.second && third == src->ternary.third) {
+			return src;
 		} else {
 			if (!new_hol_term(new_term)) {
-				if (first != src.ternary.first) {
+				if (first != src->ternary.first) {
 					free(*first); if (first->reference_count == 0) free(first);
-				} if (second != src.ternary.second) {
+				} if (second != src->ternary.second) {
 					free(*second); if (second->reference_count == 0) free(second);
-				} if (third != src.ternary.third) {
+				} if (third != src->ternary.third) {
 					free(*third); if (third->reference_count == 0) free(third);
 				}
 				return NULL;
@@ -856,9 +991,9 @@ hol_term* default_apply(hol_term& src, Function&&... function)
 			new_term->ternary.first = first;
 			new_term->ternary.second = second;
 			new_term->ternary.third = third;
-			if (first == src.ternary.first) first->reference_count++;
-			if (second == src.ternary.second) second->reference_count++;
-			if (third == src.ternary.third) third->reference_count++;
+			if (first == src->ternary.first) first->reference_count++;
+			if (second == src->ternary.second) second->reference_count++;
+			if (third == src->ternary.third) third->reference_count++;
 			new_term->type = Type;
 			new_term->reference_count = 1;
 			return new_term;
@@ -867,38 +1002,38 @@ hol_term* default_apply(hol_term& src, Function&&... function)
 	case hol_term_type::AND:
 	case hol_term_type::OR:
 	case hol_term_type::IFF:
-		new_terms = (hol_term**) malloc(sizeof(hol_term*) * src.array.length);
+		new_terms = (hol_term**) malloc(sizeof(hol_term*) * src->array.length);
 		if (new_terms == NULL) return NULL;
 		changed = false;
-		for (unsigned int i = 0; i < src.array.length; i++) {
-			new_terms[i] = apply(*src.array.operands[i], std::forward<Function>(function)...);
+		for (unsigned int i = 0; i < src->array.length; i++) {
+			new_terms[i] = apply(src->array.operands[i], std::forward<Function>(function)...);
 			if (new_terms[i] == NULL) {
 				for (unsigned int j = 0; j < i; j++) {
-					if (new_terms[j] != src.array.operands[j]) {
+					if (new_terms[j] != src->array.operands[j]) {
 						free(*new_terms[j]); if (new_terms[j]->reference_count == 0) free(new_terms[j]);
 					}
 				}
 				free(new_terms); return NULL;
-			} else if (new_terms[i] != src.array.operands[i])
+			} else if (new_terms[i] != src->array.operands[i])
 				changed = true;
 		}
 
 		if (!changed) {
 			free(new_terms);
-			return &src;
+			return src;
 		} else {
 			if (!new_hol_term(new_term)) {
-				for (unsigned int j = 0; j < src.array.length; j++) {
-					if (new_terms[j] != src.array.operands[j]) {
+				for (unsigned int j = 0; j < src->array.length; j++) {
+					if (new_terms[j] != src->array.operands[j]) {
 						free(*new_terms[j]); if (new_terms[j]->reference_count == 0) free(new_terms[j]);
 					}
 				}
 				free(new_terms); return NULL;
 			}
 			new_term->array.operands = new_terms;
-			new_term->array.length = src.array.length;
-			for (unsigned int i = 0; i < src.array.length; i++)
-				if (new_term->array.operands[i] == src.array.operands[i]) src.array.operands[i]->reference_count++;
+			new_term->array.length = src->array.length;
+			for (unsigned int i = 0; i < src->array.length; i++)
+				if (new_term->array.operands[i] == src->array.operands[i]) src->array.operands[i]->reference_count++;
 			new_term->type = Type;
 			new_term->reference_count = 1;
 			return new_term;
@@ -907,17 +1042,17 @@ hol_term* default_apply(hol_term& src, Function&&... function)
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		first = apply(*src.quantifier.operand, std::forward<Function>(function)...);
+		first = apply(src->quantifier.operand, std::forward<Function>(function)...);
 		if (first == NULL) {
 			return NULL;
-		} else if (first == src.quantifier.operand) {
-			return &src;
+		} else if (first == src->quantifier.operand) {
+			return src;
 		} else {
 			if (!new_hol_term(new_term)) {
 				free(*first); if (first->reference_count == 0) free(first);
 				return NULL;
 			}
-			new_term->quantifier.variable = src.quantifier.variable;
+			new_term->quantifier.variable = src->quantifier.variable;
 			new_term->quantifier.operand = first;
 			new_term->type = Type;
 			new_term->reference_count = 1;
@@ -926,16 +1061,16 @@ hol_term* default_apply(hol_term& src, Function&&... function)
 
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-		return &src;
+		return src;
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type.\n");
 	return NULL;
 }
 
 template<typename... Function>
-inline hol_term* apply(hol_term& src, Function&&... function)
+inline hol_term* apply(hol_term* src, Function&&... function)
 {
-	switch (src.type) {
+	switch (src->type) {
 	case hol_term_type::CONSTANT:
 		return apply<hol_term_type::CONSTANT>(src, std::forward<Function>(function)...);
 	case hol_term_type::VARIABLE:
@@ -973,89 +1108,93 @@ inline hol_term* apply(hol_term& src, Function&&... function)
 	return NULL;
 }
 
-template<hol_term_type SrcType, int VariableShift>
+template<hol_term_type SrcTermType, int VariableShift>
 struct term_substituter {
-	hol_term& src;
-	hol_term& dst;
+	const hol_term* src;
+	hol_term* dst;
 };
 
-template<hol_term_type Type, hol_term_type SrcType, int VariableShift,
-	typename std::enable_if<Type == SrcType>::type* = nullptr>
-inline hol_term* apply(const hol_term& src, const term_substituter<SrcType, VariableShift>& substituter) {
-	if (src == substituter.src) {
-		return &substituter.dst;
+template<hol_term_type Type, hol_term_type SrcTermType, int VariableShift,
+	typename std::enable_if<Type == SrcTermType>::type* = nullptr>
+inline hol_term* apply(hol_term* src, const term_substituter<SrcTermType, VariableShift>& substituter) {
+	if (*src == *substituter.src) {
+		substituter.dst->reference_count++;
+		return substituter.dst;
 	} else if (Type == hol_term_type::VARIABLE) {
 		hol_term* dst;
 		if (!new_hol_term(dst)) return NULL;
 		dst->type = Type;
-		dst->variable = src.variable + VariableShift;
+		dst->variable = src->variable + VariableShift;
 		dst->reference_count = 1;
 		return dst;
 	} else {
-		return &src;
+		return src;
 	}
 }
 
-/* NOTE: this function assumes `src.type == SrcType` */
-template<hol_term_type SrcType, int VariableShift = 0>
-inline hol_term* substitute(hol_term& src,
-		const hol_term& src_term, const hol_term& dst_term)
+/* NOTE: this function assumes `src_term.type == SrcTermType` */
+template<hol_term_type SrcTermType, int VariableShift = 0>
+inline hol_term* substitute(hol_term* src,
+		const hol_term* src_term, hol_term* dst_term)
 {
-	const term_substituter<SrcType, VariableShift> substituter = {src_term, dst_term};
+	const term_substituter<SrcTermType, VariableShift> substituter = {src_term, dst_term};
 	hol_term* dst = apply(src, substituter);
-	if (dst == &src)
+	if (dst == src)
 		dst->reference_count++;
 	return dst;
 }
 
-template<hol_term_type SrcType, int VariableShift>
+template<int VariableShift>
 struct index_substituter {
-	hol_term* src;
-	hol_term& dst;
+	const hol_term* src;
+	hol_term* dst;
 	const unsigned int* term_indices;
 	unsigned int term_index_count;
 	unsigned int current_term_index;
 };
 
-template<hol_term_type Type, hol_term_type SrcType, int VariableShift,
-	typename std::enable_if<Type == SrcType>::type* = nullptr>
-inline bool apply(const hol_term& src, hol_term& dst, index_substituter<SrcType, VariableShift>& substituter)
+template<hol_term_type Type, int VariableShift>
+inline hol_term* apply(hol_term* src, index_substituter<VariableShift>& substituter)
 {
+	hol_term* dst;
 	if (substituter.term_index_count > 0 && *substituter.term_indices == substituter.current_term_index) {
 		if (substituter.src == NULL) {
-			substituter.src = &src;
-		} else if (*substituter.src != src) {
+			substituter.src = src;
+		} else if (*substituter.src != *src) {
 			/* this term is not identical to other substituted terms, which should not happen */
-			return false;
+			return NULL;
 		}
 		dst = substituter.dst;
+		dst->reference_count++;
 		substituter.term_indices++;
 		substituter.term_index_count--;
+	} else {
+		dst = src;
 	}
 	substituter.current_term_index++;
-	return true;
+	return dst;
 }
 
 /* NOTE: this function assumes `src.type == SrcType` */
-template<hol_term_type SrcType, int VariableShift>
+template<int VariableShift = 0>
 inline hol_term* substitute(
-		hol_term& src, const unsigned int* term_indices,
-		unsigned int term_index_count, const hol_term& dst_term)
+		hol_term* src, const unsigned int* term_indices,
+		unsigned int term_index_count, hol_term* dst_term)
 {
-	index_substituter<SrcType, VariableShift> substituter = {NULL, dst_term, term_indices, term_index_count, 0};
+	index_substituter<VariableShift> substituter = {NULL, dst_term, term_indices, term_index_count, 0};
 	hol_term* term = apply(src, substituter);
-	if (term == &src)
+	if (term == src)
 		term->reference_count++;
 	return term;
 }
 
 bool unify(
 		const hol_term& first, const hol_term& second,
-		const hol_term& src_term, const hol_term*& dst_term)
+		const hol_term* src_term, hol_term const*& dst_term)
 {
 	if (first.type != second.type) {
 		return false;
-	} else if (first == src_term) {
+	} else if (first == *src_term) {
 		if (dst_term == NULL) {
 			dst_term = &second;
 		} else if (second != *dst_term) {
@@ -1105,7 +1244,7 @@ bool unify(
 
 bool unifies_parameter(
 		const hol_term& first, const hol_term& second,
-		const hol_term& src_term, unsigned int& parameter)
+		const hol_term* src_term, unsigned int& parameter)
 {
 	const hol_term* dst = NULL;
 	if (!unify(first, second, src_term, dst)
@@ -1263,6 +1402,20 @@ hol_term* hol_term::new_if_then(hol_term* first, hol_term* second) {
 
 hol_term* hol_term::new_equals(hol_term* first, hol_term* second) {
 	return new_hol_binary_term<hol_term_type::EQUALS>(first, second);
+}
+
+inline hol_term* new_equals_helper(hol_term* first, hol_term* second) {
+	return new_hol_binary_term<hol_term_type::EQUALS>(first, second);
+}
+
+template<typename... Args>
+inline hol_term* new_equals_helper(hol_term* first, Args&&... args) {
+	return new_hol_binary_term<hol_term_type::EQUALS>(first, new_equals_helper(std::forward<Args>(args)...));
+}
+
+template<typename... Args>
+hol_term* hol_term::new_iff(Args&&... args) {
+	return new_equals_helper(std::forward<Args>(args)...);
 }
 
 hol_term* hol_term::new_apply(hol_term* function, hol_term* arg) {

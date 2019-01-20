@@ -267,22 +267,22 @@ nd_step<Formula>* get_proof(
 template<bool FirstSample, bool Negated,
 	typename Formula, typename Canonicalizer>
 inline void get_satisfying_concepts_helper(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		const Formula* literal, array<unsigned int>& intersection)
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T, unsigned int predicate,
+		const typename Formula::Term* arg1, const typename Formula::Term* arg2, array<unsigned int>& intersection)
 {
 	typedef typename Formula::TermType TermType;
 
-	if (literal->atom.arg2.type == TermType::NONE) {
+	if (arg2 == NULL) {
 		/* this is a unary atom */
-		const pair<array<unsigned int>, array<unsigned int>>& list = T.types.get(literal->atom.predicate);
+		const pair<array<unsigned int>, array<unsigned int>>& list = T.types.get(predicate);
 		const array<unsigned int>& sublist = Negated ? list.value : list.key;
 		if (FirstSample) intersection.append(sublist.data, sublist.length);
 		else set_intersect(intersection, sublist);
 	} else {
 		/* this is a binary atom */
-		relation r = { literal->atom.predicate,
-				(literal->atom.arg1.type == TermType::VARIABLE ? 0 : literal->atom.arg1.constant),
-				(literal->atom.arg2.type == TermType::VARIABLE ? 0 : literal->atom.arg2.constant) };
+		relation r = { predicate,
+				(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
+				(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
 		const pair<array<unsigned int>, array<unsigned int>>& list = T.relations.get(r);
 		const array<unsigned int>& sublist = Negated ? list.value : list.key;
 		if (FirstSample) intersection.append(sublist.data, sublist.length);
@@ -296,11 +296,13 @@ bool get_satisfying_concepts(
 		const Formula* formula, array<unsigned int>& intersection)
 {
 	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::Term Term;
 
-	if (formula->type == FormulaType::ATOM) {
-		get_satisfying_concepts_helper<FirstSample, false>(T, formula, intersection);
-	} else if (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::ATOM) {
-		get_satisfying_concepts_helper<FirstSample, true>(T, formula->unary.operand, intersection);
+	unsigned int predicate; Term const* arg1; Term const* arg2;
+	if (is_atomic(*formula, predicate, arg1, arg2)) {
+		get_satisfying_concepts_helper<FirstSample, false>(T, predicate, arg1, arg2, intersection);
+	} else if (formula->type == FormulaType::NOT && is_atomic(*formula->unary.operand, predicate, arg1, arg2)) {
+		get_satisfying_concepts_helper<FirstSample, true>(T, predicate, arg1, arg2, intersection);
 	} else if (formula->type == FormulaType::AND) {
 		for (unsigned int i = 0; i < formula->array.length; i++) {
 			Formula* conjunct = formula->array.operands[i];
@@ -391,21 +393,24 @@ bool get_conjunct_step(const Formula* atom,
 		array<nd_step<Formula>*>& conjunct_steps)
 {
 	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
+	unsigned int predicate; Term const* arg1; Term const* arg2;
 	if (atom->type == FormulaType::NOT) {
 		atom = atom->unary.operand;
-		if (atom->atom.arg2.type == TermType::NONE) {
-			if (!get_axiom<Formula, true>(instance.negated_types, atom->atom.predicate, conjunct_steps)) {
+		is_atomic(*atom, predicate, arg1, arg2);
+		if (arg2 == NULL) {
+			if (!get_axiom<Formula, true>(instance.negated_types, predicate, conjunct_steps)) {
 				for (auto step : conjunct_steps) {
 					free(*step); if (step->reference_count == 0) free(step);
 				}
 				return false;
 			}
 		} else {
-			const relation rel = { atom->atom.predicate,
-					atom->atom.arg1.type == TermType::CONSTANT ? atom->atom.arg1.constant : 0,
-					atom->atom.arg2.type == TermType::CONSTANT ? atom->atom.arg2.constant : 0 };
+			const relation rel = { predicate,
+					arg1->type == TermType::CONSTANT ? arg1->constant : 0,
+					arg2->type == TermType::CONSTANT ? arg2->constant : 0 };
 			if (!get_axiom<Formula, true>(instance.negated_relations, rel, conjunct_steps)) {
 				for (auto step : conjunct_steps) {
 					free(*step); if (step->reference_count == 0) free(step);
@@ -414,17 +419,18 @@ bool get_conjunct_step(const Formula* atom,
 			}
 		}
 	} else {
-		if (atom->atom.arg2.type == TermType::NONE) {
-			if (!get_axiom<Formula, false>(instance.types, atom->atom.predicate, conjunct_steps)) {
+		is_atomic(*atom, predicate, arg1, arg2);
+		if (arg2 == NULL) {
+			if (!get_axiom<Formula, false>(instance.types, predicate, conjunct_steps)) {
 				for (auto step : conjunct_steps) {
 					free(*step); if (step->reference_count == 0) free(step);
 				}
 				return false;
 			}
 		} else {
-			const relation rel = { atom->atom.predicate,
-					atom->atom.arg1.type == TermType::CONSTANT ? atom->atom.arg1.constant : 0,
-					atom->atom.arg2.type == TermType::CONSTANT ? atom->atom.arg2.constant : 0 };
+			const relation rel = { predicate,
+					arg1->type == TermType::CONSTANT ? arg1->constant : 0,
+					arg2->type == TermType::CONSTANT ? arg2->constant : 0 };
 			if (!get_axiom<Formula, true>(instance.negated_relations, rel, conjunct_steps)) {
 				for (auto step : conjunct_steps) {
 					free(*step); if (step->reference_count == 0) free(step);
@@ -447,6 +453,7 @@ bool propose_universal_intro(
 		ProofPrior& proof_prior)
 {
 	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::Term Term;
 	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
@@ -633,8 +640,9 @@ bool propose_universal_intro(
 
 		unsigned int offset = antecedent_length * k;
 		Proof* antecedent = (antecedent_length == 1 ? conjunct_steps[k] : ProofCalculus::new_conjunction_intro(make_array_view(conjunct_steps.data + offset, antecedent_length)));
-		Proof* new_step = ProofCalculus::new_implication_elim(
-				ProofCalculus::new_universal_elim(axiom_step, Formula::new_constant(concept_id)), antecedent);
+		Term* constant = Formula::new_constant(concept_id);
+		Proof* new_step = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom_step, constant), antecedent);
+		free(*constant); if (constant->reference_count == 0) free(constant);
 		if (new_step == NULL) {
 			for (unsigned int i = 0; i < conjunct_steps.length; i++) {
 				free(*conjunct_steps[i]);
@@ -678,12 +686,13 @@ inline bool make_grounded_conjunct(
 		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const concept<natural_deduction<Formula>>& c,
 		Formula* lifted_conjunct, unsigned int variable,
-		typename Formula::Term constant,
+		typename Formula::Term* constant,
 		nd_step<Formula>** new_axioms,
 		unsigned int i,
 		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms)
 {
 	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 	typedef natural_deduction<Formula> ProofCalculus;
 
@@ -692,36 +701,36 @@ inline bool make_grounded_conjunct(
 	/* first check if the grounded conjunct already exists as an axiom in the theory */
 	bool contains;
 	const Formula* operand = lifted_conjunct;
-	if (operand->type == FormulaType::ATOM) {
-		if (operand->atom.arg2.type == TermType::NONE) {
+	unsigned int predicate; Term const* arg1; Term const* arg2;
+	if (is_atomic(*operand, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
 			/* atom is unary */
-			c.types.get(operand->atom.predicate, contains);
+			c.types.get(predicate, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
 		} else {
 			/* atom is binary */
-			relation r = { operand->atom.predicate,
-					(operand->atom.arg1.type == TermType::VARIABLE ? 0 : operand->atom.arg1.constant),
-					(operand->atom.arg2.type == TermType::VARIABLE ? 0 : operand->atom.arg2.constant) };
+			relation r = { predicate,
+					(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
+					(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
 			c.relations.get(r, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
 		}
-	} else if (operand->type == FormulaType::NOT && operand->unary.operand->type == FormulaType::ATOM) {
-		operand = operand->unary.operand;
-		if (operand->atom.arg2.type == TermType::NONE) {
+	} else if (operand->type == FormulaType::NOT && is_atomic(*operand->unary.operand, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
 			/* atom is unary */
-			c.negated_types.get(operand->atom.predicate, contains);
+			c.negated_types.get(predicate, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
 				return true;
 		} else {
 			/* atom is binary */
-			relation r = { operand->atom.predicate,
-					(operand->atom.arg1.type == TermType::VARIABLE ? 0 : operand->atom.arg1.constant),
-					(operand->atom.arg2.type == TermType::VARIABLE ? 0 : operand->atom.arg2.constant) };
+			relation r = { predicate,
+					(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
+					(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
 			c.negated_relations.get(r, contains);
 			if (contains)
 				/* we have to fail here as the transformation is no longer reversible */
@@ -732,14 +741,15 @@ inline bool make_grounded_conjunct(
 		return false;
 	}
 
-	new_axioms[i] = ProofCalculus::new_axiom(
-			substitute(*lifted_conjunct, Formula::new_variable(variable), constant));
+	Term* new_variable = Formula::new_variable(variable);
+	new_axioms[i] = ProofCalculus::new_axiom(substitute<TermType::VARIABLE>(lifted_conjunct, new_variable, constant));
+	free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
 	if (new_axioms[i] == NULL)
 		return false;
 	free(*new_axioms[i]->formula);
 	new_axioms[i]->reference_count++;
 
-	if (!new_grounded_axioms.put(constant.constant, new_axioms[i])) {
+	if (!new_grounded_axioms.put(constant->constant, new_axioms[i])) {
 		free(*new_axioms[i]); free(new_axioms[i]);
 		new_axioms[i] = NULL; return false;
 	}
@@ -751,7 +761,7 @@ bool make_grounded_conjunction(
 		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const concept<natural_deduction<Formula>>& c,
 		Formula** conjuncts, unsigned int conjunct_count,
-		unsigned int variable, typename Formula::Term constant,
+		unsigned int variable, typename Formula::Term* constant,
 		nd_step<Formula>** new_axioms,
 		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms,
 		nd_step<Formula>*& new_step)
@@ -807,6 +817,7 @@ bool propose_universal_elim(
 		ProofPrior& proof_prior)
 {
 	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
@@ -821,16 +832,15 @@ bool propose_universal_elim(
 	bool is_consequent_binary; bool is_consequent_symmetric;
 	unsigned int consequent_length;
 	Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-	if (consequent->type == FormulaType::ATOM) {
+	Term const* arg1; Term const* arg2;
+	if (is_atomic(*consequent, arg1, arg2)) {
 		consequent_length = 1;
-		Formula* atom = consequent;
-		is_consequent_binary = (atom->atom.arg2.type != TermType::NONE);
+		is_consequent_binary = (arg2 != NULL);
 		is_consequent_symmetric = false;
-	} else if (consequent->type == FormulaType::NOT && consequent->unary.operand->type == FormulaType::ATOM) {
+	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, arg1, arg2)) {
 		consequent_length = 1;
-		Formula* atom = consequent->unary.operand;
-		is_consequent_binary = (atom->atom.arg2.type != TermType::NONE);
-		is_consequent_symmetric = (atom->atom.arg1.type == TermType::VARIABLE && atom->atom.arg2.type == TermType::VARIABLE);
+		is_consequent_binary = (arg2 != NULL);
+		is_consequent_symmetric = (arg1->type == TermType::VARIABLE && arg2->type == TermType::VARIABLE);
 	} else if (consequent->type == FormulaType::AND) {
 		consequent_length = consequent->array.length;
 		return true;
@@ -840,9 +850,9 @@ bool propose_universal_elim(
 
 	unsigned int antecedent_length;
 	Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
-	if (antecedent->type == FormulaType::ATOM) {
+	if (is_atomic(*antecedent)) {
 		antecedent_length = 1;
-	} else if (antecedent->type == FormulaType::NOT && antecedent->unary.operand->type == FormulaType::ATOM) {
+	} else if (antecedent->type == FormulaType::NOT && is_atomic(*antecedent->unary.operand)) {
 		antecedent_length = 1;
 	} else if (antecedent->type == FormulaType::AND) {
 		antecedent_length = antecedent->array.length;
@@ -854,14 +864,14 @@ bool propose_universal_elim(
 	hash_map<unsigned int, nd_step<Formula>*> new_grounded_axioms(16);
 	for (Proof* child : axiom->children) {
 		if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
-		 || child->operands[1]->term.type != TermType::CONSTANT)
+		 || child->operands[1]->term->type != TermType::CONSTANT)
 			return true;
 
 		bool contains;
-		const concept<ProofCalculus>& c = T.ground_concepts.get(child->operands[1]->term.constant, contains);
+		const concept<ProofCalculus>& c = T.ground_concepts.get(child->operands[1]->term->constant, contains);
 #if !defined(NDEBUG)
 		if (!contains)
-			fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", child->operands[1]->term.constant);
+			fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", child->operands[1]->term->constant);
 #endif
 
 		for (Proof* grandchild : child->children) {
@@ -980,38 +990,37 @@ bool propose_universal_elim(
 	free(log_probabilities);
 
 	/* go ahead and compute the probability ratios and perform the accept/reject step */
-	if (consequent->type == FormulaType::ATOM) {
-		Formula* atomic_formula = consequent;
-		if (atomic_formula->atom.arg2.type == TermType::NONE) {
+	unsigned int predicate;
+	if (is_atomic(*consequent, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
 			atom<false, 1> consequent_atom;
-			consequent_atom.predicate = atomic_formula->atom.predicate;
+			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
 			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		} else {
 			atom<false, 2> consequent_atom;
-			consequent_atom.predicate = atomic_formula->atom.predicate;
-			consequent_atom.args[0] = (atomic_formula->atom.arg1.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg1.constant);
-			consequent_atom.args[1] = (atomic_formula->atom.arg2.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg2.constant);
+			consequent_atom.predicate = predicate;
+			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
+			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
 			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		}
-	} else if (consequent->type == FormulaType::NOT && consequent->unary.operand->type == FormulaType::ATOM) {
-		Formula* atomic_formula = consequent->unary.operand;
-		if (atomic_formula->atom.arg2.type == TermType::NONE) {
+	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
 			atom<true, 1> consequent_atom;
-			consequent_atom.predicate = atomic_formula->atom.predicate;
+			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
 			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		} else {
 			atom<true, 2> consequent_atom;
-			consequent_atom.predicate = atomic_formula->atom.predicate;
-			consequent_atom.args[0] = (atomic_formula->atom.arg1.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg1.constant);
-			consequent_atom.args[1] = (atomic_formula->atom.arg2.type == TermType::VARIABLE ? 0 : atomic_formula->atom.arg2.constant);
+			consequent_atom.predicate = predicate;
+			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
+			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
 			return do_mh_universal_elim(T, proposed_proofs, new_observations,
 					make_universal_elim_proposal(axiom_index, new_grounded_axioms, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);

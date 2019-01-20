@@ -28,15 +28,12 @@ enum class fol_term_type {
 
 struct fol_term {
 	fol_term_type type;
+	unsigned int reference_count;
 	union {
 		unsigned int variable;
 		unsigned int constant;
 		unsigned int parameter;
 	};
-
-	static constexpr fol_term none() {
-		return {fol_term_type::NONE, {0}};
-	}
 
 	static inline bool is_empty(const fol_term& key) {
 		return key.type == fol_term_type::NONE;
@@ -263,6 +260,8 @@ struct fol_formula
 	typedef fol_term Term;
 	typedef fol_term_type TermType;
 
+	static constexpr fol_term EMPTY_TERM = {fol_term_type::NONE, 1, {0}};
+
 	fol_formula_type type;
 	unsigned int reference_count;
 	union {
@@ -277,11 +276,11 @@ struct fol_formula
 	fol_formula(fol_formula_type type) : type(type), reference_count(1) { }
 	~fol_formula() { free_helper(); }
 
-	static fol_term new_variable(unsigned int variable);
-	static fol_term new_constant(unsigned int constant);
-	static fol_term new_parameter(unsigned int parameter);
-	static fol_formula* new_atom(unsigned int predicate, fol_term arg1, fol_term arg2);
-	static inline fol_formula* new_atom(unsigned int predicate, fol_term arg1);
+	static fol_term* new_variable(unsigned int variable);
+	static fol_term* new_constant(unsigned int constant);
+	static fol_term* new_parameter(unsigned int parameter);
+	static fol_formula* new_atom(unsigned int predicate, fol_term* arg1, fol_term* arg2);
+	static inline fol_formula* new_atom(unsigned int predicate, fol_term* arg1);
 	static inline fol_formula* new_atom(unsigned int predicate);
 	static inline fol_formula* new_equals(fol_term arg1, fol_term arg2);
 	static fol_formula* new_true();
@@ -300,6 +299,8 @@ struct fol_formula
 private:
 	void free_helper();
 };
+
+constexpr fol_term fol_formula::EMPTY_TERM;
 
 thread_local fol_formula FOL_TRUE(fol_formula_type::TRUE);
 thread_local fol_formula FOL_FALSE(fol_formula_type::FALSE);
@@ -458,6 +459,54 @@ inline void fol_quantifier::free(fol_quantifier& formula) {
 	core::free(*formula.operand);
 	if (formula.operand->reference_count == 0)
 		core::free(formula.operand);
+}
+
+inline bool is_atomic(
+		const fol_formula& term, unsigned int& predicate,
+		fol_term const*& arg1, fol_term const*& arg2)
+{
+	if (term.type != fol_formula_type::ATOM) return false;
+	predicate = term.atom.predicate;
+	arg1 = (term.atom.arg1.type == fol_term_type::NONE ? NULL : &term.atom.arg1);
+	arg2 = (term.atom.arg2.type == fol_term_type::NONE ? NULL : &term.atom.arg2);
+	return true;
+}
+
+inline bool is_atomic(const fol_formula& term,
+		fol_term const*& arg1, fol_term const*& arg2)
+{
+	unsigned int predicate;
+	return is_atomic(term, predicate, arg1, arg2);
+}
+
+inline bool is_atomic(const fol_formula& term) {
+	unsigned int predicate;
+	fol_term const* arg1; fol_term const* arg2;
+	return is_atomic(term, predicate, arg1, arg2);
+}
+
+inline bool is_atomic(
+		fol_formula& term, unsigned int& predicate,
+		fol_term*& arg1, fol_term*& arg2)
+{
+	if (term.type != fol_formula_type::ATOM) return false;
+	predicate = term.atom.predicate;
+	arg1 = (term.atom.arg1.type == fol_term_type::NONE ? NULL : &term.atom.arg1);
+	arg2 = (term.atom.arg2.type == fol_term_type::NONE ? NULL : &term.atom.arg2);
+	return true;
+}
+
+inline bool is_atomic(fol_formula& term,
+		fol_term*& arg1, fol_term*& arg2)
+{
+	unsigned int predicate;
+	return is_atomic(term, predicate, arg1, arg2);
+}
+
+inline bool is_atomic(fol_formula& term) {
+	unsigned int predicate;
+	fol_term* arg1; fol_term* arg2;
+	return is_atomic(term, predicate, arg1, arg2);
 }
 
 template<fol_formula_syntax Syntax> struct and_symbol;
@@ -1025,13 +1074,13 @@ inline bool apply(const fol_term& src, fol_term& dst, const term_substituter<Var
 	return true;
 }
 
-template<int VariableShift = 0>
-inline fol_formula* substitute(fol_formula& src,
-		const fol_term& src_term, const fol_term& dst_term)
+template<fol_term_type SrcTermType, int VariableShift = 0>
+inline fol_formula* substitute(fol_formula* src,
+		const fol_term* src_term, const fol_term* dst_term)
 {
-	const term_substituter<VariableShift> substituter = {src_term, dst_term};
-	fol_formula* formula = apply_to_terms(src, substituter);
-	if (formula == &src)
+	const term_substituter<VariableShift> substituter = {*src_term, *dst_term};
+	fol_formula* formula = apply_to_terms(*src, substituter);
+	if (formula == src)
 		formula->reference_count++;
 	return formula;
 }
@@ -1065,24 +1114,24 @@ inline bool apply(const fol_term& src, fol_term& dst, index_substituter<Variable
 
 template<int VariableShift>
 inline fol_formula* substitute(
-		fol_formula& src, const unsigned int* term_indices,
-		unsigned int term_index_count, const fol_term& dst_term)
+		fol_formula* src, const unsigned int* term_indices,
+		unsigned int term_index_count, const fol_term* dst_term)
 {
-	index_substituter<VariableShift> substituter = {fol_term::none(), dst_term, term_indices, term_index_count, 0};
-	fol_formula* formula = apply_to_terms(src, substituter);
-	if (formula == &src)
+	index_substituter<VariableShift> substituter = {fol_formula::EMPTY_TERM, *dst_term, term_indices, term_index_count, 0};
+	fol_formula* formula = apply_to_terms(*src, substituter);
+	if (formula == src)
 		formula->reference_count++;
 	return formula;
 }
 
 inline bool unify(
 		const fol_term& first, const fol_term& second,
-		const fol_term& src_term, fol_term& dst_term)
+		const fol_term* src_term, fol_term const*& dst_term)
 {
-	if (first == src_term) {
-		if (dst_term.type == fol_term_type::NONE) {
-			dst_term = second;
-		} else if (second != dst_term) {
+	if (first == *src_term) {
+		if (dst_term == NULL) {
+			dst_term = &second;
+		} else if (second != *dst_term) {
 			return false;
 		}
 	}
@@ -1091,7 +1140,7 @@ inline bool unify(
 
 inline bool unify(
 		const fol_atom& first, const fol_atom& second,
-		const fol_term& src_term, fol_term& dst_term)
+		const fol_term* src_term, fol_term const*& dst_term)
 {
 	if (first.predicate != second.predicate) return false;
 	return unify(first.arg1, second.arg1, src_term, dst_term)
@@ -1100,7 +1149,7 @@ inline bool unify(
 
 inline bool unify(
 		const fol_equals& first, const fol_equals& second,
-		const fol_term& src_term, fol_term& dst_term)
+		const fol_term* src_term, fol_term const*& dst_term)
 {
 	return unify(first.arg1, second.arg1, src_term, dst_term)
 		&& unify(first.arg2, second.arg2, src_term, dst_term);
@@ -1108,7 +1157,7 @@ inline bool unify(
 
 bool unify(
 		const fol_formula& first, const fol_formula& second,
-		const fol_term& src_term, fol_term& dst_term)
+		const fol_term* src_term, fol_term const*& dst_term)
 {
 	if (first.type != second.type) return false;
 	switch (first.type) {
@@ -1142,12 +1191,13 @@ bool unify(
 
 bool unifies_parameter(
 		const fol_formula& first, const fol_formula& second,
-		const fol_term& src_term, unsigned int& parameter)
+		const fol_term* src_term, unsigned int& parameter)
 {
-	fol_term dst = fol_term::none();
-	if (!unify(first, second, src_term, dst) || dst.type != fol_term_type::PARAMETER)
+	const fol_term* dst = NULL;
+	if (!unify(first, second, src_term, dst)
+	 || dst == NULL || dst->type != fol_term_type::PARAMETER)
 		return false;
-	parameter = dst.parameter;
+	parameter = dst->parameter;
 	return true;
 }
 
@@ -1157,30 +1207,41 @@ bool unifies_parameter(
  */
 
 
-fol_term fol_formula::new_variable(unsigned int variable) {
-	fol_term term;
-	term.type = fol_term_type::VARIABLE;
-	term.variable = variable;
+fol_term* fol_formula::new_variable(unsigned int variable) {
+	fol_term* term = (fol_term*) malloc(sizeof(fol_term));
+	if (term == NULL) {
+		fprintf(stderr, "fol_formula.new_variable ERROR: Out of memory.\n");
+		return NULL;
+	}
+	term->type = fol_term_type::VARIABLE;
+	term->variable = variable;
 	return term;
 }
 
-fol_term fol_formula::new_constant(unsigned int constant) {
-	fol_term term;
-	term.type = fol_term_type::CONSTANT;
-	term.constant = constant;
+fol_term* fol_formula::new_constant(unsigned int constant) {
+	fol_term* term = (fol_term*) malloc(sizeof(fol_term));
+	if (term == NULL) {
+		fprintf(stderr, "fol_formula.new_constant ERROR: Out of memory.\n");
+		return NULL;
+	}
+	term->type = fol_term_type::CONSTANT;
+	term->constant = constant;
 	return term;
 }
 
-fol_term fol_formula::new_parameter(unsigned int parameter) {
-	fol_term term;
-	term.type = fol_term_type::PARAMETER;
-	term.parameter = parameter;
+fol_term* fol_formula::new_parameter(unsigned int parameter) {
+	fol_term* term = (fol_term*) malloc(sizeof(fol_term));
+	if (term == NULL) {
+		fprintf(stderr, "fol_formula.new_parameter ERROR: Out of memory.\n");
+		return NULL;
+	}
+	term->type = fol_term_type::PARAMETER;
+	term->parameter = parameter;
 	return term;
 }
 
-fol_formula* fol_formula::new_atom(
-		unsigned int predicate,
-		fol_term arg1, fol_term arg2)
+fol_formula* new_atom_helper(unsigned int predicate,
+		const fol_term& arg1, const fol_term& arg2)
 {
 	fol_formula* atom;
 	if (!new_fol_formula(atom)) return NULL;
@@ -1192,12 +1253,19 @@ fol_formula* fol_formula::new_atom(
 	return atom;
 }
 
-inline fol_formula* fol_formula::new_atom(unsigned int predicate, fol_term arg1) {
-	return new_atom(predicate, arg1, fol_term::none());
+inline fol_formula* fol_formula::new_atom(
+		unsigned int predicate,
+		fol_term* arg1, fol_term* arg2)
+{
+	return new_atom_helper(predicate, *arg1, *arg2);
+}
+
+inline fol_formula* fol_formula::new_atom(unsigned int predicate, fol_term* arg1) {
+	return new_atom_helper(predicate, *arg1, fol_formula::EMPTY_TERM);
 }
 
 inline fol_formula* fol_formula::new_atom(unsigned int predicate) {
-	return new_atom(predicate, fol_term::none(), fol_term::none());
+	return new_atom_helper(predicate, fol_formula::EMPTY_TERM, fol_formula::EMPTY_TERM);
 }
 
 inline fol_formula* fol_formula::new_equals(
@@ -1366,6 +1434,13 @@ inline int_fast8_t compare(
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized fol_term_type.\n");
 	exit(EXIT_FAILURE);
+}
+
+inline int_fast8_t compare(
+		const fol_term* first,
+		const fol_term* second)
+{
+	return compare(*first, *second);
 }
 
 inline int_fast8_t compare_terms(

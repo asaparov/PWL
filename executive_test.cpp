@@ -1,3 +1,4 @@
+#include "higher_order_logic.h"
 #include "executive.h"
 #include "fake_parser.h"
 
@@ -420,47 +421,69 @@ inline simple_hol_term_distribution<ConstantDistribution> make_simple_hol_term_d
 			antecedent_stop_probability, consequent_stop_probability);
 }
 
-template<typename ConstantDistribution>
+template<bool Quantified, typename ConstantDistribution>
 double log_probability_atom(const hol_term* function, const hol_term* arg1,
 		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
-	if (function->type != hol_term_type::CONSTANT || arg1->type != hol_term_type::CONSTANT)
+	if (function->type != hol_term_type::CONSTANT)
 		return std::numeric_limits<double>::infinity();
 
 	constants.add_predicate(function->constant);
-	constants.add_predicate(arg1->constant);
-	return prior.log_unary_probability;
+	if (Quantified && arg1->type == hol_term_type::VARIABLE) {
+		return prior.log_unary_probability;
+	} else if (!Quantified && arg1->type == hol_term_type::CONSTANT) {
+		constants.add_constant(arg1->constant);
+		return prior.log_unary_probability;
+	} else {
+		return std::numeric_limits<double>::infinity();
+	}	
 }
 
-template<typename ConstantDistribution>
+template<bool Quantified, typename ConstantDistribution>
 double log_probability_atom(
 		const hol_term* function, const hol_term* arg1, const hol_term* arg2,
 		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
-	if (function->type != hol_term_type::CONSTANT || arg1->type != hol_term_type::CONSTANT || arg2->type != hol_term_type::CONSTANT)
+	if (function->type != hol_term_type::CONSTANT)
 		return std::numeric_limits<double>::infinity();
 
 	constants.add_predicate(function->constant);
-	constants.add_predicate(arg1->constant);
-	constants.add_predicate(arg2->constant);
-	return prior.log_unary_probability;
+	if (arg1->type == hol_term_type::VARIABLE) {
+		if (arg2->type == hol_term_type::VARIABLE) {
+			return prior.log_binary_probability - log_cache<double>::instance().get(3);
+		} else if (arg2->type == hol_term_type::CONSTANT) {
+			constants.add_constant(arg2->constant);
+			return prior.log_binary_probability - log_cache<double>::instance().get(3);
+		} else {
+			return std::numeric_limits<double>::infinity();
+		}
+	} else if (arg1->type == hol_term_type::CONSTANT) {
+		constants.add_constant(arg1->constant);
+		if (arg2->type == hol_term_type::VARIABLE) {
+			return prior.log_binary_probability - log_cache<double>::instance().get(3);
+		} else { /* both `arg1` and `arg2` can't be constants */
+			return std::numeric_limits<double>::infinity();
+		}
+	} else {
+		return std::numeric_limits<double>::infinity();
+	}
 }
 
-template<typename ConstantDistribution>
+template<bool Quantified, typename ConstantDistribution>
 double log_probability_literal(const hol_term* literal,
 		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (literal->type == hol_term_type::UNARY_APPLICATION) {
-		return prior.log_positive_probability + log_probability_atom(literal->binary.left, literal->binary.right, prior, constants);
+		return prior.log_positive_probability + log_probability_atom<Quantified>(literal->binary.left, literal->binary.right, prior, constants);
 	} else if (literal->type == hol_term_type::BINARY_APPLICATION) {
-		return prior.log_positive_probability + log_probability_atom(literal->ternary.first, literal->ternary.second, literal->ternary.third, prior, constants);
+		return prior.log_positive_probability + log_probability_atom<Quantified>(literal->ternary.first, literal->ternary.second, literal->ternary.third, prior, constants);
 	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::UNARY_APPLICATION) {
-		return prior.log_negation_probability + log_probability_atom(literal->unary.operand->binary.left, literal->unary.operand->binary.right, prior, constants);
+		return prior.log_negation_probability + log_probability_atom<Quantified>(literal->unary.operand->binary.left, literal->unary.operand->binary.right, prior, constants);
 	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::BINARY_APPLICATION) {
-		return prior.log_negation_probability + log_probability_atom(literal->unary.operand->ternary.first, literal->unary.operand->ternary.second, literal->unary.operand->ternary.third, prior, constants);
+		return prior.log_negation_probability + log_probability_atom<Quantified>(literal->unary.operand->ternary.first, literal->unary.operand->ternary.second, literal->unary.operand->ternary.third, prior, constants);
 	} else {
 		return std::numeric_limits<double>::infinity();
 	}
@@ -479,7 +502,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
 	case hol_term_type::NOT:
-		return prior.log_ground_literal_probability + log_probability_literal(term, prior, constants);
+		return prior.log_ground_literal_probability + log_probability_literal<false>(term, prior, constants);
 	case hol_term_type::FOR_ALL:
 		if (term->quantifier.operand->type == hol_term_type::IF_THEN) {
 			antecedent = term->quantifier.operand->binary.left;
@@ -487,17 +510,17 @@ double log_probability_helper(const hol_term* term,
 			if (antecedent->type == hol_term_type::AND) {
 				value = (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < antecedent->array.length; i++)
-					value += log_probability_literal(antecedent->array.operands[i], prior, constants);
+					value += log_probability_literal<true>(antecedent->array.operands[i], prior, constants);
 			} else {
-				value = prior.log_antecedent_stop_probability + log_probability_literal(antecedent, prior, constants);
+				value = prior.log_antecedent_stop_probability + log_probability_literal<true>(antecedent, prior, constants);
 			}
 
 			if (consequent->type == hol_term_type::AND) {
 				value = (consequent->array.length - 1) * prior.log_consequent_continue_probability + prior.log_consequent_stop_probability;
 				for (unsigned int i = 0; i < consequent->array.length; i++)
-					value += log_probability_literal(consequent->array.operands[i], prior, constants);
+					value += log_probability_literal<true>(consequent->array.operands[i], prior, constants);
 			} else {
-				value = prior.log_consequent_stop_probability + log_probability_literal(consequent, prior, constants);
+				value = prior.log_consequent_stop_probability + log_probability_literal<true>(consequent, prior, constants);
 			}
 			return value;
 		} else {
@@ -638,7 +661,7 @@ template<typename Formula, typename ProofCalculus, typename Canonicalizer>
 bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, const Formula* formula)
 {
 	typedef typename Formula::Type FormulaType;
-	typedef typename Formula::TermType TermType;
+	typedef typename Formula::Term Term;
 	typedef typename ProofCalculus::Proof Proof;
 
 	if (formula == NULL) {
@@ -647,36 +670,36 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 	}
 
 	bool contains;
+	unsigned int predicate; Term const* arg1; Term const* arg2;
 	if (formula->type == FormulaType::FOR_ALL) {
 		for (const Proof* axiom : T.universal_quantifications)
 			if (*axiom->formula == *formula) return true;
 		return false;
-	} else if (formula->type == FormulaType::ATOM) {
-		if (formula->atom.arg2.type == TermType::NONE) {
+	} else if (is_atomic(*formula, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
 			/* `formula` is an atom of form `f(a)` */
-			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(formula->atom.predicate, contains);
+			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(predicate, contains);
 			if (!contains) return false;
-			return types.key.contains(formula->atom.arg1.constant);
+			return types.key.contains(arg1->constant);
 		} else {
 			/* `formula` is an atom of form `f(a,b)` */
-			relation rel = { 0, formula->atom.arg1.constant, formula->atom.arg2.constant };
+			relation rel = { 0, arg1->constant, arg2->constant };
 			const pair<array<unsigned int>, array<unsigned int>>& relations = T.relations.get(rel, contains);
 			if (!contains) return false;
-			return relations.key.contains(formula->atom.predicate);
+			return relations.key.contains(predicate);
 		}
-	} else if (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::ATOM) {
-		formula = formula->unary.operand;
-		if (formula->atom.arg2.type == TermType::NONE) {
+	} else if (formula->type == FormulaType::NOT && is_atomic(*formula->unary.operand)) {
+		if (arg2 == NULL) {
 			/* `formula` is an atom of form `~f(a)` */
-			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(formula->atom.predicate, contains);
+			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(predicate, contains);
 			if (!contains) return false;
-			return types.value.contains(formula->atom.arg1.constant);
+			return types.value.contains(arg1->constant);
 		} else {
 			/* `formula` is an atom of form `~f(a,b)` */
-			relation rel = { 0, formula->atom.arg1.constant, formula->atom.arg2.constant };
+			relation rel = { 0, arg1->constant, arg2->constant };
 			const pair<array<unsigned int>, array<unsigned int>>& relations = T.relations.get(rel, contains);
 			if (!contains) return false;
-			return relations.value.contains(formula->atom.predicate);
+			return relations.value.contains(predicate);
 		}
 	} else {
 		return false;
