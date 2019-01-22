@@ -39,6 +39,10 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return clone_parameter(src_parameter, dst_parameter);
 }
 
+inline bool clone_integer(int src_integer, int& dst_integer, constant_relabeler& relabeler) {
+	return clone_integer(src_integer, dst_integer);
+}
+
 template<typename Formula>
 inline Formula* relabel_constants(const Formula* src,
 		const array_map<unsigned int, unsigned int>& constant_map)

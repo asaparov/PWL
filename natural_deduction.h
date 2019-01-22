@@ -588,7 +588,8 @@ inline const nd_step<Formula>* map(
 	else return step;
 }
 
-template<typename Formula, typename Canonicalizer, typename... ProofMap>
+template<unsigned int SetPredicate, unsigned int AllPredicate, unsigned int SizePredicate,
+		typename Formula, typename Canonicalizer, typename... ProofMap>
 bool check_proof(proof_state<Formula>& out,
 		const nd_step<Formula>& proof,
 		proof_state<Formula>** operand_states,
@@ -603,6 +604,8 @@ bool check_proof(proof_state<Formula>& out,
 	Formula* formula;
 	const nd_step<Formula>* second_operand;
 	Term* parameter; Term* variable;
+	Term const* unifying_term;
+	array<unsigned int> constants = array<unsigned int>(8);
 	unsigned int i;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
@@ -623,18 +626,105 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states, operand_count));
 	case nd_step_type::SET_INTRODUCTION:
-		if (operand_count < 1 || operand_states[0]->type != nd_step_type::FORMULA_PARAMETER) return false;
+	case nd_step_type::SET_SIZE_INTRODUCTION:
+		if (operand_count < 1 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER) return false;
 
 		/* check that we have `n` distinct instantiations of `A[x -> a_i]` */
-		for (i = 0; i < ) /* TODO: continue here */
-
 		parameter = Formula::new_parameter(1);
+		for (i = 1; i < operand_count; i++) {
+			if (!unify(*operand_states[0]->formula, *operand_states[i]->formula, parameter, unifying_term)
+			 || unifying_term->type != TermType::CONSTANT || constants.contains(unifying_term->constant)
+			 || !constants.add(unifying_term->constant))
+			{
+				free(*parameter); if (parameter->reference_count == 0) free(parameter);
+				return false;
+			}
+		}
+
 		variable = Formula::new_variable(2);
 		formula = substitute<TermType::PARAMETER, 2>(operand_states[0]->formula, parameter, variable);
 		free(*parameter); if (parameter->reference_count == 0) free(parameter);
 		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (formula == NULL) return false;
-		out.formula = Formula::new_exists(1, Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)));
+		if (proof.type == nd_step_type::SET_INTRODUCTION) {
+			out.formula = Formula::new_exists(1, Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)));
+		} else if (proof.type == nd_step_type::SET_SIZE_INTRODUCTION) {
+			out.formula = Formula::new_exists(1,
+					Formula::new_and(
+						Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)),
+						Formula::new_atom(SizePredicate, variable, Term::new_int(operand_count - 1)))
+				);
+		}
+		if (out.formula == NULL) {
+			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
+			return false;
+		}
+		out.formula = try_canonicalize(out.formula, canonicalizer);
+		if (out.formula == NULL) return false;
+		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states + 1, operand_count - 1));
+	case nd_step_type::ALL_INTRODUCTION:
+	case nd_step_type::ALL_SIZE_INTRODUCTION:
+		if (operand_count < 1 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER
+		 || operand_states[0]->formula->type != FormulaType::FOR_ALL)
+			return false;
+
+		/* check the 'exhaustion' statement */
+		if (operand_states[0]->formula->quantifier.operand->type == FormulaType::NOT) {
+			formula = operand_states[0]->formula->quantifier.operand->unary.operand;
+		} else if (operand_states[0]->formula->quantifier.operand->type == FormulaType::IF_THEN) {
+			formula = operand_states[0]->formula->quantifier.operand->binary.left;
+			if (operand_count - 1 == 1) {
+				if (operand_states[0]->formula->quantifier.operand->binary.right->type != FormulaType::EQUALS
+				 || operand_states[0]->formula->quantifier.operand->binary.right->binary.left->type != FormulaType::VARIABLE
+				 || operand_states[0]->formula->quantifier.operand->binary.right->binary.left->variable != operand_states[0]->formula->quantifier.variable
+				 || operand_states[0]->formula->quantifier.operand->binary.right->binary.right->type != FormulaType::CONSTANT
+				 || !constants.add(operand_states[0]->formula->quantifier.operand->binary.right->binary.right->constant))
+				{
+					return false;
+				}
+			} else {
+				if (operand_states[0]->formula->quantifier.operand->binary.right->type != FormulaType::AND
+				 || operand_states[0]->formula->quantifier.operand->binary.right->array.length != operand_count - 1)
+				{
+					return false;
+				}
+				for (i = 1; i < operand_count; i++) {
+					if (operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->type != FormulaType::EQUALS
+					 || operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.left->type != FormulaType::VARIABLE
+					 || operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.left->variable != operand_states[0]->formula->quantifier.variable
+					 || operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.right->type != FormulaType::CONSTANT
+					 || !constants.add(operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.right->constant))
+					{
+						return false;
+					}
+				}
+			}
+		}
+
+		/* check that we have `n` distinct instantiations of `A[x -> a_i]` */
+		variable = Formula::new_variable(operand_states[0]->formula->quantifier.variable);
+		for (i = 1; i < operand_count; i++) {
+			if (!unify(*formula, *operand_states[i]->formula, variable, unifying_term)
+			 || unifying_term->type != TermType::CONSTANT || unifying_term->constant != constants[i - 1])
+			{
+				free(*variable); if (variable->reference_count == 0) free(variable);
+				return false;
+			}
+		}
+
+		parameter = Formula::new_variable(2);
+		formula = substitute<TermType::VARIABLE, 2>(formula, variable, parameter);
+		free(*parameter); if (parameter->reference_count == 0) free(parameter);
+		free(*variable); if (variable->reference_count == 0) free(variable);
+		if (proof.type == nd_step_type::ALL_INTRODUCTION) {
+			out.formula = Formula::new_exists(1, Formula::new_atom(AllPredicate, variable, Formula::new_lambda(2, formula)));
+		} else if (proof.type == nd_step_type::ALL_SIZE_INTRODUCTION) {
+			out.formula = Formula::new_exists(1,
+					Formula::new_and(
+						Formula::new_atom(AllPredicate, variable, Formula::new_lambda(2, formula)),
+						Formula::new_atom(SizePredicate, variable, Term::new_int(operand_count - 1)))
+				);
+		}
 		if (out.formula == NULL) {
 			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
 			return false;
@@ -945,7 +1035,8 @@ bool compute_in_degrees(const nd_step<Formula>* proof,
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer, typename... ProofMap>
+template<unsigned int SetPredicate, unsigned int AllPredicate, unsigned int SizePredicate,
+	typename Formula, typename Canonicalizer, typename... ProofMap>
 Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
 {
@@ -1018,7 +1109,7 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 		}
 
 		/* check this proof step */
-		if (!check_proof(state, *node, operand_states.data, operand_states.length, canonicalizer, std::forward<ProofMap>(proof_map)...)) {
+		if (!check_proof<SetPredicate, AllPredicate, SizePredicate>(state, *node, operand_states.data, operand_states.length, canonicalizer, std::forward<ProofMap>(proof_map)...)) {
 			free_proof_states(proof_states);
 			return NULL;
 		}
@@ -1039,12 +1130,13 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 	return formula;
 }
 
-template<typename Formula, typename Canonicalizer, typename... ProofMap>
+template<unsigned int SetPredicate, unsigned int AllPredicate, unsigned int SizePredicate,
+	typename Formula, typename Canonicalizer, typename... ProofMap>
 bool check_proof(const nd_step<Formula>& proof,
 		const Formula* expected_conclusion,
 		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
 {
-	Formula* actual_conclusion = compute_proof_conclusion(proof, canonicalizer, std::forward<ProofMap>(proof_map)...);
+	Formula* actual_conclusion = compute_proof_conclusion<SetPredicate, AllPredicate, SizePredicate>(proof, canonicalizer, std::forward<ProofMap>(proof_map)...);
 	bool success = (*actual_conclusion == *expected_conclusion);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");

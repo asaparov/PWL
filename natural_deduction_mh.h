@@ -1,8 +1,8 @@
 #ifndef NATURAL_DEDUCTION_MH_H_
 #define NATURAL_DEDUCTION_MH_H_
 
-#include "theory.h"
 #include "natural_deduction.h"
+#include "theory.h"
 
 #include <core/random.h>
 #include <math/log.h>

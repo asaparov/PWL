@@ -23,6 +23,7 @@ enum class hol_term_type {
 	VARIABLE = 1,
 	CONSTANT,
 	PARAMETER,
+	INTEGER,
 
 	UNARY_APPLICATION,
 	BINARY_APPLICATION,
@@ -135,6 +136,7 @@ struct hol_term
 		unsigned int variable;
 		unsigned int constant;
 		unsigned int parameter;
+		int integer;
 		hol_unary_term unary;
 		hol_binary_term binary;
 		hol_ternary_term ternary;
@@ -143,16 +145,12 @@ struct hol_term
 	};
 
 	hol_term(hol_term_type type) : type(type), reference_count(1) { }
-	//hol_term(const hol_term& src) : type(src.type), reference_count(1) { if (!init_helper(src)) exit(EXIT_FAILURE); }
 	~hol_term() { free_helper(); }
-
-	//inline void operator = (const hol_term& src) {
-	//	if (!init_helper(src)) exit(EXIT_FAILURE);
-	//}
 
 	static hol_term* new_variable(unsigned int variable);
 	static hol_term* new_constant(unsigned int constant);
 	static hol_term* new_parameter(unsigned int parameter);
+	static hol_term* new_int(int integer);
 	static hol_term* new_atom(unsigned int predicate, hol_term* arg1, hol_term* arg2);
 	static inline hol_term* new_atom(unsigned int predicate, hol_term* arg1);
 	static inline hol_term* new_atom(unsigned int predicate);
@@ -185,6 +183,8 @@ private:
 			constant = src.constant; return true;
 		case hol_term_type::PARAMETER:
 			parameter = src.parameter; return true;
+		case hol_term_type::INTEGER:
+			integer = src.integer; return true;
 		case hol_term_type::NOT:
 			unary.operand = src.unary.operand;
 			unary.operand->reference_count++;
@@ -275,6 +275,8 @@ bool operator == (const hol_term& first, const hol_term& second)
 		return first.constant == second.constant;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
+	case hol_term_type::INTEGER:
+		return first.integer == second.integer;
 	case hol_term_type::NOT:
 		return first.unary == second.unary;
 	case hol_term_type::IF_THEN:
@@ -308,11 +310,13 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 	dst.reference_count = src.reference_count;
 	switch (src.type) {
 	case hol_term_type::VARIABLE:
-		dst.variable = src.variable;
+		dst.variable = src.variable; return;
 	case hol_term_type::CONSTANT:
-		dst.constant = src.constant;
+		dst.constant = src.constant; return;
 	case hol_term_type::PARAMETER:
-		dst.constant = src.constant;
+		dst.parameter = src.parameter; return;
+	case hol_term_type::INTEGER:
+		dst.integer = src.integer; return;
 	case hol_term_type::NOT:
 		core::move(src.unary, dst.unary); return;
 	case hol_term_type::IF_THEN:
@@ -393,6 +397,7 @@ inline void hol_term::free_helper() {
 		case hol_term_type::VARIABLE:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::PARAMETER:
+		case hol_term_type::INTEGER:
 			return;
 		}
 		fprintf(stderr, "hol_term.free_helper ERROR: Unrecognized hol_term_type.\n");
@@ -624,6 +629,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 	case hol_term_type::PARAMETER:
 		return print_parameter<Syntax>(term.parameter, out);
 
+	case hol_term_type::INTEGER:
+		return print(term.integer, out);
+
 	case hol_term_type::TRUE:
 		return print(true_symbol<Syntax>::symbol, out);
 
@@ -700,6 +708,8 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return visit<hol_term_type::VARIABLE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::PARAMETER:
 		return visit<hol_term_type::PARAMETER>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::INTEGER:
+		return visit<hol_term_type::INTEGER>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::NOT:
 		return visit<hol_term_type::NOT>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.unary.operand, std::forward<Visitor>(visitor)...);
@@ -800,6 +810,11 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return true;
 }
 
+inline bool clone_integer(int src_integer, int& dst_integer) {
+	dst_integer = src_integer;
+	return true;
+}
+
 template<typename... Cloner>
 bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 {
@@ -812,6 +827,8 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return clone_variable(src.variable, dst.variable, std::forward<Cloner>(cloner)...);
 	case hol_term_type::PARAMETER:
 		return clone_parameter(src.parameter, dst.parameter, std::forward<Cloner>(cloner)...);
+	case hol_term_type::INTEGER:
+		return clone_integer(src.integer, dst.integer, std::forward<Cloner>(cloner)...);
 	case hol_term_type::NOT:
 		if (!new_hol_term(dst.unary.operand)) return false;
 		if (!clone(*src.unary.operand, *dst.unary.operand, std::forward<Cloner>(cloner)...)) {
@@ -907,6 +924,7 @@ hol_term* apply(hol_term* src, Function&&... function)
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
 	case hol_term_type::PARAMETER:
+	case hol_term_type::INTEGER:
 		return src;
 
 	case hol_term_type::NOT:
@@ -1077,6 +1095,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::VARIABLE>(src, std::forward<Function>(function)...);
 	case hol_term_type::PARAMETER:
 		return apply<hol_term_type::PARAMETER>(src, std::forward<Function>(function)...);
+	case hol_term_type::INTEGER:
+		return apply<hol_term_type::INTEGER>(src, std::forward<Function>(function)...);
 	case hol_term_type::NOT:
 		return apply<hol_term_type::NOT>(src, std::forward<Function>(function)...);
 	case hol_term_type::IF_THEN:
@@ -1211,6 +1231,8 @@ bool unify(
 		return first.variable == second.variable;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
+	case hol_term_type::INTEGER:
+		return first.integer == second.integer;
 	case hol_term_type::NOT:
 		return unify(*first.unary.operand, *second.unary.operand, src_term, dst_term);
 	case hol_term_type::IF_THEN:
@@ -1287,6 +1309,14 @@ hol_term* hol_term::new_parameter(unsigned int parameter) {
 	return term;
 }
 
+hol_term* hol_term::new_int(int integer) {
+	hol_term* term;
+	if (!new_hol_term(term)) return NULL;
+	term->reference_count = 1;
+	term->type = hol_term_type::INTEGER;
+	term->integer = integer;
+	return term;
+}
 
 hol_term* hol_term::new_atom(unsigned int predicate, hol_term* arg1, hol_term* arg2) {
 	return hol_term::new_apply(hol_term::new_constant(predicate), arg1, arg2);
@@ -1639,6 +1669,7 @@ inline bool init(hol_type& type, unsigned int variable) {
 }
 
 const hol_type HOL_BOOLEAN_TYPE(hol_constant_type::BOOLEAN);
+const hol_type HOL_INTEGER_TYPE(hol_constant_type::INDIVIDUAL);
 
 inline bool operator == (const hol_type& first, const hol_type& second) {
 	if (first.kind != second.kind) return false;
@@ -2228,6 +2259,10 @@ bool compute_type(const hol_term& term,
 		return compute_type<hol_term_type::VARIABLE>(term.variable, term, types, expected_type, variable_types, type_variables);
 	case hol_term_type::PARAMETER:
 		return compute_type<hol_term_type::PARAMETER>(term.parameter, term, types, expected_type, parameter_types, type_variables);
+	case hol_term_type::INTEGER:
+		return types.template push<hol_term_type::INTEGER>(term)
+			&& expect_type(HOL_INTEGER_TYPE, expected_type, type_variables)
+			&& types.template add<hol_term_type::INTEGER>(term, HOL_INTEGER_TYPE);
 	case hol_term_type::UNARY_APPLICATION:
 		return compute_apply_type<PolymorphicEquality>(term.binary, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
@@ -2575,6 +2610,10 @@ int_fast8_t compare(
 		if (first.parameter < second.parameter) return -1;
 		else if (first.parameter > second.parameter) return 1;
 		else return 0;
+	case hol_term_type::INTEGER:
+		if (first.integer < second.integer) return -1;
+		else if (first.integer > second.integer) return 1;
+		else return 0;
 	case hol_term_type::NOT:
 		return compare(first.unary, second.unary);
 	case hol_term_type::IF_THEN:
@@ -2653,6 +2692,7 @@ bool relabel_variables(hol_term& term,
 	switch (term.type) {
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
+	case hol_term_type::INTEGER:
 		return true;
 	case hol_term_type::VARIABLE:
 		index = variable_map.index_of(term.variable);
@@ -2783,6 +2823,7 @@ struct hol_scope {
 		unsigned int variable;
 		unsigned int constant;
 		unsigned int parameter;
+		int integer;
 		hol_scope* unary;
 		hol_nary_scope<2> binary;
 		hol_nary_scope<3> ternary;
@@ -2814,6 +2855,8 @@ struct hol_scope {
 			dst.variable = src.variable; return;
 		case hol_term_type::PARAMETER:
 			dst.parameter = src.parameter; return;
+		case hol_term_type::INTEGER:
+			dst.integer = src.integer; return;
 		case hol_term_type::AND:
 		case hol_term_type::OR:
 		case hol_term_type::IFF:
@@ -2876,6 +2919,7 @@ private:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
+		case hol_term_type::INTEGER:
 			return true;
 		}
 		fprintf(stderr, "hol_scope.init_helper ERROR: Unrecognized hol_term_type.\n");
@@ -2911,6 +2955,7 @@ private:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
+		case hol_term_type::INTEGER:
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 			return true;
@@ -3017,6 +3062,8 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 		return first.variable == second.variable;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
+	case hol_term_type::INTEGER:
+		return first.integer == second.integer;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		return true;
@@ -3131,6 +3178,10 @@ int_fast8_t compare(
 		if (first.parameter < second.parameter) return -1;
 		else if (first.parameter > second.parameter) return 1;
 		else return 0;
+	case hol_term_type::INTEGER:
+		if (first.integer < second.integer) return -1;
+		else if (first.integer > second.integer) return 1;
+		else return 0;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		return 0;
@@ -3185,6 +3236,7 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 		return;
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
+	case hol_term_type::INTEGER:
 		return;
 	case hol_term_type::NOT:
 		shift_variables(*scope.unary, removed_variable); return;
@@ -3532,6 +3584,8 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 		return hol_term::new_variable(scope.variable);
 	case hol_term_type::PARAMETER:
 		return hol_term::new_parameter(scope.parameter);
+	case hol_term_type::INTEGER:
+		return hol_term::new_int(scope.integer);
 	case hol_term_type::TRUE:
 		HOL_TRUE.reference_count++;
 		return &HOL_TRUE;
@@ -4964,6 +5018,9 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	case hol_term_type::PARAMETER:
 		if (!init(out, hol_term_type::PARAMETER)) return false;
 		out.parameter = src.parameter; return true;
+	case hol_term_type::INTEGER:
+		if (!init(out, hol_term_type::INTEGER)) return false;
+		out.integer = src.integer; return true;
 	case hol_term_type::VARIABLE:
 		if (!init(out, hol_term_type::VARIABLE)) return false;
 		index = variable_map.index_of(src.variable);
@@ -5442,6 +5499,7 @@ bool tptp_interpret_unary_term(
 			return false;
 
 	} else if (tokens[index].type == tptp_token_type::IDENTIFIER) {
+		int integer;
 		if (tokens[index].text == "T") {
 			/* this the constant true */
 			term.type = hol_term_type::TRUE;
@@ -5450,6 +5508,12 @@ bool tptp_interpret_unary_term(
 		} else if (tokens[index].text == "F") {
 			/* this the constant false */
 			term.type = hol_term_type::FALSE;
+			term.reference_count = 1;
+			index++;
+		} else if (parse_int(tokens[index].text, integer)) {
+			/* this is an integer */
+			term.integer = integer;
+			term.type = hol_term_type::INTEGER;
 			term.reference_count = 1;
 			index++;
 		} else {

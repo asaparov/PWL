@@ -11,12 +11,18 @@ using namespace core;
 
 enum built_in_predicates : unsigned int {
 	PREDICATE_UNKNOWN = 1,
+	PREDICATE_SET = 2,
+	PREDICATE_ALL = 3,
+	PREDICATE_SIZE = 4,
 	PREDICATE_COUNT
 };
 
 inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 {
-	return names.put("unknown", PREDICATE_UNKNOWN);
+	return names.put("unknown", PREDICATE_UNKNOWN)
+		&& names.put("set", PREDICATE_SET)
+		&& names.put("all", PREDICATE_ALL)
+		&& names.put("size", PREDICATE_SIZE);
 }
 
 struct relation {
@@ -129,15 +135,6 @@ inline bool init(concept<ProofCalculus>& c) {
 	return true;
 }
 
-template<bool Unique, typename T>
-inline void add_sorted(array<T>& list, const T& element) {
-	unsigned int index = linear_search(list.data, element, 0, list.length);
-	if (Unique && index < list.length && list[index] == element) return;
-	shift_right(list.data, list.length, index);
-	list[index] = element;
-	list.length++;
-}
-
 template<typename Formula,
 	typename ProofCalculus,
 	typename Canonicalizer>
@@ -224,7 +221,7 @@ struct theory
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put(PREDICATE_UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
-if (!check_proof(*new_proof, expected_conclusion, canonicalizer))
+if (!check_proof<PREDICATE_SET, PREDICATE_ALL, PREDICATE_SIZE>(*new_proof, expected_conclusion, canonicalizer))
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(expected_conclusion);
 		core::free(*canonicalized);

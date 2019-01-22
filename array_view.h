@@ -1,6 +1,15 @@
 #ifndef ARRAY_VIEW_H_
 #define ARRAY_VIEW_H_
 
+template<bool Unique, typename T>
+inline void add_sorted(array<T>& list, const T& element) {
+	unsigned int index = linear_search(list.data, element, 0, list.length);
+	if (Unique && index < list.length && list[index] == element) return;
+	shift_right(list.data, list.length, index);
+	list[index] = element;
+	list.length++;
+}
+
 template<typename T>
 struct array_view {
 	T* array;
