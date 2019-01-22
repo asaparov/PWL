@@ -1055,6 +1055,10 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 			bool error = false;
 			switch (child->type) {
 			case nd_step_type::CONJUNCTION_INTRODUCTION:
+			case nd_step_type::SET_INTRODUCTION:
+			case nd_step_type::SET_SIZE_INTRODUCTION:
+			case nd_step_type::ALL_INTRODUCTION:
+			case nd_step_type::ALL_SIZE_INTRODUCTION:
 				for (unsigned int j = 0; j < child->operand_array.length; j++) {
 					if (child->operand_array[j] == entry.key) {
 						child->operand_array[j] = entry.value;

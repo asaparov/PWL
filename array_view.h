@@ -54,4 +54,32 @@ inline unsigned int size(const indexed_array_view<T>& view) {
 	return view.length;
 }
 
+template<typename T, template<typename> class Array>
+struct composed_array_view {
+	T& first;
+	Array<T>& second;
+
+	composed_array_view(T& first, Array<T>& second) : first(first), second(second) { }
+
+	inline T& operator[] (size_t index) {
+		if (index == 0) return first;
+		else return second[index - 1];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		if (index == 0) return first;
+		else return second[index - 1];
+	}
+};
+
+template<typename T, template<typename> class Array>
+composed_array_view<T, Array> make_composed_array_view(T& first, Array<T>& second) {
+	return composed_array_view<T, Array>(first, second);
+}
+
+template<typename T, template<typename> class Array>
+inline unsigned int size(const composed_array_view<T, Array>& view) {
+	return 1 + size(view.second);
+}
+
 #endif /* ARRAY_VIEW_H_ */

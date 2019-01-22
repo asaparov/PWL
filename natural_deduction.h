@@ -38,6 +38,11 @@ enum class nd_step_type : uint_fast16_t
 	EXISTENTIAL_INTRODUCTION,
 	EXISTENTIAL_ELIMINATION,
 
+	SET_INTRODUCTION,
+	SET_SIZE_INTRODUCTION,
+	ALL_INTRODUCTION,
+	ALL_SIZE_INTRODUCTION,
+
 	COUNT
 };
 
@@ -82,6 +87,10 @@ struct nd_step
 			subproofs = NULL; length = 0;
 			return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::SET_INTRODUCTION:
+		case nd_step_type::SET_SIZE_INTRODUCTION:
+		case nd_step_type::ALL_INTRODUCTION:
+		case nd_step_type::ALL_SIZE_INTRODUCTION:
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
@@ -123,6 +132,10 @@ struct nd_step
 			subproofs = NULL; length = 0;
 			return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::SET_INTRODUCTION:
+		case nd_step_type::SET_SIZE_INTRODUCTION:
+		case nd_step_type::ALL_INTRODUCTION:
+		case nd_step_type::ALL_SIZE_INTRODUCTION:
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
@@ -189,6 +202,10 @@ private:
 				core::free(formula);
 			return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::SET_INTRODUCTION:
+		case nd_step_type::SET_SIZE_INTRODUCTION:
+		case nd_step_type::ALL_INTRODUCTION:
+		case nd_step_type::ALL_SIZE_INTRODUCTION:
 			for (unsigned int i = 0; i < operand_array.length; i++) {
 				operand_array[i]->remove_child(this);
 				core::free(*operand_array[i]);
@@ -257,6 +274,10 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 	case nd_step_type::FORMULA_PARAMETER:
 		return compare(*first.formula, *second.formula);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
+	case nd_step_type::SET_INTRODUCTION:
+	case nd_step_type::SET_SIZE_INTRODUCTION:
+	case nd_step_type::ALL_INTRODUCTION:
+	case nd_step_type::ALL_SIZE_INTRODUCTION:
 		if (first.operand_array.length < second.operand_array.length) return -1;
 		else if (first.operand_array.length > second.operand_array.length) return 1;
 		for (unsigned int i = 0; i < first.operand_array.length; i++) {
@@ -582,6 +603,7 @@ bool check_proof(proof_state<Formula>& out,
 	Formula* formula;
 	const nd_step<Formula>* second_operand;
 	Term* parameter; Term* variable;
+	unsigned int i;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		if (!is_canonical(*proof.formula, canonicalizer)) {
@@ -600,6 +622,26 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = try_canonicalize(out.formula, canonicalizer);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states, operand_count));
+	case nd_step_type::SET_INTRODUCTION:
+		if (operand_count < 1 || operand_states[0]->type != nd_step_type::FORMULA_PARAMETER) return false;
+
+		/* check that we have `n` distinct instantiations of `A[x -> a_i]` */
+		for (i = 0; i < ) /* TODO: continue here */
+
+		parameter = Formula::new_parameter(1);
+		variable = Formula::new_variable(2);
+		formula = substitute<TermType::PARAMETER, 2>(operand_states[0]->formula, parameter, variable);
+		free(*parameter); if (parameter->reference_count == 0) free(parameter);
+		free(*variable); if (variable->reference_count == 0) free(variable);
+		if (formula == NULL) return false;
+		out.formula = Formula::new_exists(1, Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)));
+		if (out.formula == NULL) {
+			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
+			return false;
+		}
+		out.formula = try_canonicalize(out.formula, canonicalizer);
+		if (out.formula == NULL) return false;
+		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states + 1, operand_count - 1));
 	case nd_step_type::CONJUNCTION_ELIMINATION:
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -1038,12 +1080,12 @@ struct natural_deduction
 
 	template<typename... Proofs>
 	static inline Proof* new_conjunction_intro(Proof* proof, Proofs&&... other_proofs) {
-		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION>(proof, std::forward<Proofs>(other_proofs)...);
+		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION, 2>(proof, std::forward<Proofs>(other_proofs)...);
 	}
 
 	template<template<typename> class Array>
 	static inline Proof* new_conjunction_intro(const Array<Proof*>& operands) {
-		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION>(operands);
+		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION, 2>(operands);
 	}
 
 	template<template<typename> class Array>
@@ -1119,6 +1161,46 @@ struct natural_deduction
 
 	static inline Proof* new_existential_elim(Proof* existential, Proof* proof) {
 		return new_binary_step<nd_step_type::EXISTENTIAL_ELIMINATION>(existential, proof);
+	}
+
+	template<typename... Proofs>
+	static inline Proof* new_set_intro(Formula* parameter, Proofs&&... operands) {
+		return new_array_step<nd_step_type::SET_INTRODUCTION, 0>(new_formula_parameter(parameter), std::forward<Proofs>(operands)...);
+	}
+
+	template<template<typename> class Array>
+	static inline Proof* new_set_intro(Formula* parameter, const Array<Proof*>& operands) {
+		return new_array_step<nd_step_type::SET_INTRODUCTION, 0>(make_composed_array_view(new_formula_parameter(parameter), operands));
+	}
+
+	template<typename... Proofs>
+	static inline Proof* new_set_size_intro(Formula* parameter, Proofs&&... operands) {
+		return new_array_step<nd_step_type::SET_SIZE_INTRODUCTION, 0>(new_formula_parameter(parameter), std::forward<Proofs>(operands)...);
+	}
+
+	template<template<typename> class Array>
+	static inline Proof* new_set_size_intro(Formula* parameter, const Array<Proof*>& operands) {
+		return new_array_step<nd_step_type::SET_SIZE_INTRODUCTION, 0>(make_composed_array_view(new_formula_parameter(parameter), operands));
+	}
+
+	template<typename... Proofs>
+	static inline Proof* new_all_intro(Proof* exhaustion, Proofs&&... operands) {
+		return new_array_step<nd_step_type::ALL_INTRODUCTION, 0>(exhaustion, std::forward<Proofs>(operands)...);
+	}
+
+	template<template<typename> class Array>
+	static inline Proof* new_all_intro(Proof* exhaustion, const Array<Proof*>& operands) {
+		return new_array_step<nd_step_type::ALL_INTRODUCTION, 0>(make_composed_array_view(exhaustion, operands));
+	}
+
+	template<typename... Proofs>
+	static inline Proof* new_all_size_intro(Proof* exhaustion, Proofs&&... operands) {
+		return new_array_step<nd_step_type::ALL_SIZE_INTRODUCTION, 0>(exhaustion, std::forward<Proofs>(operands)...);
+	}
+
+	template<template<typename> class Array>
+	static inline Proof* new_all_size_intro(Proof* exhaustion, const Array<Proof*>& operands) {
+		return new_array_step<nd_step_type::ALL_SIZE_INTRODUCTION, 0>(make_composed_array_view(exhaustion, operands));
 	}
 
 private:
@@ -1228,12 +1310,7 @@ private:
 	}
 
 	template<unsigned int Index>
-	static inline bool new_array_step_helper(nd_step<Formula>* step, Proof* arg) {
-		step->operand_array[Index] = arg;
-		arg->reference_count++;
-		if (!arg->children.add(step)) {
-			free(*arg); return false;
-		}
+	static constexpr bool new_array_step_helper(nd_step<Formula>* step) {
 		return true;
 	}
 
@@ -1250,9 +1327,9 @@ private:
 		return true;
 	}
 
-	template<nd_step_type Type, typename... Args>
+	template<nd_step_type Type, unsigned int MinOperandCount, typename... Args>
 	static inline Proof* new_array_step(Args&&... args) {
-		static_assert(sizeof...(Args) >= 2, "This proof step requires at least two operands.");
+		static_assert(sizeof...(Args) >= MinOperandCount, "This proof step requires at least two operands.");
 
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) return NULL;
@@ -1268,17 +1345,21 @@ private:
 		return step;
 	}
 
-	template<nd_step_type Type, template<typename> class Array>
+	template<nd_step_type Type, unsigned int MinOperandCount, template<typename> class Array>
 	static inline Proof* new_array_step(const Array<Proof*>& operands) {
-		if (operands.length < 2) return NULL;
+		if (operands.length < MinOperandCount) {
+			fprintf(stderr, "natural_deduction.new_array_step ERROR: "
+					"This proof step requires at least two operands.\n");
+			return NULL;
+		}
 
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 0;
-		if (!array_init(step->operand_array, operands.length)) {
+		if (!array_init(step->operand_array, size(operands))) {
 			free(step); return NULL;
 		}
-		for (unsigned int i = 0; i < operands.length; i++) {
+		for (unsigned int i = 0; i < size(operands); i++) {
 			step->operand_array[i] = operands[i];
 			operands[i]->reference_count++;
 			if (!operands[i]->children.add(step)) {
@@ -1290,7 +1371,7 @@ private:
 				return NULL;
 			}
 		}
-		step->operand_array.length = operands.length;
+		step->operand_array.length = size(operands);
 		return step;
 	}
 };
