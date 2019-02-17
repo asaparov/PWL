@@ -317,45 +317,6 @@ bool get_satisfying_concepts(
 	return true;
 }
 
-template<typename Formula>
-bool is_subset(
-		const Formula** first, unsigned int first_length,
-		const Formula** second, unsigned int second_length)
-{
-	unsigned int i = 0, j = 0;
-	while (i < first_length && j < second_length)
-	{
-		if (first[i] == second[j] || *first[i] == *second[j]) {
-			i++; j++;
-		} else if (*first[i] < *second[j]) {
-			return false;
-		} else {
-			j++;
-		}
-	}
-	return (i == first_length);
-}
-
-template<typename Formula>
-bool is_subset(const Formula* first, const Formula* second)
-{
-	typedef typename Formula::Type FormulaType;
-
-	if (first->type == FormulaType::AND) {
-		if (second->type == Formula::AND) {
-			return is_subset(first->array.operands, first->array.length, second->array.operands, second->array.length);
-		} else {
-			return false;
-		}
-	} else {
-		if (second->type == Formula::AND) {
-			return is_subset(&first, 1, second->array.operands, second->array.length);
-		} else {
-			return (first == second || *first == *second);
-		}
-	}
-}
-
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_intro_proposal {
 	nd_step<Formula>* new_universal_quantification;

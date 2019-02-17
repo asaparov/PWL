@@ -28,6 +28,19 @@ f(a) => ~f(a);			~f(a);
 F => f(a);				T;
 a=a;					T;
 a=b;					F;
+a=4;					a=4;
+4=a;					a=4;
+2=2;					T;
+size(S)=3;				size(S)=3;
+3=size(S);				size(S)=3;
+
+(f(a) & g(a)) | (~f(a) & g(a));										g(a);
+~f(a) & g(a) & ~(f(a) & g(a));										g(a) & ~f(a);
+(f(a) & g(a)) => f(a);												T;
+((f(a) & g(a)) => f(a)) => h(a);									h(a);
+f(a) => ((b=a) | (c=a) | (d=a));									~f(a);
+(^[x]:f(x))(y);														f(y);
+(^[x]:(f(a)=x))(f(a));												T;
 
 h(a) & ~k(a) & ~g(a) & f(a) & f(b);									f(a) & f(b) & h(a) & ~g(a) & ~k(a);
 (f(a) & g(b)) | (h(c) & ~(i(d) => i(d)));							f(a) & g(b);

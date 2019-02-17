@@ -23,7 +23,6 @@ enum class hol_term_type {
 	VARIABLE = 1,
 	CONSTANT,
 	PARAMETER,
-	INTEGER,
 
 	UNARY_APPLICATION,
 	BINARY_APPLICATION,
@@ -38,6 +37,8 @@ enum class hol_term_type {
 	FOR_ALL,
 	EXISTS,
 	LAMBDA,
+
+	INTEGER,
 
 	TRUE,
 	FALSE /* our canonicalization code assumes that FALSE is the last element of this enum */
@@ -87,6 +88,7 @@ inline bool print_parameter(unsigned int parameter, Stream& out) {
 struct hol_unary_term {
 	hol_term* operand;
 
+	static inline unsigned int hash(const hol_unary_term& key);
 	static inline void move(const hol_unary_term& src, hol_unary_term& dst);
 	static inline void free(hol_unary_term& term);
 };
@@ -95,6 +97,7 @@ struct hol_binary_term {
 	hol_term* left;
 	hol_term* right;
 
+	static inline unsigned int hash(const hol_binary_term& key);
 	static inline void move(const hol_binary_term& src, hol_binary_term& dst);
 	static inline void free(hol_binary_term& term);
 };
@@ -104,6 +107,7 @@ struct hol_ternary_term {
 	hol_term* second;
 	hol_term* third;
 
+	static inline unsigned int hash(const hol_ternary_term& key);
 	static inline void move(const hol_ternary_term& src, hol_ternary_term& dst);
 	static inline void free(hol_ternary_term& term);
 };
@@ -112,6 +116,7 @@ struct hol_array_term {
 	hol_term** operands;
 	unsigned int length;
 
+	static inline unsigned int hash(const hol_array_term& key);
 	static inline void move(const hol_array_term& src, hol_array_term& dst);
 	static inline void free(hol_array_term& term);
 };
@@ -120,6 +125,7 @@ struct hol_quantifier {
 	unsigned int variable;
 	hol_term* operand;
 
+	static inline unsigned int hash(const hol_quantifier& key);
 	static inline void move(const hol_quantifier& src, hol_quantifier& dst);
 	static inline void free(hol_quantifier& term);
 };
@@ -168,6 +174,9 @@ struct hol_term
 	static inline hol_term* new_exists(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_lambda(unsigned int variable, hol_term* operand);
 
+	static inline unsigned int hash(const hol_term& key);
+	static inline bool is_empty(const hol_term& key);
+	static inline void set_empty(hol_term& key);
 	static inline void move(const hol_term& src, hol_term& dst);
 	static inline void swap(hol_term& first, hol_term& second);
 	static inline void free(hol_term& term) { term.free_helper(); }
@@ -232,10 +241,18 @@ private:
 		fprintf(stderr, "hol_term.init_helper ERROR: Unrecognized hol_term_type.\n");
 		return false;
 	}
+
+	friend bool init(hol_term&, const hol_term&);
 };
 
 thread_local hol_term HOL_TRUE(hol_term_type::TRUE);
 thread_local hol_term HOL_FALSE(hol_term_type::FALSE);
+
+inline bool init(hol_term& term, const hol_term& src) {
+	term.type = src.type;
+	term.reference_count = 1;
+	return term.init_helper(src);
+}
 
 inline bool operator == (const hol_unary_term& first, const hol_unary_term& second) {
 	return first.operand == second.operand
@@ -303,6 +320,73 @@ bool operator == (const hol_term& first, const hol_term& second)
 
 inline bool operator != (const hol_term& first, const hol_term& second) {
 	return !(first == second);
+}
+
+inline bool hol_term::is_empty(const hol_term& key) {
+	return key.reference_count == 0;
+}
+
+inline void hol_term::set_empty(hol_term& key) {
+	key.reference_count = 0;
+}
+
+inline unsigned int hol_unary_term::hash(const hol_unary_term& key) {
+	return hol_term::hash(*key.operand);
+}
+
+inline unsigned int hol_binary_term::hash(const hol_binary_term& key) {
+	return hol_term::hash(*key.left) + hol_term::hash(*key.right) * 131071;
+}
+
+inline unsigned int hol_ternary_term::hash(const hol_ternary_term& key) {
+	return hol_term::hash(*key.first) + hol_term::hash(*key.second) * 127 + hol_term::hash(*key.third) * 524287;
+}
+
+inline unsigned int hol_array_term::hash(const hol_array_term& key) {
+	unsigned int hash_value = default_hash(key.length);
+	for (unsigned int i = 0; i < key.length; i++)
+		hash_value ^= hol_term::hash(*key.operands[i]);
+	return hash_value;
+}
+
+inline unsigned int hol_quantifier::hash(const hol_quantifier& key) {
+	return default_hash(key.variable) ^ hol_term::hash(*key.operand);
+}
+
+inline unsigned int hol_term::hash(const hol_term& key) {
+	/* TODO: precompute these and store them in a table for faster access */
+	unsigned int type_hash = default_hash(key.type, 571290832);
+	switch (key.type) {
+	case hol_term_type::VARIABLE:
+		return type_hash ^ default_hash(key.variable);
+	case hol_term_type::CONSTANT:
+		return type_hash ^ default_hash(key.constant);
+	case hol_term_type::PARAMETER:
+		return type_hash ^ default_hash(key.parameter);
+	case hol_term_type::INTEGER:
+		return type_hash ^ default_hash(key.integer);
+	case hol_term_type::NOT:
+		return type_hash ^ hol_unary_term::hash(key.unary);
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+	case hol_term_type::UNARY_APPLICATION:
+		return type_hash ^ hol_binary_term::hash(key.binary);
+	case hol_term_type::BINARY_APPLICATION:
+		return type_hash ^ hol_ternary_term::hash(key.ternary);
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IFF:
+		return type_hash ^ hol_array_term::hash(key.array);
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		return type_hash ^ hol_quantifier::hash(key.quantifier);
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+		return type_hash;
+	}
+	fprintf(stderr, "hol_term.hash ERROR: Unrecognized hol_term_type.\n");
+	exit(EXIT_FAILURE);
 }
 
 inline void hol_term::move(const hol_term& src, hol_term& dst) {
@@ -2699,8 +2783,7 @@ bool relabel_variables(hol_term& term,
 		if (index < variable_map.size) {
 			term.variable = variable_map.values[index];
 			return true;
-		} else {
-			fprintf(stderr, "relabel_variables ERROR: Undefined variable.\n");
+		} else if (!new_variable(term.variable, term.variable, variable_map)) {
 			return false;
 		}
 	case hol_term_type::IF_THEN:
@@ -5026,8 +5109,7 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 		index = variable_map.index_of(src.variable);
 		if (index < variable_map.size) {
 			out.variable = variable_map.values[index];
-		} else {
-			fprintf(stderr, "relabel_variables ERROR: Undefined variable.\n");
+		} else if (!new_variable(src.variable, out.variable, variable_map)) {
 			return false;
 		}
 
@@ -5100,6 +5182,160 @@ constexpr bool is_canonical<identity_canonicalizer>(
 		const hol_term& src, identity_canonicalizer& canonicalizer)
 {
 	return true;
+}
+
+
+/**
+ * Code for determining set relations with sets of the form {x : A} where A is
+ * a higher-order logic formula.
+ */
+
+/* forward declarations */
+bool is_subset(const hol_term* first, const hol_term* second);
+
+
+bool is_conjunction_subset(
+		const hol_term* const* first, unsigned int first_length,
+		const hol_term* const* second, unsigned int second_length)
+{
+	unsigned int i = 0, j = 0;
+	while (i < first_length && j < second_length)
+	{
+		if (first[i] == second[j] || *first[i] == *second[j]) {
+			i++; j++;
+		} else if (*first[i] < *second[j]) {
+			i++;
+		} else {
+			for (unsigned int k = 0; k < first_length; k++) {
+				if (is_subset(first[k], second[j])) {
+					j++; continue;
+				}
+			}
+			return false;
+		}
+	}
+
+	while (j < second_length) {
+		for (unsigned int k = 0; k < first_length; k++) {
+			if (is_subset(first[k], second[j])) {
+				j++; continue;
+			}
+		}
+		return false;
+	}
+
+	return true;
+}
+
+bool is_disjunction_subset(
+		const hol_term* const* first, unsigned int first_length,
+		const hol_term* const* second, unsigned int second_length)
+{
+	unsigned int i = 0, j = 0;
+	while (i < first_length && j < second_length)
+	{
+		if (first[i] == second[j] || *first[i] == *second[j]) {
+			i++; j++;
+		} else if (*first[i] < *second[j]) {
+			for (unsigned int k = 0; k < second_length; k++) {
+				if (is_subset(first[i], second[k])) {
+					i++; continue;
+				}
+			}
+			return false;
+		} else {
+			j++;
+		}
+	}
+
+	while (i < first_length) {
+		for (unsigned int k = 0; k < second_length; k++) {
+			if (is_subset(first[i], second[k])) {
+				i++; continue;
+			}
+		}
+		return false;
+	}
+
+	return true;
+}
+
+bool is_subset(const hol_term* first, const hol_term* second)
+{
+	if (first->type == hol_term_type::TRUE) {
+		return (second->type == hol_term_type::TRUE);
+	} else if (second->type == hol_term_type::TRUE) {
+		return true;
+	} else if (first->type == hol_term_type::FALSE) {
+		return true;
+	} else if (second->type == hol_term_type::FALSE) {
+		return (first->type == hol_term_type::FALSE);
+	} else if (first->type == hol_term_type::AND) {
+		if (second->type == hol_term_type::AND) {
+			return is_conjunction_subset(first->array.operands, first->array.length, second->array.operands, second->array.length);
+		} else {
+			return is_conjunction_subset(first->array.operands, first->array.length, &second, 1);
+		}
+	} else if (second->type == hol_term_type::AND) {
+		return false;
+	} else if (first->type == hol_term_type::OR) {
+		if (second->type == hol_term_type::OR) {
+			return is_disjunction_subset(first->array.operands, first->array.length, second->array.operands, second->array.length);
+		} else {
+			return false;
+		}
+	} else if (second->type == hol_term_type::OR) {
+		return is_disjunction_subset(&first, 1, second->array.operands, second->array.length);
+	}
+
+	switch (first->type) {
+	case hol_term_type::CONSTANT:
+		return (second->type == hol_term_type::CONSTANT && first->constant == second->constant);
+	case hol_term_type::VARIABLE:
+		return (second->type == hol_term_type::VARIABLE && first->variable == second->variable);
+	case hol_term_type::PARAMETER:
+		return (second->type == hol_term_type::PARAMETER && first->parameter == second->parameter);
+	case hol_term_type::NOT:
+		if (second->type == hol_term_type::NOT) {
+			return is_subset(second->unary.operand, first->unary.operand);
+		} else {
+			return false;
+		}
+	case hol_term_type::UNARY_APPLICATION:
+	case hol_term_type::BINARY_APPLICATION:
+		return *first == *second;
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+	case hol_term_type::IFF:
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		/* TODO: finish implementing this */
+		fprintf(stderr, "is_subset ERROR: Not implemented.\n");
+		exit(EXIT_FAILURE);
+
+	case hol_term_type::INTEGER:
+		fprintf(stderr, "is_subset ERROR: `first` does not have type proposition.\n");
+		exit(EXIT_FAILURE);
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+		/* this should be unreachable */
+		break;
+	}
+	fprintf(stderr, "is_subset ERROR: Unrecognized hol_term_type.\n");
+	exit(EXIT_FAILURE);
+}
+
+inline hol_term* intersect(hol_term* first, hol_term* second)
+{
+	standard_canonicalizer<false, false> canonicalizer;
+	hol_term* conjunction = hol_term::new_and(first, second);
+	first->reference_count++; second->reference_count++;
+	hol_term* canonicalized = canonicalize(*conjunction, canonicalizer);
+	free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
+	return canonicalized;
 }
 
 

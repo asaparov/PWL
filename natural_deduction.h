@@ -652,7 +652,7 @@ bool check_proof(proof_state<Formula>& out,
 			out.formula = Formula::new_exists(1,
 					Formula::new_and(
 						Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)),
-						Formula::new_atom(SizePredicate, variable, Term::new_int(operand_count - 1)))
+						Formula::new_equals(Formula::new_atom(SizePredicate, variable), Term::new_int(operand_count - 1)))
 				);
 		}
 		if (out.formula == NULL) {
@@ -722,7 +722,7 @@ bool check_proof(proof_state<Formula>& out,
 			out.formula = Formula::new_exists(1,
 					Formula::new_and(
 						Formula::new_atom(AllPredicate, variable, Formula::new_lambda(2, formula)),
-						Formula::new_atom(SizePredicate, variable, Term::new_int(operand_count - 1)))
+						Formula::new_equals(Formula::new_atom(SizePredicate, variable), Term::new_int(operand_count - 1)))
 				);
 		}
 		if (out.formula == NULL) {
