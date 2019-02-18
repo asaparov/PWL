@@ -518,8 +518,6 @@ struct clique_search_state {
 	unsigned int clique_count;
 	unsigned int* neighborhood;
 	unsigned int neighborhood_count;
-	unsigned int* X;
-	unsigned int X_count;
 	unsigned int next_set;
 
 	int priority;
@@ -533,14 +531,12 @@ struct clique_search_state {
 	static inline void free(clique_search_state& state) {
 		core::free(state.clique);
 		core::free(state.neighborhood);
-		core::free(state.X);
 	}
 };
 
 inline bool init(clique_search_state& state,
 		const unsigned int* clique, unsigned int clique_count,
 		const array<unsigned int>& neighborhood,
-		const unsigned int* X, unsigned int X_count,
 		unsigned int next_set_to_expand, int priority)
 {
 	state.clique = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * clique_count));
@@ -561,18 +557,17 @@ inline bool init(clique_search_state& state,
 		state.neighborhood[i] = neighborhood[i];
 	state.neighborhood_count = neighborhood.length;
 
-	state.X = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * X_count));
-	if (state.X == NULL) {
-		fprintf(stderr, "init ERROR: Insufficient memory for `clique_search_state.X`.");
-		core::free(state.clique); core::free(state.neighborhood); return false;
-	}
-	for (unsigned int i = 0; i < X_count; i++)
-		state.X[i] = X[i];
-	state.X_count = X_count;
-
 	state.next_set = next_set_to_expand;
 	state.priority = priority;
 	return true;
+}
+
+template<typename Stream>
+bool print(const clique_search_state& state, Stream& out) {
+	return print("  clique: ", out) && print<unsigned int, '{', '}'>(state.clique, state.clique_count, out) && print('\n', out)
+		&& print("  neighborhood: ", out) && print<unsigned int, '{', '}'>(state.neighborhood, state.neighborhood_count, out) && print('\n', out)
+		&& print("  next_set: ", out) && print(state.next_set, out) && print('\n', out)
+		&& print("  priority: ", out) && print(state.priority, out) && print('\n', out);
 }
 
 struct clique_search_queue {
@@ -597,6 +592,14 @@ struct clique_search_queue {
 	}
 
 	inline void push(clique_search_state* state) {
+//#if !defined(NDEBUG)
+		if (state->priority > last_priority) {
+			fprintf(stderr, "clique_search_queue.push WARNING: Search is not monotonic.\n");
+// TODO: these two lines are for debugging; remove them
+print("Problematic state:\n", stderr);
+print(*state, stderr);
+}
+//#endif
 		queue.insert(state);
 	}
 
@@ -605,11 +608,7 @@ struct clique_search_queue {
 		clique_search_state* state = *last;
 		queue.erase(last);
 
-//#if !defined(NDEBUG)
-		if (state->priority > last_priority)
-			fprintf(stderr, "clique_search_queue.pop WARNING: Search is not monotonic. (iteration %u)\n", iteration);
 		last_priority = state->priority;
-//#endif
 		return state;
 	}
 };
@@ -650,7 +649,6 @@ bool expand_clique_search_state(
 		unsigned int clique_count,
 		array<unsigned int>& neighborhood,
 		int& priority,
-		unsigned int* X, unsigned int X_count,
 		hash_map<unsigned int, hash_set<unsigned int>>& descendants,
 		hash_set<unsigned int>& visited,
 		unsigned int set_to_expand,
@@ -662,43 +660,39 @@ bool expand_clique_search_state(
 		if (!neighborhood.ensure_capacity(neighborhood.length + 1))
 			return false;
 
+#if !defined(NDEBUG)
+		if (neighborhood.contains(root))
+			fprintf(stderr, "expand_clique_search_state WARNING: `neighborhood` contains `root`.\n");
+#endif
+
+		priority += sets.sets[root].set_size;
+
 		clique_search_state* new_state = (clique_search_state*) malloc(sizeof(clique_search_state));
 		if (new_state == NULL) {
 			return false;
-		} else if (!init(*new_state, clique, clique_count, neighborhood, X, X_count, root, priority)) {
+		} else if (!init(*new_state, clique, clique_count, neighborhood, root, priority)) {
 			free(new_state); return false;
 		}
 
+print("Pushing neighborhood state:\n", stderr);
+print(*new_state, stderr); print('\n', stderr);
 		queue.push(new_state);
-
-		if (!neighborhood.contains(root)) {
-			neighborhood[neighborhood.length++] = root;
-			priority += sets.sets[root].set_size;
-		}
-		unsigned int index = index_of(root, X, X_count);
-		if (index < X_count) {
-			X[index] = X[X_count - 1];
-			X_count--;
-		}
+		neighborhood[neighborhood.length++] = root;
 	} else {
 		for (unsigned int child : sets.extensional_graph.vertices[root].children) {
 			if (sets.sets[child].set_size == 0) continue;
 			bool was_visited = visited.contains(child);
-			for (unsigned int i = 0; !was_visited && i < X_count; i++) /* TODO: is this correct? */
-				if (has_descendant(sets, descendants, X[i], child)) was_visited = true;
 			for (unsigned int i = 0; !was_visited && i < clique_count; i++)
 				if (has_descendant(sets, descendants, clique[i], child)) was_visited = true;
 			if (was_visited) continue;
-			if (!expand_clique_search_state(queue, sets, clique, clique_count, neighborhood, priority, X, X_count, descendants, visited, set_to_expand, child)) return false;
+			if (!expand_clique_search_state(queue, sets, clique, clique_count, neighborhood, priority, descendants, visited, set_to_expand, child)) return false;
 		} for (unsigned int child : sets.intensional_graph.vertices[root].children) {
 			if (sets.sets[child].set_size == 0) continue;
 			bool was_visited = visited.contains(child);
-			for (unsigned int i = 0; !was_visited && i < X_count; i++) /* TODO: is this correct? */
-				if (has_descendant(sets, descendants, X[i], child)) was_visited = true;
 			for (unsigned int i = 0; !was_visited && i < clique_count; i++)
 				if (has_descendant(sets, descendants, clique[i], child)) was_visited = true;
 			if (was_visited) continue;
-			if (!expand_clique_search_state(queue, sets, clique, clique_count, neighborhood, priority, X, X_count, descendants, visited, set_to_expand, child)) return false;
+			if (!expand_clique_search_state(queue, sets, clique, clique_count, neighborhood, priority, descendants, visited, set_to_expand, child)) return false;
 		}
 	}
 	return true;
@@ -712,13 +706,13 @@ bool process_clique_search_state(
 		hash_map<unsigned int, hash_set<unsigned int>>& descendants,
 		unsigned int*& clique, unsigned int& clique_count)
 {
-	int priority = 0;
+	int priority = sets.sets[state.next_set].set_size;
 	for (unsigned int i = 0; i < state.clique_count; i++)
 		priority += sets.sets[state.clique[i]].set_size;
 
 	unsigned int* new_clique = (unsigned int*) malloc(sizeof(unsigned int) * (state.clique_count + 1));
 	if (new_clique == NULL) {
-		fprintf(stderr, "process_clique_search_state ERROR: Out of memory.\n");
+		fprintf(stderr, "process_clique_search_state ERROR: Insufficient memory for `new_clique`.\n");
 		return false;
 	}
 	for (unsigned int i = 0; i < state.clique_count; i++)
@@ -727,23 +721,22 @@ bool process_clique_search_state(
 
 	array<unsigned int> neighborhood(16);
 	hash_set<unsigned int> visited(16);
-	unsigned int old_queue_size = queue.size();
 	for (unsigned int i = 0; i < state.neighborhood_count; i++) {
 		if (!expand_clique_search_state(queue, sets,
-				new_clique, state.clique_count + 1, neighborhood,
-				priority, state.X, state.X_count, descendants,
-				visited, state.next_set, state.neighborhood[i]))
+				new_clique, state.clique_count + 1, neighborhood, priority,
+				descendants, visited, state.next_set, state.neighborhood[i]))
 		{
 			free(new_clique);
 			return false;
 		}
 	}
 
-	if (TestTermination && queue.size() == old_queue_size) {
+	if (TestTermination && state.neighborhood_count == 0) {
 		/* `expand_clique_search_state` did not add any states to the queue, meaning this clique is maximal */
-		clique = new_clique;
-		clique_count = state.clique_count + 1;
-		return true;
+		print(new_clique, state.clique_count + 1, stderr); print('\n', stderr);
+		//clique = new_clique;
+		//clique_count = state.clique_count + 1;
+		//return true;
 	}
 
 	if (RecurseChildren) {
@@ -755,34 +748,35 @@ bool process_clique_search_state(
 			return false;
 		}
 
+		priority -= sets.sets[state.next_set].set_size;
 		for (unsigned int child : sets.extensional_graph.vertices[state.next_set].children) {
 			if (sets.sets[child].set_size == 0) continue;
 			clique_search_state* new_state = (clique_search_state*) malloc(sizeof(clique_search_state));
+			priority += sets.sets[child].set_size;
 			if (new_state == NULL) {
 				free(new_clique);
 				return false;
-			} else if (!init(*new_state, state.clique, state.clique_count, neighborhood, state.X, state.X_count, child, priority)) {
+			} else if (!init(*new_state, state.clique, state.clique_count, neighborhood, child, priority)) {
 				free(new_clique); free(new_state);
 				return false;
 			}
 			queue.push(new_state);
-
 			neighborhood[neighborhood.length++] = child;
-			priority += sets.sets[child].set_size;
 		} for (unsigned int child : sets.intensional_graph.vertices[state.next_set].children) {
 			if (sets.sets[child].set_size == 0) continue;
 			clique_search_state* new_state = (clique_search_state*) malloc(sizeof(clique_search_state));
+			priority += sets.sets[child].set_size;
 			if (new_state == NULL) {
 				free(new_clique);
 				return false;
-			} else if (!init(*new_state, state.clique, state.clique_count, neighborhood, state.X, state.X_count, child, priority)) {
+			} else if (!init(*new_state, state.clique, state.clique_count, neighborhood, child, priority)) {
 				free(new_clique); free(new_state);
 				return false;
 			}
+print("Pushing child state:\n", stderr);
+print(*new_state, stderr); print('\n', stderr);
 			queue.push(new_state);
-
 			neighborhood[neighborhood.length++] = child;
-			priority += sets.sets[child].set_size;
 		}
 	}
 
@@ -800,7 +794,7 @@ bool find_largest_disjoint_clique(
 
 	array<unsigned int> initial_neighborhood(1);
 	clique_search_state initial_state;
-	if (!init(initial_state, NULL, 0, initial_neighborhood, NULL, 0, root, INT_MAX)) {
+	if (!init(initial_state, NULL, 0, initial_neighborhood, root, INT_MAX)) {
 		return false;
 	} else if (!process_clique_search_state<true, false>(queue, sets, initial_state, descendants, clique, clique_count)) {
 		free(initial_state);
@@ -813,6 +807,8 @@ bool find_largest_disjoint_clique(
 	clique = NULL; clique_count = 0;
 	for (unsigned int iteration = 0; success && !queue.is_empty(); iteration++) {
 		clique_search_state* state = queue.pop(iteration);
+fprintf(stderr, "[iteration %u] Popped state:\n", iteration);
+print(*state, stderr);
 		success = process_clique_search_state<true, true>(queue, sets, *state, descendants, clique, clique_count);
 		free(*state); free(state);
 

@@ -355,7 +355,7 @@ inline unsigned int hol_quantifier::hash(const hol_quantifier& key) {
 
 inline unsigned int hol_term::hash(const hol_term& key) {
 	/* TODO: precompute these and store them in a table for faster access */
-	unsigned int type_hash = default_hash(key.type, 571290832);
+	unsigned int type_hash = default_hash<hol_term_type, 571290832>(key.type);
 	switch (key.type) {
 	case hol_term_type::VARIABLE:
 		return type_hash ^ default_hash(key.variable);
