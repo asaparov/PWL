@@ -518,25 +518,28 @@ struct clique_search_state {
 	unsigned int clique_count;
 	unsigned int* neighborhood;
 	unsigned int neighborhood_count;
+	unsigned int* X;
+	unsigned int X_count;
 	unsigned int next_set;
-
 	int priority;
 
-	struct less {
-		inline bool operator () (const clique_search_state* first, const clique_search_state* second) {
-			return first->priority < second->priority;
-		}
-	};
+	inline int get_priority() const {
+		return priority;
+	}
 
 	static inline void free(clique_search_state& state) {
 		core::free(state.clique);
 		core::free(state.neighborhood);
+		core::free(state.X);
 	}
 };
 
+template<typename Formula>
 inline bool init(clique_search_state& state,
+		const set_reasoning<Formula>& sets,
 		const unsigned int* clique, unsigned int clique_count,
-		const array<unsigned int>& neighborhood,
+		const unsigned int* neighborhood, unsigned int neighborhood_count,
+		const unsigned int* X, unsigned int X_count,
 		unsigned int next_set_to_expand, int priority)
 {
 	state.clique = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * clique_count));
@@ -548,14 +551,23 @@ inline bool init(clique_search_state& state,
 		state.clique[i] = clique[i];
 	state.clique_count = clique_count;
 
-	state.neighborhood = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * neighborhood.length));
+	state.neighborhood = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * neighborhood_count));
 	if (state.neighborhood == NULL) {
 		fprintf(stderr, "init ERROR: Insufficient memory for `clique_search_state.neighborhood`.");
 		core::free(state.clique); return false;
 	}
-	for (unsigned int i = 0; i < neighborhood.length; i++)
+	for (unsigned int i = 0; i < neighborhood_count; i++)
 		state.neighborhood[i] = neighborhood[i];
-	state.neighborhood_count = neighborhood.length;
+	state.neighborhood_count = neighborhood_count;
+
+	state.X = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * X_count));
+	if (state.X == NULL) {
+		fprintf(stderr, "init ERROR: Insufficient memory for `clique_search_state.X`.");
+		core::free(state.clique); core::free(state.neighborhood); return false;
+	}
+	for (unsigned int i = 0; i < X_count; i++)
+		state.X[i] = X[i];
+	state.X_count = X_count;
 
 	state.next_set = next_set_to_expand;
 	state.priority = priority;
@@ -566,21 +578,70 @@ template<typename Stream>
 bool print(const clique_search_state& state, Stream& out) {
 	return print("  clique: ", out) && print<unsigned int, '{', '}'>(state.clique, state.clique_count, out) && print('\n', out)
 		&& print("  neighborhood: ", out) && print<unsigned int, '{', '}'>(state.neighborhood, state.neighborhood_count, out) && print('\n', out)
-		&& print("  next_set: ", out) && print(state.next_set, out) && print('\n', out)
+		&& print("  X: ", out) && print<unsigned int, '{', '}'>(state.X, state.X_count, out) && print('\n', out)
+		&& print("  next_set: ", out) && print(state.next_set, out) && print('\n', out);
+}
+
+struct ancestor_clique_search_state {
+	clique_search_state clique_state;
+	unsigned int ancestor;
+
+	inline int get_priority() const {
+		return clique_state.priority;
+	}
+
+	static inline void free(ancestor_clique_search_state& state) {
+		core::free(state.clique_state);
+	}
+};
+
+template<typename Formula>
+inline bool init(ancestor_clique_search_state& state,
+		const set_reasoning<Formula>& sets,
+		const unsigned int* clique, unsigned int clique_count,
+		const unsigned int* neighborhood, unsigned int neighborhood_count,
+		const unsigned int* X, unsigned int X_count,
+		unsigned int next_set_to_expand, int neighborhood_size,
+		unsigned int ancestor)
+{
+	if (!init(state.clique_state, sets, clique, clique_count, neighborhood, neighborhood_count,
+			X, X_count, next_set_to_expand, neighborhood_size - sets.sets[ancestor].set_size))
+		return false;
+	state.ancestor = ancestor;
+	return true;
+}
+
+template<typename StateData>
+struct search_state {
+	StateData* state;
+
+	static inline void free(search_state<StateData>& state) {
+		core::free(*state.state);
+		core::free(state.state);
+	}
+};
+
+template<typename StateData>
+inline bool operator < (const search_state<StateData>& first, const search_state<StateData>& second) {
+	return first.state->get_priority() < second.state->get_priority();
+}
+
+template<typename StateData, typename Stream>
+inline bool print(const search_state<StateData>& state, Stream& out) {
+	return print(state.state, out)
 		&& print("  priority: ", out) && print(state.priority, out) && print('\n', out);
 }
 
-struct clique_search_queue {
-	std::multiset<clique_search_state*, clique_search_state::less> queue;
+template<typename StateData>
+struct search_queue {
+	std::multiset<search_state<StateData>> queue;
 	int last_priority;
 
-	clique_search_queue() : last_priority(INT_MAX) { }
+	search_queue() : last_priority(INT_MAX) { }
 
-	~clique_search_queue() {
-		for (clique_search_state* state : queue) {
-			core::free(*state);
+	~search_queue() {
+		for (search_state<StateData> state : queue)
 			core::free(state);
-		}
 	}
 
 	inline bool is_empty() const {
@@ -591,25 +652,27 @@ struct clique_search_queue {
 		return queue.size();
 	}
 
-	inline void push(clique_search_state* state) {
+	inline void push(const search_state<StateData>& state) {
 //#if !defined(NDEBUG)
-		if (state->priority > last_priority) {
-			fprintf(stderr, "clique_search_queue.push WARNING: Search is not monotonic.\n");
-// TODO: these two lines are for debugging; remove them
-print("Problematic state:\n", stderr);
-print(*state, stderr);
-}
+		if (state.state->get_priority() > last_priority)
+			fprintf(stderr, "search_queue.push WARNING: Search is not monotonic.\n");
 //#endif
 		queue.insert(state);
 	}
 
-	inline clique_search_state* pop(unsigned int iteration) {
+	inline search_state<StateData> pop(unsigned int iteration) {
 		auto last = queue.cend(); last--;
-		clique_search_state* state = *last;
+		search_state<StateData> state = *last;
 		queue.erase(last);
 
-		last_priority = state->priority;
+		last_priority = state.state->get_priority();
 		return state;
+	}
+
+	inline int priority() const {
+		auto last = queue.cend(); last--;
+		search_state<StateData> state = *last;
+		return state.state->get_priority();
 	}
 };
 
@@ -627,6 +690,8 @@ const hash_set<unsigned int>& get_descendants(const set_reasoning<Formula>& sets
 		value.size++;
 		for (unsigned int child : sets.extensional_graph.vertices[root].children)
 			if (!value.add_all(get_descendants(sets, descendants, child))) exit(EXIT_FAILURE);
+		for (unsigned int child : sets.intensional_graph.vertices[root].children)
+			if (!value.add_all(get_descendants(sets, descendants, child))) exit(EXIT_FAILURE);
 		descendants.table.keys[bucket] = root;
 		descendants.table.size++;
 	}
@@ -643,12 +708,9 @@ bool has_descendant(const set_reasoning<Formula>& sets,
 
 template<typename Formula>
 bool expand_clique_search_state(
-		clique_search_queue& queue,
 		const set_reasoning<Formula>& sets,
-		const unsigned int* clique,
-		unsigned int clique_count,
 		array<unsigned int>& neighborhood,
-		int& priority,
+		const unsigned int* X, const unsigned int X_count,
 		hash_map<unsigned int, hash_set<unsigned int>>& descendants,
 		hash_set<unsigned int>& visited,
 		unsigned int set_to_expand,
@@ -657,6 +719,9 @@ bool expand_clique_search_state(
 	if (!visited.add(root)) return false;
 
 	if (sets.are_disjoint(set_to_expand, root)) {
+		for (unsigned int i = 0; i < neighborhood.length; i++)
+			if (has_descendant(sets, descendants, neighborhood[i], root)) { neighborhood.remove(i); i--; }
+
 		if (!neighborhood.ensure_capacity(neighborhood.length + 1))
 			return false;
 
@@ -665,51 +730,40 @@ bool expand_clique_search_state(
 			fprintf(stderr, "expand_clique_search_state WARNING: `neighborhood` contains `root`.\n");
 #endif
 
-		priority += sets.sets[root].set_size;
-
-		clique_search_state* new_state = (clique_search_state*) malloc(sizeof(clique_search_state));
-		if (new_state == NULL) {
-			return false;
-		} else if (!init(*new_state, clique, clique_count, neighborhood, root, priority)) {
-			free(new_state); return false;
-		}
-
-print("Pushing neighborhood state:\n", stderr);
-print(*new_state, stderr); print('\n', stderr);
-		queue.push(new_state);
 		neighborhood[neighborhood.length++] = root;
 	} else {
 		for (unsigned int child : sets.extensional_graph.vertices[root].children) {
 			if (sets.sets[child].set_size == 0) continue;
 			bool was_visited = visited.contains(child);
-			for (unsigned int i = 0; !was_visited && i < clique_count; i++)
-				if (has_descendant(sets, descendants, clique[i], child)) was_visited = true;
+			for (unsigned int i = 0; !was_visited && i < X_count; i++)
+				if (has_descendant(sets, descendants, X[i], child)) was_visited = true;
+			for (unsigned int neighbor : neighborhood)
+				if (has_descendant(sets, descendants, neighbor, child)) was_visited = true;
 			if (was_visited) continue;
-			if (!expand_clique_search_state(queue, sets, clique, clique_count, neighborhood, priority, descendants, visited, set_to_expand, child)) return false;
+			if (!expand_clique_search_state(sets, neighborhood, X, X_count, descendants, visited, set_to_expand, child)) return false;
 		} for (unsigned int child : sets.intensional_graph.vertices[root].children) {
 			if (sets.sets[child].set_size == 0) continue;
 			bool was_visited = visited.contains(child);
-			for (unsigned int i = 0; !was_visited && i < clique_count; i++)
-				if (has_descendant(sets, descendants, clique[i], child)) was_visited = true;
+			for (unsigned int i = 0; !was_visited && i < X_count; i++)
+				if (has_descendant(sets, descendants, X[i], child)) was_visited = true;
+			for (unsigned int neighbor : neighborhood)
+				if (has_descendant(sets, descendants, neighbor, child)) was_visited = true;
 			if (was_visited) continue;
-			if (!expand_clique_search_state(queue, sets, clique, clique_count, neighborhood, priority, descendants, visited, set_to_expand, child)) return false;
+			if (!expand_clique_search_state(sets, neighborhood, X, X_count, descendants, visited, set_to_expand, child)) return false;
 		}
 	}
 	return true;
 }
 
-template<bool RecurseChildren, bool TestTermination, typename Formula>
+template<bool RecurseChildren, bool TestCompletion, bool ReturnOnCompletion, typename StateData, typename Formula, typename... StateArgs>
 bool process_clique_search_state(
-		clique_search_queue& queue,
+		search_queue<StateData>& queue,
 		const set_reasoning<Formula>& sets,
 		const clique_search_state& state,
 		hash_map<unsigned int, hash_set<unsigned int>>& descendants,
-		unsigned int*& clique, unsigned int& clique_count)
+		unsigned int*& clique, unsigned int& clique_count,
+		StateArgs&&... state_args)
 {
-	int priority = sets.sets[state.next_set].set_size;
-	for (unsigned int i = 0; i < state.clique_count; i++)
-		priority += sets.sets[state.clique[i]].set_size;
-
 	unsigned int* new_clique = (unsigned int*) malloc(sizeof(unsigned int) * (state.clique_count + 1));
 	if (new_clique == NULL) {
 		fprintf(stderr, "process_clique_search_state ERROR: Insufficient memory for `new_clique`.\n");
@@ -721,82 +775,102 @@ bool process_clique_search_state(
 
 	array<unsigned int> neighborhood(16);
 	hash_set<unsigned int> visited(16);
+	for (unsigned int i = 0; i < state.X_count; i++) {
+		if (!expand_clique_search_state(sets, neighborhood, neighborhood.data, neighborhood.length, descendants, visited, state.next_set, state.X[i])) {
+			free(new_clique);
+			return false;
+		}
+	}
+	unsigned int new_X_count = neighborhood.length;
 	for (unsigned int i = 0; i < state.neighborhood_count; i++) {
-		if (!expand_clique_search_state(queue, sets,
-				new_clique, state.clique_count + 1, neighborhood, priority,
-				descendants, visited, state.next_set, state.neighborhood[i]))
-		{
+		if (!expand_clique_search_state(sets, neighborhood, neighborhood.data, new_X_count, descendants, visited, state.next_set, state.neighborhood[i])) {
 			free(new_clique);
 			return false;
 		}
 	}
 
-	if (TestTermination && state.neighborhood_count == 0) {
+	int priority = sets.sets[state.next_set].set_size;
+	for (unsigned int i = 0; i < state.clique_count; i++)
+		priority += sets.sets[state.clique[i]].set_size;
+	for (unsigned int i = new_X_count; i < neighborhood.length; i++)
+		priority += sets.sets[neighborhood[i]].set_size;
+
+	for (unsigned int i = new_X_count; i < neighborhood.length; i++) {
+		search_state<StateData> new_state;
+		new_state.state = (StateData*) malloc(sizeof(StateData));
+		if (new_state.state == NULL) {
+			free(new_clique);
+			return false;
+		} else if (!init(*new_state.state, sets, new_clique, state.clique_count + 1,
+				neighborhood.data + i + 1, neighborhood.length - i - 1,
+				neighborhood.data, i, neighborhood[i], priority, std::forward<StateArgs>(state_args)...))
+		{
+			free(new_state.state); free(new_clique);
+			return false;
+		}
+
+		queue.push(new_state);
+		priority -= sets.sets[neighborhood[i]].set_size;
+	}
+
+	if (TestCompletion && state.neighborhood_count == 0 && state.X_count == 0) {
 		/* `expand_clique_search_state` did not add any states to the queue, meaning this clique is maximal */
-		print(new_clique, state.clique_count + 1, stderr); print('\n', stderr);
-		//clique = new_clique;
-		//clique_count = state.clique_count + 1;
-		//return true;
+		clique = new_clique;
+		clique_count = state.clique_count + 1;
+		if (ReturnOnCompletion) return true;
+	} else {
+		free(new_clique);
 	}
 
 	if (RecurseChildren) {
-		if (!neighborhood.ensure_capacity(neighborhood.length
-				+ sets.extensional_graph.vertices[state.next_set].children.length
-				+ sets.intensional_graph.vertices[state.next_set].children.length))
-		{
-			free(new_clique);
+		unsigned int old_neighborhood_length = neighborhood.length;
+		const array<unsigned int>& extensional_children = sets.extensional_graph.vertices[state.next_set].children;
+		const array<unsigned int>& intensional_children = sets.intensional_graph.vertices[state.next_set].children;
+		if (!neighborhood.append(extensional_children.data, extensional_children.length))
 			return false;
+		for (unsigned int i = 0; i < intensional_children.length; i++) {
+			if (extensional_children.contains(intensional_children[i])) continue;
+			if (!neighborhood.add(intensional_children[i])) return false;
 		}
 
-		priority -= sets.sets[state.next_set].set_size;
-		for (unsigned int child : sets.extensional_graph.vertices[state.next_set].children) {
+		priority -= sets.sets[state.next_set].set_size;		
+		for (unsigned int i = old_neighborhood_length; i < neighborhood.length; i++)
+			priority += sets.sets[neighborhood[i]].set_size;
+
+		for (unsigned int i = old_neighborhood_length; i < neighborhood.length; i++) {
+			unsigned int child = neighborhood[i];
 			if (sets.sets[child].set_size == 0) continue;
-			clique_search_state* new_state = (clique_search_state*) malloc(sizeof(clique_search_state));
-			priority += sets.sets[child].set_size;
-			if (new_state == NULL) {
-				free(new_clique);
+			search_state<StateData> new_state;
+			new_state.state = (StateData*) malloc(sizeof(StateData));
+			if (new_state.state == NULL) {
 				return false;
-			} else if (!init(*new_state, state.clique, state.clique_count, neighborhood, child, priority)) {
-				free(new_clique); free(new_state);
+			} else if (!init(*new_state.state, sets, state.clique, state.clique_count,
+					neighborhood.data + i + 1, neighborhood.length - i - 1,
+					neighborhood.data, i, child, priority, std::forward<StateArgs>(state_args)...))
+			{
+				free(new_state.state);
 				return false;
 			}
 			queue.push(new_state);
-			neighborhood[neighborhood.length++] = child;
-		} for (unsigned int child : sets.intensional_graph.vertices[state.next_set].children) {
-			if (sets.sets[child].set_size == 0) continue;
-			clique_search_state* new_state = (clique_search_state*) malloc(sizeof(clique_search_state));
-			priority += sets.sets[child].set_size;
-			if (new_state == NULL) {
-				free(new_clique);
-				return false;
-			} else if (!init(*new_state, state.clique, state.clique_count, neighborhood, child, priority)) {
-				free(new_clique); free(new_state);
-				return false;
-			}
-print("Pushing child state:\n", stderr);
-print(*new_state, stderr); print('\n', stderr);
-			queue.push(new_state);
-			neighborhood[neighborhood.length++] = child;
+			priority -= sets.sets[child].set_size;
 		}
 	}
 
-	free(new_clique);
 	return true;
 }
 
 template<typename Formula>
-bool find_largest_disjoint_clique(
+bool find_largest_disjoint_subset_clique(
 		const set_reasoning<Formula>& sets, unsigned int root,
 		unsigned int*& clique, unsigned int& clique_count)
 {
-	clique_search_queue queue;
+	search_queue<clique_search_state> queue;
 	hash_map<unsigned int, hash_set<unsigned int>> descendants(64);
 
-	array<unsigned int> initial_neighborhood(1);
 	clique_search_state initial_state;
-	if (!init(initial_state, NULL, 0, initial_neighborhood, root, INT_MAX)) {
+	if (!init(initial_state, sets, NULL, 0, NULL, 0, NULL, 0, root, INT_MAX)) {
 		return false;
-	} else if (!process_clique_search_state<true, false>(queue, sets, initial_state, descendants, clique, clique_count)) {
+	} else if (!process_clique_search_state<true, false, false>(queue, sets, initial_state, descendants, clique, clique_count)) {
 		free(initial_state);
 		for (auto entry : descendants) free(entry.value);
 		return false;
@@ -806,13 +880,172 @@ bool find_largest_disjoint_clique(
 	bool success = true;
 	clique = NULL; clique_count = 0;
 	for (unsigned int iteration = 0; success && !queue.is_empty(); iteration++) {
-		clique_search_state* state = queue.pop(iteration);
-fprintf(stderr, "[iteration %u] Popped state:\n", iteration);
-print(*state, stderr);
-		success = process_clique_search_state<true, true>(queue, sets, *state, descendants, clique, clique_count);
-		free(*state); free(state);
+		search_state<clique_search_state> next = queue.pop(iteration);
+		success = process_clique_search_state<true, true, true>(queue, sets, *next.state, descendants, clique, clique_count);
+		free(next);
 
 		if (clique != NULL) break;
+	}
+
+	for (auto entry : descendants) free(entry.value);
+	return success;
+}
+
+inline bool add_non_ancestor_neighbor(
+		unsigned int child, bool& changed, array<unsigned int>& neighborhood,
+		hash_map<unsigned int, array<unsigned int>>& non_ancestor_neighborhood)
+{
+	bool contains;
+	array<unsigned int>& child_neighborhood = non_ancestor_neighborhood.get(child, contains);
+	if (contains) {
+		for (unsigned int child_neighbor : child_neighborhood) {
+			if (neighborhood.contains(child_neighbor)) continue;
+			if (!neighborhood.add(child_neighbor)) return false;
+			changed = true;
+		}
+	} else {
+		if (!neighborhood.add(child)) return false;
+		changed = true;
+	}
+	return true;
+}
+
+template<typename Formula>
+inline bool add_non_ancestor_neighbors(
+		const set_reasoning<Formula>& sets, unsigned int node, bool& changed,
+		hash_map<unsigned int, array<unsigned int>>& non_ancestor_neighborhood)
+{
+	array<unsigned int>& neighborhood = non_ancestor_neighborhood.get(node);
+	for (unsigned int child : sets.extensional_graph.vertices[node].children)
+		if (!add_non_ancestor_neighbor(child, changed, neighborhood, non_ancestor_neighborhood)) return false;
+	for (unsigned int child : sets.intensional_graph.vertices[node].children)
+		if (!add_non_ancestor_neighbor(child, changed, neighborhood, non_ancestor_neighborhood)) return false;
+	return true;
+}
+
+template<typename Formula>
+bool find_largest_disjoint_clique_with_set(
+		const set_reasoning<Formula>& sets, unsigned int set,
+		unsigned int*& clique, unsigned int& clique_count,
+		unsigned int& ancestor_of_clique)
+{
+	/* first collect all ancestors of `set` */
+	array<unsigned int> stack(8);
+	stack[stack.length++] = set;
+	hash_map<unsigned int, array<unsigned int>> non_ancestor_neighborhood(32);
+	while (stack.length > 0) {
+		unsigned int current = stack.pop();
+		if (!non_ancestor_neighborhood.check_size()) {
+			for (auto entry : non_ancestor_neighborhood) free(entry.value);
+			return false;
+		}
+
+		bool contains; unsigned int bucket;
+		array<unsigned int>& siblings = non_ancestor_neighborhood.get(current, contains, bucket);
+		if (!contains) {
+			if (!array_init(siblings, 4)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			}
+			non_ancestor_neighborhood.table.keys[bucket] = current;
+			non_ancestor_neighborhood.table.size++;
+		}
+
+		for (unsigned int parent : sets.extensional_graph.vertices[current].parents) {
+			if (non_ancestor_neighborhood.table.contains(parent)) continue;
+			if (!stack.add(parent)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			}
+		} for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
+			if (non_ancestor_neighborhood.table.contains(parent)) continue;
+			if (!stack.add(parent)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			}
+		}
+	}
+
+	stack[stack.length++] = set;
+	while (stack.length > 0) {
+		unsigned int current = stack.pop();
+		for (unsigned int parent : sets.extensional_graph.vertices[current].parents) {
+			bool parent_changed = false;
+			if (!add_non_ancestor_neighbors(sets, parent, parent_changed, non_ancestor_neighborhood)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			} if (parent_changed && !stack.add(parent)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			}
+		} for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
+			bool parent_changed = false;
+			if (!add_non_ancestor_neighbors(sets, parent, parent_changed, non_ancestor_neighborhood)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			} if (parent_changed && !stack.add(parent)) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			}
+		}
+	}
+
+	bool contains; unsigned int bucket;
+	free(non_ancestor_neighborhood.get(set, contains, bucket));
+	non_ancestor_neighborhood.remove_at(bucket);
+
+	search_queue<ancestor_clique_search_state> queue;
+	hash_map<unsigned int, hash_set<unsigned int>> descendants(64);
+	clique = NULL; clique_count = 0;
+	int best_clique_score = INT_MIN;
+	for (const auto& entry : non_ancestor_neighborhood) {
+		ancestor_clique_search_state initial_state;
+		initial_state.ancestor = entry.key;
+		unsigned int* completed_clique = NULL; unsigned int completed_clique_count;
+		if (!init(initial_state.clique_state, sets, NULL, 0, entry.value.data, entry.value.length, NULL, 0, set, INT_MAX)) {
+			for (auto entry : descendants) free(entry.value);
+			for (auto entry : non_ancestor_neighborhood) free(entry.value);
+			return false;
+		} else if (!process_clique_search_state<false, true, false>(queue, sets, initial_state.clique_state,
+				descendants, completed_clique, completed_clique_count, initial_state.ancestor))
+		{
+			free(initial_state);
+			for (auto entry : descendants) free(entry.value);
+			for (auto entry : non_ancestor_neighborhood) free(entry.value);
+			return false;
+		}
+		free(initial_state);
+
+		if (completed_clique != NULL) {
+			/* this only happens if the `set` is disjoint with everything in the initial neighborhood */
+			if (clique != NULL) free(clique);
+			clique = completed_clique;
+			clique_count = completed_clique_count;
+			ancestor_of_clique = entry.key;
+			best_clique_score = sets.sets[set].set_size - sets.sets[entry.key].set_size;
+		}
+	}
+	for (auto entry : non_ancestor_neighborhood) free(entry.value);
+
+	bool success = true;
+	for (unsigned int iteration = 0; success && !queue.is_empty() && queue.priority() > best_clique_score; iteration++) {
+		search_state<ancestor_clique_search_state> next = queue.pop(iteration);
+		unsigned int* completed_clique = NULL; unsigned int completed_clique_count;
+		success = process_clique_search_state<true, true, true>(queue, sets, next.state->clique_state,
+				descendants, completed_clique, completed_clique_count, next.state->ancestor);
+
+		if (completed_clique != NULL) {
+			if (queue.last_priority > best_clique_score) {
+				if (clique != NULL) free(clique);
+				clique = completed_clique;
+				clique_count = completed_clique_count;
+				ancestor_of_clique = next.state->ancestor;
+				best_clique_score = queue.last_priority;
+			} else {
+				free(completed_clique);
+			}
+		}
+		free(next);
 	}
 
 	for (auto entry : descendants) free(entry.value);
