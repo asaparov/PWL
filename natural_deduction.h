@@ -30,6 +30,7 @@ enum class nd_step_type : uint_fast16_t
 	BICONDITIONAL_INTRODUCTION,
 	BICONDITIONAL_ELIMINATION_LEFT,
 	BICONDITIONAL_ELIMINATION_RIGHT,
+	EQUALITY_ELIMINATION,
 	PROOF_BY_CONTRADICTION,
 	NEGATION_ELIMINATION,
 
@@ -1228,6 +1229,11 @@ struct natural_deduction
 
 	static inline Proof* new_biconditional_elim_right(Proof* biconditional, Proof* right) {
 		return new_binary_step<nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT>(biconditional, right);
+	}
+
+	template<template<typename> class Array>
+	static inline Proof* new_equality_elim(Proof* equality, Proof* formula, const Array<unsigned int>& indices) {
+		return new_ternary_step<nd_step_type::EQUALITY_ELIMINATION>(equality, formula, new_array_parameter(indices));
 	}
 
 	static inline Proof* new_proof_by_contradiction(Proof* proof, Proof* assumption) {

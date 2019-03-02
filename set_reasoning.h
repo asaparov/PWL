@@ -1259,6 +1259,12 @@ struct set_reasoning
 		return true;
 	}
 
+	unsigned int get_size(Formula* formula, bool& contains) const {
+		set_id = set_ids.get(*formula, contains);
+		if (!contains) return 0;
+		return sets[set_id].set_size;
+	}
+
 	template<bool ResolveInconsistencies>
 	bool set_size(Formula* formula, unsigned int new_size) {
 		unsigned int set_id;

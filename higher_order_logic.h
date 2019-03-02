@@ -175,6 +175,7 @@ struct hol_term
 	static inline hol_term* new_for_all(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_exists(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_lambda(unsigned int variable, hol_term* operand);
+	static inline hol_term* new_int(int value);
 
 	static inline unsigned int hash(const hol_term& key);
 	static inline bool is_empty(const hol_term& key);
@@ -1588,6 +1589,15 @@ inline hol_term* hol_term::new_exists(unsigned int variable, hol_term* operand) 
 
 inline hol_term* hol_term::new_lambda(unsigned int variable, hol_term* operand) {
 	return new_hol_quantifier<hol_term_type::LAMBDA>(variable, operand);
+}
+
+inline hol_term* hol_term::new_int(int value) {
+	hol_term* term;
+	if (!new_hol_term(term)) return NULL;
+	term->reference_count = 1;
+	term->type = hol_term_type::INTEGER;
+	term->integer = value;
+	return term;
 }
 
 

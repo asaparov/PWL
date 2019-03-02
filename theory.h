@@ -167,18 +167,29 @@ struct theory
 	hash_map<unsigned int, concept<ProofCalculus>> ground_concepts;
 	unsigned int ground_axiom_count;
 
-	array<Proof*> universal_quantifications;
-
 	hash_set<Proof*> observations;
 	hash_multiset<Formula*, false> proof_axioms;
 	set_reasoning<Formula> sets;
+
+	Proof* empty_set_axiom;
 
 	Canonicalizer canonicalizer;
 
 	theory(unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), types(64), relations(64),
-			ground_concepts(64), ground_axiom_count(0), universal_quantifications(32),
-			observations(64), proof_axioms(64) { }
+			ground_concepts(64), ground_axiom_count(0), observations(64), proof_axioms(64)
+	{
+		Formula* empty_set_formula = Formula::new_for_all(1, Formula::new_equals(
+			Formula::equals(Formula::new_atom(PREDICATE_SIZE, Formula::new_lambda(1)), Formula::new_int(0)),
+			Formula::new_not(Formula::new_exists(Formula::new_variable(1)))
+		));
+		if (empty_set_formula == NULL) exit(EXIT_FAILURE);
+		empty_set_axiom = ProofCalculus::new_axiom(empty_set_formula);
+		core::free(*empty_set_formula);
+		if (empty_set_formula->reference_count == 0)
+			core::free(empty_set_formula);
+		if (empty_set_axiom == NULL) exit(EXIT_FAILURE);
+	}
 
 	~theory() {
 		for (auto entry : types) {
@@ -191,27 +202,28 @@ struct theory
 			core::free(*proof);
 			if (proof->reference_count == 0)
 				core::free(proof);
-		} for (Proof* proof : universal_quantifications) {
+		} for (Proof* proof : non_existence_axioms) {
 			core::free(*proof);
 			if (proof->reference_count == 0)
 				core::free(proof);
 		} for (auto entry : ground_concepts) {
 			core::free(entry.value);
 		}
+		core::free(*empty_set_axiom);
+		if (empty_set_axiom->reference_count == 0)
+			core::free(empty_set_axiom);
 	}
 
 	template<typename Stream, typename... Printer>
 	bool print_axioms(Stream& out, Printer&&... printer) const {
-		for (Proof* axiom : universal_quantifications) {
-			if (!print(*axiom->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
-		} for (auto entry : ground_concepts) {
+		for (auto entry : ground_concepts) {
 			if (!entry.value.print_axioms(out, std::forward<Printer>(printer)...)) return false;
 		}
-		return true;
+		return sets.print_axioms(out, std::forward<Printer>(printer)...);
 	}
 
 	inline unsigned int axiom_count() const {
-		return universal_quantifications.length + ground_axiom_count;
+		return sets.axiom_count() + ground_axiom_count;
 	}
 
 	bool add_formula(Formula* formula, unsigned int& new_constant)
@@ -247,19 +259,6 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			return false;
 		}
 		return true;
-	}
-
-	inline bool add_universal_quantification(Proof* axiom) {
-		if (!universal_quantifications.add(axiom))
-			return false;
-		axiom->reference_count++;
-		return true;
-	}
-
-	inline void remove_universal_quantification(unsigned int axiom_index) {
-		Proof* axiom = universal_quantifications[axiom_index];
-		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
-		universal_quantifications.remove(axiom_index);
 	}
 
 	template<bool Negated>
@@ -525,6 +524,17 @@ private:
 		} else if (canonicalized->type == FormulaType::NOT) {
 			if (is_atomic(*canonicalized->unary.operand, predicate, arg1, arg2)) {
 				return make_atom_proof<true>(canonicalized, predicate, arg1, arg2, new_constant);
+			} else if (canonicalized->type == FormulaType::EXISTS) {
+				/* get empty set size axiom, forcing inconsistencies to be resolved */
+				Formula* set_formula = canonicalized->quantifier.operand;
+				Formula* set_size_axiom = sets.get_size_axiom<true>(set_formula, 0);
+				if (set_size_axiom == NULL) return NULL;
+
+				/* TODO: what are the semantics of the third argument to new_equality_elim? */
+				Proof* proof = ProofCalculus::new_equality_elim(set_size_axiom, ProofCalculus::new_universal_elim(empty_set_axiom, set_formula));
+				if (proof == NULL) return NULL;
+				proof->reference_count++;
+				return proof;
 			}
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			unsigned int variable = canonicalized->quantifier.variable;
