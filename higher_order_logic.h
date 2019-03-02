@@ -166,8 +166,10 @@ struct hol_term
 	static hol_term* new_apply(hol_term* function, hol_term* arg1, hol_term* arg2);
 	template<typename... Args> static inline hol_term* new_and(Args&&... args);
 	template<typename... Args> static inline hol_term* new_or(Args&&... args);
-	static inline hol_term* new_equals(hol_term* first, hol_term* second);
 	template<typename... Args> static inline hol_term* new_iff(Args&&... args);
+	static inline hol_term* new_equals(hol_term* first, hol_term* second);
+	template<template<typename> class Array> static inline hol_term* new_and(Array<hol_term*>& args);
+	template<template<typename> class Array> static inline hol_term* new_or(Array<hol_term*>& args);
 	static hol_term* new_if_then(hol_term* first, hol_term* second);
 	static hol_term* new_not(hol_term* operand);
 	static inline hol_term* new_for_all(unsigned int variable, hol_term* operand);
@@ -1481,6 +1483,16 @@ inline hol_term* hol_term::new_or(Args&&... args) {
 	return new_hol_array<hol_term_type::OR>(std::forward<Args>(args)...);
 }
 
+template<template<typename> class Array>
+inline hol_term* hol_term::new_and(Array<hol_term*>& args) {
+	return new_hol_array<hol_term_type::AND>(args);
+}
+
+template<template<typename> class Array>
+inline hol_term* hol_term::new_or(Array<hol_term*>& args) {
+	return new_hol_array<hol_term_type::OR>(args);
+}
+
 template<hol_term_type Type>
 inline hol_term* new_hol_binary_term(hol_term* first, hol_term* second) {
 	if (first == NULL || second == NULL)
@@ -2162,7 +2174,7 @@ inline bool get_function_child_types(unsigned int type_variable,
 	switch (type_variables[type_variable].kind) {
 	case hol_type_kind::ANY:
 		if (!type_variables.ensure_capacity(type_variables.length + 2))
-			return NULL;
+			return false;
 		if (!init(type_variables[type_variables.length], hol_type_kind::ANY)) return false;
 		type_variables.length++;
 		if (!init(type_variables[type_variables.length], hol_type_kind::ANY)) return false;
@@ -2564,7 +2576,7 @@ struct equals_arg_types {
 
 	template<hol_term_type Type, typename... Args,
 		typename std::enable_if<Type != hol_term_type::EQUALS>::type* = nullptr>
-	constexpr bool add(const hol_term& term, const hol_type& type, Args&&... extra_types) {
+	constexpr bool add(const hol_term& term, const hol_type& type, Args&&... extra_types) const {
 		return true;
 	}
 

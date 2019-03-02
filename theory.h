@@ -5,6 +5,7 @@
 #include <math/multiset.h>
 
 #include "array_view.h"
+#include "set_reasoning.h"
 
 using namespace core;
 
@@ -170,6 +171,7 @@ struct theory
 
 	hash_set<Proof*> observations;
 	hash_multiset<Formula*, false> proof_axioms;
+	set_reasoning<Formula> sets;
 
 	Canonicalizer canonicalizer;
 
@@ -533,10 +535,11 @@ private:
 				if (atomic && arg1->type == TermType::VARIABLE
 				 && arg1->variable == variable && arg2 ==  NULL)
 				{
-					if (predicate == PREDICATE_UNKNOWN) {
-						/* this is a definition of a type */
-						Formula* right = canonicalized->quantifier.operand->binary.right;
+					/* this is a definition of a type */
+					Formula* right = canonicalized->quantifier.operand->binary.right;
 
+					if (predicate == PREDICATE_UNKNOWN)
+					{
 						/* check the right-hand side is a valid definition */
 						if (!valid_definition(right, variable)) {
 							fprintf(stderr, "theory.make_proof ERROR: This is not a valid type definition.\n");
@@ -587,6 +590,8 @@ private:
 						return proof;*/
 					} else {
 						/* this is a formula of form `![x]:(t(x) => f(x))` */
+						sets.add_subset_relation()
+
 						/* TODO: check that this is not implied by an existing univerally-quantified axiom */
 						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 						if (new_axiom == NULL) return NULL;
