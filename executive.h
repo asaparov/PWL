@@ -39,7 +39,6 @@ bool read_sentence(
 			break;
 		} else if (parse_count > 0 && unrecognized.length == 1 && unrecognized[0].id == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			new_constant = 0;
 			bool success = T.add_formula(logical_forms[0], new_constant)
 						&& parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);

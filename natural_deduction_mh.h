@@ -420,13 +420,16 @@ bool propose_universal_intro(
 
 	proof_transformations<Formula> proposed_proofs;
 
-	/* NOTE: We can't check if there is an existing universally-quantified
-			 formula that implies the new formula (that we propose in this
-			 function), or vice versa, since the inverse proposal has zero
-			 probability. Rather, we constrain the theory such that for any
-			 literal observation, if it can be proved by a universally-
-			 quantified axiom, we initialize its proof to use that axiom,
-			 rather than adding a trivial proof of the literal. */
+	/* look for existing universally-quantified formulas that imply this formula */
+	array<pair<unsigned int, unsigned int>> satisfying_extensional_edges(16);
+	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
+		if (T.sets.sets[i].size_axiom == NULL) continue;
+		if (is_subset(a, T.sets.sets[i].set_formula())) {
+			for (const auto& entry : T.sets.extensional_graph.vertices[i].children) {
+				/* TODO: check if the instance cannot belong to the set given by `entry` (if there is a contradiction) */
+			}
+		}
+	}
 
 	/* compute the set of constants for which the selected axiom is true */
 	const array<unsigned int>& negated_set = get_concept_set(T, !a);
@@ -756,18 +759,19 @@ bool make_grounded_conjunction(
 
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_elim_proposal {
-	unsigned int universal_axiom_index;
+	unsigned int antecedent_set;
+	unsigned int consequent_set;
 	hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms;
 	atom<Negated, Arity> consequent_atom;
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_proposal(
-		unsigned int universal_axiom_index,
+		unsigned int antecedent_set, unsigned int consequent_set,
 		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms,
 		atom<Negated, Arity> consequent_atom)
 {
-	return {universal_axiom_index, new_grounded_axioms, consequent_atom};
+	return {antecedent_set, consequent_set, new_grounded_axioms, consequent_atom};
 }
 
 template<typename Formula, typename ProofPrior, typename Canonicalizer>

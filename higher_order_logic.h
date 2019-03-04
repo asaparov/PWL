@@ -175,7 +175,6 @@ struct hol_term
 	static inline hol_term* new_for_all(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_exists(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_lambda(unsigned int variable, hol_term* operand);
-	static inline hol_term* new_int(int value);
 
 	static inline unsigned int hash(const hol_term& key);
 	static inline bool is_empty(const hol_term& key);
@@ -863,6 +862,22 @@ inline bool visit(const hol_term& term, const parameter_comparator& visitor) {
 
 inline bool contains_parameter(const hol_term& src, unsigned int parameter) {
 	parameter_comparator visitor = {parameter};
+	return !visit(src, visitor);
+}
+
+struct constant_comparator {
+	unsigned int constant;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, const constant_comparator& visitor) {
+	if (Type == hol_term_type::CONSTANT)
+		return visitor.constant == term.constant;
+	else return true;
+}
+
+inline bool contains_constant(const hol_term& src, unsigned int constant) {
+	constant_comparator visitor = {constant};
 	return !visit(src, visitor);
 }
 
@@ -1589,15 +1604,6 @@ inline hol_term* hol_term::new_exists(unsigned int variable, hol_term* operand) 
 
 inline hol_term* hol_term::new_lambda(unsigned int variable, hol_term* operand) {
 	return new_hol_quantifier<hol_term_type::LAMBDA>(variable, operand);
-}
-
-inline hol_term* hol_term::new_int(int value) {
-	hol_term* term;
-	if (!new_hol_term(term)) return NULL;
-	term->reference_count = 1;
-	term->type = hol_term_type::INTEGER;
-	term->integer = value;
-	return term;
 }
 
 

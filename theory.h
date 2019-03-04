@@ -10,20 +10,20 @@
 using namespace core;
 
 
-enum built_in_predicates : unsigned int {
-	PREDICATE_UNKNOWN = 1,
-	PREDICATE_SET = 2,
-	PREDICATE_ALL = 3,
-	PREDICATE_SIZE = 4,
-	PREDICATE_COUNT
+enum class built_in_predicates : unsigned int {
+	UNKNOWN = 1,
+	SET = 2,
+	ALL = 3,
+	SIZE = 4,
+	COUNT
 };
 
 inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 {
-	return names.put("unknown", PREDICATE_UNKNOWN)
-		&& names.put("set", PREDICATE_SET)
-		&& names.put("all", PREDICATE_ALL)
-		&& names.put("size", PREDICATE_SIZE);
+	return names.put("unknown",	(unsigned int) built_in_predicates::UNKNOWN)
+		&& names.put("set",		(unsigned int) built_in_predicates::SET)
+		&& names.put("all",		(unsigned int) built_in_predicates::ALL)
+		&& names.put("size",	(unsigned int) built_in_predicates::SIZE);
 }
 
 struct relation {
@@ -169,7 +169,7 @@ struct theory
 
 	hash_set<Proof*> observations;
 	hash_multiset<Formula*, false> proof_axioms;
-	set_reasoning<Formula> sets;
+	set_reasoning<built_in_predicates, Formula, ProofCalculus> sets;
 
 	Proof* empty_set_axiom;
 
@@ -180,7 +180,7 @@ struct theory
 			ground_concepts(64), ground_axiom_count(0), observations(64), proof_axioms(64)
 	{
 		Formula* empty_set_formula = Formula::new_for_all(1, Formula::new_equals(
-			Formula::equals(Formula::new_atom(PREDICATE_SIZE, Formula::new_lambda(1)), Formula::new_int(0)),
+			Formula::equals(Formula::new_atom(built_in_predicates::SIZE, Formula::new_lambda(1)), Formula::new_int(0)),
 			Formula::new_not(Formula::new_exists(Formula::new_variable(1)))
 		));
 		if (empty_set_formula == NULL) exit(EXIT_FAILURE);
@@ -199,10 +199,6 @@ struct theory
 			core::free(entry.value.key);
 			core::free(entry.value.value);
 		} for (Proof* proof : observations) {
-			core::free(*proof);
-			if (proof->reference_count == 0)
-				core::free(proof);
-		} for (Proof* proof : non_existence_axioms) {
 			core::free(*proof);
 			if (proof->reference_count == 0)
 				core::free(proof);
@@ -228,14 +224,15 @@ struct theory
 
 	bool add_formula(Formula* formula, unsigned int& new_constant)
 	{
+		new_constant = 0;
 		Formula* canonicalized = canonicalize(*formula, canonicalizer);
 		if (canonicalized == NULL) return false;
 
-		Proof* new_proof = make_proof(canonicalized, new_constant);
+		Proof* new_proof = make_proof<true>(canonicalized, new_constant);
 array_map<unsigned int, unsigned int> constant_map(1);
-constant_map.put(PREDICATE_UNKNOWN, new_constant);
+constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
-if (!check_proof<PREDICATE_SET, PREDICATE_ALL, PREDICATE_SIZE>(*new_proof, expected_conclusion, canonicalizer))
+if (!check_proof<built_in_predicates>(*new_proof, expected_conclusion, canonicalizer))
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(expected_conclusion);
 		core::free(*canonicalized);
@@ -516,18 +513,19 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	}
 
 private:
+	template<bool DefinitionsAllowed>
 	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant)
 	{
 		unsigned int predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
-			return make_atom_proof<false>(canonicalized, predicate, arg1, arg2, new_constant);
+			return make_atom_proof<DefinitionsAllowed, false>(canonicalized, predicate, arg1, arg2, new_constant);
 		} else if (canonicalized->type == FormulaType::NOT) {
 			if (is_atomic(*canonicalized->unary.operand, predicate, arg1, arg2)) {
-				return make_atom_proof<true>(canonicalized, predicate, arg1, arg2, new_constant);
+				return make_atom_proof<DefinitionsAllowed, true>(canonicalized, predicate, arg1, arg2, new_constant);
 			} else if (canonicalized->type == FormulaType::EXISTS) {
 				/* get empty set size axiom, forcing inconsistencies to be resolved */
 				Formula* set_formula = canonicalized->quantifier.operand;
-				Formula* set_size_axiom = sets.get_size_axiom<true>(set_formula, 0);
+				Proof* set_size_axiom = sets.get_size_axiom<true>(set_formula, 0);
 				if (set_size_axiom == NULL) return NULL;
 
 				/* TODO: what are the semantics of the third argument to new_equality_elim? */
@@ -539,103 +537,102 @@ private:
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			unsigned int variable = canonicalized->quantifier.variable;
 			if (canonicalized->quantifier.operand->type == FormulaType::IF_THEN) {
-				const Formula* left = canonicalized->quantifier.operand->binary.left;
+				Formula* left = canonicalized->quantifier.operand->binary.left;
+				Formula* right = canonicalized->quantifier.operand->binary.right;
 				Term const* arg1; Term const* arg2;
 				bool atomic = is_atomic(*left, predicate, arg1, arg2);
 				if (atomic && arg1->type == TermType::VARIABLE
-				 && arg1->variable == variable && arg2 ==  NULL)
+				 && arg1->variable == variable && arg2 == NULL
+				 && predicate == (unsigned int) built_in_predicates::UNKNOWN)
 				{
-					/* this is a definition of a type */
-					Formula* right = canonicalized->quantifier.operand->binary.right;
-
-					if (predicate == PREDICATE_UNKNOWN)
-					{
-						/* check the right-hand side is a valid definition */
-						if (!valid_definition(right, variable)) {
-							fprintf(stderr, "theory.make_proof ERROR: This is not a valid type definition.\n");
-							return NULL;
-						}
-
-						if (!ground_concepts.check_size()) return NULL;
-						new_constant = new_constant_offset + ground_concepts.table.size;
-
-						bool contains; unsigned int bucket;
-						concept<ProofCalculus>& c = ground_concepts.get(new_constant, contains, bucket);
-						if (!contains) {
-							if (!init(c)) return NULL;
-							ground_concepts.table.keys[bucket] = new_constant;
-							ground_concepts.table.size++;
-						}
-
-						/* TODO: definitions of new concepts should be biconditionals */
-						Formula* definition = Formula::new_for_all(variable, Formula::new_if_then(
-								Formula::new_atom(new_constant, Formula::new_variable(variable)), right));
-						if (definition == NULL) return NULL;
-						right->reference_count++;
-
-						Proof* new_axiom = ProofCalculus::new_axiom(definition);
-						free(*definition); if (definition->reference_count == 0) free(definition);
-						if (new_axiom == NULL) return NULL;
-						new_axiom->reference_count++;
-						if (!add_universal_quantification(new_axiom)) {
-							free(*new_axiom); free(new_axiom);
-							return NULL;
-						}
-						return new_axiom;
-
-						/*Formula* definition = Formula::new_for_all(variable, Formula::new_iff(
-								Formula::new_atom(new_constant, Formula::new_variable(variable)), right));
-						if (definition == NULL) return NULL;
-						right->reference_count++;
-
-						Proof* proof = ProofCalculus::new_universal_intro(
-							ProofCalculus::new_implication_intro(
-								ProofCalculus::new_biconditional_elim_left(
-									ProofCalculus::new_universal_elim(ProofCalculus::new_axiom(definition), Formula::new_parameter(1)),
-									ProofCalculus::new_axiom(left)),
-								ProofCalculus::new_axiom(left)), 1);
-						if (proof == NULL) {
-							free(*definition); free(definition);
-						}
-						return proof;*/
-					} else {
-						/* this is a formula of form `![x]:(t(x) => f(x))` */
-						sets.add_subset_relation()
-
-						/* TODO: check that this is not implied by an existing univerally-quantified axiom */
-						Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
-						if (new_axiom == NULL) return NULL;
-						new_axiom->reference_count++;
-						if (!add_universal_quantification(new_axiom)) {
-							free(*new_axiom); free(new_axiom);
-							return NULL;
-						}
-						return new_axiom;
+					if (!DefinitionsAllowed) {
+						fprintf(stderr, "theory.make_proof ERROR: Definitions are not allowed in this context.\n");
+						return NULL;
 					}
-				} else if (is_atomic(*left)) {
-					/* TODO: implement this */
-					fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
-					return NULL;
-				} else if (left->type == FormulaType::AND) {
-					/* TODO: implement this */
-					fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
-					return NULL;
+
+					/* this is a definition of a type */
+					/* check the right-hand side is a valid definition */
+					if (!valid_definition(right, variable)) {
+						fprintf(stderr, "theory.make_proof ERROR: This is not a valid type definition.\n");
+						return NULL;
+					}
+
+					if (!ground_concepts.check_size()) return NULL;
+					new_constant = new_constant_offset + ground_concepts.table.size;
+
+					bool contains; unsigned int bucket;
+					concept<ProofCalculus>& c = ground_concepts.get(new_constant, contains, bucket);
+					if (!contains) {
+						if (!init(c)) return NULL;
+						ground_concepts.table.keys[bucket] = new_constant;
+						ground_concepts.table.size++;
+					}
+
+					/* TODO: definitions of new concepts should be biconditionals */
+					Formula* new_left = Formula::new_atom(new_constant, Formula::new_variable(variable));
+					if (new_left == NULL) return NULL;
+
+					Proof* new_axiom = sets.get_subset_axiom<true>(new_left, right);
+					new_axiom->reference_count++;
+					return new_axiom;
+				} else {
+					/* make sure there are no unknown predicates */
+					if (contains_constant(*left, built_in_predicates::UNKNOWN) || contains_constant(*right, built_in_predicates::UNKNOWN)) {
+						fprintf(stderr, "theory.make_proof ERROR: Universally-quantified statement has unknown constants.\n");
+						return NULL;
+					}
+
+					/* this is a formula of form `![x]:(t(x) => f(x))` */
+					Proof* new_axiom = sets.get_subset_axiom<true>(left, right);
+					new_axiom->reference_count++;
+					return new_axiom;
 				}
 			}
 		} else if (canonicalized->type == FormulaType::AND) {
-			return ProofCalculus::new_conjunction_intro(
-					make_proof(canonicalized->binary.left, new_constant),
-					make_proof(canonicalized->binary.right, new_constant));
+			Proof** operands = (Proof**) malloc(sizeof(Proof*) * canonicalized->array.length);
+			if (operands == NULL) {
+				fprintf(stderr, "theory.make_proof ERROR: Out of memory.\n");
+				return NULL;
+			}
+			for (unsigned int i = 0; i < canonicalized->array.length; i++) {
+				if (new_constant == 0)
+					operands[i] = make_proof<true>(canonicalized->array.operands[i], new_constant);
+				else operands[i] = make_proof<false>(canonicalized->array.operands[i], new_constant);
+
+				if (operands[i] == NULL) {
+					for (unsigned int j = 0; j < i; j++) {
+						free(*operands[j]); if (operands[j]->reference_count == 0) free(operands[j]);
+					}
+				}
+			}
+			Proof* conjunction = ProofCalculus::new_conjunction_intro(make_array_view(operands, canonicalized->array.length));
+			for (unsigned int j = 0; j < canonicalized->array.length; j++) {
+				free(*operands[j]); if (operands[j]->reference_count == 0) free(operands[j]);
+			}
+			return conjunction;
 		} else if (canonicalized->type == FormulaType::EXISTS) {
 			/* TODO: implement this */
 			fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
 			return NULL;
+		} else if (canonicalized->type == FormulaType::EQUALS) {
+			Formula* left = canonicalized->binary.left;
+			Formula* right = canonicalized->binary.right;
+			Term* arg1; Term* arg2;
+			bool atomic = is_atomic(*left, predicate, arg1, arg2);
+			if (atomic && predicate == (unsigned int) built_in_predicates::SIZE
+			 && arg1->type == TermType::LAMBDA && arg2 == NULL
+			 && right->type == TermType::INTEGER)
+			{
+				Proof* set_size_axiom = sets.get_size_axiom<true>(arg1->quantifier.operand, 0);
+				set_size_axiom->reference_count++;
+				return set_size_axiom;
+			}
 		}
 		fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
 		return NULL;
 	}
 
-	template<bool Negated>
+	template<bool DefinitionsAllowed, bool Negated>
 	Proof* make_atom_proof(Formula* canonicalized, unsigned int predicate,
 			Term* arg1, Term* arg2, unsigned int& new_constant)
 	{
@@ -643,9 +640,13 @@ private:
 		if (arg1->type == TermType::CONSTANT && arg2 == NULL)
 		{
 			/* this is a unary formula */
-			if (predicate != PREDICATE_UNKNOWN) {
-				if (arg1->constant == PREDICATE_UNKNOWN) {
+			if (predicate != (unsigned int) built_in_predicates::UNKNOWN) {
+				if (arg1->constant == built_in_predicates::UNKNOWN) {
 					/* this is a definition of an object */
+					if (!DefinitionsAllowed) {
+						fprintf(stderr, "theory.make_atom_proof ERROR: Definitions are not allowed in this context.\n");
+						return NULL;
+					}
 					if (!ground_concepts.check_size()) return NULL;
 					new_constant = new_constant_offset + ground_concepts.table.size;
 					arg1->constant = new_constant;
@@ -668,49 +669,6 @@ private:
 					return new_axiom;
 				} else {
 					/* this is a formula of form `t(c)` */
-
-					/* check that this is not implied by an existing univerally-quantified axiom */
-					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
-						Proof* axiom = universal_quantifications[k];
-						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-						unsigned int i = 0;
-						if (consequent->type == FormulaType::AND) {
-							for (; i < consequent->array.length; i++) {
-								Term const* dst = NULL;
-								Term* variable = Formula::new_variable(axiom->formula->quantifier.variable);
-								if (unify(*consequent->array.operands[i], *canonicalized, variable, dst)) {
-									free(*variable); if (variable->reference_count == 0) free(variable);
-									break;
-								}
-								free(*variable); if (variable->reference_count == 0) free(variable);
-							}
-							if (i == consequent->array.length) continue;
-						} else if (*consequent != *canonicalized) {
-							i = consequent->array.length;
-							continue;
-						}
-
-						/* check if the antecedent is satisfied by `c` */
-						Proof* proof;
-						if (!make_universal_elim_proof(consequent, ground_concepts.get(arg1->constant), proof))
-							return NULL;
-						if (proof != NULL) {
-							proof->reference_count++;
-							Proof* new_proof;
-							if (i == consequent->array.length) {
-								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof);
-							} else {
-								new_proof = ProofCalculus::new_conjunction_elim(
-										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof),
-										make_array_view(&i, 1));
-							}
-							free(*proof); if (proof->reference_count == 0) free(proof);
-							if (new_proof == NULL) return NULL;
-							return new_proof;
-						}
-					}
-
-					/* no existing universally-quantified axiom implies this observation */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
@@ -729,57 +687,14 @@ private:
 				&& arg2->type == TermType::CONSTANT)
 		{
 			/* this is a binary formula */
-			if (predicate != PREDICATE_UNKNOWN)
+			if (predicate != (unsigned int) built_in_predicates::UNKNOWN)
 			{
-				if (arg1->constant == PREDICATE_UNKNOWN
-				 || arg2->constant == PREDICATE_UNKNOWN) {
+				if (arg1->constant == built_in_predicates::UNKNOWN
+				 || arg2->constant == built_in_predicates::UNKNOWN) {
 					fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
 					return NULL;
 				} else {
 					/* this is a formula of form `r(c_1,c_2)` */
-
-					/* check that this is not implied by an existing univerally-quantified axiom */
-					for (unsigned int k = 0; k < universal_quantifications.length; k++) {
-						Proof* axiom = universal_quantifications[k];
-						Formula* consequent = axiom->formula->quantifier.operand->binary.right;
-						Term const* unifying_term = NULL;
-						unsigned int i = 0;
-						if (consequent->type == FormulaType::AND) {
-							for (; i < consequent->array.length; i++) {
-								Term* variable = Formula::new_variable(axiom->formula->quantifier.variable);
-								if (unify(*consequent->array.operands[i], *canonicalized, variable, unifying_term)) {
-									free(*variable); if (variable->reference_count == 0) free(variable);
-									break;
-								}
-								free(*variable); if (variable->reference_count == 0) free(variable);
-							}
-							if (i == consequent->array.length) continue;
-						} else if (*consequent != *canonicalized) {
-							i = consequent->array.length;
-							continue;
-						}
-
-						/* check if the antecedent is satisfied by `c_1` or `c_2` (whichever unifies with the consequent) */
-						Proof* proof;
-						if (!make_universal_elim_proof(consequent, ground_concepts.get(unifying_term->constant), proof))
-							return NULL;
-						if (proof != NULL) {
-							proof->reference_count++;
-							Proof* new_proof;
-							if (i == consequent->array.length) {
-								new_proof = ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof);
-							} else {
-								new_proof = ProofCalculus::new_conjunction_elim(
-										ProofCalculus::new_implication_elim(ProofCalculus::new_universal_elim(axiom, arg1), proof),
-										make_array_view(&i, 1));
-							}
-							free(*proof); if (proof->reference_count == 0) free(proof);
-							if (new_proof == NULL) return NULL;
-							return new_proof;
-						}
-					}
-
-					/* no existing universally-quantified axiom implies this observation */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
@@ -804,7 +719,7 @@ private:
 	{
 		unsigned int predicate; Term const* arg1; Term const* arg2;
 		if (is_atomic(*right, predicate, arg1, arg2)) {
-			return predicate != PREDICATE_UNKNOWN
+			return predicate != (unsigned int) built_in_predicates::UNKNOWN
 				&& arg1->type == TermType::VARIABLE
 				&& arg1->variable == quantified_variable
 				&& arg2 == NULL;

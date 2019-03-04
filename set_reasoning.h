@@ -11,16 +11,16 @@ using namespace core;
 
 /* forward declarations */
 
-template<typename Formula, typename ProofCalculus> struct set_reasoning;
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus> struct set_reasoning;
 
-template<int MinPriority, typename Formula, typename ProofCalculus>
+template<int MinPriority, typename BuiltInConstants, typename Formula, typename ProofCalculus>
 bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<Formula, ProofCalculus>&,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>&,
 		unsigned int, unsigned int*&, unsigned int&, unsigned int&);
-template<int MinPriority, typename Formula, typename ProofCalculus>
+template<int MinPriority, typename BuiltInConstants, typename Formula, typename ProofCalculus>
 bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<Formula, ProofCalculus>&, unsigned int,
-		unsigned int, unsigned int*&, unsigned int&, unsigned int&);
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>&,
+		unsigned int, unsigned int, unsigned int*&, unsigned int&, unsigned int&);
 
 template<typename T, typename Stream>
 bool print(const hash_set<T>& set, Stream& out) {
@@ -86,11 +86,6 @@ inline bool init(extensional_set_vertex<ProofCalculus>& vertex) {
 	}
 	return true;
 }
-
-struct set_cover {
-	array<unsigned int> sets;
-	unsigned int covered_set;
-};
 
 struct intensional_set_graph {
 	intensional_set_vertex* vertices;
@@ -305,51 +300,78 @@ bool get_descendants(
 	return true;
 }
 
-template<typename Formula>
-struct set_info {
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+struct set_info
+{
+	typedef typename ProofCalculus::Proof Proof;
+
 	unsigned int set_size;
-	bool fixed_set_size;
-	Formula* set_formula;
+	Proof* size_axiom;
 	hash_set<unsigned int> descendants;
 
 	static inline void free(set_info& info) {
 		core::free(info.descendants);
-		core::free(*info.set_formula);
-		if (info.set_formula->reference_count == 0)
-			core::free(info.set_formula);
-		info.set_formula = NULL;
+		core::free(*info.size_axiom);
+		if (info.size_axiom->reference_count == 0)
+			core::free(info.size_axiom);
+		info.size_axiom = NULL;
+	}
+
+	inline Formula* set_formula() {
+		return size_axiom->formula->binary.left->binary.right->quantifier.operand;
+	}
+
+	/* TODO: this function does not check the consistency of the new size */
+	inline void change_size(unsigned int new_size) {
+		set_size = new_size;
+		size_axiom->formula->binary.right->integer = new_size;
 	}
 };
 
-template<typename Formula>
-inline bool init(set_info<Formula>& info, unsigned int set_size, Formula* set_formula) {
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline bool init(
+		set_info<BuiltInConstants, Formula, ProofCalculus>& info,
+		unsigned int set_size, Formula* set_formula)
+{
 	info.set_size = set_size;
-	info.fixed_set_size = false;
-	info.set_formula = set_formula;
+	Formula* size_axiom_formula = Formula::new_equals(Formula::new_atom(
+			(unsigned int) BuiltInConstants::SIZE, Formula::new_lambda(1, set_formula)), Formula::new_int(set_size));
+	if (size_axiom_formula == NULL) return false;
 	set_formula->reference_count++;
-	return hash_set_init(info.descendants, 16);
+	info.size_axiom = ProofCalculus::new_axiom(size_axiom_formula);
+	free(*size_axiom_formula); if (size_axiom_formula->reference_count == 0) free(size_axiom_formula);
+	if (info.size_axiom == NULL) return false;
+	info.size_axiom->reference_count++;
+	if (!hash_set_init(info.descendants, 16)) {
+		free(*info.size_axiom); if (info.size_axiom->reference_count == 0) free(info.size_axiom);
+		return false;
+	}
+	return true;
 }
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 struct set_reasoning
 {
 	typedef typename ProofCalculus::Proof Proof;
 
 	extensional_set_graph<ProofCalculus> extensional_graph;
 	intensional_set_graph intensional_graph;
-	set_info<Formula>* sets;
+	set_info<BuiltInConstants, Formula, ProofCalculus>* sets;
 
 	unsigned int capacity;
 	unsigned int set_count;
+	unsigned int extensional_edge_count;
 
 	hash_map<Formula, unsigned int> set_ids;
 
-	set_reasoning() : extensional_graph(1024), intensional_graph(1024), capacity(1024), set_count(0), set_ids(2048)
+	set_reasoning() :
+			extensional_graph(1024), intensional_graph(1024), capacity(1024),
+			set_count(0), extensional_edge_count(0), set_ids(2048)
 	{
-		sets = (set_info<Formula>*) malloc(sizeof(set_info<Formula>) * capacity);
+		sets = (set_info<BuiltInConstants, Formula, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, Formula, ProofCalculus>) * capacity);
 		if (sets == NULL) exit(EXIT_FAILURE);
 		for (unsigned int i = 1; i < capacity; i++)
-			sets[i].set_formula = NULL;
+			sets[i].size_axiom = NULL;
 
 		unsigned int empty_set_id;
 		Formula* empty = Formula::new_false();
@@ -357,13 +379,12 @@ struct set_reasoning
 		 || !get_set_id(empty, empty_set_id))
 			exit(EXIT_FAILURE);
 		free(*empty); if (empty->reference_count == 0) free(empty);
-		sets[empty_set_id].set_size = 0;
-		sets[empty_set_id].fixed_set_size = true;
+		sets[empty_set_id].change_size(0);
 	}
 
 	~set_reasoning() {
 		for (unsigned int i = 1; i < set_count + 1; i++) {
-			if (sets[i].set_formula != NULL) {
+			if (sets[i].size_axiom != NULL) {
 				extensional_graph.template free_set<false>(i);
 				intensional_graph.free_set<false>(i);
 				core::free(sets[i]);
@@ -381,19 +402,19 @@ struct set_reasoning
 		if (!resize(sets, new_capacity) || !extensional_graph.resize(new_capacity) || !intensional_graph.resize(new_capacity))
 			return false;
 		for (unsigned int i = capacity; i < new_capacity; i++)
-			sets[i].set_formula = NULL; /* we use this field to mark which vertices are free */
+			sets[i].size_axiom = NULL; /* we use this field to mark which vertices are free */
 		capacity = new_capacity;
 		return true;
 	}
 
 	unsigned int get_next_free_set() const {
 		for (unsigned int i = 1; i < capacity; i++)
-			if (sets[i].set_formula == NULL) return i;
+			if (sets[i].size_axiom == NULL) return i;
 		return capacity;
 	}
 
 	bool is_freeable(unsigned int set_id) const {
-		return !sets[set_id].fixed_set_size
+		return set_id > 1 && sets[set_id].size_axiom->reference_count == 1
 			&& extensional_graph.vertices[set_id].children.size == 0
 			&& extensional_graph.vertices[set_id].parents.size == 0;
 	}
@@ -426,14 +447,14 @@ struct set_reasoning
 		/* initialize all intensional set relations */
 		array<unsigned int> supersets(8), subsets(8);
 		for (unsigned int i = 1; i < set_count + 1; i++) {
-			if (sets[i].set_formula == NULL) continue;
-			if (is_subset(sets[i].set_formula, set_formula)) {
+			if (sets[i].size_axiom == NULL) continue;
+			if (is_subset(sets[i].set_formula(), set_formula)) {
 				if (!subsets.add(i)) {
 					intensional_graph.template free_set<true>(set_id);
 					extensional_graph.template free_set<true>(set_id);
 					return false;
 				}
-			} else if (is_subset(set_formula, sets[i].set_formula)) {
+			} else if (is_subset(set_formula, sets[i].set_formula())) {
 				if (!supersets.add(i)) {
 					intensional_graph.template free_set<true>(set_id);
 					extensional_graph.template free_set<true>(set_id);
@@ -556,7 +577,7 @@ struct set_reasoning
 		{
 			free_set(set_id); return false;
 		}
-		sets[set_id].set_size = initial_set_size;
+		sets[set_id].change_size(initial_set_size);
 
 		if (set_id == set_count + 1)
 			set_count++;
@@ -669,11 +690,14 @@ struct set_reasoning
 
 	template<typename T>
 	struct subgraph_formula_view {
-		set_info<Formula>* sets;
+		set_info<BuiltInConstants, Formula, ProofCalculus>* sets;
 		unsigned int* indices;
 		unsigned int length;
 
-		subgraph_formula_view(set_info<Formula>* sets, const hash_set<unsigned int>& vertices) : sets(sets), length(vertices.size) {
+		subgraph_formula_view(
+				set_info<BuiltInConstants, Formula, ProofCalculus>* sets,
+				const hash_set<unsigned int>& vertices) : sets(sets), length(vertices.size)
+		{
 			indices = (unsigned int*) malloc(sizeof(unsigned int) * vertices.size);
 			unsigned int index = 0;
 			for (unsigned int vertex : vertices)
@@ -683,7 +707,7 @@ struct set_reasoning
 		~subgraph_formula_view() { free(indices); }
 
 		T operator[] (unsigned int index) const {
-			return sets[indices[index]].set_formula;
+			return sets[indices[index]].set_formula();
 		}
 	};
 
@@ -756,7 +780,7 @@ struct set_reasoning
 		Formula* conjunction = Formula::new_and(subgraph_formula_view<Formula*>(sets, connected_component));
 		if (conjunction == NULL) return false;
 		for (unsigned int member : connected_component)
-			sets[member].set_formula->reference_count++;
+			sets[member].set_formula()->reference_count++;
 
 		if (!new_set(contracted_set)) {
 			free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
@@ -888,10 +912,10 @@ struct set_reasoning
 			graph_changed = true;
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
-					sets[member].set_size = requested_size;
+					sets[member].change_size(requested_size);
 				return uncontract_component(set, connected_component);
 			} else {
-				sets[set].set_size = requested_size;
+				sets[set].change_size(requested_size);
 				return true;
 			}
 		} else if (sets[set].set_size < upper_bound) {
@@ -899,10 +923,10 @@ struct set_reasoning
 			graph_changed = true;
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
-					sets[member].set_size = upper_bound;
+					sets[member].change_size(upper_bound);
 				return uncontract_component(set, connected_component);
 			} else {
-				sets[set].set_size = upper_bound;
+				sets[set].change_size(upper_bound);
 				return true;
 			}
 		}
@@ -986,10 +1010,10 @@ struct set_reasoning
 			graph_changed = true;
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
-					sets[member].set_size = requested_size;
+					sets[member].change_size(requested_size);
 				return uncontract_component(set, connected_component);
 			} else {
-				sets[set].set_size = requested_size;
+				sets[set].change_size(requested_size);
 				return true;
 			}
 		} else if (sets[set].set_size > lower_bound) {
@@ -997,10 +1021,10 @@ struct set_reasoning
 			graph_changed = true;
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
-					sets[member].set_size = lower_bound;
+					sets[member].change_size(lower_bound);
 				return uncontract_component(set, connected_component);
 			} else {
-				sets[set].set_size = lower_bound;
+				sets[set].change_size(lower_bound);
 				return true;
 			}
 		}
@@ -1061,6 +1085,7 @@ struct set_reasoning
 		}
 
 		if (!new_edge) return axiom;
+		extensional_edge_count++;
 
 		/* check that the new edge does not create any inconsistencies */
 		for (unsigned int descendant : sets[antecedent_set].descendants) {
@@ -1198,6 +1223,7 @@ struct set_reasoning
 #endif
 
 		extensional_graph.remove_edge(consequent_set, antecedent_set);
+		extensional_edge_count--;
 
 		array<unsigned int> stack(8);
 		stack[stack.length++] = consequent_set;
@@ -1241,77 +1267,53 @@ struct set_reasoning
 		return remove_subset_relation(antecedent_set, consequent_set, antecedent, consequent);
 	}
 
-	bool fix_size(const Formula* formula)
-	{
-		unsigned int set_id;
-		if (!get_set_id(formula, set_id))
-			return false;
-		sets[set_id].fixed_set_size = true;
-		return true;
-	}
-
-	bool unfix_size(const Formula* formula)
-	{
-		unsigned int set_id;
-		if (!get_set_id(formula, set_id))
-			return false;
-		sets[set_id].fixed_set_size = false;
-		return true;
-	}
-
-	unsigned int get_size(Formula* formula, bool& contains) const {
-		set_id = set_ids.get(*formula, contains);
-		if (!contains) return 0;
-		return sets[set_id].set_size;
-	}
-
 	template<bool ResolveInconsistencies>
-	bool set_size(Formula* formula, unsigned int new_size) {
+	Proof* get_size_axiom(Formula* formula, unsigned int new_size) {
 		unsigned int set_id;
 		if (!get_set_id(formula, set_id))
-			return false;
+			return NULL;
 		if (new_size > sets[set_id].set_size) {
 			unsigned int upper_bound;
-			if (!get_size_upper_bound(set_id, upper_bound)) return false;
+			if (!get_size_upper_bound(set_id, upper_bound)) return NULL;
 			if (new_size <= upper_bound) {
-				sets[set_id].set_size = new_size;
-				return true;
+				sets[set_id].change_size(new_size);
+				return sets[set_id].size_axiom;
 			}
 
-			if (!ResolveInconsistencies) return false;
+			if (!ResolveInconsistencies) return NULL;
 
 			while (true) {
 				/* compute the upper bound on the size of this set; if the new size
 				   violates this bound, change the sizes of other sets to increase the bound */
 				array<unsigned int> stack(8); bool graph_changed;
 				if (!increase_set_size(set_id, new_size, stack, graph_changed))
-					return false;
+					return NULL;
 				if (sets[set_id].set_size == new_size)
 					break;
-				if (!graph_changed) return false;
+				if (!graph_changed) return NULL;
 			}
 		} else if (new_size < sets[set_id].set_size) {
 			unsigned int lower_bound;
-			if (!get_size_lower_bound(set_id, lower_bound)) return false;
+			if (!get_size_lower_bound(set_id, lower_bound)) return NULL;
 			if (new_size >= lower_bound) {
-				sets[set_id].set_size = new_size;
-				return true;
+				sets[set_id].change_size(new_size);
+				return sets[set_id].size_axiom;
 			}
 
-			if (!ResolveInconsistencies) return false;
+			if (!ResolveInconsistencies) return NULL;
 
 			while (true) {
 				/* compute the lower bound on the size of this set; if the new size
 				   violates this bound, change the sizes of other sets to increase the bound */
 				array<unsigned int> stack(8); bool graph_changed;
 				if (!decrease_set_size(set_id, new_size, stack, graph_changed))
-					return false;
+					return NULL;
 				if (sets[set_id].set_size == new_size)
 					break;
-				if (!graph_changed) return false;
+				if (!graph_changed) return NULL;
 			}
 		}
-		return true;
+		return sets[set_id].size_axiom;
 	}
 
 	bool get_size_lower_bound(unsigned int set_id, unsigned int& lower_bound,
@@ -1369,7 +1371,7 @@ struct set_reasoning
 
 	inline bool are_disjoint(unsigned int first_set, unsigned int second_set) const
 	{
-		Formula* intersection = intersect(sets[first_set].set_formula, sets[second_set].set_formula);
+		Formula* intersection = intersect(sets[first_set].set_formula(), sets[second_set].set_formula());
 
 		array<unsigned int> stack(8);
 		hash_set<unsigned int> visited(16);
@@ -1377,7 +1379,7 @@ struct set_reasoning
 		visited.add(1);
 		while (stack.length > 0) {
 			unsigned int current = stack.pop();
-			if (is_subset(intersection, sets[current].set_formula)) {
+			if (is_subset(intersection, sets[current].set_formula())) {
 				free(*intersection); if (intersection->reference_count == 0) free(intersection);
 				return true;
 			}
@@ -1415,7 +1417,7 @@ struct set_reasoning
 	bool are_descendants_valid() const {
 		bool success = true;
 		for (unsigned int i = 1; i < set_count + 1; i++) {
-			if (sets[i].set_formula != NULL) {
+			if (sets[i].size_axiom != NULL) {
 				hash_set<unsigned int> descendants(16);
 				if (!compute_descendants(i, descendants)) return false;
 				if (!descendants.equals(sets[i].descendants)) {
@@ -1451,9 +1453,9 @@ struct clique_search_state {
 	}
 };
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline bool init(clique_search_state& state,
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		const unsigned int* clique, unsigned int clique_count,
 		const unsigned int* neighborhood, unsigned int neighborhood_count,
 		const unsigned int* X, unsigned int X_count,
@@ -1512,9 +1514,9 @@ struct ancestor_clique_search_state {
 	}
 };
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline bool init(ancestor_clique_search_state& state,
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		const unsigned int* clique, unsigned int clique_count,
 		const unsigned int* neighborhood, unsigned int neighborhood_count,
 		const unsigned int* X, unsigned int X_count,
@@ -1593,17 +1595,17 @@ struct search_queue {
 	}
 };
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline bool has_descendant(
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		unsigned int root, unsigned int vertex)
 {
 	return sets.sets[root].descendants.contains(vertex);
 }
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 bool expand_clique_search_state(
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		array<unsigned int>& neighborhood,
 		const unsigned int* X, const unsigned int X_count,
 		hash_set<unsigned int>& visited,
@@ -1650,10 +1652,10 @@ bool expand_clique_search_state(
 }
 
 template<bool RecurseChildren, bool TestCompletion, bool ReturnOnCompletion, int MinPriority,
-	typename StateData, typename Formula, typename ProofCalculus, typename... StateArgs>
+	typename StateData, typename BuiltInConstants, typename Formula, typename ProofCalculus, typename... StateArgs>
 bool process_clique_search_state(
 		search_queue<StateData>& queue,
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		const clique_search_state& state,
 		unsigned int*& clique, unsigned int& clique_count,
 		StateArgs&&... state_args)
@@ -1757,9 +1759,9 @@ bool process_clique_search_state(
 	return true;
 }
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 bool find_largest_disjoint_subset_clique(
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		unsigned int root, unsigned int*& clique, unsigned int& clique_count)
 {
 	search_queue<clique_search_state> queue;
@@ -1811,9 +1813,10 @@ inline bool add_non_ancestor_neighbor(
 	return true;
 }
 
-template<typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline bool add_non_ancestor_neighbors(
-		const set_reasoning<Formula, ProofCalculus>& sets, unsigned int node, bool& changed,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		unsigned int node, bool& changed,
 		hash_map<unsigned int, array<unsigned int>>& non_ancestor_neighborhood)
 {
 	array<unsigned int>& neighborhood = non_ancestor_neighborhood.get(node);
@@ -1825,8 +1828,8 @@ inline bool add_non_ancestor_neighbors(
 }
 
 struct default_parents {
-	template<typename Formula, typename ProofCalculus, typename Function>
-	bool for_each_parent(const set_reasoning<Formula, ProofCalculus>& sets, unsigned int set, Function apply) const {
+	template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename Function>
+	bool for_each_parent(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set, Function apply) const {
 		for (const auto& entry : sets.extensional_graph.vertices[set].parents)
 			if (!apply(entry.key)) return false;
 		for (unsigned int parent : sets.intensional_graph.vertices[set].parents)
@@ -1834,8 +1837,8 @@ struct default_parents {
 		return true;
 	}
 
-	template<typename Formula, typename ProofCalculus>
-	inline unsigned int count(const set_reasoning<Formula, ProofCalculus>& sets, unsigned int set) const {
+	template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+	inline unsigned int count(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set) const {
 		return sets.extensional_graph.vertices[set].parents.size
 			 + sets.intensional_graph.vertices[set].parents.length;
 	}
@@ -1844,20 +1847,20 @@ struct default_parents {
 struct singleton_parent {
 	unsigned int parent;
 
-	template<typename Formula, typename ProofCalculus, typename Function>
-	bool for_each_parent(const set_reasoning<Formula, ProofCalculus>& sets, unsigned int set, Function apply) const {
+	template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename Function>
+	bool for_each_parent(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set, Function apply) const {
 		return apply(parent);
 	}
 
-	template<typename Formula, typename ProofCalculus>
-	constexpr unsigned int count(const set_reasoning<Formula, ProofCalculus>& sets, unsigned int set) const {
+	template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+	constexpr unsigned int count(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set) const {
 		return 1;
 	}
 };
 
-template<int MinPriority, typename Formula, typename ProofCalculus, typename SetParents>
+template<int MinPriority, typename BuiltInConstants, typename Formula, typename ProofCalculus, typename SetParents>
 bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		unsigned int set, const SetParents& set_parents,
 		unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique)
@@ -2010,9 +2013,9 @@ bool find_largest_disjoint_clique_with_set(
 	return success;
 }
 
-template<int MinPriority, typename Formula, typename ProofCalculus>
+template<int MinPriority, typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		unsigned int set, unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique)
 {
@@ -2020,9 +2023,9 @@ inline bool find_largest_disjoint_clique_with_set(
 	return find_largest_disjoint_clique_with_set<MinPriority>(sets, set, parents, clique, clique_count, ancestor_of_clique);
 }
 
-template<int MinPriority, typename Formula, typename ProofCalculus>
+template<int MinPriority, typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		unsigned int set, unsigned int parent,
 		unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique)
