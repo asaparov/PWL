@@ -1162,6 +1162,7 @@ template<typename Formula>
 struct natural_deduction
 {
 	typedef nd_step<Formula> Proof;
+	typedef nd_step_type ProofType;
 	typedef typename Formula::Term Term;
 
 	static inline Proof* new_axiom(Formula* axiom) {

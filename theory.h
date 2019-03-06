@@ -218,10 +218,6 @@ struct theory
 		return sets.print_axioms(out, std::forward<Printer>(printer)...);
 	}
 
-	inline unsigned int axiom_count() const {
-		return sets.axiom_count() + ground_axiom_count;
-	}
-
 	bool add_formula(Formula* formula, unsigned int& new_constant)
 	{
 		new_constant = 0;
