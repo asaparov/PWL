@@ -729,7 +729,7 @@ int main(int argc, const char** argv)
 
 	unsigned int index = 0;
 	in_memory_article_store corpus;
-	fake_parser<hol_term> parser = fake_parser<hol_term>(PREDICATE_UNKNOWN);
+	fake_parser<hol_term> parser = fake_parser<hol_term>((unsigned int) built_in_predicates::UNKNOWN);
 	while (index < tokens.length) {
 		unsigned int article_name = 0;
 		article& new_article = *((article*) alloca(sizeof(article)));

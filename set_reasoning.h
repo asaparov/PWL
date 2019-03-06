@@ -1219,7 +1219,7 @@ struct set_reasoning
 	{
 #if !defined(NDEBUG)
 		if (consequent_set == antecedent_set)
-			fprintf(stderr, "set_reasoning.remove_subset_relation WARNING: `consequent` and `antecedent` are the same set.\n");
+			fprintf(stderr, "set_reasoning.decrement_subset_axiom WARNING: `consequent` and `antecedent` are the same set.\n");
 #endif
 
 		extensional_graph.remove_edge(consequent_set, antecedent_set);
@@ -1251,14 +1251,25 @@ struct set_reasoning
 		return true;
 	}
 
-	bool remove_subset_relation(Formula* antecedent, Formula* consequent)
+	bool decrement_subset_axiom(Proof* subset_axiom)
 	{
+		free(*subset_axiom);
+#if !defined(NDEBUG)
+		if (subset_axiom->reference_count < 2)
+			fprintf(stderr, "decrement_subset_axiom ERROR: Detected double free.\n");
+#endif
+
+		if (subset_axiom->reference_count > 2) return true;
+
+		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
+		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
+
 #if !defined(NDEBUG)
 		bool contains;
 		unsigned int antecedent_set = set_ids.get(*antecedent, contains);
-		if (!contains) fprintf(stderr, "set_reasoning.remove_subset_relation WARNING: No such set for given antecedent.\n");
+		if (!contains) fprintf(stderr, "set_reasoning.decrement_subset_axiom WARNING: No such set for given antecedent.\n");
 		unsigned int consequent_set = set_ids.get(*consequent, contains);
-		if (!contains) fprintf(stderr, "set_reasoning.remove_subset_relation WARNING: No such set for given consequent.\n");
+		if (!contains) fprintf(stderr, "set_reasoning.decrement_subset_axiom WARNING: No such set for given consequent.\n");
 #else
 		unsigned int antecedent_set = set_ids.get(*antecedent);
 		unsigned int consequent_set = set_ids.get(*consequent);
@@ -1369,9 +1380,9 @@ struct set_reasoning
 		return true;
 	}
 
-	inline bool are_disjoint(unsigned int first_set, unsigned int second_set) const
+	inline bool are_disjoint(Formula* first, Formula* second) const
 	{
-		Formula* intersection = intersect(sets[first_set].set_formula(), sets[second_set].set_formula());
+		Formula* intersection = intersect(first, second);
 
 		array<unsigned int> stack(8);
 		hash_set<unsigned int> visited(16);
@@ -1394,6 +1405,11 @@ struct set_reasoning
 		}
 		free(*intersection); if (intersection->reference_count == 0) free(intersection);
 		return false;
+	}
+
+	inline bool are_disjoint(unsigned int first_set, unsigned int second_set) const
+	{
+		return are_disjoint(sets[first_set].set_formula(), sets[second_set].set_formula());
 	}
 
 	bool compute_descendants(unsigned int set, hash_set<unsigned int>& descendants) const {

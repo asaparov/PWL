@@ -180,8 +180,8 @@ struct theory
 			ground_concepts(64), ground_axiom_count(0), observations(64), proof_axioms(64)
 	{
 		Formula* empty_set_formula = Formula::new_for_all(1, Formula::new_equals(
-			Formula::equals(Formula::new_atom(built_in_predicates::SIZE, Formula::new_lambda(1)), Formula::new_int(0)),
-			Formula::new_not(Formula::new_exists(Formula::new_variable(1)))
+			Formula::new_equals(Formula::new_atom((unsigned int) built_in_predicates::SIZE, Formula::new_lambda(2, Formula::new_variable(1))), Formula::new_int(0)),
+			Formula::new_not(Formula::new_exists(2, Formula::new_variable(1)))
 		));
 		if (empty_set_formula == NULL) exit(EXIT_FAILURE);
 		empty_set_axiom = ProofCalculus::new_axiom(empty_set_formula);
@@ -525,7 +525,7 @@ private:
 			} else if (canonicalized->type == FormulaType::EXISTS) {
 				/* get empty set size axiom, forcing inconsistencies to be resolved */
 				Formula* set_formula = canonicalized->quantifier.operand;
-				Proof* set_size_axiom = sets.get_size_axiom<true>(set_formula, 0);
+				Proof* set_size_axiom = sets.template get_size_axiom<true>(set_formula, 0);
 				if (set_size_axiom == NULL) return NULL;
 
 				/* TODO: what are the semantics of the third argument to new_equality_elim? */
@@ -572,18 +572,19 @@ private:
 					Formula* new_left = Formula::new_atom(new_constant, Formula::new_variable(variable));
 					if (new_left == NULL) return NULL;
 
-					Proof* new_axiom = sets.get_subset_axiom<true>(new_left, right);
+					Proof* new_axiom = sets.template get_subset_axiom<true>(new_left, right);
 					new_axiom->reference_count++;
 					return new_axiom;
 				} else {
 					/* make sure there are no unknown predicates */
-					if (contains_constant(*left, built_in_predicates::UNKNOWN) || contains_constant(*right, built_in_predicates::UNKNOWN)) {
+					if (contains_constant(*left, (unsigned int) built_in_predicates::UNKNOWN)
+					 || contains_constant(*right, (unsigned int) built_in_predicates::UNKNOWN)) {
 						fprintf(stderr, "theory.make_proof ERROR: Universally-quantified statement has unknown constants.\n");
 						return NULL;
 					}
 
 					/* this is a formula of form `![x]:(t(x) => f(x))` */
-					Proof* new_axiom = sets.get_subset_axiom<true>(left, right);
+					Proof* new_axiom = sets.template get_subset_axiom<true>(left, right);
 					new_axiom->reference_count++;
 					return new_axiom;
 				}
@@ -623,7 +624,7 @@ private:
 			 && arg1->type == TermType::LAMBDA && arg2 == NULL
 			 && right->type == TermType::INTEGER)
 			{
-				Proof* set_size_axiom = sets.get_size_axiom<true>(arg1->quantifier.operand, 0);
+				Proof* set_size_axiom = sets.template get_size_axiom<true>(arg1->quantifier.operand, 0);
 				set_size_axiom->reference_count++;
 				return set_size_axiom;
 			}
@@ -641,7 +642,7 @@ private:
 		{
 			/* this is a unary formula */
 			if (predicate != (unsigned int) built_in_predicates::UNKNOWN) {
-				if (arg1->constant == built_in_predicates::UNKNOWN) {
+				if (arg1->constant == (unsigned int) built_in_predicates::UNKNOWN) {
 					/* this is a definition of an object */
 					if (!DefinitionsAllowed) {
 						fprintf(stderr, "theory.make_atom_proof ERROR: Definitions are not allowed in this context.\n");
@@ -689,8 +690,8 @@ private:
 			/* this is a binary formula */
 			if (predicate != (unsigned int) built_in_predicates::UNKNOWN)
 			{
-				if (arg1->constant == built_in_predicates::UNKNOWN
-				 || arg2->constant == built_in_predicates::UNKNOWN) {
+				if (arg1->constant == (unsigned int) built_in_predicates::UNKNOWN
+				 || arg2->constant == (unsigned int) built_in_predicates::UNKNOWN) {
 					fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
 					return NULL;
 				} else {

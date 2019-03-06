@@ -589,8 +589,7 @@ inline const nd_step<Formula>* map(
 	else return step;
 }
 
-template<unsigned int SetPredicate, unsigned int AllPredicate, unsigned int SizePredicate,
-		typename Formula, typename Canonicalizer, typename... ProofMap>
+template<typename BuiltInPredicates, typename Formula, typename Canonicalizer, typename... ProofMap>
 bool check_proof(proof_state<Formula>& out,
 		const nd_step<Formula>& proof,
 		proof_state<Formula>** operand_states,
@@ -648,12 +647,12 @@ bool check_proof(proof_state<Formula>& out,
 		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (formula == NULL) return false;
 		if (proof.type == nd_step_type::SET_INTRODUCTION) {
-			out.formula = Formula::new_exists(1, Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)));
+			out.formula = Formula::new_exists(1, Formula::new_atom((unsigned int) BuiltInPredicates::SET, variable, Formula::new_lambda(2, formula)));
 		} else if (proof.type == nd_step_type::SET_SIZE_INTRODUCTION) {
 			out.formula = Formula::new_exists(1,
 					Formula::new_and(
-						Formula::new_atom(SetPredicate, variable, Formula::new_lambda(2, formula)),
-						Formula::new_equals(Formula::new_atom(SizePredicate, variable), Term::new_int(operand_count - 1)))
+						Formula::new_atom((unsigned int) BuiltInPredicates::SET, variable, Formula::new_lambda(2, formula)),
+						Formula::new_equals(Formula::new_atom((unsigned int) BuiltInPredicates::SET, variable), Term::new_int(operand_count - 1)))
 				);
 		}
 		if (out.formula == NULL) {
@@ -718,12 +717,12 @@ bool check_proof(proof_state<Formula>& out,
 		free(*parameter); if (parameter->reference_count == 0) free(parameter);
 		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (proof.type == nd_step_type::ALL_INTRODUCTION) {
-			out.formula = Formula::new_exists(1, Formula::new_atom(AllPredicate, variable, Formula::new_lambda(2, formula)));
+			out.formula = Formula::new_exists(1, Formula::new_atom((unsigned int) BuiltInPredicates::ALL, variable, Formula::new_lambda(2, formula)));
 		} else if (proof.type == nd_step_type::ALL_SIZE_INTRODUCTION) {
 			out.formula = Formula::new_exists(1,
 					Formula::new_and(
-						Formula::new_atom(AllPredicate, variable, Formula::new_lambda(2, formula)),
-						Formula::new_equals(Formula::new_atom(SizePredicate, variable), Term::new_int(operand_count - 1)))
+						Formula::new_atom((unsigned int) BuiltInPredicates::ALL, variable, Formula::new_lambda(2, formula)),
+						Formula::new_equals(Formula::new_atom((unsigned int) BuiltInPredicates::SIZE, variable), Term::new_int(operand_count - 1)))
 				);
 		}
 		if (out.formula == NULL) {
@@ -1036,8 +1035,7 @@ bool compute_in_degrees(const nd_step<Formula>* proof,
 	return true;
 }
 
-template<unsigned int SetPredicate, unsigned int AllPredicate, unsigned int SizePredicate,
-	typename Formula, typename Canonicalizer, typename... ProofMap>
+template<typename BuiltInPredicates, typename Formula, typename Canonicalizer, typename... ProofMap>
 Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
 {
@@ -1110,7 +1108,7 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 		}
 
 		/* check this proof step */
-		if (!check_proof<SetPredicate, AllPredicate, SizePredicate>(state, *node, operand_states.data, operand_states.length, canonicalizer, std::forward<ProofMap>(proof_map)...)) {
+		if (!check_proof<BuiltInPredicates>(state, *node, operand_states.data, operand_states.length, canonicalizer, std::forward<ProofMap>(proof_map)...)) {
 			free_proof_states(proof_states);
 			return NULL;
 		}
@@ -1131,13 +1129,12 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 	return formula;
 }
 
-template<unsigned int SetPredicate, unsigned int AllPredicate, unsigned int SizePredicate,
-	typename Formula, typename Canonicalizer, typename... ProofMap>
+template<typename BuiltInPredicates, typename Formula, typename Canonicalizer, typename... ProofMap>
 bool check_proof(const nd_step<Formula>& proof,
 		const Formula* expected_conclusion,
 		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
 {
-	Formula* actual_conclusion = compute_proof_conclusion<SetPredicate, AllPredicate, SizePredicate>(proof, canonicalizer, std::forward<ProofMap>(proof_map)...);
+	Formula* actual_conclusion = compute_proof_conclusion<BuiltInPredicates>(proof, canonicalizer, std::forward<ProofMap>(proof_map)...);
 	bool success = (*actual_conclusion == *expected_conclusion);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
