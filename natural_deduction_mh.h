@@ -467,7 +467,7 @@ inline bool is_equal(const atom<true, Arity>& a, const Formula* formula) {
 }
 
 template<bool Negated, typename ProofCalculus, typename Formula>
-bool contains(
+bool intensional_element_of(
 		const concept<ProofCalculus>& c, const Formula* set_formula)
 {
 	typedef typename Formula::Type FormulaType;
@@ -495,18 +495,18 @@ bool contains(
 				set_formula->ternary.second->type == TermType::VARIABLE ? 0 : set_formula->ternary.second->constant,
 				set_formula->ternary.third->type == TermType::VARIABLE ? 0 : set_formula->ternary.third->constant });
 	case FormulaType::NOT:
-		return contains<!Negated>(c, set_formula);
+		return intensional_element_of<!Negated>(c, set_formula);
 	case FormulaType::AND:
 		for (unsigned int i = 0; i < set_formula->array.length; i++)
-			if (!contains<Negated>(c, set_formula->array.operands[i])) return false;
+			if (!intensional_element_of<Negated>(c, set_formula->array.operands[i])) return false;
 		return true;
 	case FormulaType::OR:
 		for (unsigned int i = 0; i < set_formula->array.length; i++)
-			if (contains<Negated>(c, set_formula->array.operands[i])) return true;
+			if (intensional_element_of<Negated>(c, set_formula->array.operands[i])) return true;
 		return false;
 	case FormulaType::IF_THEN:
-		return contains<Negated>(c, set_formula->binary.left)
-			&& contains<!Negated>(c, set_formula->binary.right);
+		return intensional_element_of<Negated>(c, set_formula->binary.left)
+			&& intensional_element_of<!Negated>(c, set_formula->binary.right);
 	case FormulaType::TRUE:
 		return !Negated;
 	case FormulaType::FALSE:
@@ -516,7 +516,7 @@ bool contains(
 	case FormulaType::FOR_ALL:
 	case FormulaType::EXISTS:
 	case FormulaType::LAMBDA:
-		fprintf(stderr, "contains ERROR: Not implemented.\n");
+		fprintf(stderr, "intensional_element_of ERROR: Not implemented.\n");
 		return false;
 	case FormulaType::VARIABLE:
 	case FormulaType::CONSTANT:
@@ -524,8 +524,69 @@ bool contains(
 	case FormulaType::INTEGER:
 		break;
 	}
-	fprintf(stderr, "contains ERROR: Unrecognized formula type.\n");
+	fprintf(stderr, "intensional_element_of ERROR: Unrecognized formula type.\n");
 	return false;
+}
+
+template<typename Formula, typename ProofCalculus, typename Canonicalizer>
+inline bool is_satisfying_antecedent(
+		unsigned int concept_id, unsigned int antecedent_id,
+		const theory<Formula, ProofCalculus, Canonicalizer>& T)
+{
+	/* check if `concept_id` cannot belong to the set given by `antecedent_id` (if there is a contradiction) */
+	/* first check if we can prove that the entry belongs to any descendant of `antecedent_id` */
+	bool provably_consistent = false;
+	array<unsigned int> stack(8);
+	hash_set<unsigned int> visited(16);
+	stack[stack.length++] = antecedent_id;
+	visited.add(antecedent_id);
+	while (stack.length > 0) {
+		unsigned int descendant = stack.pop();
+		if (intensional_element_of<true>(T.ground_concepts.get(concept_id), T.sets.sets[descendant].set_formula())) {
+			provably_consistent = true;
+			break;
+		}
+
+		for (unsigned int child : T.sets.intensional_graph.vertices[descendant].children) {
+			if (visited.contains(child)) continue;
+			if (!visited.add(child) || !stack.add(child)) return false;
+		} for (const auto& entry : T.sets.extensional_graph.vertices[descendant].children) {
+			if (visited.contains(entry.key)) continue;
+			if (!visited.add(entry.key) || !stack.add(entry.key)) return false;
+		}
+	}
+
+	if (provably_consistent) return true;
+
+	/* check if the instance belongs to a set that is disjoint with the antecedent set */
+	Formula* conjunction = make_lifted_conjunction(concept_id, T);
+	if (conjunction == NULL) return false;
+
+	bool disjoint = T.sets.are_disjoint(conjunction, T.sets.sets[antecedent_id].set_formula());
+	free(*conjunction); free(conjunction);
+	return !disjoint;
+}
+
+template<bool Negated, unsigned int Arity,
+	typename Formula, typename Canonicalizer>
+bool get_satisfying_extensional_edges(
+		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const atom<Negated, Arity> a,
+		unsigned int concept_id,
+		array<pair<unsigned int, unsigned int>>& satisfying_extensional_edges)
+{
+	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
+		if (T.sets.sets[i].size_axiom == NULL) continue;
+		if (is_equal(a, T.sets.sets[i].set_formula())) {
+			for (const auto& entry : T.sets.extensional_graph.vertices[i].children) {
+				if (!is_satisfying_antecedent(concept_id, entry.key, T)) continue;
+
+				/* as far as we can tell, we can't prove that `concept_id` cannot belong to the antecedent set */
+				if (!satisfying_extensional_edges.add({i, entry.key})) return false;
+			}
+		}
+	}
+	return true;
 }
 
 template<bool Negated, unsigned int Arity,
@@ -535,6 +596,7 @@ bool propose_universal_intro(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, Arity> a,
 		unsigned int concept_id,
+		unsigned int old_axiom_count,
 		double& log_proposal_probability_ratio,
 		ProofPrior& proof_prior)
 {
@@ -543,56 +605,19 @@ bool propose_universal_intro(
 	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
+	/* look for existing universally-quantified formulas that imply this formula */
+	array<pair<unsigned int, unsigned int>> satisfying_extensional_edges(16);
+	if (!get_satisfying_extensional_edges(T, a, concept_id, satisfying_extensional_edges)) return false;
+
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (!init(proposed_proofs)) return false;
 
-	/* look for existing universally-quantified formulas that imply this formula */
-	array<pair<unsigned int, unsigned int>> satisfying_extensional_edges(16);
-	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
-		if (T.sets.sets[i].size_axiom == NULL) continue;
-		if (is_equal(a, T.sets.sets[i].set_formula())) {
-			for (const auto& entry : T.sets.extensional_graph.vertices[i].children) {
-				/* check if `concept_id` cannot belong to the set given by `entry` (if there is a contradiction) */
-				/* first check if we can prove that the entry does not belong to any ancestor of `entry.key` */
-				bool inconsistent = false;
-				array<unsigned int> stack(8);
-				hash_set<unsigned int> visited(16);
-				stack[stack.length++] = entry.key;
-				visited.add(entry.key);
-				while (stack.length > 0) {
-					unsigned int ancestor = stack.pop();
-					if (!contains<true>(T.ground_concepts.get(concept_id), T.sets.sets[ancestor].set_formula())) {
-						inconsistent = true;
-						break;
-					}
-
-					for (unsigned int parent : T.sets.intensional_graph.vertices[ancestor].parents) {
-						if (visited.contains(parent)) continue;
-						if (!visited.add(parent) || !stack.add(parent)) { free(proposed_proofs); return false; }
-					} for (const auto& entry : T.sets.extensional_graph.vertices[ancestor].parents) {
-						if (visited.contains(entry.key)) continue;
-						if (!visited.add(entry.key) || !stack.add(entry.key)) { free(proposed_proofs); return false; }
-					}
-				}
-
-				if (inconsistent) continue;
-
-				/* check if the instance belongs to a set that is disjoint with the antecedent set */
-				Formula* conjunction; /* TODO: make this the conjunction of all atomic formula for `concept_id` */
-
-				if (T.sets.are_disjoint(conjunction, T.sets.sets[entry.key].set_formula()))
-					continue;
-
-				/* as far as we can tell, we can't prove that `concept_id` cannot belong to the antecedent set */
-				if (!satisfying_extensional_edges.add({i, entry.key})) { free(proposed_proofs); return false; }
-			}
-		}
-	}
-
 	Formula* antecedent; Formula* consequent;
 	nd_step<Formula>* axiom_step;
-	if (satisfying_extensional_edges.length > 0) {
-		const pair<unsigned int, unsigned int>& selected = sample_uniform(satisfying_extensional_edges);
+	unsigned int random = sample_uniform(satisfying_extensional_edges.length + 1);
+	log_proposal_probability_ratio -= -log_cache<double>::instance().get(satisfying_extensional_edges.length + 1);
+	if (random < satisfying_extensional_edges.length) {
+		const pair<unsigned int, unsigned int>& selected = satisfying_extensional_edges[random];
 		axiom_step = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
 		consequent = T.sets.sets[selected.key].set_formula();
 		antecedent = T.sets.sets[selected.value].set_formula();
@@ -616,14 +641,14 @@ bool propose_universal_intro(
 		} for (unsigned int i = 0; i < c.relations.size; i++) {
 			/* avoid selecting the consequent as a conjunct in the antecedent */
 			if (!Negated && Arity == 2 && c.relations.keys[i].predicate == a.predicate
-			&& c.relations.keys[i].arg1 == a.args[0]
-			&& c.relations.keys[i].arg2 == a.args[1]) continue;
+			 && c.relations.keys[i].arg1 == a.args[0]
+			 && c.relations.keys[i].arg2 == a.args[1]) continue;
 			axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(2, i));
 		} for (unsigned int i = 0; i < c.negated_relations.size; i++) {
 			/* avoid selecting the consequent as a conjunct in the antecedent */
 			if (Negated && Arity == 2 && c.negated_relations.keys[i].predicate == a.predicate
-			&& c.negated_relations.keys[i].arg1 == a.args[0]
-			&& c.negated_relations.keys[i].arg2 == a.args[1]) continue;
+			 && c.negated_relations.keys[i].arg1 == a.args[0]
+			 && c.negated_relations.keys[i].arg2 == a.args[1]) continue;
 			axiom_indices.add(make_pair<uint_fast8_t, unsigned int>(3, i));
 		}
 
@@ -660,14 +685,6 @@ bool propose_universal_intro(
 
 		/* we only consider concepts that have the axiom `a` */
 		set_intersect(intersection, get_concept_set(T, a));
-
-		/* compute the probability of the inverse proposal */
-		unsigned int new_axiom_count = T.axiom_count() + 1;
-		if (Arity == 2 && a.args[0] == a.args[1]) new_axiom_count -= 3 * intersection.length;
-		else if (Arity == 2) new_axiom_count -= 2 * intersection.length;
-		else new_axiom_count -= intersection.length;
-		if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) { free(proposed_proofs); return false; }
-		log_proposal_probability_ratio += -log_cache<double>::instance().get(new_axiom_count);
 
 		/* we've finished constructing the new universally-quantified formula,
 		and now we need to transform all the relevant proofs */
@@ -729,6 +746,15 @@ bool propose_universal_intro(
 		}
 		axiom_step->reference_count++;
 	}
+
+	/* compute the probability of the inverse proposal */
+	unsigned int new_axiom_count = old_axiom_count;
+	if (satisfying_extensional_edges.length == 0) new_axiom_count++;
+	if (Arity == 2 && a.args[0] == a.args[1]) new_axiom_count -= 3;
+	else if (Arity == 2) new_axiom_count -= 2;
+	else new_axiom_count -= 1;
+	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) { free(proposed_proofs); return false; }
+	log_proposal_probability_ratio += -log_cache<double>::instance().get(new_axiom_count);
 
 	unsigned int antecedent_length;
 	if (antecedent->type != FormulaType::AND) {
@@ -812,21 +838,16 @@ void free_proofs(nd_step<Formula>** proofs, unsigned int count) {
 }
 
 template<typename Formula, typename Canonicalizer>
-inline bool make_grounded_conjunct(
+inline nd_step<Formula>* make_grounded_conjunct(
 		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const concept<natural_deduction<Formula>>& c,
 		Formula* lifted_conjunct, unsigned int variable,
-		typename Formula::Term* constant,
-		nd_step<Formula>** new_axioms,
-		unsigned int i,
-		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms)
+		typename Formula::Term* constant)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 	typedef natural_deduction<Formula> ProofCalculus;
-
-	if (new_axioms[i] != NULL) return true;
 
 	/* first check if the grounded conjunct already exists as an axiom in the theory */
 	bool contains;
@@ -836,91 +857,56 @@ inline bool make_grounded_conjunct(
 		if (arg2 == NULL) {
 			/* atom is unary */
 			c.types.get(predicate, contains);
-			if (contains)
+			if (contains) {
 				/* we have to fail here as the transformation is no longer reversible */
-				return true;
+				fprintf(stderr, "make_grounded_conjunct WARNING: The theory is in a state where this proposed transformation is not invertible.\n");
+				return NULL;
+			}
 		} else {
 			/* atom is binary */
 			relation r = { predicate,
 					(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
 					(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
 			c.relations.get(r, contains);
-			if (contains)
+			if (contains) {
 				/* we have to fail here as the transformation is no longer reversible */
-				return true;
+				fprintf(stderr, "make_grounded_conjunct WARNING: The theory is in a state where this proposed transformation is not invertible.\n");
+				return NULL;
+			}
 		}
 	} else if (operand->type == FormulaType::NOT && is_atomic(*operand->unary.operand, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			/* atom is unary */
 			c.negated_types.get(predicate, contains);
-			if (contains)
+			if (contains) {
 				/* we have to fail here as the transformation is no longer reversible */
-				return true;
+				fprintf(stderr, "make_grounded_conjunct WARNING: The theory is in a state where this proposed transformation is not invertible.\n");
+				return NULL;
+			}
 		} else {
 			/* atom is binary */
 			relation r = { predicate,
 					(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
 					(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
 			c.negated_relations.get(r, contains);
-			if (contains)
+			if (contains) {
 				/* we have to fail here as the transformation is no longer reversible */
-				return true;
+				fprintf(stderr, "make_grounded_conjunct WARNING: The theory is in a state where this proposed transformation is not invertible.\n");
+				return NULL;
+			}
 		}
 	} else {
-		fprintf(stderr, "make_grounded_conjunct ERROR: Expected a conjunction of literals.\n");
-		return false;
+		fprintf(stderr, "make_grounded_conjunct ERROR: Expected a literal.\n");
+		return NULL;
 	}
 
 	Term* new_variable = Formula::new_variable(variable);
-	new_axioms[i] = ProofCalculus::new_axiom(substitute<TermType::VARIABLE>(lifted_conjunct, new_variable, constant));
+	nd_step<Formula>* new_axiom = ProofCalculus::new_axiom(substitute<TermType::VARIABLE>(lifted_conjunct, new_variable, constant));
 	free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
-	if (new_axioms[i] == NULL)
-		return false;
-	free(*new_axioms[i]->formula);
-	new_axioms[i]->reference_count++;
-
-	if (!new_grounded_axioms.put(constant->constant, new_axioms[i])) {
-		free(*new_axioms[i]); free(new_axioms[i]);
-		new_axioms[i] = NULL; return false;
-	}
-	return true;
-}
-
-template<typename Formula, typename Canonicalizer>
-bool make_grounded_conjunction(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		const concept<natural_deduction<Formula>>& c,
-		Formula** conjuncts, unsigned int conjunct_count,
-		unsigned int variable, typename Formula::Term* constant,
-		nd_step<Formula>** new_axioms,
-		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms,
-		nd_step<Formula>*& new_step)
-{
-	typedef natural_deduction<Formula> ProofCalculus;
-
-	for (unsigned int i = 0; i < conjunct_count; i++) {
-		if (!make_grounded_conjunct(T, c, conjuncts[i], variable, constant, new_axioms, i, new_grounded_axioms)) {
-			free_proofs(new_axioms, i);
-			return false;
-		} if (new_axioms[i] == NULL) {
-			new_step = NULL;
-			return true;
-		}
-	}
-
-	if (conjunct_count == 1) {
-		new_step = new_axioms[0];
-		new_step->reference_count++;
-		return true;
-	}
-
-	new_step = ProofCalculus::new_conjunction_intro(make_array_view(new_axioms, conjunct_count));
-	if (new_step == NULL) {
-		free_proofs(new_axioms, conjunct_count);
-		return false;
-	}
-	new_step->reference_count++;
-	return true;
+	if (new_axiom == NULL) return NULL;
+	free(*new_axiom->formula);
+	new_axiom->reference_count++;
+	return new_axiom;
 }
 
 template<typename Formula>
@@ -929,6 +915,7 @@ struct extensional_edge {
 	unsigned int antecedent_set;
 	nd_step<Formula>* axiom;
 	nd_step<Formula>* child;
+	nd_step<Formula>* grandchild;
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
@@ -951,6 +938,7 @@ template<typename Formula, typename ProofPrior, typename Canonicalizer>
 bool propose_universal_elim(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const extensional_edge<Formula>& selected_edge,
+		unsigned int old_axiom_count,
 		double& log_proposal_probability_ratio,
 		ProofPrior& proof_prior)
 {
@@ -965,20 +953,14 @@ bool propose_universal_elim(
 
 	/* this proposal is not invertible if the consequent is not atomic */
 	bool is_consequent_binary; bool is_consequent_symmetric;
-	unsigned int consequent_length;
 	Formula* consequent = selected_edge.axiom->formula->quantifier.operand->binary.right;
 	Term const* arg1; Term const* arg2;
 	if (is_atomic(*consequent, arg1, arg2)) {
-		consequent_length = 1;
 		is_consequent_binary = (arg2 != NULL);
 		is_consequent_symmetric = false;
 	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, arg1, arg2)) {
-		consequent_length = 1;
 		is_consequent_binary = (arg2 != NULL);
 		is_consequent_symmetric = (arg1->type == TermType::VARIABLE && arg2->type == TermType::VARIABLE);
-	} else if (consequent->type == FormulaType::AND) {
-		consequent_length = consequent->array.length;
-		free(proposed_proofs); return true;
 	} else {
 		free(proposed_proofs); return true;
 	}
@@ -1009,125 +991,86 @@ bool propose_universal_elim(
 		fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", selected_edge.child->operands[1]->term->constant);
 #endif
 
-	for (Proof* grandchild : selected_edge.child->children) {
-		Proof* new_step = NULL;
-		Proof** new_axioms = (Proof**) calloc(consequent_length, sizeof(Proof*));
-		if (new_axioms == NULL) { free(proposed_proofs); return false; }
-
-		/* check if `grandchild` is observed */
-		if (T.observations.contains(grandchild)) {
-			if (!make_grounded_conjunction(T, c,
-					(consequent->type == FormulaType::AND ? consequent->array.operands : &consequent),
-					(consequent->type == FormulaType::AND ? consequent_length : 1),
-					selected_edge.axiom->formula->quantifier.variable, selected_edge.child->operands[1]->term, new_axioms, new_grounded_axioms, new_step)
-			 || new_step == NULL)
-			{
-				bool fail = (new_step == NULL);
-				free_proofs(new_axioms, consequent_length);
-				free(new_axioms); { free(proposed_proofs); return !fail; }
-			}
-
-			/* propose `new_step` to substitute `grandchild` */
-			if (!propose_transformation(T, proposed_proofs, new_observations, grandchild, new_step)) {
-				free(*new_step); if (new_step->reference_count == 0) free(new_step);
-				free_proofs(new_axioms, consequent_length);
-				free(new_axioms); free(proposed_proofs); return false;
-			}
-		}
-		for (Proof* descendant : grandchild->children) {
-			if (descendant->type != nd_step_type::CONJUNCTION_ELIMINATION) {
-				/* we need to prove all conjuncts in `grandchild` */
-				if (new_step == NULL) {
-					if (!make_grounded_conjunction(T, c,
-							(consequent->type == FormulaType::AND ? consequent->array.operands : &consequent),
-							(consequent->type == FormulaType::AND ? consequent_length : 1),
-							selected_edge.axiom->formula->quantifier.variable, selected_edge.child->operands[1]->term, new_axioms, new_grounded_axioms, new_step)
-					 || new_step == NULL)
-					{
-						bool fail = (new_step == NULL);
-						free_proofs(new_axioms, consequent_length);
-						free(new_axioms); free(proposed_proofs); return !fail;
-					}
-
-					/* propose `new_step` to substitute `grandchild` if we haven't already */
-					if (!propose_transformation(T, proposed_proofs, new_observations, grandchild, new_step)) {
-						free(*new_step); if (new_step->reference_count == 0) free(new_step);
-						free_proofs(new_axioms, consequent_length);
-						free(new_axioms); free(proposed_proofs); return false;
-					}
-				}
-			} else {
-				const array<unsigned int>& indices = descendant->operands[1]->parameters;
-				for (unsigned int index : indices) {
-					if (!make_grounded_conjunct(T, c, consequent->array.operands[index],
-							selected_edge.axiom->formula->quantifier.variable, selected_edge.child->operands[1]->term, new_axioms, index, new_grounded_axioms)
-					 || new_axioms[index] == NULL)
-					{
-						bool fail = (new_axioms[index] == NULL);
-						if (new_step != NULL) {
-							free(*new_step); if (new_step->reference_count == 0) free(new_step);
-						}
-						free_proofs(new_axioms, consequent_length);
-						free(new_axioms); free(proposed_proofs); return !fail;
-					}
-				}
-
-				Proof* new_indexed_step = ProofCalculus::new_conjunction_intro(
-						make_indexed_array_view(new_axioms, indices.data, indices.length));
-				if (new_indexed_step == NULL) {
-					if (new_step != NULL) {
-						free(*new_step); if (new_step->reference_count == 0) free(new_step);
-					}
-					free_proofs(new_axioms, consequent_length);
-					free(new_axioms); free(proposed_proofs); return false;
-				}
-
-				/* propose `new_indexed_step` to substitute `descendant` */
-				if (!propose_transformation(T, proposed_proofs, new_observations, descendant, new_indexed_step)) {
-					if (new_step != NULL) {
-						free(*new_step); if (new_step->reference_count == 0) free(new_step);
-					}
-					free_proofs(new_axioms, consequent_length);
-					free(new_axioms); free(proposed_proofs); return false;
-				}
-			}
-		}
-		free(*new_step); if (new_step->reference_count == 0) free(new_step);
-		free_proofs(new_axioms, consequent_length);
-		free(new_axioms);
-	}
-
-	/* Compute the probability of inverting this proposal. NOTE: the change to
-	   `T` that is being proposed here is removing an element from
-	   `T.universal_quantifications` and adding an axiom for every conjunct in
-	   the consequent and for every constant that is used to eliminate the
-	   universal quantification in the aforementioned axiom. */
-	array<unsigned int> intersection(64);
-	if (!get_satisfying_concepts<true>(T, antecedent, intersection)) {
+	/* check if `grandchild` is observed */
+	Proof* new_axiom = make_grounded_conjunct(T, c, consequent,
+				selected_edge.axiom->formula->quantifier.variable,
+				selected_edge.child->operands[1]->term);
+	if (new_axiom == NULL) {
 		free(proposed_proofs); return false;
 	}
-	/* if the antecedent conjuncts aren't grounded, then we can't propose the inverse transformation */
-	if (intersection.length == 0) { free(proposed_proofs); return true; }
-	unsigned int new_axiom_count = T.axiom_count() - 1;
-	if (is_consequent_symmetric) new_axiom_count += new_grounded_axioms.table.size * 3;
-	else if (is_consequent_binary) new_axiom_count += new_grounded_axioms.table.size * 2;
-	else new_axiom_count += new_grounded_axioms.table.size;
-	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) { free(proposed_proofs); return false; }
-	double* log_probabilities = (double*) calloc(intersection.length, sizeof(double));
-	for (unsigned int i = 0; i < intersection.length; i++) {
-		const concept<ProofCalculus>& c = T.ground_concepts.get(intersection[i]);
-		unsigned int count = c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size + 1;
-		if (new_grounded_axioms.table.contains(intersection[i])) count--;
 
-		log_probabilities[i] += -log_cache<double>::instance().get(count)
-				- lgamma(count + 1) + lgamma(antecedent_length + 1) + lgamma(count - antecedent_length + 1)
-				- log_cache<double>::instance().get(new_axiom_count); /* this is the log probabilty of selecting the consequent in the universal introduction */
+	/* propose `new_step` to substitute `grandchild` */
+	if (!propose_transformation(T, proposed_proofs, new_observations, selected_edge.grandchild, new_axiom)) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
 	}
-	log_proposal_probability_ratio += logsumexp(log_probabilities, intersection.length);
-	free(log_probabilities);
+	free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+
+	/* compute the probability of inverting this proposal */
+	array<pair<unsigned int, unsigned int>> satisfying_extensional_edges(16);
+	unsigned int predicate; bool success;
+	if (is_atomic(*consequent, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
+			atom<false, 1> consequent_atom;
+			consequent_atom.predicate = predicate;
+			consequent_atom.args[0] = 0;
+			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+		} else {
+			atom<false, 2> consequent_atom;
+			consequent_atom.predicate = predicate;
+			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
+			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
+			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+		}
+	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, predicate, arg1, arg2)) {
+		if (arg2 == NULL) {
+			atom<true, 1> consequent_atom;
+			consequent_atom.predicate = predicate;
+			consequent_atom.args[0] = 0;
+			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+		} else {
+			atom<true, 2> consequent_atom;
+			consequent_atom.predicate = predicate;
+			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
+			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
+			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+		}
+	}
+	if (!success) { free(proposed_proofs); return false; }
+
+	unsigned int new_axiom_count = old_axiom_count;
+	unsigned int new_axiom_indices_length = c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size;
+	unsigned int new_satisfying_extensional_edges_length = satisfying_extensional_edges.length;
+	if (is_consequent_symmetric) {
+		new_axiom_count += new_grounded_axioms.table.size * 3;
+		new_axiom_indices_length += 3;
+	} else if (is_consequent_binary) {
+		new_axiom_count += new_grounded_axioms.table.size * 2;
+		new_axiom_indices_length += 2;
+	} else {
+		new_axiom_count += new_grounded_axioms.table.size;
+		new_axiom_indices_length += 1;
+	}
+	if (selected_edge.axiom->children.length == 1 && selected_edge.child->children.length == 1) {
+		/* this is the last reference to this axiom */
+		new_axiom_count--;
+		new_satisfying_extensional_edges_length--;
+	}
+	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) { free(proposed_proofs); return false; }
+
+	double log_rebuild_probability = 0.0;
+	new_axiom_indices_length--;
+	/* this is the probability of selecting the length of the antecedent */
+	log_rebuild_probability += -log_cache<double>::instance().get(new_axiom_indices_length);
+	/* this is the probability of selecting the conjuncts in the antecedent */
+	log_rebuild_probability += -lgamma(new_axiom_indices_length + 1)
+			+ lgamma(antecedent_length + 1) + lgamma(new_axiom_indices_length - antecedent_length + 1);
+
+	log_proposal_probability_ratio += logsumexp(
+			-log_cache<double>::instance().get(new_satisfying_extensional_edges_length + 1), /* log probability of relifting the grounded consequent to this extensional edge */
+			-log_cache<double>::instance().get(new_satisfying_extensional_edges_length + 1) + log_rebuild_probability); /* log probability of rebuilding this extensional edge */
 
 	/* go ahead and compute the probability ratios and perform the accept/reject step */
-	unsigned int predicate; bool success;
 	if (is_atomic(*consequent, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			atom<false, 1> consequent_atom;
@@ -1194,10 +1137,6 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 			bool error = false;
 			switch (child->type) {
 			case nd_step_type::CONJUNCTION_INTRODUCTION:
-			case nd_step_type::SET_INTRODUCTION:
-			case nd_step_type::SET_SIZE_INTRODUCTION:
-			case nd_step_type::ALL_INTRODUCTION:
-			case nd_step_type::ALL_SIZE_INTRODUCTION:
 				for (unsigned int j = 0; j < child->operand_array.length; j++) {
 					if (child->operand_array[j] == entry.key) {
 						child->operand_array[j] = entry.value;
@@ -1418,15 +1357,11 @@ bool do_mh_step(
 				if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
 				 || child->operands[1]->type != nd_step_type::TERM_PARAMETER
 				 || child->operands[1]->term->type != TermType::CONSTANT) continue;
-				bool eliminable = true;
-				for (const Proof* grandchild : child->children) {
-					if (grandchild->type != nd_step_type::IMPLICATION_ELIMINATION) {
-						eliminable = false; break;
-					}
+				for (Proof* grandchild : child->children) {
+					if (grandchild->type != nd_step_type::IMPLICATION_ELIMINATION) continue;
+					if (!eliminable_extensional_edges.add({i, entry.key, entry.value, child, grandchild}))
+						return false;
 				}
-
-				if (eliminable && !eliminable_extensional_edges.add({i, entry.key, entry.value, child}))
-					return false;
 			}
 		}
 	}
@@ -1444,24 +1379,24 @@ bool do_mh_step(
 			concept<ProofCalculus>& c = entry.value;
 			if (random < c.types.size) {
 				atom<false, 1> a = {c.types.keys[random], {0}};
-				return propose_universal_intro(T, a, entry.key, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
 			}
 			random -= c.types.size;
 			if (random < c.negated_types.size) {
 				atom<true, 1> a = {c.negated_types.keys[random], {0}};
-				return propose_universal_intro(T, a, entry.key, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
 			}
 			random -= c.negated_types.size;
 			if (random < c.relations.size) {
 				relation rel = c.relations.keys[random];
 				atom<false, 2> a = {rel.predicate, {rel.arg1, rel.arg2}};
-				return propose_universal_intro(T, a, entry.key, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
 			}
 			random -= c.relations.size;
 			if (random < c.negated_relations.size) {
 				relation rel = c.relations.keys[random];
 				atom<true, 2> a = {rel.predicate, {rel.arg1, rel.arg2}};
-				return propose_universal_intro(T, a, entry.key, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
 			}
 			random -= c.negated_relations.size;
 		}
@@ -1470,7 +1405,7 @@ bool do_mh_step(
 
 	if (random < eliminable_extensional_edges.length) {
 		/* we've selected a universally-quantified formula */
-		return propose_universal_elim(T, eliminable_extensional_edges[random], log_proposal_probability_ratio, proof_prior);
+		return propose_universal_elim(T, eliminable_extensional_edges[random], axiom_count, log_proposal_probability_ratio, proof_prior);
 	}
 
 	fprintf(stderr, "propose ERROR: Unable to select axiom.\n");

@@ -145,6 +145,7 @@ struct theory
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 	typedef typename ProofCalculus::Proof Proof;
+	typedef typename ProofCalculus::ProofType ProofType;
 
 	unsigned int new_constant_offset;
 
@@ -666,10 +667,150 @@ private:
 					return new_axiom;
 				} else {
 					/* this is a formula of form `t(c)` */
+
+					/* first check if there is already an extensional edge that proves this formula (for this particular instantiation) */
+					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+						if (sets.sets[i].size_axiom == NULL) continue;
+						const Formula* set_formula = sets.sets[i].set_formula();
+						if (set_formula->type == FormulaType::NOT) {
+							if (Negated) set_formula = set_formula->unary.operand;
+							else continue;
+						} else if (Negated) continue;
+						if (set_formula->type != FormulaType::UNARY_APPLICATION)
+							continue;
+
+						unsigned int expected_constant_eliminator = 0;
+						if (set_formula->binary.left->type == TermType::VARIABLE) {
+							expected_constant_eliminator = predicate;
+						} else if (set_formula->binary.left->type != TermType::CONSTANT || set_formula->binary.left->constant != predicate) {
+							continue;
+						}
+
+						if (set_formula->binary.right->type == TermType::VARIABLE) {
+							if (expected_constant_eliminator == 0)
+								expected_constant_eliminator = arg1->constant;
+							else if (expected_constant_eliminator != arg1->constant)
+								continue;
+						} else if (*set_formula->binary.right != *arg1) {
+							continue;
+						}
+
+						/* the atomic formula unifies with `set_formula` of this set */
+						for (auto entry : sets.extensional_graph.vertices[i].children) {
+							if (entry.value->type == ProofType::UNIVERSAL_ELIMINATION
+							 && entry.value->operands[1]->type == ProofType::TERM_PARAMETER
+							 && entry.value->operands[1]->term->type == TermType::CONSTANT
+							 && entry.value->operands[1]->term->constant == expected_constant_eliminator)
+							{
+								for (Proof* grandchild : entry.value->children) {
+									if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
+										/* we found a proof of the atomic formula */
+										grandchild->reference_count++;
+										return grandchild;
+									}
+								}
+							}
+						}
+					}
+
+					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
+					/* check if this observation is inconsistent with the theory (can we prove its negation?) */
+					/* the first step to check for inconsistency is to ensure
+					   we can't prove the negation of the new axiom via disjointness */
+					Formula* conjunction = make_lifted_conjunction(arg1->constant, *this);
+					if (conjunction == NULL) return NULL;
+					Formula* lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1));
+					if (lifted_literal == NULL) {
+						free(*conjunction); free(conjunction);
+						return NULL;
+					} else if (sets.are_disjoint(conjunction, lifted_literal)) {
+						free(*conjunction); free(conjunction);
+						free(*lifted_literal); free(lifted_literal);
+						return NULL;
+					}
+
+					/* the next step is to ensure that the sets that contain this new instance can be made sufficiently large */
+					hash_set<unsigned int> old_ancestors(16);
+					array<unsigned int> stack(8);
+					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+						if (sets.sets[i].size_axiom == NULL) continue;
+						const Formula* set_formula = sets.sets[i].set_formula();
+						if (is_subset(conjunction, set_formula))
+							if (!stack.add(i) || !old_ancestors.add(i)) {
+								free(*lifted_literal); free(lifted_literal);
+								free(*conjunction); free(conjunction); return NULL;
+							}
+					} while (stack.length > 0) {
+						unsigned int old_ancestor = stack.pop();
+						for (unsigned int parent : sets.intensional_graph.vertices[old_ancestor].parents) {
+							if (old_ancestors.contains(parent)) continue;
+							if (!old_ancestors.add(parent) || !stack.add(parent)) {
+								free(*lifted_literal); free(lifted_literal);
+								free(*conjunction); free(conjunction); return NULL;
+							}
+						} for (const auto& entry : sets.extensional_graph.vertices[old_ancestor].parents) {
+							if (old_ancestors.contains(entry.key)) continue;
+							if (!old_ancestors.add(entry.key) || !stack.add(entry.key)) {
+								free(*lifted_literal); free(lifted_literal);
+								free(*conjunction); free(conjunction); return NULL;
+							}
+						}
+					}
+					free(*conjunction); free(conjunction);
+
+					hash_set<unsigned int> new_ancestors(16);
+					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+						if (sets.sets[i].size_axiom == NULL) continue;
+						const Formula* set_formula = sets.sets[i].set_formula();
+						if (!old_ancestors.contains(i) && is_subset(lifted_literal, set_formula)) {
+							if (!new_ancestors.add(i) || !stack.add(i)) {
+								free(*lifted_literal); free(lifted_literal);
+								return NULL;
+							}
+						}
+					}
+					free(*lifted_literal); free(lifted_literal);
+					while (stack.length > 0) {
+						unsigned int ancestor = stack.pop();
+						for (unsigned int parent : sets.intensional_graph.vertices[ancestor].parents) {
+							if (old_ancestors.contains(parent)) continue;
+							if (new_ancestors.contains(parent)) continue;
+							if (!new_ancestors.add(parent) || !stack.add(parent)) return NULL;
+						} for (const auto& entry : sets.extensional_graph.vertices[ancestor].parents) {
+							if (old_ancestors.contains(entry.key)) continue;
+							if (new_ancestors.contains(entry.key)) continue;
+							if (!new_ancestors.add(entry.key) || !stack.add(entry.key)) return NULL;
+						}
+					}
+
+					for (unsigned int new_ancestor : new_ancestors) {
+						if (!sets.increment_provable_ground_instance_count(new_ancestor)) {
+							/* we couldn't increase the size of the set `new_ancestor` */
+							for (unsigned int j : new_ancestors) {
+								if (j == new_ancestor) break;
+								sets.decrement_provable_ground_instance_count(j);
+							}
+							return NULL;
+						}
+					}
+
+					/* the third step is to make sure we can't currently prove
+					   the negation of this new axiom via set containment (can
+					   we prove that the instance does not belong to any ancestor?) */
+					
+
+
+					/* we found no inconsistency, so create the axiom */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
-					if (new_axiom == NULL) return NULL;
+					if (new_axiom == NULL) {
+						for (unsigned int j : new_ancestors)
+							sets.decrement_provable_ground_instance_count(j);
+						return NULL;
+					}
 					new_axiom->reference_count++;
 					if (!add_unary_atom<Negated>(predicate, arg1->constant, new_axiom)) {
+						for (unsigned int j : new_ancestors)
+							sets.decrement_provable_ground_instance_count(j);
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -692,6 +833,62 @@ private:
 					return NULL;
 				} else {
 					/* this is a formula of form `r(c_1,c_2)` */
+
+					/* first check if there is already an extensional edge that proves this formula (for this particular instantiation) */
+					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+						if (sets.sets[i].size_axiom == NULL) continue;
+						const Formula* set_formula = sets.sets[i].set_formula();
+						if (set_formula->type == FormulaType::NOT) {
+							if (Negated) set_formula = set_formula->unary.operand;
+							else continue;
+						} else if (Negated) continue;
+						if (set_formula->type != FormulaType::BINARY_APPLICATION)
+							continue;
+
+						unsigned int expected_constant_eliminator = 0;
+						if (set_formula->ternary.first->type == TermType::VARIABLE) {
+							expected_constant_eliminator = predicate;
+						} else if (set_formula->ternary.first->type != TermType::CONSTANT || set_formula->ternary.first->constant != predicate) {
+							continue;
+						}
+
+						if (set_formula->ternary.second->type == TermType::VARIABLE) {
+							if (expected_constant_eliminator == 0)
+								expected_constant_eliminator = arg1->constant;
+							else if (expected_constant_eliminator != arg1->constant)
+								continue;
+						} else if (*set_formula->ternary.second != *arg1) {
+							continue;
+						}
+
+						if (set_formula->ternary.third->type == TermType::VARIABLE) {
+							if (expected_constant_eliminator == 0)
+								expected_constant_eliminator = arg2->constant;
+							else if (expected_constant_eliminator != arg2->constant)
+								continue;
+						} else if (*set_formula->ternary.third != *arg2) {
+							continue;
+						}
+
+						/* the atomic formula unifies with `set_formula` of this set */
+						for (auto entry : sets.extensional_graph.vertices[i].children) {
+							if (entry.value->type == ProofType::UNIVERSAL_ELIMINATION
+							 && entry.value->operands[1]->type == ProofType::TERM_PARAMETER
+							 && entry.value->operands[1]->term->type == TermType::CONSTANT
+							 && entry.value->operands[1]->term->constant == expected_constant_eliminator)
+							{
+								for (Proof* grandchild : entry.value->children) {
+									if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
+										/* we found a proof of the atomic formula */
+										grandchild->reference_count++;
+										return grandchild;
+									}
+								}
+							}
+						}
+					}
+
+					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
@@ -780,5 +977,147 @@ private:
 		}
 	}
 };
+
+template<bool Negated, typename Formula>
+bool intensional_element_of(
+		unsigned int predicate,
+		const typename Formula::Term* arg1,
+		const typename Formula::Term* arg2,
+		const Formula* set_formula,
+		typename Formula::Term*& unifying_substitution)
+{
+	typedef typename Formula::Term Term;
+	typedef typename Formula::Type FormulaType;
+	typedef typename Formula::TermType TermType;
+
+	switch (set_formula->type) {
+	case FormulaType::UNARY_APPLICATION:
+		if (Negated || arg1 == NULL || arg2 != NULL) return false;
+		if (set_formula->binary.left->type == TermType::VARIABLE && set_formula->binary.left->variable == 1) {
+			if (unifying_substitution == NULL) {
+				unifying_substitution = Term::new_constant(predicate);
+				if (unifying_substitution == NULL) return false;
+			} else if (unifying_substitution->type != TermType::CONSTANT || unifying_substitution->constant != predicate) {
+				return false;
+			}
+		} else if (set_formula->binary.left->type != TermType::CONSTANT || set_formula->binary.left->constant != predicate) {
+			return false;
+		}
+
+		if (set_formula->binary.right->type == TermType::VARIABLE && set_formula->binary.right->variable == 1) {
+			if (unifying_substitution == NULL) {
+				unifying_substitution = arg1;
+				arg1->reference_count++;
+			} else if (*unifying_substitution != *arg1) {
+				return false;
+			}
+		} else if (*set_formula->binary.right != *arg1) {
+			return false;
+		}
+		return true;
+	case FormulaType::BINARY_APPLICATION:
+		if (Negated || arg1 == NULL || arg2 == NULL) return false;
+		if (set_formula->ternary.first->type == TermType::VARIABLE && set_formula->ternary.first->variable == 1) {
+			if (unifying_substitution == NULL) {
+				unifying_substitution = Term::new_constant(predicate);
+				if (unifying_substitution == NULL) return false;
+			} else if (unifying_substitution->type != TermType::CONSTANT || unifying_substitution->constant != predicate) {
+				return false;
+			}
+		} else if (set_formula->ternary.first->type != TermType::CONSTANT || set_formula->ternary.first->constant != predicate) {
+			return false;
+		}
+
+		if (set_formula->ternary.second->type == TermType::VARIABLE && set_formula->ternary.second->variable == 1) {
+			if (unifying_substitution == NULL) {
+				unifying_substitution = arg1;
+				arg1->reference_count++;
+			} else if (*unifying_substitution != *arg1) {
+				return false;
+			}
+		} else if (*set_formula->ternary.second != *arg1) {
+			return false;
+		}
+
+		if (set_formula->ternary.third->type == TermType::VARIABLE && set_formula->ternary.third->variable == 1) {
+			if (unifying_substitution == NULL) {
+				unifying_substitution = arg2;
+				arg2->reference_count++;
+			} else if (*unifying_substitution != *arg2) {
+				return false;
+			}
+		} else if (*set_formula->ternary.third != *arg2) {
+			return false;
+		}
+		return true;
+	case FormulaType::NOT:
+		return intensional_element_of<!Negated>(predicate, arg1, arg2, set_formula, unifying_substitution);
+	case FormulaType::AND:
+		for (unsigned int i = 0; i < set_formula->array.length; i++)
+			if (!intensional_element_of<Negated>(predicate, arg1, arg2, set_formula->array.operands[i], unifying_substitution)) return false;
+		return true;
+	case FormulaType::OR:
+		for (unsigned int i = 0; i < set_formula->array.length; i++) {
+			if (intensional_element_of<Negated>(predicate, arg1, arg2, set_formula->array.operands[i], unifying_substitution))
+				return true;
+			if (unifying_substitution != NULL) {
+				free(*unifying_substitution);
+				if (unifying_substitution->reference_count == 0)
+					free(unifying_substitution);
+				unifying_substitution = NULL;
+			}
+		}
+		return false;
+	case FormulaType::IF_THEN:
+		return intensional_element_of<Negated>(predicate, arg1, arg2, set_formula->binary.left, unifying_substitution)
+			&& intensional_element_of<!Negated>(predicate, arg1, arg2, set_formula->binary.right, unifying_substitution);
+	case FormulaType::TRUE:
+		return !Negated;
+	case FormulaType::FALSE:
+		return Negated;
+	case FormulaType::EQUALS:
+	case FormulaType::IFF:
+	case FormulaType::FOR_ALL:
+	case FormulaType::EXISTS:
+	case FormulaType::LAMBDA:
+		fprintf(stderr, "intensional_element_of ERROR: Not implemented.\n");
+		return false;
+	case FormulaType::VARIABLE:
+	case FormulaType::CONSTANT:
+	case FormulaType::PARAMETER:
+	case FormulaType::INTEGER:
+		break;
+	}
+	fprintf(stderr, "intensional_element_of ERROR: Unrecognized formula type.\n");
+	return false;
+}
+
+template<typename Formula, typename ProofCalculus, typename Canonicalizer>
+Formula* make_lifted_conjunction(unsigned int concept_id,
+		const theory<Formula, ProofCalculus, Canonicalizer>& T)
+{
+	const concept<ProofCalculus>& c = T.ground_concepts.get(concept_id);
+	array<Formula*> conjuncts(16);
+	for (const auto& entry : c.types) {
+		Formula* new_conjunct = Formula::new_atom(entry.key, Formula::new_variable(1));
+		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+	} for (const auto& entry : c.negated_types) {
+		Formula* new_conjunct = Formula::new_not(Formula::new_atom(entry.key, Formula::new_variable(1)));
+		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+	} for (const auto& entry : c.relations) {
+		Formula* new_conjunct = Formula::new_atom(entry.key.predicate,
+				(entry.key.arg1 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg1),
+				(entry.key.arg2 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg2));
+		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+	} for (const auto& entry : c.negated_relations) {
+		Formula* new_conjunct = Formula::new_not(Formula::new_atom(entry.key.predicate,
+				(entry.key.arg1 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg1),
+				(entry.key.arg2 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg2)));
+		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+	}
+	Formula* conjunction = Formula::new_and(conjuncts);
+	free_formulas(conjuncts);
+	return conjunction;
+}
 
 #endif /* THEORY_H_ */

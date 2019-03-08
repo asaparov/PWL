@@ -39,11 +39,6 @@ enum class nd_step_type : uint_fast16_t
 	EXISTENTIAL_INTRODUCTION,
 	EXISTENTIAL_ELIMINATION,
 
-	SET_INTRODUCTION,
-	SET_SIZE_INTRODUCTION,
-	ALL_INTRODUCTION,
-	ALL_SIZE_INTRODUCTION,
-
 	COUNT
 };
 
@@ -88,10 +83,6 @@ struct nd_step
 			subproofs = NULL; length = 0;
 			return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
-		case nd_step_type::SET_INTRODUCTION:
-		case nd_step_type::SET_SIZE_INTRODUCTION:
-		case nd_step_type::ALL_INTRODUCTION:
-		case nd_step_type::ALL_SIZE_INTRODUCTION:
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
@@ -133,10 +124,6 @@ struct nd_step
 			subproofs = NULL; length = 0;
 			return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
-		case nd_step_type::SET_INTRODUCTION:
-		case nd_step_type::SET_SIZE_INTRODUCTION:
-		case nd_step_type::ALL_INTRODUCTION:
-		case nd_step_type::ALL_SIZE_INTRODUCTION:
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
@@ -203,10 +190,6 @@ private:
 				core::free(formula);
 			return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
-		case nd_step_type::SET_INTRODUCTION:
-		case nd_step_type::SET_SIZE_INTRODUCTION:
-		case nd_step_type::ALL_INTRODUCTION:
-		case nd_step_type::ALL_SIZE_INTRODUCTION:
 			for (unsigned int i = 0; i < operand_array.length; i++) {
 				operand_array[i]->remove_child(this);
 				core::free(*operand_array[i]);
@@ -275,10 +258,6 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 	case nd_step_type::FORMULA_PARAMETER:
 		return compare(*first.formula, *second.formula);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
-	case nd_step_type::SET_INTRODUCTION:
-	case nd_step_type::SET_SIZE_INTRODUCTION:
-	case nd_step_type::ALL_INTRODUCTION:
-	case nd_step_type::ALL_SIZE_INTRODUCTION:
 		if (first.operand_array.length < second.operand_array.length) return -1;
 		else if (first.operand_array.length > second.operand_array.length) return 1;
 		for (unsigned int i = 0; i < first.operand_array.length; i++) {
@@ -625,113 +604,6 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = try_canonicalize(out.formula, canonicalizer);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states, operand_count));
-	case nd_step_type::SET_INTRODUCTION:
-	case nd_step_type::SET_SIZE_INTRODUCTION:
-		if (operand_count < 1 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER) return false;
-
-		/* check that we have `n` distinct instantiations of `A[x -> a_i]` */
-		parameter = Formula::new_parameter(1);
-		for (i = 1; i < operand_count; i++) {
-			if (!unify(*operand_states[0]->formula, *operand_states[i]->formula, parameter, unifying_term)
-			 || unifying_term->type != TermType::CONSTANT || constants.contains(unifying_term->constant)
-			 || !constants.add(unifying_term->constant))
-			{
-				free(*parameter); if (parameter->reference_count == 0) free(parameter);
-				return false;
-			}
-		}
-
-		variable = Formula::new_variable(2);
-		formula = substitute<TermType::PARAMETER, 2>(operand_states[0]->formula, parameter, variable);
-		free(*parameter); if (parameter->reference_count == 0) free(parameter);
-		free(*variable); if (variable->reference_count == 0) free(variable);
-		if (formula == NULL) return false;
-		if (proof.type == nd_step_type::SET_INTRODUCTION) {
-			out.formula = Formula::new_exists(1, Formula::new_atom((unsigned int) BuiltInPredicates::SET, variable, Formula::new_lambda(2, formula)));
-		} else if (proof.type == nd_step_type::SET_SIZE_INTRODUCTION) {
-			out.formula = Formula::new_exists(1,
-					Formula::new_and(
-						Formula::new_atom((unsigned int) BuiltInPredicates::SET, variable, Formula::new_lambda(2, formula)),
-						Formula::new_equals(Formula::new_atom((unsigned int) BuiltInPredicates::SET, variable), Term::new_int(operand_count - 1)))
-				);
-		}
-		if (out.formula == NULL) {
-			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
-			return false;
-		}
-		out.formula = try_canonicalize(out.formula, canonicalizer);
-		if (out.formula == NULL) return false;
-		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states + 1, operand_count - 1));
-	case nd_step_type::ALL_INTRODUCTION:
-	case nd_step_type::ALL_SIZE_INTRODUCTION:
-		if (operand_count < 1 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER
-		 || operand_states[0]->formula->type != FormulaType::FOR_ALL)
-			return false;
-
-		/* check the 'exhaustion' statement */
-		if (operand_states[0]->formula->quantifier.operand->type == FormulaType::NOT) {
-			formula = operand_states[0]->formula->quantifier.operand->unary.operand;
-		} else if (operand_states[0]->formula->quantifier.operand->type == FormulaType::IF_THEN) {
-			formula = operand_states[0]->formula->quantifier.operand->binary.left;
-			if (operand_count - 1 == 1) {
-				if (operand_states[0]->formula->quantifier.operand->binary.right->type != FormulaType::EQUALS
-				 || operand_states[0]->formula->quantifier.operand->binary.right->binary.left->type != FormulaType::VARIABLE
-				 || operand_states[0]->formula->quantifier.operand->binary.right->binary.left->variable != operand_states[0]->formula->quantifier.variable
-				 || operand_states[0]->formula->quantifier.operand->binary.right->binary.right->type != FormulaType::CONSTANT
-				 || !constants.add(operand_states[0]->formula->quantifier.operand->binary.right->binary.right->constant))
-				{
-					return false;
-				}
-			} else {
-				if (operand_states[0]->formula->quantifier.operand->binary.right->type != FormulaType::AND
-				 || operand_states[0]->formula->quantifier.operand->binary.right->array.length != operand_count - 1)
-				{
-					return false;
-				}
-				for (i = 1; i < operand_count; i++) {
-					if (operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->type != FormulaType::EQUALS
-					 || operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.left->type != FormulaType::VARIABLE
-					 || operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.left->variable != operand_states[0]->formula->quantifier.variable
-					 || operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.right->type != FormulaType::CONSTANT
-					 || !constants.add(operand_states[0]->formula->quantifier.operand->binary.right->array.operands[i - 1]->binary.right->constant))
-					{
-						return false;
-					}
-				}
-			}
-		}
-
-		/* check that we have `n` distinct instantiations of `A[x -> a_i]` */
-		variable = Formula::new_variable(operand_states[0]->formula->quantifier.variable);
-		for (i = 1; i < operand_count; i++) {
-			if (!unify(*formula, *operand_states[i]->formula, variable, unifying_term)
-			 || unifying_term->type != TermType::CONSTANT || unifying_term->constant != constants[i - 1])
-			{
-				free(*variable); if (variable->reference_count == 0) free(variable);
-				return false;
-			}
-		}
-
-		parameter = Formula::new_variable(2);
-		formula = substitute<TermType::VARIABLE, 2>(formula, variable, parameter);
-		free(*parameter); if (parameter->reference_count == 0) free(parameter);
-		free(*variable); if (variable->reference_count == 0) free(variable);
-		if (proof.type == nd_step_type::ALL_INTRODUCTION) {
-			out.formula = Formula::new_exists(1, Formula::new_atom((unsigned int) BuiltInPredicates::ALL, variable, Formula::new_lambda(2, formula)));
-		} else if (proof.type == nd_step_type::ALL_SIZE_INTRODUCTION) {
-			out.formula = Formula::new_exists(1,
-					Formula::new_and(
-						Formula::new_atom((unsigned int) BuiltInPredicates::ALL, variable, Formula::new_lambda(2, formula)),
-						Formula::new_equals(Formula::new_atom((unsigned int) BuiltInPredicates::SIZE, variable), Term::new_int(operand_count - 1)))
-				);
-		}
-		if (out.formula == NULL) {
-			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
-			return false;
-		}
-		out.formula = try_canonicalize(out.formula, canonicalizer);
-		if (out.formula == NULL) return false;
-		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states + 1, operand_count - 1));
 	case nd_step_type::CONJUNCTION_ELIMINATION:
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -1257,46 +1129,6 @@ struct natural_deduction
 
 	static inline Proof* new_existential_elim(Proof* existential, Proof* proof) {
 		return new_binary_step<nd_step_type::EXISTENTIAL_ELIMINATION>(existential, proof);
-	}
-
-	template<typename... Proofs>
-	static inline Proof* new_set_intro(Formula* parameter, Proofs&&... operands) {
-		return new_array_step<nd_step_type::SET_INTRODUCTION, 0>(new_formula_parameter(parameter), std::forward<Proofs>(operands)...);
-	}
-
-	template<template<typename> class Array>
-	static inline Proof* new_set_intro(Formula* parameter, const Array<Proof*>& operands) {
-		return new_array_step<nd_step_type::SET_INTRODUCTION, 0>(make_composed_array_view(new_formula_parameter(parameter), operands));
-	}
-
-	template<typename... Proofs>
-	static inline Proof* new_set_size_intro(Formula* parameter, Proofs&&... operands) {
-		return new_array_step<nd_step_type::SET_SIZE_INTRODUCTION, 0>(new_formula_parameter(parameter), std::forward<Proofs>(operands)...);
-	}
-
-	template<template<typename> class Array>
-	static inline Proof* new_set_size_intro(Formula* parameter, const Array<Proof*>& operands) {
-		return new_array_step<nd_step_type::SET_SIZE_INTRODUCTION, 0>(make_composed_array_view(new_formula_parameter(parameter), operands));
-	}
-
-	template<typename... Proofs>
-	static inline Proof* new_all_intro(Proof* exhaustion, Proofs&&... operands) {
-		return new_array_step<nd_step_type::ALL_INTRODUCTION, 0>(exhaustion, std::forward<Proofs>(operands)...);
-	}
-
-	template<template<typename> class Array>
-	static inline Proof* new_all_intro(Proof* exhaustion, const Array<Proof*>& operands) {
-		return new_array_step<nd_step_type::ALL_INTRODUCTION, 0>(make_composed_array_view(exhaustion, operands));
-	}
-
-	template<typename... Proofs>
-	static inline Proof* new_all_size_intro(Proof* exhaustion, Proofs&&... operands) {
-		return new_array_step<nd_step_type::ALL_SIZE_INTRODUCTION, 0>(exhaustion, std::forward<Proofs>(operands)...);
-	}
-
-	template<template<typename> class Array>
-	static inline Proof* new_all_size_intro(Proof* exhaustion, const Array<Proof*>& operands) {
-		return new_array_step<nd_step_type::ALL_SIZE_INTRODUCTION, 0>(make_composed_array_view(exhaustion, operands));
 	}
 
 private:

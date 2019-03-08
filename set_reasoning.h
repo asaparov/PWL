@@ -306,6 +306,7 @@ struct set_info
 	typedef typename ProofCalculus::Proof Proof;
 
 	unsigned int set_size;
+	unsigned int provable_ground_instance_count;
 	Proof* size_axiom;
 	hash_set<unsigned int> descendants;
 
@@ -334,6 +335,7 @@ inline bool init(
 		unsigned int set_size, Formula* set_formula)
 {
 	info.set_size = set_size;
+	info.provable_ground_instance_count = 0;
 	Formula* size_axiom_formula = Formula::new_equals(Formula::new_atom(
 			(unsigned int) BuiltInConstants::SIZE, Formula::new_lambda(1, set_formula)), Formula::new_int(set_size));
 	if (size_axiom_formula == NULL) return false;
@@ -1327,6 +1329,34 @@ struct set_reasoning
 		return sets[set_id].size_axiom;
 	}
 
+	bool increment_provable_ground_instance_count(unsigned int set_id) {
+		unsigned int new_instance_count = sets[set_id].provable_ground_instance_count + 1;
+		if (new_instance_count > sets[set_id].set_size) {
+			while (true) {
+				/* compute the upper bound on the size of this set; if the new size
+				   violates this bound, change the sizes of other sets to increase the bound */
+				array<unsigned int> stack(8); bool graph_changed;
+				if (!increase_set_size(set_id, new_instance_count, stack, graph_changed))
+					return NULL;
+				if (sets[set_id].set_size == new_instance_count)
+					break;
+				if (!graph_changed) return false;
+			}
+			sets[set_id].provable_ground_instance_count = new_instance_count;
+		}
+		return true;
+	}
+
+	void decrement_provable_ground_instance_count(unsigned int set_id) {
+#if !defined(NDEBUG)
+		if (sets[set_id].provable_ground_instance_count == 0) {
+			fprintf(stderr, "set_reasoning.decrement_provable_ground_instance_count WARNING: Count is zero.\n");
+			return;
+		}
+#endif
+		sets[set_id].provable_ground_instance_count--;
+	}
+
 	bool get_size_lower_bound(unsigned int set_id, unsigned int& lower_bound,
 			unsigned int*& clique, unsigned int& clique_count) const
 	{
@@ -1340,6 +1370,7 @@ struct set_reasoning
 		lower_bound = 0;
 		for (unsigned int i = 0; i < clique_count; i++)
 			lower_bound += sets[clique[i]].set_size;
+		lower_bound = max(lower_bound, sets[set_id].provable_ground_instance_count);
 		return true;
 	}
 
