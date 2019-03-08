@@ -715,105 +715,29 @@ private:
 
 					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
 					/* check if this observation is inconsistent with the theory (can we prove its negation?) */
-					/* the first step to check for inconsistency is to ensure
-					   we can't prove the negation of the new axiom via disjointness */
-					Formula* conjunction = make_lifted_conjunction(arg1->constant, *this);
-					if (conjunction == NULL) return NULL;
 					Formula* lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1));
-					if (lifted_literal == NULL) {
-						free(*conjunction); free(conjunction);
-						return NULL;
-					} else if (sets.are_disjoint(conjunction, lifted_literal)) {
-						free(*conjunction); free(conjunction);
+					if (lifted_literal == NULL) return NULL;
+					bool consistent = is_consistent(arg1->concept, lifted_literal);
+					if (!consistent) {
 						free(*lifted_literal); free(lifted_literal);
 						return NULL;
 					}
 
-					/* the next step is to ensure that the sets that contain this new instance can be made sufficiently large */
-					hash_set<unsigned int> old_ancestors(16);
-					array<unsigned int> stack(8);
-					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-						if (sets.sets[i].size_axiom == NULL) continue;
-						const Formula* set_formula = sets.sets[i].set_formula();
-						if (is_subset(conjunction, set_formula))
-							if (!stack.add(i) || !old_ancestors.add(i)) {
-								free(*lifted_literal); free(lifted_literal);
-								free(*conjunction); free(conjunction); return NULL;
-							}
-					} while (stack.length > 0) {
-						unsigned int old_ancestor = stack.pop();
-						for (unsigned int parent : sets.intensional_graph.vertices[old_ancestor].parents) {
-							if (old_ancestors.contains(parent)) continue;
-							if (!old_ancestors.add(parent) || !stack.add(parent)) {
-								free(*lifted_literal); free(lifted_literal);
-								free(*conjunction); free(conjunction); return NULL;
-							}
-						} for (const auto& entry : sets.extensional_graph.vertices[old_ancestor].parents) {
-							if (old_ancestors.contains(entry.key)) continue;
-							if (!old_ancestors.add(entry.key) || !stack.add(entry.key)) {
-								free(*lifted_literal); free(lifted_literal);
-								free(*conjunction); free(conjunction); return NULL;
-							}
-						}
-					}
-					free(*conjunction); free(conjunction);
-
-					hash_set<unsigned int> new_ancestors(16);
-					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-						if (sets.sets[i].size_axiom == NULL) continue;
-						const Formula* set_formula = sets.sets[i].set_formula();
-						if (!old_ancestors.contains(i) && is_subset(lifted_literal, set_formula)) {
-							if (!new_ancestors.add(i) || !stack.add(i)) {
-								free(*lifted_literal); free(lifted_literal);
-								return NULL;
-							}
-						}
-					}
-					free(*lifted_literal); free(lifted_literal);
-					while (stack.length > 0) {
-						unsigned int ancestor = stack.pop();
-						for (unsigned int parent : sets.intensional_graph.vertices[ancestor].parents) {
-							if (old_ancestors.contains(parent)) continue;
-							if (new_ancestors.contains(parent)) continue;
-							if (!new_ancestors.add(parent) || !stack.add(parent)) return NULL;
-						} for (const auto& entry : sets.extensional_graph.vertices[ancestor].parents) {
-							if (old_ancestors.contains(entry.key)) continue;
-							if (new_ancestors.contains(entry.key)) continue;
-							if (!new_ancestors.add(entry.key) || !stack.add(entry.key)) return NULL;
-						}
-					}
-
-					for (unsigned int new_ancestor : new_ancestors) {
-						if (!sets.increment_provable_ground_instance_count(new_ancestor)) {
-							/* we couldn't increase the size of the set `new_ancestor` */
-							for (unsigned int j : new_ancestors) {
-								if (j == new_ancestor) break;
-								sets.decrement_provable_ground_instance_count(j);
-							}
-							return NULL;
-						}
-					}
-
-					/* the third step is to make sure we can't currently prove
-					   the negation of this new axiom via set containment (can
-					   we prove that the instance does not belong to any ancestor?) */
-					
-
-
 					/* we found no inconsistency, so create the axiom */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) {
-						for (unsigned int j : new_ancestors)
-							sets.decrement_provable_ground_instance_count(j);
+						sets.remove_element(lifted_literal, arg1->concept);
+						free(*lifted_literal); free(lifted_literal);
 						return NULL;
 					}
 					new_axiom->reference_count++;
 					if (!add_unary_atom<Negated>(predicate, arg1->constant, new_axiom)) {
-						for (unsigned int j : new_ancestors)
-							sets.decrement_provable_ground_instance_count(j);
+						sets.remove_element(lifted_literal, arg1->concept);
+						free(*lifted_literal); free(lifted_literal);
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
+					free(*lifted_literal); free(lifted_literal);
 					return new_axiom;
 				}
 			} else {
@@ -889,10 +813,73 @@ private:
 					}
 
 					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
+					/* check if this observation is inconsistent with the theory (can we prove its negation?) */
+					Formula* first_lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1), arg2);
+					if (first_lifted_literal == NULL) return NULL;
+					arg2->reference_count++;
+					bool consistent = is_consistent(arg1->concept, first_lifted_literal);
+					if (!consistent) {
+						free(*first_lifted_literal); free(first_lifted_literal);
+						return NULL;
+					}
+
+					Formula* second_lifted_literal = Formula::new_atom(predicate, arg1, Formula::new_variable(1));
+					if (lifted_literal == NULL) {
+						free(*first_lifted_literal); free(first_lifted_literal);
+						return NULL;
+					}
+					arg1->reference_count++;
+					consistent = is_consistent(arg2->concept, second_lifted_literal);
+					if (!consistent) {
+						sets.remove_element(first_lifted_literal, arg1->concept);
+						free(*first_lifted_literal); free(first_lifted_literal);
+						free(*second_lifted_literal); free(second_lifted_literal);
+						return NULL;
+					}
+
+					Formula* third_lifted_literal = NULL;
+					if (*arg1 == *arg2) {
+						third_lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1), Formula::new_variable(1));
+						if (third_lifted_literal == NULL) {
+							sets.remove_element(first_lifted_literal, arg1->concept);
+							free(*first_lifted_literal); free(first_lifted_literal);
+							free(*second_lifted_literal); free(second_lifted_literal);
+							return NULL;
+						}
+						consistent = is_consistent(arg1->concept, third_lifted_literal);
+						if (!consistent) {
+							sets.remove_element(first_lifted_literal, arg1->concept);
+							sets.remove_element(second_lifted_literal, arg2->concept);
+							free(*first_lifted_literal); free(first_lifted_literal);
+							free(*second_lifted_literal); free(second_lifted_literal);
+							free(*third_lifted_literal); free(third_lifted_literal);
+							return NULL;
+						}
+					}
+
+					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
-					if (new_axiom == NULL) return NULL;
+					if (new_axiom == NULL) {
+						sets.remove_element(first_lifted_literal, arg1->concept);
+						sets.remove_element(second_lifted_literal, arg2->concept);
+						free(*first_lifted_literal); free(first_lifted_literal);
+						free(*second_lifted_literal); free(second_lifted_literal);
+						if (third_lifted_literal != NULL) {
+							sets.remove_element(third_lifted_literal, arg1->concept);
+							free(*third_lifted_literal); free(third_lifted_literal);
+						}
+						return NULL;
+					}
 					new_axiom->reference_count++;
 					if (!add_binary_atom<Negated>({predicate, arg1->constant, arg2->constant}, new_axiom)) {
+						sets.remove_element(first_lifted_literal, arg1->concept);
+						sets.remove_element(second_lifted_literal, arg2->concept);
+						free(*first_lifted_literal); free(first_lifted_literal);
+						free(*second_lifted_literal); free(second_lifted_literal);
+						if (third_lifted_literal != NULL) {
+							sets.remove_element(third_lifted_literal, arg1->concept);
+							free(*third_lifted_literal); free(third_lifted_literal);
+						}
 						free(*new_axiom); free(new_axiom);
 						return NULL;
 					}
@@ -975,6 +962,64 @@ private:
 		} else {
 			return make_conjunct_proof<false>(constraint, c, proof);
 		}
+	}
+
+	bool is_consistent(unsigned int concept, Formula* lifted_literal)
+	{
+		/* the first step to check for inconsistency is to ensure
+		   we can't prove the negation of the new axiom via disjointness */
+		Formula* conjunction = make_lifted_conjunction(concept, *this);
+		if (conjunction == NULL) return NULL;
+		if (sets.are_disjoint(conjunction, lifted_literal)) {
+			free(*conjunction); free(conjunction);
+			return false;
+		}
+
+		/* the next step is to make sure we can't currently prove
+		   the negation of this new axiom via set containment (can
+		   we prove that the instance does not belong to any ancestor?) */
+		hash_set<unsigned int> ancestors(16);
+		array<unsigned int> stack(8);
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == NULL) continue;
+			const Formula* set_formula = sets.sets[i].set_formula();
+			if (is_subset(lifted_literal, set_formula) || is_subset(conjunction, set_formula)) {
+				if (!stack.add(i) || !ancestors.add(i)) {
+					free(*conjunction); free(conjunction); return false;
+				}
+			}
+		} while (stack.length > 0) {
+			unsigned int old_ancestor = stack.pop();
+			for (unsigned int parent : sets.intensional_graph.vertices[old_ancestor].parents) {
+				if (ancestors.contains(parent)) continue;
+				if (!ancestors.add(parent) || !stack.add(parent)) {
+					free(*conjunction); free(conjunction); return false;
+				}
+			} for (const auto& entry : sets.extensional_graph.vertices[old_ancestor].parents) {
+				if (ancestors.contains(entry.key)) continue;
+				if (!ancestors.add(entry.key) || !stack.add(entry.key)) {
+					free(*conjunction); free(conjunction); return false;
+				}
+			}
+		}
+		free(*conjunction); free(conjunction);
+
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == NULL) continue;
+			Formula* set_formula = sets.sets[i].set_formula();
+			Formula* negated_set_formula = Formula::new_not(set_formula);
+			if (negated_set_formula == NULL)
+				return false;
+			set_formula->reference_count++;
+			bool contradiction = is_subset(lifted_literal, negated_set_formula) && ancestors.contains(i);
+			free(*negated_set_formula); free(negated_set_formula);
+			if (contradiction)
+				return false;
+		}
+
+		/* the third step is to ensure that the sets that contain this new
+		   instance can be made sufficiently large */
+		return sets.add_element(lifted_literal, concept);
 	}
 };
 
