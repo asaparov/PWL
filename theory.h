@@ -386,6 +386,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	template<bool Negated>
 	inline void remove_unary_atom(unsigned int predicate, unsigned int arg)
 	{
+		
+
 #if !defined(NDEBUG)
 		if (!types.table.contains(predicate))
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `types` does not contain the key %u.\n", predicate);
@@ -648,22 +650,38 @@ private:
 					if (!ground_concepts.check_size()) return NULL;
 					new_constant = new_constant_offset + ground_concepts.table.size;
 					arg1->constant = new_constant;
+
+					Formula* lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1));
+					if (lifted_literal == NULL) return NULL;
+					if (!add_new_element_to_set(arg1->constant, lifted_literal)) {
+						free(*lifted_literal); free(lifted_literal); return NULL;
+					}
+
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
-					if (new_axiom == NULL) return NULL;
+					if (new_axiom == NULL) {
+						sets.remove_element_from_set(arg1->constant, lifted_literal);
+						free(*lifted_literal); free(lifted_literal);
+						return NULL;
+					}
 					new_axiom->reference_count++;
 
 					concept<ProofCalculus>& c = ground_concepts.get(new_constant, contains, bucket);
 					if (!contains) {
 						if (!init(c)) {
 							free(*new_axiom); free(new_axiom);
+							sets.remove_element_from_set(arg1->constant, lifted_literal);
+							free(*lifted_literal); free(lifted_literal);
 							return NULL;
 						}
 						ground_concepts.table.keys[bucket] = new_constant;
 						ground_concepts.table.size++;
 					} if (!add_unary_atom<Negated>(predicate, new_constant, new_axiom)) {
 						free(*new_axiom); free(new_axiom);
+						sets.remove_element_from_set(arg1->constant, lifted_literal);
+						free(*lifted_literal); free(lifted_literal);
 						return NULL;
 					}
+					free(*lifted_literal); free(lifted_literal);
 					return new_axiom;
 				} else {
 					/* this is a formula of form `t(c)` */
@@ -717,27 +735,27 @@ private:
 					/* check if this observation is inconsistent with the theory (can we prove its negation?) */
 					Formula* lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1));
 					if (lifted_literal == NULL) return NULL;
-					bool consistent = is_consistent(arg1->concept, lifted_literal);
-					if (!consistent) {
-						free(*lifted_literal); free(lifted_literal);
-						return NULL;
-					}
+					pair<Formula*, Formula*> set_formulas = move_element_to_subset(arg1->constant, lifted_literal);
+					free(*lifted_literal); free(lifted_literal);
+					if (set_formulas.value == NULL) return NULL;
 
 					/* we found no inconsistency, so create the axiom */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) {
-						sets.remove_element(lifted_literal, arg1->concept);
-						free(*lifted_literal); free(lifted_literal);
+						if (set_formulas.key == NULL) sets.remove_element_from_set(arg1->constant, set_formulas.value);
+						else sets.move_element_to_superset(arg1->constant, set_formulas.value, set_formulas.key);
+						if (set_formulas.key != NULL) { free(*set_formulas.key); free(set_formulas.key); }
+						free(*set_formulas.value); free(set_formulas.value);
 						return NULL;
 					}
 					new_axiom->reference_count++;
 					if (!add_unary_atom<Negated>(predicate, arg1->constant, new_axiom)) {
-						sets.remove_element(lifted_literal, arg1->concept);
-						free(*lifted_literal); free(lifted_literal);
-						free(*new_axiom); free(new_axiom);
-						return NULL;
+						if (set_formulas.key == NULL) sets.remove_element_from_set(arg1->constant, set_formulas.value);
+						else sets.move_element_to_superset(arg1->constant, set_formulas.value, set_formulas.key);
+						if (set_formulas.key != NULL) { free(*set_formulas.key); free(set_formulas.key); }
+						free(*set_formulas.value); free(set_formulas.value);
+						free(*new_axiom); free(new_axiom); return NULL;
 					}
-					free(*lifted_literal); free(lifted_literal);
 					return new_axiom;
 				}
 			} else {
@@ -814,71 +832,60 @@ private:
 
 					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
 					/* check if this observation is inconsistent with the theory (can we prove its negation?) */
-					Formula* first_lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1), arg2);
-					if (first_lifted_literal == NULL) return NULL;
-					arg2->reference_count++;
-					bool consistent = is_consistent(arg1->concept, first_lifted_literal);
-					if (!consistent) {
-						free(*first_lifted_literal); free(first_lifted_literal);
-						return NULL;
-					}
-
-					Formula* second_lifted_literal = Formula::new_atom(predicate, arg1, Formula::new_variable(1));
-					if (lifted_literal == NULL) {
-						free(*first_lifted_literal); free(first_lifted_literal);
-						return NULL;
-					}
-					arg1->reference_count++;
-					consistent = is_consistent(arg2->concept, second_lifted_literal);
-					if (!consistent) {
-						sets.remove_element(first_lifted_literal, arg1->concept);
-						free(*first_lifted_literal); free(first_lifted_literal);
-						free(*second_lifted_literal); free(second_lifted_literal);
-						return NULL;
-					}
-
-					Formula* third_lifted_literal = NULL;
+					pair<Formula*, Formula*> first_set_formulas = {NULL, NULL}, second_set_formulas = {NULL, NULL};
 					if (*arg1 == *arg2) {
-						third_lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1), Formula::new_variable(1));
-						if (third_lifted_literal == NULL) {
-							sets.remove_element(first_lifted_literal, arg1->concept);
-							free(*first_lifted_literal); free(first_lifted_literal);
-							free(*second_lifted_literal); free(second_lifted_literal);
-							return NULL;
-						}
-						consistent = is_consistent(arg1->concept, third_lifted_literal);
-						if (!consistent) {
-							sets.remove_element(first_lifted_literal, arg1->concept);
-							sets.remove_element(second_lifted_literal, arg2->concept);
-							free(*first_lifted_literal); free(first_lifted_literal);
-							free(*second_lifted_literal); free(second_lifted_literal);
-							free(*third_lifted_literal); free(third_lifted_literal);
-							return NULL;
-						}
+						Formula* first_lifted_literal = Formula::new_and(
+								Formula::new_atom(predicate, Formula::new_variable(1), arg2),
+								Formula::new_atom(predicate, Formula::new_variable(1), Formula::new_variable(1)),
+								Formula::new_atom(predicate, arg1, Formula::new_variable(1)));
+						if (first_lifted_literal == NULL) return NULL;
+						arg1->reference_count++; arg2->reference_count++;
+						first_set_formulas = move_element_to_subset(arg1->constant, first_lifted_literal);
+						free(*first_lifted_literal); free(first_lifted_literal);
+						if (first_set_formulas.value == NULL) return NULL;
+						
+					} else {
+						Formula* first_lifted_literal = Formula::new_atom(predicate, Formula::new_variable(1), arg2);
+						if (first_lifted_literal == NULL) return NULL;
+						arg2->reference_count++;
+						first_set_formulas = move_element_to_subset(arg1->constant, first_lifted_literal);
+						free(*first_lifted_literal); free(first_lifted_literal);
+						if (first_set_formulas.value == NULL) return NULL;
+
+						Formula* second_lifted_literal = Formula::new_atom(predicate, arg1, Formula::new_variable(1));
+						if (second_lifted_literal == NULL) return NULL;
+						arg1->reference_count++;
+						second_set_formulas = move_element_to_subset(arg2->constant, second_lifted_literal);
+						free(*second_lifted_literal); free(second_lifted_literal);
+						if (second_set_formulas.value == NULL) return NULL;
 					}
 
 					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
 					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
 					if (new_axiom == NULL) {
-						sets.remove_element(first_lifted_literal, arg1->concept);
-						sets.remove_element(second_lifted_literal, arg2->concept);
-						free(*first_lifted_literal); free(first_lifted_literal);
-						free(*second_lifted_literal); free(second_lifted_literal);
-						if (third_lifted_literal != NULL) {
-							sets.remove_element(third_lifted_literal, arg1->concept);
-							free(*third_lifted_literal); free(third_lifted_literal);
+						if (first_set_formulas.key == NULL) sets.remove_element_from_set(arg1->constant, first_set_formulas.value);
+						else sets.move_element_to_superset(arg1->constant, first_set_formulas.value, first_set_formulas.key);
+						if (first_set_formulas.key != NULL) { free(*first_set_formulas.key); free(first_set_formulas.key); }
+						free(*first_set_formulas.value); free(first_set_formulas.value);
+						if (second_set_formulas.value != NULL) {
+							if (second_set_formulas.key == NULL) sets.remove_element_from_set(arg1->constant, second_set_formulas.value);
+							else sets.move_element_to_superset(arg1->constant, second_set_formulas.value, second_set_formulas.key);
+							if (second_set_formulas.key != NULL) { free(*second_set_formulas.key); free(second_set_formulas.key); }
+							free(*second_set_formulas.value); free(second_set_formulas.value);
 						}
 						return NULL;
 					}
 					new_axiom->reference_count++;
 					if (!add_binary_atom<Negated>({predicate, arg1->constant, arg2->constant}, new_axiom)) {
-						sets.remove_element(first_lifted_literal, arg1->concept);
-						sets.remove_element(second_lifted_literal, arg2->concept);
-						free(*first_lifted_literal); free(first_lifted_literal);
-						free(*second_lifted_literal); free(second_lifted_literal);
-						if (third_lifted_literal != NULL) {
-							sets.remove_element(third_lifted_literal, arg1->concept);
-							free(*third_lifted_literal); free(third_lifted_literal);
+						if (first_set_formulas.key == NULL) sets.remove_element_from_set(arg1->constant, first_set_formulas.value);
+						else sets.move_element_to_superset(arg1->constant, first_set_formulas.value, first_set_formulas.key);
+						if (first_set_formulas.key != NULL) { free(*first_set_formulas.key); free(first_set_formulas.key); }
+						free(*first_set_formulas.value); free(first_set_formulas.value);
+						if (second_set_formulas.value != NULL) {
+							if (second_set_formulas.key == NULL) sets.remove_element_from_set(arg1->constant, second_set_formulas.value);
+							else sets.move_element_to_superset(arg1->constant, second_set_formulas.value, second_set_formulas.key);
+							if (second_set_formulas.key != NULL) { free(*second_set_formulas.key); free(second_set_formulas.key); }
+							free(*second_set_formulas.value); free(second_set_formulas.value);
 						}
 						free(*new_axiom); free(new_axiom);
 						return NULL;
@@ -964,62 +971,145 @@ private:
 		}
 	}
 
-	bool is_consistent(unsigned int concept, Formula* lifted_literal)
+	pair<Formula*, Formula*> move_element_to_subset(unsigned int element, Formula* lifted_literal)
 	{
-		/* the first step to check for inconsistency is to ensure
-		   we can't prove the negation of the new axiom via disjointness */
-		Formula* conjunction = make_lifted_conjunction(concept, *this);
-		if (conjunction == NULL) return NULL;
-		if (sets.are_disjoint(conjunction, lifted_literal)) {
-			free(*conjunction); free(conjunction);
-			return false;
+		Formula* new_set_formula;
+		Formula* old_set_formula = make_lifted_conjunction(element, *this);
+		if (old_set_formula == NULL) {
+			return {NULL, NULL};
+		} else if (old_set_formula->array.length == 0) {
+			/* there are no other atomic formulas for this concept */
+			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			old_set_formula = NULL;
+			new_set_formula = lifted_literal;
+			new_set_formula->reference_count++;
+		} else {
+			new_set_formula = Formula::new_and(old_set_formula, lifted_literal);
+			old_set_formula->reference_count++;
+		}
+		if (new_set_formula == NULL) {
+			if (old_set_formula != NULL) {
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			}
+			return {NULL, NULL};
+		}
+		Formula* canonicalized = canonicalize(*new_set_formula, canonicalizer);
+		free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
+		if (canonicalized == NULL) {
+			if (old_set_formula != NULL) {
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			}
+			return {NULL, NULL};
+		}
+		if (!sets.move_element_to_set<true>(element, old_set_formula, canonicalized)) {
+			free(*canonicalized); free(canonicalized);
+			if (old_set_formula != NULL) {
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			}
+			return {NULL, NULL};
 		}
 
-		/* the next step is to make sure we can't currently prove
-		   the negation of this new axiom via set containment (can
-		   we prove that the instance does not belong to any ancestor?) */
-		hash_set<unsigned int> ancestors(16);
-		array<unsigned int> stack(8);
-		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-			if (sets.sets[i].size_axiom == NULL) continue;
-			const Formula* set_formula = sets.sets[i].set_formula();
-			if (is_subset(lifted_literal, set_formula) || is_subset(conjunction, set_formula)) {
-				if (!stack.add(i) || !ancestors.add(i)) {
-					free(*conjunction); free(conjunction); return false;
-				}
-			}
-		} while (stack.length > 0) {
-			unsigned int old_ancestor = stack.pop();
-			for (unsigned int parent : sets.intensional_graph.vertices[old_ancestor].parents) {
-				if (ancestors.contains(parent)) continue;
-				if (!ancestors.add(parent) || !stack.add(parent)) {
-					free(*conjunction); free(conjunction); return false;
-				}
-			} for (const auto& entry : sets.extensional_graph.vertices[old_ancestor].parents) {
-				if (ancestors.contains(entry.key)) continue;
-				if (!ancestors.add(entry.key) || !stack.add(entry.key)) {
-					free(*conjunction); free(conjunction); return false;
-				}
-			}
-		}
-		free(*conjunction); free(conjunction);
-
+		/* make sure we can't currently prove the negation of this new axiom
+		   via set containment (can we prove that the instance does not belong to any ancestor?) */
+		unsigned int new_set_id = sets.set_ids.get(*canonicalized);
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axiom == NULL) continue;
 			Formula* set_formula = sets.sets[i].set_formula();
 			Formula* negated_set_formula = Formula::new_not(set_formula);
-			if (negated_set_formula == NULL)
-				return false;
+			if (negated_set_formula == NULL) {
+				if (old_set_formula == NULL) sets.remove_element_from_set(element, canonicalized);
+				else sets.move_element_to_superset(element, canonicalized, old_set_formula);
+				if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
+				free(*canonicalized); free(canonicalized);
+				return {NULL, NULL};
+			}
 			set_formula->reference_count++;
-			bool contradiction = is_subset(lifted_literal, negated_set_formula) && ancestors.contains(i);
+			bool contradiction = is_subset(lifted_literal, negated_set_formula) && sets.sets[i].descendants.contains(new_set_id);
 			free(*negated_set_formula); free(negated_set_formula);
-			if (contradiction)
-				return false;
+			if (contradiction) {
+				if (old_set_formula == NULL) sets.remove_element_from_set(element, canonicalized);
+				else sets.move_element_to_superset(element, canonicalized, old_set_formula);
+				if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
+				free(*canonicalized); free(canonicalized);
+				return {NULL, NULL};
+			}
 		}
 
-		/* the third step is to ensure that the sets that contain this new
-		   instance can be made sufficiently large */
-		return sets.add_element(lifted_literal, concept);
+		return {old_set_formula, canonicalized};
+	}
+
+	bool move_element_to_superset(unsigned int element, Formula* lifted_literal)
+	{
+		Formula* old_set_formula = make_lifted_conjunction(element, *this);
+		if (old_set_formula == NULL) {
+			return false;
+		} else if (old_set_formula->array.length == 0) {
+			/* there are no other atomic formulas for this concept */
+			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			return false;
+		}
+
+		if (lifted_literal->type == FormulaType::AND) {
+			sort(lifted_literal->array.operands, )
+		} else {
+
+		}
+		new_set_formula = Formula::new_and(old_set_formula, lifted_literal);
+		old_set_formula->reference_count++;
+
+		if (new_set_formula == NULL) {
+			if (old_set_formula != NULL) {
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			}
+			return {NULL, NULL};
+		}
+		Formula* canonicalized = canonicalize(*new_set_formula, canonicalizer);
+		free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
+		if (canonicalized == NULL) {
+			if (old_set_formula != NULL) {
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			}
+			return {NULL, NULL};
+		}
+		if (!sets.move_element_to_set<true>(element, old_set_formula, canonicalized)) {
+			free(*canonicalized); free(canonicalized);
+			if (old_set_formula != NULL) {
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			}
+			return {NULL, NULL};
+		}
+
+		/* make sure we can't currently prove the negation of this new axiom
+		   via set containment (can we prove that the instance does not belong to any ancestor?) */
+		unsigned int new_set_id = sets.set_ids.get(*canonicalized);
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == NULL) continue;
+			Formula* set_formula = sets.sets[i].set_formula();
+			Formula* negated_set_formula = Formula::new_not(set_formula);
+			if (negated_set_formula == NULL) {
+				if (old_set_formula == NULL) sets.remove_element_from_set(element, canonicalized);
+				else sets.move_element_to_superset(element, canonicalized, old_set_formula);
+				if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
+				free(*canonicalized); free(canonicalized);
+				return {NULL, NULL};
+			}
+			set_formula->reference_count++;
+			bool contradiction = is_subset(lifted_literal, negated_set_formula) && sets.sets[i].descendants.contains(new_set_id);
+			free(*negated_set_formula); free(negated_set_formula);
+			if (contradiction) {
+				if (old_set_formula == NULL) sets.remove_element_from_set(element, canonicalized);
+				else sets.move_element_to_superset(element, canonicalized, old_set_formula);
+				if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
+				free(*canonicalized); free(canonicalized);
+				return {NULL, NULL};
+			}
+		}
+
+		return {old_set_formula, canonicalized};
+	}
+
+	inline bool add_new_element_to_set(unsigned int element, Formula* lifted_literal) {
+		return sets.move_element_to_set<true>(element, NULL, lifted_literal);
 	}
 };
 

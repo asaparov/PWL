@@ -556,15 +556,7 @@ inline bool is_satisfying_antecedent(
 		}
 	}
 
-	if (provably_consistent) return true;
-
-	/* check if the instance belongs to a set that is disjoint with the antecedent set */
-	Formula* conjunction = make_lifted_conjunction(concept_id, T);
-	if (conjunction == NULL) return false;
-
-	bool disjoint = T.sets.are_disjoint(conjunction, T.sets.sets[antecedent_id].set_formula());
-	free(*conjunction); free(conjunction);
-	return !disjoint;
+	return provably_consistent;
 }
 
 template<bool Negated, unsigned int Arity,

@@ -583,9 +583,7 @@ bool check_proof(proof_state<Formula>& out,
 	Formula* formula;
 	const nd_step<Formula>* second_operand;
 	Term* parameter; Term* variable;
-	Term const* unifying_term;
 	array<unsigned int> constants = array<unsigned int>(8);
-	unsigned int i;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		if (!is_canonical(*proof.formula, canonicalizer)) {

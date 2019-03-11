@@ -89,7 +89,7 @@ sets.are_descendants_valid();
 	print_set_sizes(sets, stdout, printer); print('\n', stdout);
 
 	unsigned int* clique = NULL; unsigned int clique_count; unsigned int ancestor_of_clique;
-	find_largest_disjoint_subset_clique(sets, sets.set_ids.get(*all), clique, clique_count);
+	find_largest_disjoint_subset_clique(sets, sets.set_ids.get(*all), clique, clique_count, INT_MIN);
 	print("Largest pairwise-disjoint family of subsets: {", stdout);
 	if (clique_count > 0) {
 		print(*sets.sets[clique[0]].set_formula(), stdout, printer);
@@ -101,7 +101,7 @@ sets.are_descendants_valid();
 	print("}.\n", stdout);
 	if (clique != NULL) free(clique);
 
-	find_largest_disjoint_clique_with_set<INT_MIN>(sets, sets.set_ids.get(*blue_cats), clique, clique_count, ancestor_of_clique);
+	find_largest_disjoint_clique_with_set(sets, sets.set_ids.get(*blue_cats), clique, clique_count, ancestor_of_clique, INT_MIN);
 	print("Largest pairwise-disjoint family of subsets: {", stdout);
 	if (clique_count > 0) {
 		print(*sets.sets[clique[0]].set_formula(), stdout, printer);

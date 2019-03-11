@@ -313,7 +313,6 @@ struct set_info
 	static inline void free(set_info& info) {
 		core::free(info.descendants);
 		core::free(info.elements);
-		core::free(info.provable_elements);
 		core::free(*info.size_axiom);
 		if (info.size_axiom->reference_count == 0)
 			core::free(info.size_axiom);
@@ -1141,7 +1140,7 @@ struct set_reasoning
 				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
 				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
 				return NULL;
-			} else if (!find_largest_disjoint_clique_with_set<1>(*this, antecedent_set, consequent_set, clique, clique_count, ancestor_of_clique)) {
+			} else if (!find_largest_disjoint_clique_with_set(*this, antecedent_set, consequent_set, clique, clique_count, ancestor_of_clique, 1)) {
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
 				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
 				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
@@ -1334,28 +1333,23 @@ struct set_reasoning
 		return sets[set_id].size_axiom;
 	}
 
+	inline bool get_provable_elements(unsigned int set_id,
+			hash_set<unsigned int>& provable_elements) const
+	{
+		for (unsigned int descendant : sets[set_id].descendants) {
+			for (unsigned int element : sets[descendant].elements)
+				if (!provable_elements.add(element)) return false;
+		}
+		return true;
+	}
+
 	bool get_size_lower_bound(unsigned int set_id, unsigned int& lower_bound,
 			unsigned int*& clique, unsigned int& clique_count) const
 	{
 		/* first compute the number of elements that provably belong to this set */
-		array<unsigned int> stack(8);
-		hash_set<unsigned int> visited(16);
 		hash_set<unsigned int> provable_elements(16);
-		stack[stack.length++] = set_id;
-		visited.add(set_id);
-		while (stack.length > 0) {
-			unsigned int descendant = stack.pop();
-			for (unsigned int element : sets[set_id].elements)
-				if (!provable_elements.add(element)) return false;
-
-			for (unsigned int child : intensional_graph.vertices[descendant].children) {
-				if (visited.contains(child)) continue;
-				if (!visited.add(child) || !stack.add(child)) return false;
-			} for (const auto& entry : extensional_graph.vertices[descendant].children) {
-				if (visited.contains(entry.key)) continue;
-				if (!visited.add(entry.key) || !stack.add(entry.key)) return false;
-			}
-		}
+		if (!get_provable_elements(set_id, provable_elements))
+			return false;
 		lower_bound = provable_elements.size;
 
 		/* next compute the maximal clique of subsets of this set
@@ -1408,38 +1402,200 @@ struct set_reasoning
 		return true;
 	}
 
-	bool add_element(Formula* set_formula, unsigned int element) {
-		unsigned int set_id;
-		if (!get_set_id(formula, set_id))
-			return NULL;
-		if (!sets[set_id].elements.ensure_capacity(sets[set_id].elements.length + 1)) {
-			if (is_freeable(set_id)) free_set(set_formula, set_id);
+	template<bool ResolveInconsistencies>
+	bool move_element_to_set(unsigned int element,
+			Formula* old_set_formula, Formula* new_set_formula)
+	{
+		typedef typename Formula::Type FormulaType;
+
+		unsigned int old_set_id = 0;
+		if (old_set_formula != NULL) {
+			bool contains;
+			old_set_id = set_ids.get(*old_set_formula, contains);
+			if (!contains) old_set_id = 0;
+		}
+
+#if !defined(NDEBUG)
+		if (new_set_formula->type == FormulaType::FALSE) {
+			fprintf(stderr, "move_element_to_set WARNING: `new_set_formula` is false.\n");
 			return false;
 		}
-		unsigned int index = sets[set_id].elements.index_of(element);
-		if (index < sets[set_id].elements.length)
+#endif
+
+		unsigned int new_set_id;
+		if (!get_set_id(new_set_formula, new_set_id))
+			return false;
+		else if (new_set_id == old_set_id)
 			return true;
-		sets[set_id].elements[sets[set_id].elements.length++] = element;
 
-		/* TODO: check `set_id` and its ancestors to make sure the size of each
-		   set is at least as large as the number of provable elements of each
-		   set (the below code is from an earlier incarnation of this function
-		   and is not correct) */
+		if (old_set_id != 0) {
+			unsigned int index = sets[old_set_id].elements.index_of(element);
+#if !defined(NDEBUG)
+			if (index == sets[old_set_id].elements.length)
+				fprintf(stderr, "set_reasoning.move_element_to_set WARNING: The old set does not contain the given element.\n");
+			else sets[old_set_id].elements.remove(index);
+#else
+			sets[old_set_id].elements.remove(index);
+#endif
+		}
 
-		while (true) {
-			/* compute the upper bound on the size of this set; if the new size
-				violates this bound, change the sizes of other sets to increase the bound */
-			array<unsigned int> stack(8); bool graph_changed;
-			if (!increase_set_size(set_id, sets[set_id].elements.length, stack, graph_changed))
-				return NULL;
-			if (sets[set_id].set_size >= sets[set_id].elements.length)
-				break;
-			if (!graph_changed) {
-				sets[set_id].elements.length--;
-				if (is_freeable(set_id)) free_set(set_formula, set_id);
-				return false;
+		if (!sets[new_set_id].elements.ensure_capacity(sets[new_set_id].elements.length + 1)) {
+			if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+			return false;
+		}
+#if !defined(NDEBUG)
+		unsigned int index = sets[new_set_id].elements.index_of(element);
+		if (index < sets[new_set_id].elements.length)
+			fprintf(stderr, "set_reasoning.move_element_to_set WARNING: The new set already contains the given element.\n");
+#endif
+		sets[new_set_id].elements[sets[new_set_id].elements.length++] = element;
+
+		/* retrieve the ancestors of `old_set_id` */
+		array<unsigned int> stack(8);
+		hash_set<unsigned int> old_ancestors(16);
+		if (old_set_id != 0) {
+			stack[stack.length++] = old_set_id;
+			old_ancestors.add(old_set_id);
+			while (stack.length > 0) {
+				unsigned int current = stack.pop();
+				for (unsigned int parent : intensional_graph.vertices[current].parents) {
+					if (old_ancestors.contains(parent)) continue;
+					if (!old_ancestors.add(parent) || !stack.add(parent)) {
+						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+						if (old_set_id != 0) sets[old_set_id].elements.add(element);
+						sets[new_set_id].elements.length--; return false;
+					}
+				} for (const auto& entry : extensional_graph.vertices[current].parents) {
+					if (old_ancestors.contains(entry.key)) continue;
+					if (!old_ancestors.add(entry.key) || !stack.add(entry.key)) {
+						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+						if (old_set_id != 0) sets[old_set_id].elements.add(element);
+						sets[new_set_id].elements.length--; return false;
+					}
+				}
 			}
 		}
+
+		/* retrieve the new ancestors of `new_set_id` */
+		hash_set<unsigned int> new_ancestors(16);
+		stack[stack.length++] = new_set_id;
+		new_ancestors.add(new_set_id);
+		while (stack.length > 0) {
+			unsigned int current = stack.pop();
+			for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (old_ancestors.contains(parent) || new_ancestors.contains(parent)) continue;
+				if (!new_ancestors.add(parent) || !stack.add(parent)) {
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					if (old_set_id != 0) sets[old_set_id].elements.add(element);
+					sets[new_set_id].elements.length--; return false;
+				}
+			} for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (old_ancestors.contains(entry.key) || new_ancestors.contains(entry.key)) continue;
+				if (!new_ancestors.add(entry.key) || !stack.add(entry.key)) {
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					if (old_set_id != 0) sets[old_set_id].elements.add(element);
+					sets[new_set_id].elements.length--; return false;
+				}
+			}
+		}
+
+		/* check the new ancestors of `new_set_id` to make sure the size of each
+		   set is at least as large as the number of provable elements of each set */
+		for (unsigned int new_ancestor : new_ancestors) {
+			hash_set<unsigned int> provable_elements(16);
+			if (!get_provable_elements(new_ancestor, provable_elements)) {
+				if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+				if (old_set_id != 0) sets[old_set_id].elements.add(element);
+				sets[new_set_id].elements.length--; return false;
+			}
+
+			if (sets[new_ancestor].set_size >= provable_elements.size) continue;
+
+			while (true) {
+				/* compute the upper bound on the size of this set; if the new size
+					violates this bound, change the sizes of other sets to increase the bound */
+				array<unsigned int> stack(8); bool graph_changed;
+				if (!ResolveInconsistencies || !increase_set_size(new_ancestor, provable_elements.size, stack, graph_changed)) {
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					if (old_set_id != 0) sets[old_set_id].elements.add(element);
+					sets[new_set_id].elements.length--; return false;
+				}
+				if (sets[new_ancestor].set_size >= provable_elements.size)
+					break;
+				if (!graph_changed) {
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					if (old_set_id != 0) sets[old_set_id].elements.add(element);
+					sets[new_set_id].elements.length--; return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	bool move_element_to_superset(unsigned int element,
+			Formula* old_set_formula, Formula* new_set_formula)
+	{
+		bool contains;
+		unsigned int old_set_id = set_ids.get(*old_set_formula, contains);
+		if (!contains) {
+			fprintf(stderr, "set_reasoning.move_element_to_superset ERROR: There is no set given by `old_set_formula`.\n");
+			return false;
+		}
+
+		unsigned int new_set_id;
+		if (!get_set_id(new_set_formula, new_set_id))
+			return false;
+		else if (new_set_id == old_set_id)
+			return true;
+
+#if !defined(NDEBUG)
+		if (!sets[new_set_id].descendants.contains(old_set_id))
+			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The new set is not a superset of the old set.\n");
+#endif
+
+		unsigned int index = sets[old_set_id].elements.index_of(element);
+#if !defined(NDEBUG)
+		if (index == sets[old_set_id].elements.length)
+			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The old set does not contain the given element.\n");
+		else sets[old_set_id].elements.remove(index);
+#else
+		sets[old_set_id].elements.remove(index);
+#endif
+
+		if (!sets[new_set_id].elements.ensure_capacity(sets[new_set_id].elements.length + 1)) {
+			if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+			return false;
+		}
+#if !defined(NDEBUG)
+		index = sets[new_set_id].elements.index_of(element);
+		if (index < sets[new_set_id].elements.length)
+			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The new set already contains the given element.\n");
+#endif
+		sets[new_set_id].elements[sets[new_set_id].elements.length++] = element;
+		return true;
+	}
+
+	void remove_element_from_set(unsigned int element, Formula* set_formula)
+	{
+#if !defined(NDEBUG)
+		bool contains;
+		unsigned int set_id = set_ids.get(*set_formula, contains);
+		if (!contains) {
+			fprintf(stderr, "set_reasoning.remove_element_from_set ERROR: There is no set given by `set_formula`.\n");
+			return;
+		}
+#else
+		unsigned int set_id = set_ids.get(*set_formula);
+#endif
+
+		unsigned int index = sets[set_id].elements.index_of(element);
+#if !defined(NDEBUG)
+		if (index == sets[set_id].elements.length) {
+			fprintf(stderr, "set_reasoning.remove_element_from_set ERROR: The set does not contain the given element.\n");
+			return;
+		}
+#endif
+		sets[set_id].elements.remove(index);
 	}
 
 	inline bool are_disjoint(Formula* first, Formula* second) const
@@ -1862,7 +2018,7 @@ bool find_largest_disjoint_subset_clique(
 		free(next);
 
 		if (clique != NULL) {
-			if (next.state->priority >= min_priority) {
+			if (queue.last_priority >= min_priority) {
 				break;
 			} else {
 				free(clique);

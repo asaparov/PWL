@@ -1480,7 +1480,7 @@ inline hol_term* new_hol_array(const Array<hol_term*>& operands)
 	term->reference_count = 1;
 	term->type = Operator;
 	term->array.length = operands.length;
-	term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * operands.length);
+	term->array.operands = (hol_term**) malloc(max((size_t) 1, sizeof(hol_term*) * operands.length));
 	if (term->array.operands == NULL) {
 		free(term); return NULL;
 	}
