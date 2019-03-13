@@ -324,17 +324,26 @@ bool get_satisfying_concepts(
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_intro_proposal {
 	unsigned int concept_id;
+	nd_step<Formula>* old_axiom;
 	nd_step<Formula>* new_axiom;
 	atom<Negated, Arity> consequent_atom;
+
+	~universal_intro_proposal() {
+		free(*old_axiom); if (old_axiom->reference_count == 0) free(old_axiom);
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+	}
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline universal_intro_proposal<Formula, Negated, Arity> make_universal_intro_proposal(
 		unsigned int concept_id,
+		nd_step<Formula>* old_axiom,
 		nd_step<Formula>* new_axiom,
 		atom<Negated, Arity> consequent_atom)
 {
-	return {concept_id, new_axiom, consequent_atom};
+	old_axiom->reference_count++;
+	new_axiom->reference_count++;
+	return {concept_id, old_axiom, new_axiom, consequent_atom};
 }
 
 template<typename Formula>
@@ -810,11 +819,13 @@ bool propose_universal_intro(
 		return false;
 	}
 
+	old_step->reference_count++;
 	bool success = do_mh_universal_intro(
 			T, proposed_proofs, new_observations,
-			make_universal_intro_proposal(concept_id, axiom_step, a),
+			make_universal_intro_proposal(concept_id, old_step, axiom_step, a),
 			log_proposal_probability_ratio, proof_prior);
 	free(proposed_proofs);
+	free(*old_step); if (old_step->reference_count == 0) free(old_step);
 	T.sets.decrement_subset_axiom(axiom_step);
 	return success;
 }
@@ -1186,22 +1197,22 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 }
 
 template<bool Negated, typename Formula, typename Canonicalizer>
-inline void remove_ground_axiom(
+inline bool remove_ground_axiom(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> consequent_atom, unsigned int constant)
 {
-	T.template remove_unary_atom<Negated>(consequent_atom.predicate, constant);
+	return T.template remove_unary_atom<Negated>(consequent_atom.predicate, constant);
 }
 
 template<bool Negated, typename Formula, typename Canonicalizer>
-inline void remove_ground_axiom(
+inline bool remove_ground_axiom(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> consequent_atom, unsigned int constant)
 {
 	relation rel = { consequent_atom.predicate,
 			(consequent_atom.args[0] == 0 ? constant : consequent_atom.args[0]),
 			(consequent_atom.args[1] == 0 ? constant : consequent_atom.args[1]) };
-	T.template remove_binary_atom<Negated>(rel);
+	return T.template remove_binary_atom<Negated>(rel);
 }
 
 template<typename Formula,
@@ -1230,9 +1241,12 @@ bool do_mh_universal_intro(
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 //fprintf(stderr, "%u, accepted universal introduction (%u)\n", iteration, T.observations.size);
 		/* we've accepted the proposal */
-		if (!transform_proofs(proposed_proofs)) return false;
-
-		remove_ground_axiom(T, proposal.consequent_atom, proposal.concept_id);
+		if (!remove_ground_axiom(T, proposal.consequent_atom, proposal.concept_id))
+			return false;
+		if (!transform_proofs(proposed_proofs)) {
+			add_ground_axiom(T, proposal.consequent_atom, proposal.concept_id, proposal.old_axiom);
+			return false;
+		}
 		for (auto entry : proposed_proofs.transformed_proofs) {
 			bool contains;
 			unsigned int bucket = T.observations.index_of(entry.key, contains);

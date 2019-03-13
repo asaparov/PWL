@@ -331,7 +331,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				return false;
 			}
 			free(*lifted_literal); free(lifted_literal);
-			
+
 		} else {
 			Formula* lifted_literal;
 			Formula* lifted_atom = Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_constant(rel.arg2));
@@ -1162,17 +1162,23 @@ private:
 		}
 		free(*canonicalized); free(canonicalized);
 
-		Formula* new_set_formula = Formula::new_and(difference);
-		if (new_set_formula == NULL) {
+		Formula* new_set_formula = (difference.length == 0 ? NULL : Formula::new_and(difference));
+		if (difference.length != 0 && new_set_formula == NULL) {
 			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
 			return false;
 		}
 		for (Formula* conjunct : difference)
 			conjunct->reference_count++;
 
-		bool success = sets.move_element_to_superset(element, old_set_formula, new_set_formula);
+		bool success;
+		if (new_set_formula == NULL) {
+			sets.remove_element_from_set(element, old_set_formula);
+			success = true;
+		} else {
+			success = sets.move_element_to_superset(element, old_set_formula, new_set_formula);
+			free(*new_set_formula); free(new_set_formula);
+		}
 		free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-		free(*new_set_formula); free(new_set_formula);
 		return success;
 	}
 
