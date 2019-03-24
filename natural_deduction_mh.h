@@ -504,7 +504,7 @@ bool intensional_element_of(
 				set_formula->ternary.second->type == TermType::VARIABLE ? 0 : set_formula->ternary.second->constant,
 				set_formula->ternary.third->type == TermType::VARIABLE ? 0 : set_formula->ternary.third->constant });
 	case FormulaType::NOT:
-		return intensional_element_of<!Negated>(c, set_formula);
+		return intensional_element_of<!Negated>(c, set_formula->unary.operand);
 	case FormulaType::AND:
 		for (unsigned int i = 0; i < set_formula->array.length; i++)
 			if (!intensional_element_of<Negated>(c, set_formula->array.operands[i])) return false;
@@ -551,7 +551,7 @@ inline bool is_satisfying_antecedent(
 	visited.add(antecedent_id);
 	while (stack.length > 0) {
 		unsigned int descendant = stack.pop();
-		if (intensional_element_of<true>(T.ground_concepts.get(concept_id), T.sets.sets[descendant].set_formula())) {
+		if (intensional_element_of<false>(T.ground_concepts.get(concept_id), T.sets.sets[descendant].set_formula())) {
 			provably_consistent = true;
 			break;
 		}
@@ -559,10 +559,10 @@ inline bool is_satisfying_antecedent(
 		for (unsigned int child : T.sets.intensional_graph.vertices[descendant].children) {
 			if (visited.contains(child)) continue;
 			if (!visited.add(child) || !stack.add(child)) return false;
-		} for (const auto& entry : T.sets.extensional_graph.vertices[descendant].children) {
+		} /*for (const auto& entry : T.sets.extensional_graph.vertices[descendant].children) {
 			if (visited.contains(entry.key)) continue;
 			if (!visited.add(entry.key) || !stack.add(entry.key)) return false;
-		}
+		}*/
 	}
 
 	return provably_consistent;
@@ -746,6 +746,9 @@ bool propose_universal_intro(
 			free(proposed_proofs); return true; /* the proposed axiom is inconsistent */
 		}
 		axiom_step->reference_count++;
+
+		antecedent = axiom_step->formula->quantifier.operand->binary.left;
+		consequent = axiom_step->formula->quantifier.operand->binary.left;
 	}
 
 	/* compute the probability of the inverse proposal */
@@ -924,17 +927,19 @@ struct extensional_edge {
 template<typename Formula, bool Negated, unsigned int Arity>
 struct universal_elim_proposal {
 	extensional_edge<Formula> edge;
-	hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms;
+	unsigned int constant;
+	nd_step<Formula>* new_axiom;
 	atom<Negated, Arity> consequent_atom;
 };
 
 template<typename Formula, bool Negated, unsigned int Arity>
 inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_proposal(
 		extensional_edge<Formula> edge,
-		hash_map<unsigned int, nd_step<Formula>*>& new_grounded_axioms,
+		unsigned int constant,
+		nd_step<Formula>* new_axiom,
 		atom<Negated, Arity> consequent_atom)
 {
-	return {edge, new_grounded_axioms, consequent_atom};
+	return {edge, constant, new_axiom, consequent_atom};
 }
 
 template<typename Formula, typename ProofPrior, typename Canonicalizer>
@@ -981,17 +986,17 @@ bool propose_universal_elim(
 	}
 
 	array<Proof*> new_observations(8);
-	hash_map<unsigned int, nd_step<Formula>*> new_grounded_axioms(16);
 	if (selected_edge.child->type != nd_step_type::UNIVERSAL_ELIMINATION
-		|| selected_edge.child->operands[1]->term->type != TermType::CONSTANT) {
+	 || selected_edge.child->operands[1]->term->type != TermType::CONSTANT) {
 		free(proposed_proofs); return true;
 	}
 
 	bool contains;
-	const concept<ProofCalculus>& c = T.ground_concepts.get(selected_edge.child->operands[1]->term->constant, contains);
+	unsigned int constant = selected_edge.child->operands[1]->term->constant;
+	const concept<ProofCalculus>& c = T.ground_concepts.get(constant, contains);
 #if !defined(NDEBUG)
 	if (!contains)
-		fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", selected_edge.child->operands[1]->term->constant);
+		fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", constant);
 #endif
 
 	/* check if `grandchild` is observed */
@@ -1007,51 +1012,53 @@ bool propose_universal_elim(
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 		free(proposed_proofs); return false;
 	}
-	free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 
 	/* compute the probability of inverting this proposal */
 	array<pair<unsigned int, unsigned int>> satisfying_extensional_edges(16);
-	unsigned int predicate; bool success;
+	unsigned int predicate; bool success = false;
 	if (is_atomic(*consequent, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			atom<false, 1> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
-			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+			success = get_satisfying_extensional_edges(T, consequent_atom, constant, satisfying_extensional_edges);
 		} else {
 			atom<false, 2> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
 			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
-			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+			success = get_satisfying_extensional_edges(T, consequent_atom, constant, satisfying_extensional_edges);
 		}
 	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			atom<true, 1> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
-			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+			success = get_satisfying_extensional_edges(T, consequent_atom, constant, satisfying_extensional_edges);
 		} else {
 			atom<true, 2> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
 			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
-			success = get_satisfying_extensional_edges(T, consequent_atom, selected_edge.child->operands[1]->term->constant, satisfying_extensional_edges);
+			success = get_satisfying_extensional_edges(T, consequent_atom, constant, satisfying_extensional_edges);
 		}
 	}
-	if (!success) { free(proposed_proofs); return false; }
+	if (!success) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
+	}
 
 	unsigned int new_axiom_count = old_axiom_count;
 	unsigned int new_axiom_indices_length = c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size;
 	unsigned int new_satisfying_extensional_edges_length = satisfying_extensional_edges.length;
 	if (is_consequent_symmetric) {
-		new_axiom_count += new_grounded_axioms.table.size * 3;
+		new_axiom_count += 3;
 		new_axiom_indices_length += 3;
 	} else if (is_consequent_binary) {
-		new_axiom_count += new_grounded_axioms.table.size * 2;
+		new_axiom_count += 2;
 		new_axiom_indices_length += 2;
 	} else {
-		new_axiom_count += new_grounded_axioms.table.size;
+		new_axiom_count += 1;
 		new_axiom_indices_length += 1;
 	}
 	if (selected_edge.axiom->children.length == 1 && selected_edge.child->children.length == 1) {
@@ -1059,7 +1066,10 @@ bool propose_universal_elim(
 		new_axiom_count--;
 		new_satisfying_extensional_edges_length--;
 	}
-	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) { free(proposed_proofs); return false; }
+	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
+	}
 
 	double log_rebuild_probability = 0.0;
 	new_axiom_indices_length--;
@@ -1074,13 +1084,14 @@ bool propose_universal_elim(
 			-log_cache<double>::instance().get(new_satisfying_extensional_edges_length + 1) + log_rebuild_probability); /* log probability of rebuilding this extensional edge */
 
 	/* go ahead and compute the probability ratios and perform the accept/reject step */
+	selected_edge.axiom->reference_count++;
 	if (is_atomic(*consequent, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			atom<false, 1> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
 			success = do_mh_universal_elim(T, proposed_proofs, new_observations,
-					make_universal_elim_proposal(selected_edge, new_grounded_axioms, consequent_atom),
+					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		} else {
 			atom<false, 2> consequent_atom;
@@ -1088,7 +1099,7 @@ bool propose_universal_elim(
 			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
 			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
 			success = do_mh_universal_elim(T, proposed_proofs, new_observations,
-					make_universal_elim_proposal(selected_edge, new_grounded_axioms, consequent_atom),
+					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		}
 	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, predicate, arg1, arg2)) {
@@ -1097,7 +1108,7 @@ bool propose_universal_elim(
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
 			success = do_mh_universal_elim(T, proposed_proofs, new_observations,
-					make_universal_elim_proposal(selected_edge, new_grounded_axioms, consequent_atom),
+					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		} else {
 			atom<true, 2> consequent_atom;
@@ -1105,13 +1116,15 @@ bool propose_universal_elim(
 			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
 			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
 			success = do_mh_universal_elim(T, proposed_proofs, new_observations,
-					make_universal_elim_proposal(selected_edge, new_grounded_axioms, consequent_atom),
+					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
 					log_proposal_probability_ratio, proof_prior);
 		}
 	} else {
 		success = true; /* unreachable */
 	}
+	free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 	free(proposed_proofs);
+	T.sets.decrement_subset_axiom(selected_edge.axiom);
 	return success;
 }
 
@@ -1167,6 +1180,7 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 			case nd_step_type::UNIVERSAL_ELIMINATION:
 			case nd_step_type::EXISTENTIAL_INTRODUCTION:
 			case nd_step_type::EXISTENTIAL_ELIMINATION:
+			case nd_step_type::EQUALITY_ELIMINATION:
 				for (unsigned int j = 0; j < ND_OPERAND_COUNT; j++) {
 					if (child->operands[j] == entry.key) {
 						child->operands[j] = entry.value;
@@ -1215,6 +1229,8 @@ inline bool remove_ground_axiom(
 	return T.template remove_binary_atom<Negated>(rel);
 }
 
+nd_step<hol_term>* debug_observation = NULL; /* TODO: delete this */
+
 template<typename Formula,
 	typename Canonicalizer,
 	bool Negated, unsigned int Arity,
@@ -1258,6 +1274,8 @@ bool do_mh_universal_intro(
 		for (auto proof : new_observations) {
 			T.observations.add(proof);
 			proof->reference_count++;
+if (proposal.consequent_atom.predicate == 30 && proposal.concept_id == 36)
+debug_observation = proof;
 		}
 		subtract(T.proof_axioms, old_axioms);
 		if (!add(T.proof_axioms, new_axioms))
@@ -1315,11 +1333,8 @@ bool do_mh_universal_elim(
 		/* we've accepted the proposal */
 		if (!transform_proofs(proposed_proofs)) return false;
 
-		T.sets.decrement_subset_axiom(proposal.edge.axiom);
-		for (auto entry : proposal.new_grounded_axioms) {
-			if (!add_ground_axiom(T, proposal.consequent_atom, entry.key, entry.value))
-				return false;
-		}
+		if (!add_ground_axiom(T, proposal.consequent_atom, proposal.constant, proposal.new_axiom))
+			return false;
 		for (auto entry : proposed_proofs.transformed_proofs) {
 			bool contains;
 			unsigned int bucket = T.observations.index_of(entry.key, contains);
@@ -1352,6 +1367,8 @@ bool do_mh_step(
 	/* count all eliminable extensional edges */
 	array<extensional_edge<Formula>> eliminable_extensional_edges(8);
 	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
+		if (T.sets.sets[i].size_axiom == NULL) continue;
+
 		const Formula* set_formula = T.sets.sets[i].set_formula();
 		if (set_formula->type == FormulaType::NOT)
 			set_formula = set_formula->unary.operand;

@@ -22,6 +22,8 @@ bool find_largest_disjoint_clique_with_set(
 		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>&,
 		unsigned int, unsigned int, unsigned int*&, unsigned int&, unsigned int&, int);
 
+const char empty_string[] = "";
+
 template<typename T, typename Stream>
 bool print(const hash_set<T>& set, Stream& out) {
 	if (!print('{', out)) return false;
@@ -365,13 +367,12 @@ struct set_reasoning
 
 	unsigned int capacity;
 	unsigned int set_count;
-	unsigned int extensional_edge_count;
 
 	hash_map<Formula, unsigned int> set_ids;
 
 	set_reasoning() :
-			extensional_graph(1024), intensional_graph(1024), capacity(1024),
-			set_count(0), extensional_edge_count(0), set_ids(2048)
+			extensional_graph(1024), intensional_graph(1024),
+			capacity(1024), set_count(0), set_ids(2048)
 	{
 		sets = (set_info<BuiltInConstants, Formula, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, Formula, ProofCalculus>) * capacity);
 		if (sets == NULL) exit(EXIT_FAILURE);
@@ -618,8 +619,8 @@ struct set_reasoning
 
 		const array<unsigned int>& parents_src = intensional_graph.vertices[set_id].parents;
 		const array<unsigned int>& children_src = intensional_graph.vertices[set_id].children;
-		array<unsigned int> parents(parents_src.length);
-		array<unsigned int> children(children_src.length);
+		array<unsigned int> parents(max((size_t) 1, parents_src.length));
+		array<unsigned int> children(max((size_t) 1, children_src.length));
 		for (unsigned int i = 0; i < parents_src.length; i++)
 			parents[i] = parents_src[i];
 		parents.length = parents_src.length;
@@ -1091,7 +1092,6 @@ struct set_reasoning
 		}
 
 		if (!new_edge) return axiom;
-		extensional_edge_count++;
 
 		/* check that the new edge does not create any inconsistencies */
 		for (unsigned int descendant : sets[antecedent_set].descendants) {
@@ -1229,7 +1229,6 @@ struct set_reasoning
 #endif
 
 		extensional_graph.remove_edge(consequent_set, antecedent_set);
-		extensional_edge_count--;
 
 		array<unsigned int> stack(8);
 		stack[stack.length++] = consequent_set;
@@ -1269,6 +1268,8 @@ struct set_reasoning
 
 		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
 		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
+		antecedent->reference_count++;
+		consequent->reference_count++;
 
 #if !defined(NDEBUG)
 		bool contains;
@@ -1281,7 +1282,10 @@ struct set_reasoning
 		unsigned int consequent_set = set_ids.get(*consequent);
 #endif
 
-		return remove_subset_relation(antecedent_set, consequent_set, antecedent, consequent);
+		bool success = remove_subset_relation(antecedent_set, consequent_set, antecedent, consequent);
+		free(*antecedent); if (antecedent->reference_count == 0) free(antecedent);
+		free(*consequent); if (consequent->reference_count == 0) free(consequent);
+		return success;
 	}
 
 	template<bool ResolveInconsistencies>
@@ -1406,8 +1410,6 @@ struct set_reasoning
 	bool move_element_to_set(unsigned int element,
 			Formula* old_set_formula, Formula* new_set_formula)
 	{
-		typedef typename Formula::Type FormulaType;
-
 		unsigned int old_set_id = 0;
 		if (old_set_formula != NULL) {
 			bool contains;
@@ -1416,6 +1418,8 @@ struct set_reasoning
 		}
 
 #if !defined(NDEBUG)
+		typedef typename Formula::Type FormulaType;
+
 		if (new_set_formula->type == FormulaType::FALSE) {
 			fprintf(stderr, "move_element_to_set WARNING: `new_set_formula` is false.\n");
 			return false;
@@ -1662,6 +1666,59 @@ struct set_reasoning
 				}
 			}
 		}
+		return success;
+	}
+
+	template<typename Stream, typename... Printer>
+	bool print_axioms(Stream& out, Printer&&... printer) const {
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axiom == NULL) continue;
+			if (!print(*sets[i].size_axiom->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
+				return false;
+			for (const auto& entry : extensional_graph.vertices[i].children) {
+				if (!print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
+					return false;
+			}
+		}
+		return true;
+	}
+
+	bool are_elements_unique() const {
+		hash_map<unsigned int, array<unsigned int>> all_elements(1024);
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axiom == NULL) continue;
+			if (!all_elements.check_size(all_elements.table.size + sets[i].elements.length)) {
+				for (auto entry : all_elements) free(entry.value);
+				return false;
+			}
+			for (unsigned int element : sets[i].elements) {
+				bool contains; unsigned int bucket;
+				array<unsigned int>& containing_sets = all_elements.get(element, contains, bucket);
+				if (!contains) {
+					if (!array_init(containing_sets, 4)) {
+						for (auto entry : all_elements) free(entry.value);
+						return false;
+					}
+					all_elements.table.keys[bucket] = element;
+					all_elements.table.size++;
+				} if (!containing_sets.add(i)) {
+					for (auto entry : all_elements) free(entry.value);
+					return false;
+				}
+			}
+		}
+
+		bool success = true;
+		for (const auto& entry : all_elements) {
+			if (entry.value.length > 1) {
+				print("set_reasoning.are_elements_unique WARNING: Detected element ", stderr);
+				print(entry.key, stderr); print(" in multiple sets: ", stderr);
+				print<unsigned int, empty_string, empty_string>(entry.value, stderr); print('\n', stderr);
+				success = false;
+			}
+		}
+
+		for (auto entry : all_elements) free(entry.value);
 		return success;
 	}
 };
@@ -2049,6 +2106,7 @@ inline bool add_non_ancestor_neighbor(
 			changed = true;
 		}
 	} else {
+		if (neighborhood.contains(child)) return true;
 		if (!neighborhood.add(child)) return false;
 		changed = true;
 	}
@@ -2128,27 +2186,23 @@ bool find_largest_disjoint_clique_with_set(
 		for (auto entry : non_ancestor_neighborhood) free(entry.value);
 		return false;
 	}
-	set_parents.for_each_parent(sets, set, [&](unsigned int parent) { stack[stack.length++] = parent; return true; });
+	stack[stack.length++] = set;
 	while (stack.length > 0) {
 		unsigned int current = stack.pop();
 #if !defined(NDEBUG)
 		if (sets.sets[current].set_size == 0)
 			fprintf(stderr, "find_largest_disjoint_clique_with_set WARNING: A proper ancestor of `set` (ID %u) is empty.\n", current);
 #endif
-		if (!init_non_ancestor_neighborhood(current)) {
-			for (auto entry : non_ancestor_neighborhood) free(entry.value);
-			return false;
-		}
 
 		for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
-			if (non_ancestor_neighborhood.table.contains(entry.key)) continue;
-			if (!stack.add(entry.key)) {
+			if (entry.key != set && non_ancestor_neighborhood.table.contains(entry.key)) continue;
+			if (!init_non_ancestor_neighborhood(entry.key) || !stack.add(entry.key)) {
 				for (auto entry : non_ancestor_neighborhood) free(entry.value);
 				return false;
 			}
 		} for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
-			if (non_ancestor_neighborhood.table.contains(parent)) continue;
-			if (!stack.add(parent)) {
+			if (parent != set && non_ancestor_neighborhood.table.contains(parent)) continue;
+			if (!init_non_ancestor_neighborhood(parent) || !stack.add(parent)) {
 				for (auto entry : non_ancestor_neighborhood) free(entry.value);
 				return false;
 			}

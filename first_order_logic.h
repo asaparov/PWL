@@ -554,6 +554,9 @@ const char equals_symbol<fol_formula_syntax::CLASSIC>::symbol = '=';
 const char true_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<fol_formula_syntax::CLASSIC>::symbol[] = "⊥";
 
+const char left_parens[] = "(";
+const char right_parens[] = ")";
+
 template<fol_formula_syntax Syntax, typename Stream>
 inline bool print_for_all(unsigned int quantified_variable, Stream& out) {
 	switch (Syntax) {
@@ -612,17 +615,17 @@ bool print(const fol_formula& formula, Stream& out, Printer&&... printer)
 		return print(not_symbol<Syntax>::symbol, out) && print(*formula.unary.operand, out, std::forward<Printer>(printer)...);
 
 	case fol_formula_type::AND:
-		return print<fol_formula*, '(', ')', and_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<fol_formula*, left_parens, right_parens, and_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::OR:
-		return print<fol_formula*, '(', ')', or_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<fol_formula*, left_parens, right_parens, or_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::IF_THEN:
 		return print('(', out) && print(*formula.binary.left, out, std::forward<Printer>(printer)...)
 			&& print(if_then_symbol<Syntax>::symbol, out) && print(*formula.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case fol_formula_type::IFF:
-		return print<fol_formula*, '(', ')', iff_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<fol_formula*, left_parens, right_parens, iff_symbol<Syntax>::symbol>(formula.array.operands, formula.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case fol_formula_type::FOR_ALL:
 		return print_for_all<Syntax>(formula.quantifier.variable, out)

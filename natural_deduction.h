@@ -68,8 +68,8 @@ struct nd_step
 	static inline void free(nd_step<Formula>& step) {
 		step.reference_count--;
 		if (step.reference_count == 0) {
-			core::free(step.children);
 			step.free();
+			core::free(step.children);
 		}
 	}
 
@@ -145,6 +145,7 @@ struct nd_step
 		case nd_step_type::UNIVERSAL_ELIMINATION:
 		case nd_step_type::EXISTENTIAL_INTRODUCTION:
 		case nd_step_type::EXISTENTIAL_ELIMINATION:
+		case nd_step_type::EQUALITY_ELIMINATION:
 			subproofs = operands;
 			length = ND_OPERAND_COUNT;
 			return;
@@ -216,6 +217,7 @@ private:
 		case nd_step_type::UNIVERSAL_ELIMINATION:
 		case nd_step_type::EXISTENTIAL_INTRODUCTION:
 		case nd_step_type::EXISTENTIAL_ELIMINATION:
+		case nd_step_type::EQUALITY_ELIMINATION:
 			for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
 				if (operands[i] == NULL) break;
 				operands[i]->remove_child(this);
@@ -283,6 +285,7 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 	case nd_step_type::UNIVERSAL_ELIMINATION:
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
 	case nd_step_type::EXISTENTIAL_ELIMINATION:
+	case nd_step_type::EQUALITY_ELIMINATION:
 		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
 			if (first.operands[i] == NULL) {
 				if (second.operands[i] == NULL)
@@ -793,6 +796,26 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = operand_states[1]->formula;
 		out.formula->reference_count++;
 		return true;
+	case nd_step_type::EQUALITY_ELIMINATION:
+		if (operand_count != 3 || operand_states[0]->formula->type != FormulaType::EQUALS) return false;
+		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
+		if (proof.operands[2]->type == nd_step_type::ARRAY_PARAMETER) {
+			out.formula = substitute(second_operand->formula,
+					proof.operands[2]->parameters.data, proof.operands[2]->parameters.length,
+					operand_states[0]->formula->binary.left, operand_states[0]->formula->binary.right);
+			if (out.formula == NULL) {
+				out.formula = substitute(second_operand->formula,
+						proof.operands[2]->parameters.data, proof.operands[2]->parameters.length,
+						operand_states[0]->formula->binary.right, operand_states[0]->formula->binary.left);
+				if (out.formula == NULL) return false;
+			}
+		} else {
+			return false;
+		}
+
+		out.formula = try_canonicalize(out.formula, canonicalizer);
+		if (out.formula == NULL) return false;
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::PARAMETER:
 	case nd_step_type::ARRAY_PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
@@ -1100,8 +1123,8 @@ struct natural_deduction
 	}
 
 	template<template<typename> class Array>
-	static inline Proof* new_equality_elim(Proof* equality, Proof* formula, const Array<unsigned int>& indices) {
-		return new_ternary_step<nd_step_type::EQUALITY_ELIMINATION>(equality, formula, new_array_parameter(indices));
+	static inline Proof* new_equality_elim(Proof* equality, Proof* formula, const Array<unsigned int>& term_indices) {
+		return new_ternary_step<nd_step_type::EQUALITY_ELIMINATION>(equality, formula, new_array_parameter(term_indices));
 	}
 
 	static inline Proof* new_proof_by_contradiction(Proof* proof, Proof* assumption) {
@@ -1355,6 +1378,7 @@ template<typename Formula,
 	typename ConjunctionIntroductions,
 	typename UniversalIntroductions,
 	typename UniversalEliminations,
+	typename TermIndices,
 	typename... ProofMap>
 double log_probability(
 		const nd_step<Formula>* const* proof,
@@ -1365,7 +1389,7 @@ double log_probability(
 		ConjunctionIntroductions& conjunction_introductions,
 		UniversalIntroductions& universal_introductions,
 		UniversalEliminations& universal_eliminations,
-		ProofMap&&... proof_map)
+		TermIndices& term_indices, ProofMap&&... proof_map)
 {
 	typedef typename Formula::TermType TermType;
 
@@ -1419,30 +1443,34 @@ double log_probability(
 		formula_counter++;
 		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
 	case nd_step_type::UNIVERSAL_INTRODUCTION:
-		/* TODO: we need to compute the prior on the parameter */
-		formula_counter++;
 		operand = map(current_step.operands[1], std::forward<ProofMap>(proof_map)...);
+		/* we need to compute the prior on the parameter */
 		if (!universal_introductions.add(make_pair(operand->parameter, available_parameters)))
 			exit(EXIT_FAILURE);
 		
 		index = available_parameters.index_of(operand->parameter);
 		if (index < available_parameters.length)
 			shift_left(available_parameters.data + index, available_parameters.length - index - 1);
-		return 0.0;
+		return -LOG_ND_RULE_COUNT - log_cache<double>::instance().get(formula_counter++);
 	case nd_step_type::UNIVERSAL_ELIMINATION:
-		/* TODO: we need to compute the prior on the term */
-		formula_counter++;
 		operand = map(current_step.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (operand->term->type == TermType::PARAMETER) {
 			if (available_parameters.ensure_capacity(available_parameters.length + 1)) exit(EXIT_FAILURE);
 			add_sorted<true>(available_parameters, operand->term->parameter);
 		}
+		/* we need to compute the prior on the term */
 		if (!universal_eliminations.add(*operand->term)) exit(EXIT_FAILURE);
-		return 0.0;
+		return -LOG_ND_RULE_COUNT - log_cache<double>::instance().get(formula_counter++);
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
-		/* TODO: we need to compute the prior on the parameter (it can be a term or a list of term indices) */
-		formula_counter++;
-		fprintf(stderr, "log_probability ERROR: Not implemented.\n"); exit(EXIT_FAILURE);
+		/* we need to compute the prior on the parameter (it's a list of term indices) */
+		if (!term_indices.add(make_array_view(current_step.operands[2]->parameters.data, current_step.operands[2]->parameters.length)))
+			exit(EXIT_FAILURE);
+		return -LOG_ND_RULE_COUNT - log_cache<double>::instance().get(formula_counter++);
+	case nd_step_type::EQUALITY_ELIMINATION:
+		/* we need to compute the prior on the parameter (it's a list of term indices) */
+		if (!term_indices.add(make_array_view(current_step.operands[2]->parameters.data, current_step.operands[2]->parameters.length)))
+			exit(EXIT_FAILURE);
+		return -LOG_ND_RULE_COUNT - 2*log_cache<double>::instance().get(formula_counter++);
 	case nd_step_type::COUNT:
 		break;
 	}
@@ -1454,6 +1482,7 @@ template<typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
+	typename TermIndicesPrior,
 	typename ProofLengthPrior>
 struct canonicalized_proof_prior
 {
@@ -1461,6 +1490,7 @@ struct canonicalized_proof_prior
 	ConjunctionIntroductionPrior conjunction_introduction_prior;
 	UniversalIntroductionPrior universal_introduction_prior;
 	UniversalEliminationPrior universal_elimination_prior;
+	TermIndicesPrior term_indices_prior;
 	ProofLengthPrior proof_length_prior;
 
 	canonicalized_proof_prior(
@@ -1468,11 +1498,13 @@ struct canonicalized_proof_prior
 			const ConjunctionIntroductionPrior& conjunction_introduction_prior,
 			const UniversalIntroductionPrior& universal_introduction_prior,
 			const UniversalEliminationPrior& universal_elimination_prior,
+			const TermIndicesPrior& term_indices_prior,
 			const ProofLengthPrior& proof_length_prior) :
 		axiom_prior(axiom_prior),
 		conjunction_introduction_prior(conjunction_introduction_prior),
 		universal_introduction_prior(universal_introduction_prior),
 		universal_elimination_prior(universal_elimination_prior),
+		term_indices_prior(term_indices_prior),
 		proof_length_prior(proof_length_prior)
 	{ }
 
@@ -1481,6 +1513,7 @@ struct canonicalized_proof_prior
 		conjunction_introduction_prior(src.conjunction_introduction_prior),
 		universal_introduction_prior(src.universal_introduction_prior),
 		universal_elimination_prior(src.universal_elimination_prior),
+		term_indices_prior(src.term_indices_prior),
 		proof_length_prior(src.proof_length_prior)
 	{ }
 
@@ -1499,23 +1532,26 @@ template<typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
+	typename TermIndicesPrior,
 	typename ProofLengthPrior>
-inline canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>
+inline canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>
 make_canonicalized_proof_prior(
 		const AxiomPrior& axiom_prior,
 		const ConjunctionIntroductionPrior& conjunction_introduction_prior,
 		const UniversalIntroductionPrior& universal_introduction_prior,
 		const UniversalEliminationPrior& universal_elimination_prior,
+		const TermIndicesPrior& term_indices_prior,
 		const ProofLengthPrior& proof_length_prior)
 {
-	return canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>(
-			axiom_prior, conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior, proof_length_prior);
+	return canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>(
+			axiom_prior, conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior, term_indices_prior, proof_length_prior);
 }
 
 template<typename Formula,
 	typename ConjunctionIntroductions,
 	typename UniversalIntroductions,
 	typename UniversalEliminations,
+	typename TermIndices,
 	typename ProofLengthPrior,
 	typename... ProofMap>
 inline double log_probability_helper(
@@ -1524,6 +1560,7 @@ inline double log_probability_helper(
 		ConjunctionIntroductions& conjunction_introductions,
 		UniversalIntroductions& universal_introductions,
 		UniversalEliminations& universal_eliminations,
+		TermIndices& term_indices,
 		ProofLengthPrior& proof_length_prior,
 		ProofMap&&... proof_map)
 {
@@ -1540,7 +1577,7 @@ inline double log_probability_helper(
 	for (unsigned int i = 0; i < canonical_order.length; i++)
 		value += log_probability(canonical_order.data, i, formula_counter,
 				available_parameters, axioms, conjunction_introductions, universal_introductions,
-				universal_eliminations, std::forward<ProofMap>(proof_map)...);
+				universal_eliminations, term_indices, std::forward<ProofMap>(proof_map)...);
 	return value;
 }
 
@@ -1549,28 +1586,32 @@ template<
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
+	typename TermIndicesPrior,
 	typename ProofLengthPrior,
 	typename... ProofMap>
 double log_probability(
 		const nd_step<Formula>& proof,
-		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>& prior,
+		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
 		ProofMap&&... proof_map)
 {
 	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
 	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
 	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
+	typedef typename TermIndicesPrior::ObservationCollection TermIndices;
 
 	array_multiset<Formula*, false> axioms(16);
 	ConjunctionIntroductions conjunction_introductions;
 	UniversalIntroductions universal_introductions;
 	UniversalEliminations universal_eliminations;
+	TermIndices term_indices;
 	double value = log_probability_helper(proof, axioms,
 			conjunction_introductions, universal_introductions, universal_eliminations, prior.log_continue_probability,
-			prior.log_stop_probability, prior.proof_length_prior, std::forward<ProofMap>(proof_map)...);
+			prior.log_stop_probability, term_indices, prior.proof_length_prior, std::forward<ProofMap>(proof_map)...);
 	return value + log_probability(axioms, prior.axiom_prior)
 		 + log_probability(conjunction_introductions, prior.conjunction_introduction_prior)
 		 + log_probability(universal_introductions, prior.universal_introduction_prior)
-		 + log_probability(universal_eliminations, prior.universal_elimination_prior);
+		 + log_probability(universal_eliminations, prior.universal_elimination_prior)
+		 + log_probability(term_indices, prior.term_indices_prior);
 }
 
 template<
@@ -1578,12 +1619,13 @@ template<
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
 	typename UniversalEliminationPrior,
+	typename TermIndicesPrior,
 	typename ProofLengthPrior,
 	typename MultisetType,
 	typename... AxiomPriorParameters>
 double log_probability_ratio(
 		const array_map<nd_step<Formula>*, proof_substitution<Formula>>& proofs,
-		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, ProofLengthPrior>& prior,
+		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
 		const MultisetType& proof_axioms,
 		array_multiset<Formula*, false>& old_axioms,
 		array_multiset<Formula*, false>& new_axioms,
@@ -1592,20 +1634,23 @@ double log_probability_ratio(
 	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
 	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
 	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
+	typedef typename TermIndicesPrior::ObservationCollection TermIndices;
 
 	double value = 0.0;
 	for (const auto& entry : proofs) {
 		ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
 		UniversalIntroductions old_universal_introductions, new_universal_introductions;
 		UniversalEliminations old_universal_eliminations, new_universal_eliminations;
+		TermIndices old_term_indices, new_term_indices;
 		value -= log_probability_helper(*entry.key, old_axioms, old_conjunction_introductions,
-				old_universal_introductions, old_universal_eliminations, prior.proof_length_prior);
+				old_universal_introductions, old_universal_eliminations, old_term_indices, prior.proof_length_prior);
 		value += log_probability_helper(*entry.key, new_axioms, new_conjunction_introductions,
-				new_universal_introductions, new_universal_eliminations, prior.proof_length_prior, entry.value);
+				new_universal_introductions, new_universal_eliminations, new_term_indices, prior.proof_length_prior, entry.value);
 
 		value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
 		value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
 		value += log_probability_ratio(old_universal_eliminations, new_universal_eliminations, prior.universal_elimination_prior);
+		value += log_probability_ratio(old_term_indices, new_term_indices, prior.term_indices_prior);
 	}
 
 	sort(old_axioms.counts.keys, old_axioms.counts.values, old_axioms.counts.size);

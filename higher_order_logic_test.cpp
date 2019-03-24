@@ -344,5 +344,5 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 
 int main(int argc, const char** argv)
 {
-	hol_test_canonicalization();
+	hol_test_compute_type();
 }

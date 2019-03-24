@@ -190,6 +190,7 @@ struct theory
 		if (empty_set_formula->reference_count == 0)
 			core::free(empty_set_formula);
 		if (empty_set_axiom == NULL) exit(EXIT_FAILURE);
+		empty_set_axiom->reference_count++;
 	}
 
 	~theory() {
@@ -684,7 +685,9 @@ private:
 				if (set_size_axiom == NULL) return NULL;
 
 				/* TODO: what are the semantics of the third argument to new_equality_elim? */
-				Proof* proof = ProofCalculus::new_equality_elim(set_size_axiom, ProofCalculus::new_universal_elim(empty_set_axiom, set_formula));
+				unsigned int zero = 0;
+				Proof* proof = ProofCalculus::new_equality_elim(set_size_axiom,
+						ProofCalculus::new_universal_elim(empty_set_axiom, set_formula), make_array_view(&zero, 1));
 				if (proof == NULL) return NULL;
 				proof->reference_count++;
 				return proof;
@@ -729,6 +732,7 @@ private:
 
 					Proof* new_axiom = sets.template get_subset_axiom<true>(new_left, right);
 					new_axiom->reference_count++;
+					free(*new_left); if (new_left->reference_count == 0) free(new_left);
 					return new_axiom;
 				} else {
 					/* make sure there are no unknown predicates */
@@ -1054,8 +1058,15 @@ private:
 			new_set_formula = lifted_literal;
 			new_set_formula->reference_count++;
 		} else {
+			if (old_set_formula->array.length == 1) {
+				Formula* singleton = old_set_formula->array.operands[0];
+				singleton->reference_count++;
+				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+				old_set_formula = singleton;
+			}
 			new_set_formula = Formula::new_and(old_set_formula, lifted_literal);
 			old_set_formula->reference_count++;
+			lifted_literal->reference_count++;
 		}
 		if (new_set_formula == NULL) {
 			if (old_set_formula != NULL) {
@@ -1106,7 +1117,7 @@ private:
 		}
 
 		if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
-		free(*canonicalized); free(canonicalized);
+		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 		return true;
 	}
 
@@ -1121,20 +1132,31 @@ private:
 			return false;
 		}
 
+		Formula* canonicalized_old_set_formula = canonicalize(*old_set_formula, canonicalizer);
+		if (canonicalized_old_set_formula == NULL) {
+			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			return false;
+		}
+		free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+
 		Formula* canonicalized = canonicalize(*lifted_literal, canonicalizer);
 		array<Formula*> difference(8);
 		if (canonicalized == NULL) {
-			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			free(*canonicalized_old_set_formula);
+			if (canonicalized_old_set_formula->reference_count == 0)
+				free(canonicalized_old_set_formula);
 			return false;
 		} else if (canonicalized->type == FormulaType::AND) {
 			unsigned int i = 0, j = 0;
-			while (i < old_set_formula->array.length && j < canonicalized->array.length)
+			while (i < canonicalized_old_set_formula->array.length && j < canonicalized->array.length)
 			{
-				if (*old_set_formula->array.operands[i] == *canonicalized->array.operands[j]) {
+				if (*canonicalized_old_set_formula->array.operands[i] == *canonicalized->array.operands[j]) {
 					i++; j++;
-				} else if (*old_set_formula->array.operands[i] < *canonicalized->array.operands[j]) {
-					if (!difference.add(old_set_formula->array.operands[i])) {
-						free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+				} else if (*canonicalized_old_set_formula->array.operands[i] < *canonicalized->array.operands[j]) {
+					if (!difference.add(canonicalized_old_set_formula->array.operands[i])) {
+						free(*canonicalized_old_set_formula);
+						if (canonicalized_old_set_formula->reference_count == 0)
+							free(canonicalized_old_set_formula);
 						free(*canonicalized); free(canonicalized); return false;
 					}
 					i++;
@@ -1143,28 +1165,39 @@ private:
 				}
 			}
 
-			while (i < old_set_formula->array.length) {
-				if (!difference.add(old_set_formula->array.operands[i])) {
-					free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			while (i < canonicalized_old_set_formula->array.length) {
+				if (!difference.add(canonicalized_old_set_formula->array.operands[i])) {
+					free(*canonicalized_old_set_formula);
+					if (canonicalized_old_set_formula->reference_count == 0)
+						free(canonicalized_old_set_formula);
 					free(*canonicalized); free(canonicalized); return false;
 				}
 				i++;
 			}
 		} else {
-			for (unsigned int i = 0; i < old_set_formula->array.length; i++) {
-				if (*old_set_formula->array.operands[i] != *canonicalized
-				 && !difference.add(old_set_formula->array.operands[i]))
+			for (unsigned int i = 0; i < canonicalized_old_set_formula->array.length; i++) {
+				if (*canonicalized_old_set_formula->array.operands[i] != *canonicalized
+				 && !difference.add(canonicalized_old_set_formula->array.operands[i]))
 				{
-					free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+					free(*canonicalized_old_set_formula);
+					if (canonicalized_old_set_formula->reference_count == 0)
+						free(canonicalized_old_set_formula);
 					free(*canonicalized); free(canonicalized); return false;
 				}
 			}
 		}
 		free(*canonicalized); free(canonicalized);
 
-		Formula* new_set_formula = (difference.length == 0 ? NULL : Formula::new_and(difference));
+		Formula* new_set_formula;
+		if (difference.length == 0)
+			new_set_formula = NULL;
+		else if (difference.length == 1)
+			new_set_formula = difference[0];
+		else new_set_formula = Formula::new_and(difference);
 		if (difference.length != 0 && new_set_formula == NULL) {
-			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+			free(*canonicalized_old_set_formula);
+			if (canonicalized_old_set_formula->reference_count == 0)
+				free(canonicalized_old_set_formula);
 			return false;
 		}
 		for (Formula* conjunct : difference)
@@ -1172,13 +1205,15 @@ private:
 
 		bool success;
 		if (new_set_formula == NULL) {
-			sets.remove_element_from_set(element, old_set_formula);
+			sets.remove_element_from_set(element, canonicalized_old_set_formula);
 			success = true;
 		} else {
-			success = sets.move_element_to_superset(element, old_set_formula, new_set_formula);
-			free(*new_set_formula); free(new_set_formula);
+			success = sets.move_element_to_superset(element, canonicalized_old_set_formula, new_set_formula);
+			free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		}
-		free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+		free(*canonicalized_old_set_formula);
+		if (canonicalized_old_set_formula->reference_count == 0)
+			free(canonicalized_old_set_formula);
 		return success;
 	}
 
@@ -1325,7 +1360,6 @@ Formula* make_lifted_conjunction(unsigned int concept_id,
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
 	}
 	Formula* conjunction = Formula::new_and(conjuncts);
-	free_formulas(conjuncts);
 	return conjunction;
 }
 

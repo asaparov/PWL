@@ -286,6 +286,7 @@ inline bool operator == (const hol_quantifier& first, const hol_quantifier& seco
 
 bool operator == (const hol_term& first, const hol_term& second)
 {
+	if (hol_term::is_empty(first)) return false;
 	if (first.type != second.type) return false;
 	switch (first.type) {
 	case hol_term_type::VARIABLE:
@@ -648,6 +649,9 @@ const char equals_symbol<hol_term_syntax::CLASSIC>::symbol = '=';
 const char true_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊥";
 
+const char left_parens[] = "(";
+const char right_parens[] = ")";
+
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
 inline bool print_iff(const hol_array_term& term, Stream& out, Printer&&... printer) {
 	if (term.length < 2) {
@@ -728,10 +732,10 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		return print(not_symbol<Syntax>::symbol, out) && print(*term.unary.operand, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::AND:
-		return print<hol_term*, '(', ')', and_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<hol_term*, left_parens, right_parens, and_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case hol_term_type::OR:
-		return print<hol_term*, '(', ')', or_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<hol_term*, left_parens, right_parens, or_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case hol_term_type::IFF:
 		return print_iff<Syntax>(term.array, out, std::forward<Printer>(printer)...);
@@ -1301,9 +1305,10 @@ inline hol_term* apply(hol_term* src, index_substituter<VariableShift>& substitu
 template<int VariableShift = 0>
 inline hol_term* substitute(
 		hol_term* src, const unsigned int* term_indices,
-		unsigned int term_index_count, hol_term* dst_term)
+		unsigned int term_index_count, hol_term* dst_term,
+		const hol_term* expected_src_term = NULL)
 {
-	index_substituter<VariableShift> substituter = {NULL, dst_term, term_indices, term_index_count, 0};
+	index_substituter<VariableShift> substituter = {expected_src_term, dst_term, term_indices, term_index_count, 0};
 	hol_term* term = apply(src, substituter);
 	if (term == src)
 		term->reference_count++;
@@ -5234,22 +5239,26 @@ bool is_conjunction_subset(
 		} else if (*first[i] < *second[j]) {
 			i++;
 		} else {
+			bool found_subset = false;
 			for (unsigned int k = 0; k < first_length; k++) {
 				if (is_subset(first[k], second[j])) {
-					j++; continue;
+					j++; found_subset = true;
+					break;
 				}
 			}
-			return false;
+			if (!found_subset) return false;
 		}
 	}
 
 	while (j < second_length) {
+		bool found_subset = false;
 		for (unsigned int k = 0; k < first_length; k++) {
 			if (is_subset(first[k], second[j])) {
-				j++; continue;
+				j++; found_subset = true;
+				break;
 			}
 		}
-		return false;
+		if (!found_subset) return false;
 	}
 
 	return true;
@@ -5265,24 +5274,28 @@ bool is_disjunction_subset(
 		if (first[i] == second[j] || *first[i] == *second[j]) {
 			i++; j++;
 		} else if (*first[i] < *second[j]) {
+			bool found_subset = false;
 			for (unsigned int k = 0; k < second_length; k++) {
 				if (is_subset(first[i], second[k])) {
-					i++; continue;
+					i++; found_subset = true;
+					break;
 				}
 			}
-			return false;
+			if (!found_subset) return false;
 		} else {
 			j++;
 		}
 	}
 
 	while (i < first_length) {
+		bool found_subset = false;
 		for (unsigned int k = 0; k < second_length; k++) {
 			if (is_subset(first[i], second[k])) {
-				i++; continue;
+				i++; found_subset = true;
+				break;
 			}
 		}
-		return false;
+		if (!found_subset) return false;
 	}
 
 	return true;

@@ -3,6 +3,8 @@
 #include "fake_parser.h"
 
 struct poisson_distribution {
+	typedef unsigned int ObservationType;
+
 	double lambda, log_lambda;
 
 	poisson_distribution(double lambda) : lambda(lambda), log_lambda(log(lambda)) { }
@@ -651,6 +653,71 @@ inline double log_probability_ratio(
 	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
 }
 
+template<typename JumpDistribution, typename LengthDistribution>
+struct levy_process {
+	typedef typename JumpDistribution::ObservationType ValueType;
+	typedef array_view<ValueType> ObservationType;
+	typedef default_array<ObservationType> ObservationCollection;
+
+	JumpDistribution jump_distribution;
+	LengthDistribution length_distribution;
+
+	levy_process(
+			const JumpDistribution& jump_distribution,
+			const LengthDistribution& length_distribution) :
+		jump_distribution(jump_distribution),
+		length_distribution(length_distribution)
+	{ }
+};
+
+template<typename JumpDistribution, typename LengthDistribution>
+inline levy_process<JumpDistribution, LengthDistribution> make_levy_process(
+		const JumpDistribution& jump_distribution,
+		const LengthDistribution& length_distribution)
+{
+	return levy_process<JumpDistribution, LengthDistribution>(
+		jump_distribution, length_distribution);
+}
+
+template<template<typename> class Collection,
+	typename JumpDistribution, typename LengthDistribution>
+double log_probability(
+		const Collection<typename JumpDistribution::ObservationType>& observation,
+		const levy_process<JumpDistribution, LengthDistribution>& prior)
+{
+	double value = log_probability(size(observation) - 1, prior.length_distribution);
+	typename JumpDistribution::ObservationType prev = 0;
+	for (const auto& entry : observation) {
+		value += log_probability(entry - prev, prior.jump_distribution);
+		prev = entry;
+	}
+	return value;
+}
+
+template<template<typename> class ObservationCollection,
+	template<typename> class Collection,
+	typename JumpDistribution, typename LengthDistribution>
+double log_probability(
+		const ObservationCollection<Collection<typename JumpDistribution::ObservationType>>& observations,
+		const levy_process<JumpDistribution, LengthDistribution>& prior)
+{
+	double value = 0.0;
+	for (const auto& observation : observations)
+		value += log_probability(observation, prior);
+	return value;
+}
+
+template<template<typename> class ObservationCollection,
+	template<typename> class Collection,
+	typename JumpDistribution, typename LengthDistribution>
+inline double log_probability_ratio(
+		const ObservationCollection<Collection<typename JumpDistribution::ObservationType>>& old_observations,
+		const ObservationCollection<Collection<typename JumpDistribution::ObservationType>>& new_observations,
+		const levy_process<JumpDistribution, LengthDistribution>& prior)
+{
+	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
+}
+
 const string* get_name(const hash_map<string, unsigned int>& names, unsigned int id)
 {
 	for (const auto& entry : names)
@@ -659,11 +726,25 @@ const string* get_name(const hash_map<string, unsigned int>& names, unsigned int
 }
 
 template<typename Formula, typename ProofCalculus, typename Canonicalizer>
+inline bool contains_subset_axiom(
+		const theory<Formula, ProofCalculus, Canonicalizer>& T,
+		const Formula* antecedent, const Formula* consequent)
+{
+	bool contains;
+	unsigned int antecedent_set = T.sets.set_ids.get(*antecedent, contains);
+	if (!contains) return false;
+	unsigned int consequent_set = T.sets.set_ids.get(*consequent, contains);
+	if (!contains) return false;
+
+	return T.sets.extensional_graph.vertices[antecedent_set].parents.contains(consequent_set)
+		|| T.sets.intensional_graph.vertices[antecedent_set].parents.contains(consequent_set);
+}
+
+template<typename Formula, typename ProofCalculus, typename Canonicalizer>
 bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, const Formula* formula)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
-	typedef typename ProofCalculus::Proof Proof;
 
 	if (formula == NULL) {
 		fprintf(stderr, "contains_axiom WARNING: `formula` is null.\n");
@@ -673,9 +754,9 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 	bool contains;
 	unsigned int predicate; Term const* arg1; Term const* arg2;
 	if (formula->type == FormulaType::FOR_ALL) {
-		for (const Proof* axiom : T.universal_quantifications)
-			if (*axiom->formula == *formula) return true;
-		return false;
+		if (formula->quantifier.operand->type == FormulaType::IF_THEN)
+			return contains_subset_axiom(T, formula->quantifier.operand->binary.left, formula->quantifier.operand->binary.right);
+		else return false;
 	} else if (is_atomic(*formula, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			/* `formula` is an atom of form `f(a)` */
@@ -767,8 +848,9 @@ int main(int argc, const char** argv)
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = uniform_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0);
+	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
-			universal_introduction_prior, universal_elimination_prior, poisson_distribution(1.0));
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(5.0));
 	const string** reverse_name_map = invert(names);
 	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
 	read_article(names.get("Bob"), corpus, parser, T, proof_prior, printer);
@@ -776,7 +858,7 @@ int main(int argc, const char** argv)
 	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
+	//read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
 	read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
 
 	array_map<hol_term*, unsigned int> tracked_logical_forms(2);
@@ -795,11 +877,12 @@ int main(int argc, const char** argv)
 			)
 		), 0);
 
-	constexpr unsigned int iterations = 1000000;
+	constexpr unsigned int iterations = 10000000;
 	timer stopwatch;
 	auto scribe = parser.get_printer(printer);
 	for (unsigned int t = 0; t < iterations; t++) {
 		//printf("[%u]\n", t);
+T.sets.are_elements_unique();
 		//T.print_axioms(stdout, scribe);
 		//print('\n', stdout); fflush(stdout);
 		if (stopwatch.milliseconds() > 1000) {

@@ -24,6 +24,14 @@ struct array_view {
 	inline const T& operator[] (size_t index) const {
 		return array[index];
 	}
+
+	inline const T* begin() const {
+		return array;
+	}
+
+	inline const T* end() const {
+		return array + length;
+	}
 };
 
 template<typename T>
