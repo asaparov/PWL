@@ -2,6 +2,8 @@
 #include "executive.h"
 #include "fake_parser.h"
 
+#include <boost/math/special_functions/gamma.hpp>
+
 struct poisson_distribution {
 	typedef unsigned int ObservationType;
 
@@ -13,6 +15,27 @@ struct poisson_distribution {
 
 inline double log_probability(unsigned int k, const poisson_distribution& prior) {
 	return k * prior.log_lambda - prior.lambda - lgamma(k + 1);
+}
+
+struct geometric_distribution {
+	typedef unsigned int ObservationType;
+
+	double p, log_p, log_one_minus_p;
+
+	geometric_distribution(double p) : p(p), log_p(log(p)), log_one_minus_p(log(1.0 - p)) { }
+	geometric_distribution(const geometric_distribution& src) : p(src.p), log_p(src.log_p), log_one_minus_p(src.log_one_minus_p) { }
+};
+
+inline double log_probability(unsigned int k, const geometric_distribution& prior) {
+	return k * prior.log_one_minus_p + prior.log_p;
+}
+
+unsigned int sample(const geometric_distribution& prior, unsigned int min, unsigned int max) {
+	/* we use inverse transform sampling */
+	double u = sample_uniform<double>();
+	if (max == UINT_MAX)
+		return floor((min * prior.log_one_minus_p + log(1 - u)) / prior.log_one_minus_p);
+	return floor(log(pow(1 - prior.p, min) * (1 - u) + pow(1 - prior.p, max + 1) * u) / prior.log_one_minus_p);
 }
 
 template<typename T>
@@ -790,7 +813,7 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 
 int main(int argc, const char** argv)
 {
-	FILE* in = fopen("flat_ontology_articles.txt", "r");
+	FILE* in = fopen("simple_set_reasoning_articles.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
 		return EXIT_FAILURE;
@@ -851,18 +874,25 @@ int main(int argc, const char** argv)
 	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
 			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(5.0));
+	auto theory_prior = make_theory_prior(proof_prior, geometric_distribution(0.2));
 	const string** reverse_name_map = invert(names);
 	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
-	read_article(names.get("Bob"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Kate"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Sam"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Byron"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Alex"), corpus, parser, T, proof_prior, printer);
-	//read_article(names.get("Lee"), corpus, parser, T, proof_prior, printer);
-	read_article(names.get("Amy"), corpus, parser, T, proof_prior, printer);
+	read_article(names.get("Nemo"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Dory"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
+	/*read_article(names.get("Bob"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Kate"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Sam"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Byron"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Alex"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Lee"), corpus, parser, T, theory_prior, printer);
+	read_article(names.get("Amy"), corpus, parser, T, theory_prior, printer);*/
 
 	array_map<hol_term*, unsigned int> tracked_logical_forms(2);
-	tracked_logical_forms.put(
+	/*tracked_logical_forms.put(
 		hol_term::new_for_all(1,
 			hol_term::new_if_then(
 				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), hol_term::new_variable(1)),
@@ -875,14 +905,17 @@ int main(int argc, const char** argv)
 				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), hol_term::new_variable(1)),
 				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), hol_term::new_variable(1))
 			)
-		), 0);
+		), 0);*/
 
-	constexpr unsigned int iterations = 10000000;
+	constexpr unsigned int iterations = 10000;
 	timer stopwatch;
 	auto scribe = parser.get_printer(printer);
+array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
 		//printf("[%u]\n", t);
 T.sets.are_elements_unique();
+T.sets.check_freeable_sets();
+T.sets.are_descendants_valid();
 		//T.print_axioms(stdout, scribe);
 		//print('\n', stdout); fflush(stdout);
 		if (stopwatch.milliseconds() > 1000) {
@@ -890,13 +923,23 @@ T.sets.are_elements_unique();
 			for (const auto& entry : tracked_logical_forms) {
 				print("p(", stdout); print(*entry.key, stdout, scribe); print(" axiom) ≈ ", stdout); print((double) entry.value / t, stdout); print('\n', stdout);
 			}
+for (const auto& entry : set_size_distribution.counts)
+fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribution.sum);
 			stopwatch.start();
 		}
-		do_mh_step(T, proof_prior);
+		do_mh_step(T, theory_prior);
 
 		for (auto entry : tracked_logical_forms)
 			if (contains_axiom(T, entry.key)) entry.value++;
+hol_term* set_formula = hol_term::new_atom(names.get("fish"), hol_term::new_variable(1));
+set_size_distribution.add(T.sets.sets[T.sets.set_ids.get(*set_formula)].set_size);
+free(*set_formula); free(set_formula);
 	}
+
+FILE* histogram_file = fopen("histogram.txt", "w");
+for (const auto& entry : set_size_distribution.counts)
+fprintf(histogram_file, "%u %lf\n", entry.key, (double) entry.value / set_size_distribution.sum);
+fflush(histogram_file); fclose(histogram_file);
 
 	print("[iteration ", stdout); print(iterations, stdout); print("]\n", stdout);
 	for (const auto& entry : tracked_logical_forms) {

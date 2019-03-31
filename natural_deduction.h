@@ -17,6 +17,8 @@ enum class nd_step_type : uint_fast16_t
 	TERM_PARAMETER,
 	FORMULA_PARAMETER,
 
+	BETA_EQUIVALENCE,
+
 	CONJUNCTION_INTRODUCTION,
 	CONJUNCTION_ELIMINATION, /* for the canonicalizing proof calculus */
 	CONJUNCTION_ELIMINATION_LEFT,
@@ -73,6 +75,43 @@ struct nd_step
 		}
 	}
 
+	inline bool is_parameter() const {
+		switch (type) {
+		case nd_step_type::PARAMETER:
+		case nd_step_type::TERM_PARAMETER:
+		case nd_step_type::ARRAY_PARAMETER:
+		case nd_step_type::FORMULA_PARAMETER:
+			return true;
+		case nd_step_type::AXIOM:
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::BETA_EQUIVALENCE:
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
+		case nd_step_type::EQUALITY_ELIMINATION:
+			return false;
+		case nd_step_type::COUNT:
+			break;
+		}
+		fprintf(stderr, "nd_step.is_parameter ERROR: Unrecognized nd_step_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	inline void get_subproofs(nd_step<Formula>* const*& subproofs, unsigned int& length) {
 		switch (type) {
 		case nd_step_type::AXIOM:
@@ -86,6 +125,7 @@ struct nd_step
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
+		case nd_step_type::BETA_EQUIVALENCE:
 		case nd_step_type::CONJUNCTION_ELIMINATION:
 		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -127,6 +167,7 @@ struct nd_step
 			subproofs = operand_array.data;
 			length = operand_array.length;
 			return;
+		case nd_step_type::BETA_EQUIVALENCE:
 		case nd_step_type::CONJUNCTION_ELIMINATION:
 		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -199,6 +240,7 @@ private:
 			}
 			core::free(operand_array);
 			return;
+		case nd_step_type::BETA_EQUIVALENCE:
 		case nd_step_type::CONJUNCTION_ELIMINATION:
 		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -267,6 +309,7 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 			if (result != 0) return result;
 		}
 		return 0;
+	case nd_step_type::BETA_EQUIVALENCE:
 	case nd_step_type::CONJUNCTION_ELIMINATION:
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
 	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
@@ -587,6 +630,7 @@ bool check_proof(proof_state<Formula>& out,
 	const nd_step<Formula>* second_operand;
 	Term* parameter; Term* variable;
 	array<unsigned int> constants = array<unsigned int>(8);
+	unsigned int max_variable;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		if (!is_canonical(*proof.formula, canonicalizer)) {
@@ -596,6 +640,30 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = proof.formula;
 		out.formula->reference_count++;
 		return out.assumptions.add(out.formula);
+	case nd_step_type::BETA_EQUIVALENCE:
+		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
+		if (operand_count != 2 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER || second_operand->type != nd_step_type::FORMULA_PARAMETER)
+			return false;
+		formula = beta_reduce(proof.operands[0]->formula);
+		if (formula == NULL) return false;
+		out.formula = beta_reduce(second_operand->formula);
+		if (out.formula == NULL) {
+			free(*formula); if (formula->reference_count == 0) free(formula);
+			return false;
+		} else if (*formula != *out.formula) {
+			fprintf(stderr, "check_proof ERROR: The two formula are not beta-equivalent.\n");
+			free(*formula); if (formula->reference_count == 0) free(formula);
+			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
+			return false;
+		}
+		free(*formula); if (formula->reference_count == 0) free(formula);
+		free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
+
+		out.formula = Formula::new_equals(proof.operands[0]->formula, second_operand->formula);
+		if (out.formula == NULL) return false;
+		proof.operands[0]->formula->reference_count++;
+		second_operand->formula->reference_count++;
+		return true;
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
 		if (operand_count < 2) return false;
 		out.formula = Formula::new_and(proof_state_formulas<Formula*>(operand_states, operand_count));
@@ -762,7 +830,19 @@ bool check_proof(proof_state<Formula>& out,
 		 || second_operand->type != nd_step_type::TERM_PARAMETER)
 			return false;
 		variable = Formula::new_variable(operand_states[0]->formula->quantifier.variable);
-		out.formula = substitute<TermType::VARIABLE, -1>(operand_states[0]->formula->quantifier.operand, variable, second_operand->term);
+		max_variable = max_bound_variable(*operand_states[0]->formula->quantifier.operand);
+		if (max_variable == 0) {
+			formula = second_operand->term;
+			formula->reference_count++;
+		} else {
+			formula = shift_bound_variables(second_operand->term, max_variable);
+			if (formula == NULL) {
+				free(*variable); if (variable->reference_count == 0) free(variable);
+				return false;
+			}
+		}
+		out.formula = substitute<TermType::VARIABLE, -1>(operand_states[0]->formula->quantifier.operand, variable, formula);
+		free(*formula); if (formula->reference_count == 0) free(formula);
 		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (out.formula == NULL) return false;
 		out.formula = try_canonicalize(out.formula, canonicalizer);
@@ -798,15 +878,31 @@ bool check_proof(proof_state<Formula>& out,
 		return true;
 	case nd_step_type::EQUALITY_ELIMINATION:
 		if (operand_count != 3 || operand_states[0]->formula->type != FormulaType::EQUALS) return false;
-		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (proof.operands[2]->type == nd_step_type::ARRAY_PARAMETER) {
-			out.formula = substitute(second_operand->formula,
+			max_variable = max_bound_variable(*operand_states[1]->formula);
+			if (max_variable == 0) {
+				formula = operand_states[0]->formula->binary.left;
+				formula->reference_count++;
+			} else {
+				formula = shift_bound_variables(operand_states[0]->formula->binary.left, max_variable);
+				if (formula == NULL) return false;
+			}
+			out.formula = substitute(operand_states[1]->formula,
 					proof.operands[2]->parameters.data, proof.operands[2]->parameters.length,
-					operand_states[0]->formula->binary.left, operand_states[0]->formula->binary.right);
+					formula, operand_states[0]->formula->binary.right);
+			free(*formula); if (formula->reference_count == 0) free(formula);
 			if (out.formula == NULL) {
-				out.formula = substitute(second_operand->formula,
+				if (max_variable == 0) {
+					formula = operand_states[0]->formula->binary.right;
+					formula->reference_count++;
+				} else {
+					formula = shift_bound_variables(operand_states[0]->formula->binary.right, max_variable);
+					if (formula == NULL) return false;
+				}
+				out.formula = substitute(operand_states[1]->formula,
 						proof.operands[2]->parameters.data, proof.operands[2]->parameters.length,
-						operand_states[0]->formula->binary.right, operand_states[0]->formula->binary.left);
+						formula, operand_states[0]->formula->binary.left);
+				free(*formula); if (formula->reference_count == 0) free(formula);
 				if (out.formula == NULL) return false;
 			}
 		} else {
@@ -945,7 +1041,7 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 	array<const nd_step<Formula>*> topological_order(64);
 	while (stack.length > 0) {
 		const nd_step<Formula>* node = stack.pop();
-		if (!topological_order.add(node)) return NULL;
+		if (!node->is_parameter() && !topological_order.add(node)) return NULL;
 
 		unsigned int operand_count;
 		const nd_step<Formula>* const* operands;
@@ -993,7 +1089,7 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 			const nd_step<Formula>* operand = map(
 					operands[i], std::forward<ProofMap>(proof_map)...);
 			operand_states[i] = &proof_states.get(operand, contains);
-			if (!contains) {
+			if (!operand->is_parameter() && !contains) {
 				fprintf(stderr, "check_proof ERROR: The proof is not topologically ordered.\n");
 				free_proof_states(proof_states); return NULL;
 			}
@@ -1028,6 +1124,7 @@ bool check_proof(const nd_step<Formula>& proof,
 		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
 {
 	Formula* actual_conclusion = compute_proof_conclusion<BuiltInPredicates>(proof, canonicalizer, std::forward<ProofMap>(proof_map)...);
+	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
@@ -1060,6 +1157,10 @@ struct natural_deduction
 
 	static inline Proof* new_axiom(Formula* axiom) {
 		return new_parameterized_step<nd_step_type::AXIOM>(axiom);
+	}
+
+	static inline Proof* new_beta(Formula* first, Formula* second) {
+		return new_binary_step<nd_step_type::BETA_EQUIVALENCE>(new_formula_parameter(first), new_formula_parameter(second));
 	}
 
 	template<typename... Proofs>
@@ -1185,6 +1286,7 @@ private:
 		}
 		for (unsigned int i = 0; i < parameters.length; i++)
 			step->parameters[i] = parameters[i];
+		step->parameters.length = parameters.length;
 		step->reference_count = 0;
 		return step;
 	}
@@ -1412,6 +1514,9 @@ double log_probability(
 		}
 		/* the contribution from the axiom_prior is computed at the end */
 		if (!axioms.add_unsorted(current_step.formula)) exit(EXIT_FAILURE);
+		return 0.0;
+	case nd_step_type::BETA_EQUIVALENCE:
+		/* TODO: this is a hack; correct it */
 		return 0.0;
 	case nd_step_type::CONJUNCTION_ELIMINATION:
 	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:

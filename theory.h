@@ -181,8 +181,8 @@ struct theory
 			ground_concepts(64), ground_axiom_count(0), observations(64), proof_axioms(64)
 	{
 		Formula* empty_set_formula = Formula::new_for_all(1, Formula::new_equals(
-			Formula::new_equals(Formula::new_atom((unsigned int) built_in_predicates::SIZE, Formula::new_lambda(2, Formula::new_variable(1))), Formula::new_int(0)),
-			Formula::new_not(Formula::new_exists(2, Formula::new_variable(1)))
+			Formula::new_equals(Formula::new_atom((unsigned int) built_in_predicates::SIZE, Formula::new_variable(1)), Formula::new_int(0)),
+			Formula::new_not(Formula::new_exists(2, Formula::new_apply(Formula::new_variable(1), Formula::new_variable(2))))
 		));
 		if (empty_set_formula == NULL) exit(EXIT_FAILURE);
 		empty_set_axiom = ProofCalculus::new_axiom(empty_set_formula);
@@ -226,7 +226,7 @@ struct theory
 		Formula* canonicalized = canonicalize(*formula, canonicalizer);
 		if (canonicalized == NULL) return false;
 
-		Proof* new_proof = make_proof<true>(canonicalized, new_constant);
+		Proof* new_proof = make_proof<false, true>(canonicalized, new_constant);
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
@@ -669,30 +669,37 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	}
 
 private:
-	template<bool DefinitionsAllowed>
+	template<bool Contradiction, bool DefinitionsAllowed>
 	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant)
 	{
 		unsigned int predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
-			return make_atom_proof<DefinitionsAllowed, false>(canonicalized, predicate, arg1, arg2, new_constant);
+			return make_atom_proof<DefinitionsAllowed, Contradiction>(predicate, arg1, arg2, new_constant);
 		} else if (canonicalized->type == FormulaType::NOT) {
-			if (is_atomic(*canonicalized->unary.operand, predicate, arg1, arg2)) {
-				return make_atom_proof<DefinitionsAllowed, true>(canonicalized, predicate, arg1, arg2, new_constant);
-			} else if (canonicalized->type == FormulaType::EXISTS) {
-				/* get empty set size axiom, forcing inconsistencies to be resolved */
-				Formula* set_formula = canonicalized->quantifier.operand;
-				Proof* set_size_axiom = sets.template get_size_axiom<true>(set_formula, 0);
-				if (set_size_axiom == NULL) return NULL;
-
-				/* TODO: what are the semantics of the third argument to new_equality_elim? */
-				unsigned int zero = 0;
-				Proof* proof = ProofCalculus::new_equality_elim(set_size_axiom,
-						ProofCalculus::new_universal_elim(empty_set_axiom, set_formula), make_array_view(&zero, 1));
-				if (proof == NULL) return NULL;
+			return make_proof<!Contradiction, DefinitionsAllowed>(canonicalized->unary.operand, new_constant);
+		} else if (canonicalized->type == FormulaType::FOR_ALL) {
+			if (Contradiction) {
+				Term* constant;
+				Proof* exists_not_proof = make_exists_proof<true, DefinitionsAllowed>(canonicalized->quantifier.operand, canonicalized->quantifier.variable, constant);
+				if (exists_not_proof == NULL) return NULL;
+				Proof* assumption = ProofCalculus::new_axiom(canonicalized);
+				if (assumption == NULL) {
+					free(*exists_not_proof); if (exists_not_proof->reference_count == 0) free(exists_not_proof);
+					/* TODO: we need to undo the changes made by `make_exists_proof` */
+					return NULL;
+				}
+				assumption->reference_count++;
+				Proof* proof = ProofCalculus::new_proof_by_contradiction(ProofCalculus::new_negation_elim(ProofCalculus::new_universal_elim(assumption, constant), exists_not_proof), assumption);
+				free(*exists_not_proof); if (exists_not_proof->reference_count == 0) free(exists_not_proof);
+				free(*assumption); if (assumption->reference_count == 0) free(assumption);
+				if (proof == NULL) {
+					/* TODO: we need to undo the changes made by `make_exists_proof` */
+					return NULL;
+				}
 				proof->reference_count++;
 				return proof;
 			}
-		} else if (canonicalized->type == FormulaType::FOR_ALL) {
+
 			unsigned int variable = canonicalized->quantifier.variable;
 			if (canonicalized->quantifier.operand->type == FormulaType::IF_THEN) {
 				Formula* left = canonicalized->quantifier.operand->binary.left;
@@ -749,6 +756,12 @@ private:
 				}
 			}
 		} else if (canonicalized->type == FormulaType::AND) {
+			if (Contradiction) {
+				/* TODO: implement this */
+				fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+				return NULL;
+			}
+
 			Proof** operands = (Proof**) malloc(sizeof(Proof*) * canonicalized->array.length);
 			if (operands == NULL) {
 				fprintf(stderr, "theory.make_proof ERROR: Out of memory.\n");
@@ -756,8 +769,8 @@ private:
 			}
 			for (unsigned int i = 0; i < canonicalized->array.length; i++) {
 				if (new_constant == 0)
-					operands[i] = make_proof<true>(canonicalized->array.operands[i], new_constant);
-				else operands[i] = make_proof<false>(canonicalized->array.operands[i], new_constant);
+					operands[i] = make_proof<false, true>(canonicalized->array.operands[i], new_constant);
+				else operands[i] = make_proof<false, false>(canonicalized->array.operands[i], new_constant);
 
 				if (operands[i] == NULL) {
 					for (unsigned int j = 0; j < i; j++) {
@@ -770,11 +783,59 @@ private:
 				free(*operands[j]); if (operands[j]->reference_count == 0) free(operands[j]);
 			}
 			return conjunction;
-		} else if (canonicalized->type == FormulaType::EXISTS) {
+		} else if (canonicalized->type == FormulaType::OR) {
 			/* TODO: implement this */
 			fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
 			return NULL;
+		} else if (canonicalized->type == FormulaType::EXISTS) {
+			if (Contradiction) {
+				/* get empty set size axiom, forcing inconsistencies to be resolved */
+				Formula* set_formula = canonicalized->quantifier.operand;
+				Formula* lambda_formula = Formula::new_lambda(1, set_formula);
+				if (lambda_formula == NULL) return NULL;
+				set_formula->reference_count++;
+				Proof* set_size_axiom = sets.template get_size_axiom<true>(set_formula, 0);
+				if (set_size_axiom == NULL) {
+					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
+					return NULL;
+				}
+				Formula* shifted_lambda_formula = shift_bound_variables(lambda_formula, 1);
+				if (shifted_lambda_formula == NULL) {
+					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
+					sets.try_free_set(set_formula); return NULL;
+				}
+
+				unsigned int zero = 0;
+				Formula* beta_left = Formula::new_not(Formula::new_exists(1, Formula::new_apply(shifted_lambda_formula, Formula::new_variable(1))));
+				Formula* beta_right = Formula::new_not(Formula::new_exists(1, set_formula));
+				if (beta_left == NULL || beta_right == NULL) {
+					if (beta_left != NULL) { free(*beta_left); if (beta_left->reference_count == 0) free(beta_left); }
+					if (beta_right != NULL) { free(*beta_right); if (beta_right->reference_count == 0) free(beta_right); }
+					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
+					sets.try_free_set(set_formula); return NULL;
+				}
+				set_formula->reference_count++;
+				Proof* proof = ProofCalculus::new_equality_elim(
+						ProofCalculus::new_beta(beta_left, beta_right),
+						ProofCalculus::new_equality_elim(ProofCalculus::new_universal_elim(empty_set_axiom, lambda_formula), set_size_axiom, make_array_view(&zero, 1)),
+						make_array_view(&zero, 1));
+				free(*beta_left); if (beta_left->reference_count == 0) free(beta_left);
+				free(*beta_right); if (beta_right->reference_count == 0) free(beta_right);
+				free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
+				if (proof == NULL) { sets.try_free_set(set_formula); return NULL; }
+				proof->reference_count++;
+				return proof;
+			} else {
+				Term* constant;
+				return make_exists_proof<false, DefinitionsAllowed>(canonicalized->quantifier.operand, canonicalized->quantifier.variable, constant);
+			}
 		} else if (canonicalized->type == FormulaType::EQUALS) {
+			if (Contradiction) {
+				/* TODO: implement this */
+				fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+				return NULL;
+			}
+
 			Formula* left = canonicalized->binary.left;
 			Formula* right = canonicalized->binary.right;
 			Term* arg1; Term* arg2;
@@ -783,7 +844,7 @@ private:
 			 && arg1->type == TermType::LAMBDA && arg2 == NULL
 			 && right->type == TermType::INTEGER)
 			{
-				Proof* set_size_axiom = sets.template get_size_axiom<true>(arg1->quantifier.operand, 0);
+				Proof* set_size_axiom = sets.template get_size_axiom<true>(arg1->quantifier.operand, right->integer);
 				set_size_axiom->reference_count++;
 				return set_size_axiom;
 			}
@@ -792,8 +853,15 @@ private:
 		return NULL;
 	}
 
+	template<bool Contradiction, bool DefinitionsAllowed>
+	Proof* make_exists_proof(Formula* quantified, unsigned int variable, Term*& constant) {
+		/* TODO: implement this */
+		fprintf(stderr, "theory.make_exists_proof ERROR: Not implemented.\n");
+		return NULL;
+	}
+
 	template<bool DefinitionsAllowed, bool Negated>
-	Proof* make_atom_proof(Formula* canonicalized, unsigned int predicate,
+	Proof* make_atom_proof(unsigned int predicate,
 			Term* arg1, Term* arg2, unsigned int& new_constant)
 	{
 		bool contains; unsigned int bucket;
@@ -809,9 +877,13 @@ private:
 					}
 					if (!ground_concepts.check_size()) return NULL;
 					new_constant = new_constant_offset + ground_concepts.table.size;
-					arg1->constant = new_constant;
 
-					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+					Formula* formula = Negated ?
+							Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(new_constant))) :
+							Formula::new_atom(predicate, Formula::new_constant(new_constant));
+					if (formula == NULL) return NULL;
+					Proof* new_axiom = ProofCalculus::new_axiom(formula);
+					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
 
@@ -877,7 +949,13 @@ private:
 					}
 
 					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
-					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+					Formula* formula = Negated ?
+							Formula::new_not(Formula::new_atom(predicate, arg1)) :
+							Formula::new_atom(predicate, arg1);
+					if (formula == NULL) return NULL;
+					arg1->reference_count++;
+					Proof* new_axiom = ProofCalculus::new_axiom(formula);
+					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
 					if (!add_unary_atom<Negated>(predicate, arg1->constant, new_axiom)) {
@@ -958,7 +1036,13 @@ private:
 					}
 
 					/* there is no extensional edge that proves this atomic formula, so create a new axiom */
-					Proof* new_axiom = ProofCalculus::new_axiom(canonicalized);
+					Formula* formula = Negated ?
+							Formula::new_not(Formula::new_atom(predicate, arg1, arg2)) :
+							Formula::new_atom(predicate, arg1, arg2);
+					if (formula == NULL) return NULL;
+					arg1->reference_count++; arg2->reference_count++;
+					Proof* new_axiom = ProofCalculus::new_axiom(formula);
+					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
 					if (!add_binary_atom<Negated>({predicate, arg1->constant, arg2->constant}, new_axiom)) {
@@ -1047,143 +1131,105 @@ private:
 
 	bool move_element_to_subset(unsigned int element, Formula* lifted_literal)
 	{
-		Formula* new_set_formula;
-		Formula* old_set_formula = make_lifted_conjunction(element, *this);
+		Formula* new_set_formula; bool contains;
+		unsigned int old_set_id = sets.element_map.get(element, contains);
+		Formula* old_set_formula = (contains ? sets.sets[old_set_id].set_formula() : NULL);
 		if (old_set_formula == NULL) {
-			return false;
-		} else if (old_set_formula->array.length == 0) {
 			/* there are no other atomic formulas for this concept */
-			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-			old_set_formula = NULL;
 			new_set_formula = lifted_literal;
 			new_set_formula->reference_count++;
 		} else {
-			if (old_set_formula->array.length == 1) {
-				Formula* singleton = old_set_formula->array.operands[0];
-				singleton->reference_count++;
-				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-				old_set_formula = singleton;
-			}
 			new_set_formula = Formula::new_and(old_set_formula, lifted_literal);
 			old_set_formula->reference_count++;
 			lifted_literal->reference_count++;
 		}
-		if (new_set_formula == NULL) {
-			if (old_set_formula != NULL) {
-				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-			}
+		if (new_set_formula == NULL)
 			return false;
-		}
 		Formula* canonicalized = canonicalize(*new_set_formula, canonicalizer);
 		free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
-		if (canonicalized == NULL) {
-			if (old_set_formula != NULL) {
-				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-			}
+		if (canonicalized == NULL)
 			return false;
-		}
-		if (!sets.template move_element_to_set<true>(element, old_set_formula, canonicalized)) {
-			free(*canonicalized); free(canonicalized);
-			if (old_set_formula != NULL) {
-				free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-			}
+		if (!sets.template move_element_to_set<true>(element, canonicalized)) {
+			free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 			return false;
 		}
 
 		/* make sure we can't currently prove the negation of this new axiom
 		   via set containment (can we prove that the instance does not belong to any ancestor?) */
 		unsigned int new_set_id = sets.set_ids.get(*canonicalized);
+		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axiom == NULL) continue;
 			Formula* set_formula = sets.sets[i].set_formula();
 			Formula* negated_set_formula = Formula::new_not(set_formula);
 			if (negated_set_formula == NULL) {
-				if (old_set_formula == NULL) sets.remove_element_from_set(element, canonicalized);
-				else sets.move_element_to_superset(element, canonicalized, old_set_formula);
-				if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
-				free(*canonicalized); free(canonicalized);
+				if (old_set_formula == NULL) sets.remove_element(element);
+				else sets.move_element_to_superset(element, old_set_formula);
 				return false;
 			}
 			set_formula->reference_count++;
 			bool contradiction = is_subset(lifted_literal, negated_set_formula) && sets.sets[i].descendants.contains(new_set_id);
 			free(*negated_set_formula); free(negated_set_formula);
 			if (contradiction) {
-				if (old_set_formula == NULL) sets.remove_element_from_set(element, canonicalized);
-				else sets.move_element_to_superset(element, canonicalized, old_set_formula);
-				if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
-				free(*canonicalized); free(canonicalized);
+				if (old_set_formula == NULL) sets.remove_element(element);
+				else sets.move_element_to_superset(element, old_set_formula);
 				return false;
 			}
 		}
 
-		if (old_set_formula != NULL) { free(*old_set_formula); free(old_set_formula); }
-		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+		return true;
+	}
+
+	bool subtract_conjuncts(
+		Formula** first, unsigned int first_count,
+		Formula** second, unsigned int second_count,
+		array<Formula*>& difference)
+	{
+		unsigned int i = 0, j = 0;
+		while (i < first_count && j < second_count)
+		{
+			if (*first[i] == *second[j]) {
+				i++; j++;
+			} else if (*first[i] < *second[j]) {
+				if (!difference.add(first[i])) return false;
+				i++;
+			} else {
+				j++;
+			}
+		}
+
+		while (i < first_count) {
+			if (!difference.add(first[i])) return false;
+			i++;
+		}
 		return true;
 	}
 
 	bool move_element_to_superset(unsigned int element, Formula* lifted_literal)
 	{
-		Formula* old_set_formula = make_lifted_conjunction(element, *this);
-		if (old_set_formula == NULL) {
-			return false;
-		} else if (old_set_formula->array.length == 0) {
-			/* there are no other atomic formulas for this concept */
-			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-			return false;
-		}
-
-		Formula* canonicalized_old_set_formula = canonicalize(*old_set_formula, canonicalizer);
-		if (canonicalized_old_set_formula == NULL) {
-			free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
-			return false;
-		}
-		free(*old_set_formula); if (old_set_formula->reference_count == 0) free(old_set_formula);
+		Formula* old_set_formula = sets.sets[sets.element_map.get(element)].set_formula();
 
 		Formula* canonicalized = canonicalize(*lifted_literal, canonicalizer);
 		array<Formula*> difference(8);
 		if (canonicalized == NULL) {
-			free(*canonicalized_old_set_formula);
-			if (canonicalized_old_set_formula->reference_count == 0)
-				free(canonicalized_old_set_formula);
 			return false;
-		} else if (canonicalized->type == FormulaType::AND) {
-			unsigned int i = 0, j = 0;
-			while (i < canonicalized_old_set_formula->array.length && j < canonicalized->array.length)
-			{
-				if (*canonicalized_old_set_formula->array.operands[i] == *canonicalized->array.operands[j]) {
-					i++; j++;
-				} else if (*canonicalized_old_set_formula->array.operands[i] < *canonicalized->array.operands[j]) {
-					if (!difference.add(canonicalized_old_set_formula->array.operands[i])) {
-						free(*canonicalized_old_set_formula);
-						if (canonicalized_old_set_formula->reference_count == 0)
-							free(canonicalized_old_set_formula);
-						free(*canonicalized); free(canonicalized); return false;
-					}
-					i++;
-				} else {
-					j++;
-				}
-			}
-
-			while (i < canonicalized_old_set_formula->array.length) {
-				if (!difference.add(canonicalized_old_set_formula->array.operands[i])) {
-					free(*canonicalized_old_set_formula);
-					if (canonicalized_old_set_formula->reference_count == 0)
-						free(canonicalized_old_set_formula);
+		} else if (old_set_formula->type != FormulaType::AND) {
+			if (canonicalized->type == FormulaType::AND) {
+				if (!subtract_conjuncts(&old_set_formula, 1, canonicalized->array.operands, canonicalized->array.length, difference)) {
 					free(*canonicalized); free(canonicalized); return false;
 				}
-				i++;
+			} else {
+				if (!subtract_conjuncts(&old_set_formula, 1, &canonicalized, 1, difference)) {
+					free(*canonicalized); free(canonicalized); return false;
+				}
+			}
+		} else if (canonicalized->type == FormulaType::AND) {
+			if (!subtract_conjuncts(old_set_formula->array.operands, old_set_formula->array.length, canonicalized->array.operands, canonicalized->array.length, difference)) {
+				free(*canonicalized); free(canonicalized); return false;
 			}
 		} else {
-			for (unsigned int i = 0; i < canonicalized_old_set_formula->array.length; i++) {
-				if (*canonicalized_old_set_formula->array.operands[i] != *canonicalized
-				 && !difference.add(canonicalized_old_set_formula->array.operands[i]))
-				{
-					free(*canonicalized_old_set_formula);
-					if (canonicalized_old_set_formula->reference_count == 0)
-						free(canonicalized_old_set_formula);
-					free(*canonicalized); free(canonicalized); return false;
-				}
+			if (!subtract_conjuncts(old_set_formula->array.operands, old_set_formula->array.length, &canonicalized, 1, difference)) {
+				free(*canonicalized); free(canonicalized); return false;
 			}
 		}
 		free(*canonicalized); free(canonicalized);
@@ -1195,9 +1241,6 @@ private:
 			new_set_formula = difference[0];
 		else new_set_formula = Formula::new_and(difference);
 		if (difference.length != 0 && new_set_formula == NULL) {
-			free(*canonicalized_old_set_formula);
-			if (canonicalized_old_set_formula->reference_count == 0)
-				free(canonicalized_old_set_formula);
 			return false;
 		}
 		for (Formula* conjunct : difference)
@@ -1205,15 +1248,12 @@ private:
 
 		bool success;
 		if (new_set_formula == NULL) {
-			sets.remove_element_from_set(element, canonicalized_old_set_formula);
+			sets.remove_element(element);
 			success = true;
 		} else {
-			success = sets.move_element_to_superset(element, canonicalized_old_set_formula, new_set_formula);
+			success = sets.move_element_to_superset(element, new_set_formula);
 			free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		}
-		free(*canonicalized_old_set_formula);
-		if (canonicalized_old_set_formula->reference_count == 0)
-			free(canonicalized_old_set_formula);
 		return success;
 	}
 

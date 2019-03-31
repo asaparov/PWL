@@ -1,7 +1,6 @@
-organism: An organism:organism is any individual living thing. {![x]:(organism(x) => (is_living(x) & object(x)))}
-animal: An animal:animal is an organism:organism with many cells. {![x]:(animal(x) => (is_multicellular(x) & organism(x)))}
-mammal: A mammal:mammal is a vertebrate animal:animal. {![x]:(mammal(x) => (vertebrate(x) & animal(x)))} They have fur or hair. {![x]:(mammal(x) => (?[f]:(fur(f) & has(x,f)) | ?[f]:(hair(f) & has(x,f))))}
-cat: A cat:cat is a carnivorous mammal:mammal. {![x]:(cat(x) => (is_carnivorous(x) & mammal(x)))} There are 3 cats. {?[S]:(set(S,^[x]:cat(x)) & size(S)=3)}
-Bob: Bob:bob is a cat:cat. {cat(bob)} Bob:bob is a mammal:mammal. {mammal(bob)}
-Kate: Kate:kate is a cat:cat. {cat(kate)} Kate:kate is a mammal:mammal. {mammal(kate)}
-Sam: Sam:sam is a cat:cat. {cat(sam)} Sam:sam is a mammal:mammal. {mammal(sam)}
+Nemo: Nemo:nemo is a fish. {fish(nemo)}
+Dory: Dory:dory is a fish. {fish(dory)}
+red: There are 4 red fish. {size(^[x]:(red(x) & fish(x)))=4}
+blue: There are 6 blue fish. {size(^[x]:(blue(x) & fish(x)))=6}
+red_or_blue: Every fish is red or blue. {![x]:(fish(x) => (red(x) | blue(x)))} There are 10 red and blue things. {size(^[x]:(red(x) | blue(x)))=10}
+red_and_blue: No fish is both red and blue. {~?[x]:(fish(x) & red(x) & blue(x))}

@@ -22,8 +22,6 @@ bool find_largest_disjoint_clique_with_set(
 		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>&,
 		unsigned int, unsigned int, unsigned int*&, unsigned int&, unsigned int&, int);
 
-const char empty_string[] = "";
-
 template<typename T, typename Stream>
 bool print(const hash_set<T>& set, Stream& out) {
 	if (!print('{', out)) return false;
@@ -369,10 +367,11 @@ struct set_reasoning
 	unsigned int set_count;
 
 	hash_map<Formula, unsigned int> set_ids;
+	hash_map<unsigned int, unsigned int> element_map;
 
 	set_reasoning() :
 			extensional_graph(1024), intensional_graph(1024),
-			capacity(1024), set_count(0), set_ids(2048)
+			capacity(1024), set_count(0), set_ids(2048), element_map(2048)
 	{
 		sets = (set_info<BuiltInConstants, Formula, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, Formula, ProofCalculus>) * capacity);
 		if (sets == NULL) exit(EXIT_FAILURE);
@@ -424,6 +423,22 @@ struct set_reasoning
 			&& sets[set_id].elements.length == 0
 			&& extensional_graph.vertices[set_id].children.size == 0
 			&& extensional_graph.vertices[set_id].parents.size == 0;
+	}
+
+	inline void try_free_set(Formula* set_formula, unsigned int set_id) {
+		if (is_freeable(set_id)) free_set(set_formula, set_id);
+	}
+
+	inline void try_free_set(Formula* set_formula) {
+#if !defined(NDEBUG)
+		bool contains;
+		unsigned int set_id = set_ids.get(*set_formula, contains);
+		if (!contains)
+			fprintf(stderr, "set_reasoning.try_free_set WARNING: The given `set_formula` is not in `set_ids`.\n");
+#else
+		unsigned int set_id = set_ids.get(*set_formula);
+#endif
+		try_free_set(set_formula, set_id);
 	}
 
 	inline bool compute_new_set_size(unsigned int& out,
@@ -649,16 +664,14 @@ struct set_reasoning
 
 	inline bool free_set(Formula* formula, unsigned int set_id)
 	{
-		if (!free_set(set_id)) return false;
-
 		bool contains; unsigned int bucket;
 		set_ids.get(*formula, contains, bucket);
 		core::free(set_ids.table.keys[bucket]);
 		core::set_empty(set_ids.table.keys[bucket]);
-		return true;
+		return free_set(set_id);
 	}
 
-	inline bool get_set_id(Formula* formula, unsigned int& set_id) {
+	inline bool get_set_id(Formula* formula, unsigned int& set_id, bool& is_new) {
 		bool contains; unsigned int bucket;
 		set_id = set_ids.get(*formula, contains, bucket);
 		if (!contains) {
@@ -671,8 +684,16 @@ struct set_reasoning
 			}
 			set_ids.values[bucket] = set_id;
 			set_ids.table.size++;
+			is_new = true;
+		} else {
+			is_new = false;
 		}
 		return true;
+	}
+
+	inline bool get_set_id(Formula* formula, unsigned int& set_id) {
+		bool is_new;
+		return get_set_id(formula, set_id, is_new);
 	}
 
 	inline bool get_strongly_connected_component(
@@ -1065,17 +1086,21 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies>
-	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent)
+	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, int& unfixed_set_count_change)
 	{
 		if (!set_ids.check_size(set_ids.table.size + 2)) return NULL;
 
 		unsigned int antecedent_set, consequent_set;
-		if (!get_set_id(antecedent, antecedent_set)) {
+		bool is_antecedent_new, is_consequent_new;
+		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new)) {
 			return NULL;
-		} else if (!get_set_id(consequent, consequent_set)) {
+		} else if (!get_set_id(consequent, consequent_set, is_consequent_new)) {
 			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
 			return NULL;
 		}
+
+		if (is_antecedent_new) unfixed_set_count_change++;
+		if (is_consequent_new) unfixed_set_count_change++;
 
 #if !defined(NDEBUG)
 		if (consequent_set == antecedent_set)
@@ -1188,7 +1213,7 @@ struct set_reasoning
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
 				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
 				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
-				return NULL;
+				free(clique); return NULL;
 			}
 		}
 
@@ -1219,6 +1244,12 @@ struct set_reasoning
 		return axiom;
 	}
 
+	template<bool ResolveInconsistencies>
+	inline Proof* get_subset_axiom(Formula* antecedent, Formula* consequent) {
+		int unfixed_set_count_change;
+		return get_subset_axiom<ResolveInconsistencies>(antecedent, consequent, unfixed_set_count_change);
+	}
+
 	bool remove_subset_relation(
 			unsigned int antecedent_set, unsigned int consequent_set,
 			Formula* antecedent, Formula* consequent)
@@ -1236,6 +1267,7 @@ struct set_reasoning
 			unsigned int current = stack.pop();
 			unsigned int old_size = sets[current].descendants.size;
 			sets[current].descendants.clear();
+			sets[current].descendants.add(current);
 			for (unsigned int child : intensional_graph.vertices[current].children)
 				if (!sets[current].descendants.add_all(sets[child].descendants)) return false;
 			for (const auto& entry : extensional_graph.vertices[current].children)
@@ -1289,10 +1321,8 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies>
-	Proof* get_size_axiom(Formula* formula, unsigned int new_size) {
-		unsigned int set_id;
-		if (!get_set_id(formula, set_id))
-			return NULL;
+	Proof* get_size_axiom(unsigned int set_id, unsigned int new_size)
+	{
 		if (new_size > sets[set_id].set_size) {
 			unsigned int upper_bound;
 			if (!get_size_upper_bound(set_id, upper_bound)) return NULL;
@@ -1335,6 +1365,14 @@ struct set_reasoning
 			}
 		}
 		return sets[set_id].size_axiom;
+	}
+
+	template<bool ResolveInconsistencies>
+	inline Proof* get_size_axiom(Formula* formula, unsigned int new_size) {
+		unsigned int set_id;
+		if (!get_set_id(formula, set_id))
+			return NULL;
+		return get_size_axiom<ResolveInconsistencies>(set_id, new_size);
 	}
 
 	inline bool get_provable_elements(unsigned int set_id,
@@ -1407,15 +1445,12 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies>
-	bool move_element_to_set(unsigned int element,
-			Formula* old_set_formula, Formula* new_set_formula)
+	bool move_element_to_set(unsigned int element, Formula* new_set_formula)
 	{
-		unsigned int old_set_id = 0;
-		if (old_set_formula != NULL) {
-			bool contains;
-			old_set_id = set_ids.get(*old_set_formula, contains);
-			if (!contains) old_set_id = 0;
-		}
+		if (!element_map.check_size()) return false;
+		bool contains; unsigned int bucket;
+		unsigned int old_set_id = element_map.get(element, contains, bucket);
+		if (!contains) old_set_id = 0;
 
 #if !defined(NDEBUG)
 		typedef typename Formula::Type FormulaType;
@@ -1533,18 +1568,27 @@ struct set_reasoning
 				}
 			}
 		}
+
+		/* the set `old_set_id` might be freeable now */
+		if (old_set_id == 0) {
+			element_map.table.keys[bucket] = element;
+			element_map.table.size++;
+		}
+		element_map.values[bucket] = new_set_id;
+		if (is_freeable(old_set_id)) free_set(sets[old_set_id].set_formula(), old_set_id);
 		return true;
 	}
 
-	bool move_element_to_superset(unsigned int element,
-			Formula* old_set_formula, Formula* new_set_formula)
+	bool move_element_to_superset(unsigned int element, Formula* new_set_formula)
 	{
-		bool contains;
-		unsigned int old_set_id = set_ids.get(*old_set_formula, contains);
+		bool contains; unsigned int bucket;
+		unsigned int old_set_id = element_map.get(element, contains, bucket);
+#if !defined(NDEBUG)
 		if (!contains) {
-			fprintf(stderr, "set_reasoning.move_element_to_superset ERROR: There is no set given by `old_set_formula`.\n");
+			fprintf(stderr, "set_reasoning.move_element_to_superset ERROR: The given element is not in any set.\n");
 			return false;
 		}
+#endif
 
 		unsigned int new_set_id;
 		if (!get_set_id(new_set_formula, new_set_id))
@@ -1576,30 +1620,36 @@ struct set_reasoning
 			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The new set already contains the given element.\n");
 #endif
 		sets[new_set_id].elements[sets[new_set_id].elements.length++] = element;
+
+		/* `old_set_id` may now be freeable */
+		element_map.values[bucket] = new_set_id;
+		if (is_freeable(old_set_id)) free_set(sets[old_set_id].set_formula(), old_set_id);
 		return true;
 	}
 
-	void remove_element_from_set(unsigned int element, Formula* set_formula)
+	void remove_element(unsigned int element)
 	{
+		bool contains; unsigned int bucket;
+		unsigned int set_id = element_map.get(element, contains, bucket);
 #if !defined(NDEBUG)
-		bool contains;
-		unsigned int set_id = set_ids.get(*set_formula, contains);
 		if (!contains) {
-			fprintf(stderr, "set_reasoning.remove_element_from_set ERROR: There is no set given by `set_formula`.\n");
+			fprintf(stderr, "set_reasoning.remove_element ERROR: The given element is not in any set.\n");
 			return;
 		}
-#else
-		unsigned int set_id = set_ids.get(*set_formula);
 #endif
 
 		unsigned int index = sets[set_id].elements.index_of(element);
 #if !defined(NDEBUG)
 		if (index == sets[set_id].elements.length) {
-			fprintf(stderr, "set_reasoning.remove_element_from_set ERROR: The set does not contain the given element.\n");
+			fprintf(stderr, "set_reasoning.remove_element ERROR: The set does not contain the given element.\n");
 			return;
 		}
 #endif
 		sets[set_id].elements.remove(index);
+
+		/* `set_id` may now be freeable */
+		element_map.remove_at(bucket);
+		if (is_freeable(set_id)) free_set(sets[set_id].set_formula(), set_id);
 	}
 
 	inline bool are_disjoint(Formula* first, Formula* second) const
@@ -1634,6 +1684,20 @@ struct set_reasoning
 		return are_disjoint(sets[first_set].set_formula(), sets[second_set].set_formula());
 	}
 
+	inline bool is_unfixed(unsigned int set_id, const hash_set<Proof*>& observations) const {
+		return (sets[set_id].size_axiom->children.length == 0
+			&& !observations.contains(sets[set_id].size_axiom));
+	}
+
+	bool get_unfixed_sets(array<unsigned int>& unfixed_set_ids, const hash_set<Proof*>& observations) {
+		for (unsigned int i = 2; i < set_count + 1; i++) {
+			if (sets[i].size_axiom == NULL || !is_unfixed(i, observations))
+				continue;
+			if (!unfixed_set_ids.add(i)) return false;
+		}
+		return true;
+	}
+
 	bool compute_descendants(unsigned int set, hash_set<unsigned int>& descendants) const {
 		array<unsigned int> stack(8);
 		stack[stack.length++] = set;
@@ -1659,7 +1723,8 @@ struct set_reasoning
 				hash_set<unsigned int> descendants(16);
 				if (!compute_descendants(i, descendants)) return false;
 				if (!descendants.equals(sets[i].descendants)) {
-					print("set_reasoning.are_descendants_valid WARNING: Actual `descendants` doesn't match expected `descendants`.\n", stderr);
+					print("set_reasoning.are_descendants_valid WARNING: Actual `descendants` doesn't match expected `descendants` for set with ID ", stderr);
+					print(i, stderr); print(".\n", stderr);
 					print("  Computed: ", stderr); print(descendants, stderr); print('\n', stderr);
 					print("  Expected: ", stderr); print(sets[i].descendants, stderr); print('\n', stderr);
 					success = false;
@@ -1720,6 +1785,14 @@ struct set_reasoning
 
 		for (auto entry : all_elements) free(entry.value);
 		return success;
+	}
+
+	void check_freeable_sets() const {
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axiom == NULL) continue;
+			if (is_freeable(i))
+				fprintf(stderr, "has_freeable_sets: Set with ID %u is freeable.\n", i);
+		}
 	}
 };
 
@@ -2014,36 +2087,48 @@ bool process_clique_search_state(
 		unsigned int old_neighborhood_length = neighborhood.length;
 		const auto& extensional_children = sets.extensional_graph.vertices[state.next_set].children;
 		const array<unsigned int>& intensional_children = sets.intensional_graph.vertices[state.next_set].children;
+		array<unsigned int> children(max((size_t) 1, extensional_children.size + intensional_children.length));
 		for (const auto& entry : extensional_children) {
 			/* make sure we don't recurse into an ancestor of the current node */
 			if (sets.sets[entry.key].set_size == 0) continue;
-			if (!neighborhood.add(entry.key)) return false;
+			children[children.length++] = entry.key;
 		} for (unsigned int i = 0; i < intensional_children.length; i++) {
 			if (extensional_children.contains(intensional_children[i]) || sets.sets[intensional_children[i]].set_size == 0) continue;
-			if (!neighborhood.add(intensional_children[i])) return false;
+			children[children.length++] = intensional_children[i];
 		}
 
-		priority -= sets.sets[state.next_set].set_size;
-		for (unsigned int i = old_neighborhood_length; i < neighborhood.length; i++)
-			priority += sets.sets[neighborhood[i]].set_size;
+		if (!neighborhood.ensure_capacity(neighborhood.length + children.length))
+			return false;
 
-		for (unsigned int i = old_neighborhood_length; i < neighborhood.length; i++) {
-			if (priority < min_priority) break;
-			unsigned int child = neighborhood[i];
-			if (sets.sets[child].set_size == 0) continue;
+		priority -= sets.sets[state.next_set].set_size;
+		int priority_without_parent = priority;
+
+		for (unsigned int i = 0; i < children.length; i++) {
+			unsigned int child = children[i];
+			neighborhood.length = old_neighborhood_length;
+			priority = priority_without_parent;
+
+			/* only add the children to neighborhood that are disjoint with `child` */
+			for (unsigned int j = 0; j < i; j++) {
+				if (!sets.are_disjoint(child, children[j])) continue;
+				neighborhood[neighborhood.length++] = children[j];
+				priority += sets.sets[children[j]].set_size;
+			}
+
 			search_state<StateData> new_state;
 			new_state.state = (StateData*) malloc(sizeof(StateData));
 			if (new_state.state == NULL) {
 				return false;
 			} else if (!init(*new_state.state, sets, state.clique, state.clique_count,
-					neighborhood.data + i + 1, neighborhood.length - i - 1, neighborhood.data, i, child,
+					neighborhood.data + old_neighborhood_length,
+					neighborhood.length - old_neighborhood_length,
+					neighborhood.data, old_neighborhood_length, child,
 					min(state.priority, priority), std::forward<StateArgs>(state_args)...))
 			{
 				free(new_state.state);
 				return false;
 			}
 			queue.push(new_state);
-			priority -= sets.sets[child].set_size;
 		}
 	}
 
@@ -2069,17 +2154,24 @@ bool find_largest_disjoint_subset_clique(
 
 	bool success = true;
 	clique = NULL; clique_count = 0;
-	for (unsigned int iteration = 0; success && !queue.is_empty(); iteration++) {
+	int best_clique_score = INT_MIN;
+	for (unsigned int iteration = 0; success && !queue.is_empty() && queue.priority() > best_clique_score; iteration++) {
 		search_state<clique_search_state> next = queue.pop(iteration);
-		success = process_clique_search_state<true, true, true>(queue, sets, *next.state, clique, clique_count, min_priority);
+		unsigned int* completed_clique = NULL; unsigned int completed_clique_count;
+		success = process_clique_search_state<true, true, true>(queue, sets, *next.state, completed_clique, completed_clique_count, min_priority);
 		free(next);
 
-		if (clique != NULL) {
-			if (queue.last_priority >= min_priority) {
-				break;
+		if (completed_clique != NULL) {
+			int priority = 0;
+			for (unsigned int i = 0; i < completed_clique_count; i++)
+				priority += sets.sets[completed_clique[i]].set_size;
+			if (priority > best_clique_score && priority >= min_priority) {
+				if (clique != NULL) free(clique);
+				clique = completed_clique;
+				clique_count = completed_clique_count;
+				best_clique_score = priority;
 			} else {
-				free(clique);
-				clique = NULL;
+				free(completed_clique);
 			}
 		}
 	}
@@ -2189,10 +2281,6 @@ bool find_largest_disjoint_clique_with_set(
 	stack[stack.length++] = set;
 	while (stack.length > 0) {
 		unsigned int current = stack.pop();
-#if !defined(NDEBUG)
-		if (sets.sets[current].set_size == 0)
-			fprintf(stderr, "find_largest_disjoint_clique_with_set WARNING: A proper ancestor of `set` (ID %u) is empty.\n", current);
-#endif
 
 		for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
 			if (entry.key != set && non_ancestor_neighborhood.table.contains(entry.key)) continue;

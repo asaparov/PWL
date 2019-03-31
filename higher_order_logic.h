@@ -649,8 +649,7 @@ const char equals_symbol<hol_term_syntax::CLASSIC>::symbol = '=';
 const char true_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊥";
 
-const char left_parens[] = "(";
-const char right_parens[] = ")";
+const char empty_string[] = "";
 
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
 inline bool print_iff(const hol_array_term& term, Stream& out, Printer&&... printer) {
@@ -732,10 +731,10 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		return print(not_symbol<Syntax>::symbol, out) && print(*term.unary.operand, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::AND:
-		return print<hol_term*, left_parens, right_parens, and_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<hol_term*, empty_string, empty_string, and_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case hol_term_type::OR:
-		return print<hol_term*, left_parens, right_parens, or_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print<hol_term*, empty_string, empty_string, or_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
 
 	case hol_term_type::IFF:
 		return print_iff<Syntax>(term.array, out, std::forward<Printer>(printer)...);
@@ -759,16 +758,43 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 			&& print(*term.ternary.third, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case hol_term_type::FOR_ALL:
-		return print_for_all<Syntax>(term.quantifier.variable, out)
-			&& print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+		if (!print_for_all<Syntax>(term.quantifier.variable, out)) return false;
+		if (term.quantifier.operand->type == hol_term_type::AND
+		 || term.quantifier.operand->type == hol_term_type::EQUALS
+		 || term.quantifier.operand->type == hol_term_type::IF_THEN
+		 || term.quantifier.operand->type == hol_term_type::IFF
+		 || term.quantifier.operand->type == hol_term_type::OR)
+		{
+			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+		} else {
+			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+		}
 
 	case hol_term_type::EXISTS:
-		return print_exists<Syntax>(term.quantifier.variable, out)
-			&& print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+		if (!print_exists<Syntax>(term.quantifier.variable, out)) return false;
+		if (term.quantifier.operand->type == hol_term_type::AND
+		 || term.quantifier.operand->type == hol_term_type::EQUALS
+		 || term.quantifier.operand->type == hol_term_type::IF_THEN
+		 || term.quantifier.operand->type == hol_term_type::IFF
+		 || term.quantifier.operand->type == hol_term_type::OR)
+		{
+			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+		} else {
+			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+		}
 
 	case hol_term_type::LAMBDA:
-		return print_lambda<Syntax>(term.quantifier.variable, out)
-			&& print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+		if (!print_lambda<Syntax>(term.quantifier.variable, out)) return false;
+		if (term.quantifier.operand->type == hol_term_type::AND
+		 || term.quantifier.operand->type == hol_term_type::EQUALS
+		 || term.quantifier.operand->type == hol_term_type::IF_THEN
+		 || term.quantifier.operand->type == hol_term_type::IFF
+		 || term.quantifier.operand->type == hol_term_type::OR)
+		{
+			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+		} else {
+			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+		}
 	}
 
 	fprintf(stderr, "print ERROR: Unrecognized hol_term_type.\n");
@@ -853,6 +879,23 @@ bool visit(Term&& term, Visitor&&... visitor)
 	return false;
 }
 
+struct bound_variable_maximizer {
+	unsigned int variable;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, bound_variable_maximizer& visitor) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA)
+		visitor.variable = max(visitor.variable, term.quantifier.variable);
+	return true;
+}
+
+inline unsigned int max_bound_variable(const hol_term& src) {
+	bound_variable_maximizer visitor = {0};
+	visit(src, visitor);
+	return visitor.variable;
+}
+
 struct parameter_comparator {
 	unsigned int parameter;
 };
@@ -860,7 +903,7 @@ struct parameter_comparator {
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, const parameter_comparator& visitor) {
 	if (Type == hol_term_type::PARAMETER)
-		return visitor.parameter == term.parameter;
+		return visitor.parameter != term.parameter;
 	else return true;
 }
 
@@ -876,7 +919,7 @@ struct constant_comparator {
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, const constant_comparator& visitor) {
 	if (Type == hol_term_type::CONSTANT)
-		return visitor.constant == term.constant;
+		return visitor.constant != term.constant;
 	else return true;
 }
 
@@ -1020,7 +1063,7 @@ inline bool clone(const hol_term* src, hol_term* dst, Cloner&&... cloner)
 
 /* NOTE: this function assumes `src.type == Type` */
 template<hol_term_type Type, typename... Function>
-hol_term* apply(hol_term* src, Function&&... function)
+hol_term* default_apply(hol_term* src, Function&&... function)
 {
 	hol_term* new_term;
 	hol_term** new_terms;
@@ -1191,6 +1234,12 @@ hol_term* apply(hol_term* src, Function&&... function)
 	return NULL;
 }
 
+template<hol_term_type Type, typename... Function>
+inline hol_term* apply(hol_term* src, Function&&... function)
+{
+	return default_apply<Type>(src, std::forward<Function>(function)...);
+}
+
 template<typename... Function>
 inline hol_term* apply(hol_term* src, Function&&... function)
 {
@@ -1234,18 +1283,83 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 	return NULL;
 }
 
+struct bound_variable_shifter {
+	int shift;
+	array<unsigned int> bound_variables;
+
+	bound_variable_shifter(int shift) : shift(shift), bound_variables(8) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<
+	Type == hol_term_type::VARIABLE || Type == hol_term_type::FOR_ALL
+ || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, bound_variable_shifter& shifter) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		if (!shifter.bound_variables.add(src->quantifier.variable)) return NULL;
+		hol_term* operand = apply(src->quantifier.operand, shifter);
+		if (operand == NULL) return NULL;
+		else if (operand == src) operand->reference_count++;
+
+		unsigned int new_variable = src->quantifier.variable + shifter.shift;
+		hol_term* dst;
+		if (Type == hol_term_type::LAMBDA) dst = hol_term::new_lambda(new_variable, operand);
+		else if (Type == hol_term_type::FOR_ALL) dst = hol_term::new_for_all(new_variable, operand);
+		else if (Type == hol_term_type::EXISTS) dst = hol_term::new_exists(new_variable, operand);
+		if (dst == NULL) {
+			free(*operand); if (operand->reference_count == 0) free(operand);
+			return NULL;
+		}
+		return dst;
+	}
+
+	if (shifter.bound_variables.contains(src->variable)) {
+		hol_term* dst;
+		if (!new_hol_term(dst)) return NULL;
+		dst->type = Type;
+		dst->variable = src->variable + shifter.shift;
+		dst->reference_count = 1;
+		return dst;
+	} else {
+		return src;
+	}
+}
+
+inline hol_term* shift_bound_variables(hol_term* src, int shift)
+{
+	bound_variable_shifter shifter(shift);
+	hol_term* dst = apply(src, shifter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
 template<hol_term_type SrcTermType, int VariableShift>
-struct term_substituter {
+struct static_term_substituter {
 	const hol_term* src;
 	hol_term* dst;
 };
 
-template<hol_term_type Type, hol_term_type SrcTermType, int VariableShift,
-	typename std::enable_if<Type == SrcTermType>::type* = nullptr>
-inline hol_term* apply(hol_term* src, const term_substituter<SrcTermType, VariableShift>& substituter) {
-	if (*src == *substituter.src) {
+template<hol_term_type Type, hol_term_type SrcTermType, int VariableShift>
+inline hol_term* apply(hol_term* src, const static_term_substituter<SrcTermType, VariableShift>& substituter) {
+	if (Type == SrcTermType && *src == *substituter.src) {
 		substituter.dst->reference_count++;
 		return substituter.dst;
+	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		hol_term* operand = apply(src->quantifier.operand, substituter);
+		if (operand == NULL) return NULL;
+		else if (operand == src) operand->reference_count++;
+
+		unsigned int new_variable = src->quantifier.variable + VariableShift;
+		hol_term* dst;
+		if (Type == hol_term_type::LAMBDA) dst = hol_term::new_lambda(new_variable, operand);
+		else if (Type == hol_term_type::FOR_ALL) dst = hol_term::new_for_all(new_variable, operand);
+		else if (Type == hol_term_type::EXISTS) dst = hol_term::new_exists(new_variable, operand);
+		if (dst == NULL) {
+			free(*operand); if (operand->reference_count == 0) free(operand);
+			return NULL;
+		}
+		return dst;
+		
 	} else if (Type == hol_term_type::VARIABLE) {
 		hol_term* dst;
 		if (!new_hol_term(dst)) return NULL;
@@ -1254,7 +1368,7 @@ inline hol_term* apply(hol_term* src, const term_substituter<SrcTermType, Variab
 		dst->reference_count = 1;
 		return dst;
 	} else {
-		return src;
+		return default_apply<Type>(src, substituter);
 	}
 }
 
@@ -1263,7 +1377,32 @@ template<hol_term_type SrcTermType, int VariableShift = 0>
 inline hol_term* substitute(hol_term* src,
 		const hol_term* src_term, hol_term* dst_term)
 {
-	const term_substituter<SrcTermType, VariableShift> substituter = {src_term, dst_term};
+	const static_term_substituter<SrcTermType, VariableShift> substituter = {src_term, dst_term};
+	hol_term* dst = apply(src, substituter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct term_substituter {
+	const hol_term* src;
+	hol_term* dst;
+};
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, const term_substituter& substituter) {
+	if (*src == *substituter.src) {
+		substituter.dst->reference_count++;
+		return substituter.dst;
+	} else {
+		return src;
+	}
+}
+
+inline hol_term* substitute(hol_term* src,
+		const hol_term* src_term, hol_term* dst_term)
+{
+	const term_substituter substituter = {src_term, dst_term};
 	hol_term* dst = apply(src, substituter);
 	if (dst == src)
 		dst->reference_count++;
@@ -1313,6 +1452,129 @@ inline hol_term* substitute(
 	if (term == src)
 		term->reference_count++;
 	return term;
+}
+
+struct beta_reducer {
+	unsigned int max_variable;
+	array_map<unsigned int, hol_term*> substitutions;
+
+	beta_reducer(unsigned int max_variable, unsigned int initial_substitution_capacity) :
+		max_variable(max_variable), substitutions(initial_substitution_capacity) { }
+};
+
+inline hol_term* beta_reduce(hol_term* left_src, hol_term* right_src, beta_reducer& reducer)
+{
+	hol_term* right = apply(right_src, reducer);
+	if (right == NULL) return NULL;
+	else if (right == right_src)
+		right->reference_count++;
+
+	hol_term* result;
+	if (left_src->type == hol_term_type::LAMBDA) {
+		reducer.max_variable = max(reducer.max_variable, left_src->quantifier.variable);
+		if (!reducer.substitutions.put(left_src->quantifier.variable, right)) {
+			free(*right); if (right->reference_count == 0) free(right);
+			return NULL;
+		}
+
+		result = apply(left_src->quantifier.operand, reducer);
+		free(*right); if (right->reference_count == 0) free(right);
+		if (result == NULL) return NULL;
+		else if (result == left_src->quantifier.operand)
+			result->reference_count++;
+#if !defined(NDEBUG)
+		if (!reducer.substitutions.remove(left_src->quantifier.variable))
+			fprintf(stderr, "beta_reduce WARNING: The variable in the lambda expression does not exist in `reducer.substitutions`.\n");
+#else
+		reducer.substitutions.remove(left_src->quantifier.variable);
+#endif
+	} else {
+		hol_term* left = apply(left_src, reducer);
+		if (left == NULL) {
+			free(*right); if (right->reference_count == 0) free(right);
+			return NULL;
+		} else if (left == left_src)
+			left->reference_count++;
+
+		if (left->type == hol_term_type::LAMBDA) {
+			reducer.max_variable = max(reducer.max_variable, left->quantifier.variable);
+			beta_reducer new_reducer = beta_reducer(reducer.max_variable, 1);
+			new_reducer.substitutions.keys[0] = left->quantifier.variable;
+			new_reducer.substitutions.values[0] = right;
+			new_reducer.substitutions.size++;
+
+			result = apply(left->quantifier.operand, new_reducer);
+			free(*right); if (right->reference_count == 0) free(right);
+			if (result == NULL) {
+				free(*left); if (left->reference_count == 0) free(left);
+				return NULL;
+			} else if (result == left->quantifier.operand)
+				result->reference_count++;
+			free(*left); if (left->reference_count == 0) free(left);
+		} else {
+			result = hol_term::new_apply(left, right);
+			if (result == NULL) {
+				free(*right); if (right->reference_count == 0) free(right);
+				free(*left); if (left->reference_count == 0) free(left);
+				return NULL;
+			}
+		}
+	}
+	return result;
+}
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, beta_reducer& reducer)
+{
+	if (Type == hol_term_type::UNARY_APPLICATION)
+	{
+		unsigned int old_max_variable = reducer.max_variable;
+		hol_term* result = beta_reduce(src->binary.left, src->binary.right, reducer);
+		reducer.max_variable = old_max_variable;
+		return result;
+
+	} else if (Type == hol_term_type::BINARY_APPLICATION) {
+		unsigned int old_max_variable = reducer.max_variable;
+		hol_term* reduced = beta_reduce(src->ternary.first, src->ternary.second, reducer);
+		if (reduced == NULL) return NULL;
+		hol_term* result = beta_reduce(reduced, src->ternary.third, reducer);
+		free(*reduced); if (reduced->reference_count == 0) free(reduced);
+		reducer.max_variable = old_max_variable;
+		return result;
+		
+	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		hol_term* result = default_apply<Type>(src, reducer);
+		reducer.max_variable = max(reducer.max_variable, src->quantifier.variable);
+		return result;
+
+	} else if (Type == hol_term_type::VARIABLE) {
+		bool contains;
+		hol_term* dst = reducer.substitutions.get(src->variable, contains);
+		if (contains) {
+			hol_term* result;
+			if (reducer.max_variable == 0) {
+				result = dst;
+				result->reference_count++;
+			} else {
+				result = shift_bound_variables(dst, reducer.max_variable);
+			}
+			return result;
+		} else {
+			return default_apply<Type>(src, reducer);
+		}
+
+	} else {
+		return default_apply<Type>(src, reducer);
+	}
+}
+
+inline hol_term* beta_reduce(hol_term* src)
+{
+	beta_reducer reducer(0, 8);
+	hol_term* dst = apply(src, reducer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
 }
 
 bool unify(
@@ -2299,6 +2561,8 @@ inline bool compute_lambda_type(
 	free(variable_types.values[variable_types.size]); free(right_type);
 	return types.template add<hol_term_type::LAMBDA>(term, expected_type);
 }
+
+unsigned int debug = 0; /* TODO: delete this */
 
 template<bool PolymorphicEquality, typename ComputedTypes>
 inline bool compute_apply_type(

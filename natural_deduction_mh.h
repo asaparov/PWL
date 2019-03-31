@@ -591,8 +591,7 @@ bool get_satisfying_extensional_edges(
 }
 
 template<bool Negated, unsigned int Arity,
-	typename Formula, typename ProofPrior,
-	typename Canonicalizer>
+	typename Formula, typename Canonicalizer, typename ProofPrior>
 bool propose_universal_intro(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, Arity> a,
@@ -617,6 +616,7 @@ bool propose_universal_intro(
 	nd_step<Formula>* axiom_step;
 	unsigned int random = sample_uniform(satisfying_extensional_edges.length + 1);
 	log_proposal_probability_ratio -= -log_cache<double>::instance().get(satisfying_extensional_edges.length + 1);
+	int unfixed_set_count_change = 0;
 	if (random < satisfying_extensional_edges.length) {
 		const pair<unsigned int, unsigned int>& selected = satisfying_extensional_edges[random];
 		axiom_step = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
@@ -738,7 +738,7 @@ bool propose_universal_intro(
 
 		antecedent = canonicalized->quantifier.operand->binary.left;
 		consequent = canonicalized->quantifier.operand->binary.right;
-		axiom_step = T.sets.template get_subset_axiom<false>(antecedent, consequent);
+		axiom_step = T.sets.template get_subset_axiom<false>(antecedent, consequent, unfixed_set_count_change);
 		free(*canonicalized);
 		if (canonicalized->reference_count == 0)
 			free(canonicalized);
@@ -748,11 +748,20 @@ bool propose_universal_intro(
 		axiom_step->reference_count++;
 
 		antecedent = axiom_step->formula->quantifier.operand->binary.left;
-		consequent = axiom_step->formula->quantifier.operand->binary.left;
+		consequent = axiom_step->formula->quantifier.operand->binary.right;
 	}
 
+	/* check if the set containing `concept_id` is unfixed and will be freed by this transformation */
+	unsigned int old_set_id = T.sets.element_map.get(concept_id);
+	if (T.sets.is_unfixed(old_set_id, T.observations)
+	 && T.sets.extensional_graph.vertices[old_set_id].children.size == 0
+	 && T.sets.extensional_graph.vertices[old_set_id].parents.size == 0
+	 && T.sets.sets[old_set_id].elements.length == 1
+	 && T.sets.sets[old_set_id].size_axiom->children.length == 0)
+		unfixed_set_count_change--;
+
 	/* compute the probability of the inverse proposal */
-	unsigned int new_axiom_count = old_axiom_count;
+	unsigned int new_axiom_count = old_axiom_count + unfixed_set_count_change;
 	if (satisfying_extensional_edges.length == 0) new_axiom_count++;
 	if (Arity == 2 && a.args[0] == a.args[1]) new_axiom_count -= 3;
 	else if (Arity == 2) new_axiom_count -= 2;
@@ -942,7 +951,7 @@ inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_prop
 	return {edge, constant, new_axiom, consequent_atom};
 }
 
-template<typename Formula, typename ProofPrior, typename Canonicalizer>
+template<typename Formula, typename Canonicalizer, typename ProofPrior>
 bool propose_universal_elim(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const extensional_edge<Formula>& selected_edge,
@@ -1048,7 +1057,72 @@ bool propose_universal_elim(
 		free(proposed_proofs); return false;
 	}
 
-	unsigned int new_axiom_count = old_axiom_count;
+	int unfixed_set_count_change = 0;
+	if (selected_edge.axiom->reference_count == 3) {
+		/* if this edge is removed from the set graph, two unfixed sets may also be freed */
+		if (T.sets.is_unfixed(selected_edge.consequent_set, T.observations)
+		 && T.sets.extensional_graph.vertices[selected_edge.consequent_set].parents.size
+		  + T.sets.extensional_graph.vertices[selected_edge.consequent_set].children.size == 1
+		 && T.sets.sets[selected_edge.consequent_set].elements.length == 0
+		 && T.sets.sets[selected_edge.consequent_set].size_axiom->children.length == 0)
+			unfixed_set_count_change--;
+		if (T.sets.is_unfixed(selected_edge.antecedent_set, T.observations)
+		 && T.sets.extensional_graph.vertices[selected_edge.antecedent_set].parents.size
+		  + T.sets.extensional_graph.vertices[selected_edge.antecedent_set].children.size == 1
+		 && (T.sets.sets[selected_edge.antecedent_set].elements.length == 0
+		  || (T.sets.sets[selected_edge.antecedent_set].elements.length == 1 && T.sets.sets[selected_edge.antecedent_set].elements[0] == constant))
+		 && T.sets.sets[selected_edge.antecedent_set].size_axiom->children.length == 0)
+			unfixed_set_count_change--;
+	}
+
+	/* determine if removing this edge will create a new set */
+	unsigned int old_set_id = T.sets.element_map.get(constant);
+	Formula* old_set_formula = T.sets.sets[old_set_id].set_formula();
+	Formula* variable = Formula::new_variable(1);
+	if (variable == NULL) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
+	}
+	Formula* constant_term = Formula::new_constant(constant);
+	if (constant_term == NULL) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(*variable); if (variable->reference_count == 0) free(variable);
+		free(proposed_proofs); return false;
+	}
+	Formula* grounded_literal = substitute<TermType::VARIABLE>(consequent, variable, constant_term);
+	free(*variable); if (variable->reference_count == 0) free(variable);
+	free(*constant_term); if (constant_term->reference_count == 0) free(constant_term);
+	if (grounded_literal == NULL) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
+	}
+	Formula* new_set_formula = Formula::new_and(old_set_formula, grounded_literal);
+	if (new_set_formula == NULL) {
+		free(*grounded_literal); if (grounded_literal->reference_count == 0) free(grounded_literal);
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
+	}
+	old_set_formula->reference_count++;
+	Formula* canonicalized_new_set_formula = canonicalize(*new_set_formula, T.canonicalizer);
+	free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
+	if (canonicalized_new_set_formula == NULL) {
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return false;
+	}
+	if (!T.sets.set_ids.table.contains(*canonicalized_new_set_formula))
+		unfixed_set_count_change++;
+	free(*canonicalized_new_set_formula); if (canonicalized_new_set_formula->reference_count == 0) free(canonicalized_new_set_formula);
+
+	/* the old set could also be removed */
+	if (old_set_id != selected_edge.antecedent_set
+	 && T.sets.is_unfixed(old_set_id, T.observations)
+	 && T.sets.extensional_graph.vertices[old_set_id].parents.size == 0
+	 && T.sets.extensional_graph.vertices[old_set_id].children.size == 0
+	 && T.sets.sets[old_set_id].elements.length == 1
+	 && T.sets.sets[old_set_id].size_axiom->children.length == 0)
+		unfixed_set_count_change--;
+
+	unsigned int new_axiom_count = old_axiom_count + unfixed_set_count_change;
 	unsigned int new_axiom_indices_length = c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size;
 	unsigned int new_satisfying_extensional_edges_length = satisfying_extensional_edges.length;
 	if (is_consequent_symmetric) {
@@ -1128,6 +1202,27 @@ bool propose_universal_elim(
 	return success;
 }
 
+template<typename Formula, typename Canonicalizer, typename SizePrior>
+bool propose_change_set_size(
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		unsigned int selected_set,
+		unsigned int axiom_count,
+		double& log_proposal_probability_ratio,
+		SizePrior& set_size_prior)
+{
+	/* compute the upper and lower bounds of the size of this set */
+	unsigned int lower_bound, upper_bound;
+	if (!T.sets.get_size_lower_bound(selected_set, lower_bound)
+	 || !T.sets.get_size_upper_bound(selected_set, upper_bound)) return false;
+
+	unsigned int new_size = sample(set_size_prior, lower_bound, upper_bound);
+	log_proposal_probability_ratio += log_probability(new_size, set_size_prior);
+	log_proposal_probability_ratio += -log_cache<double>::instance().get(axiom_count);
+	log_proposal_probability_ratio -= log_probability(T.sets.sets[selected_set].set_size, set_size_prior);
+
+	return do_mh_change_set_size(T, selected_set, new_size, log_proposal_probability_ratio);
+}
+
 template<typename Formula>
 bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 {
@@ -1195,6 +1290,7 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 			case nd_step_type::TERM_PARAMETER:
 			case nd_step_type::ARRAY_PARAMETER:
 			case nd_step_type::FORMULA_PARAMETER:
+			case nd_step_type::BETA_EQUIVALENCE:
 			case nd_step_type::COUNT:
 				error = true; break;
 			}
@@ -1228,8 +1324,6 @@ inline bool remove_ground_axiom(
 			(consequent_atom.args[1] == 0 ? constant : consequent_atom.args[1]) };
 	return T.template remove_binary_atom<Negated>(rel);
 }
-
-nd_step<hol_term>* debug_observation = NULL; /* TODO: delete this */
 
 template<typename Formula,
 	typename Canonicalizer,
@@ -1274,8 +1368,6 @@ bool do_mh_universal_intro(
 		for (auto proof : new_observations) {
 			T.observations.add(proof);
 			proof->reference_count++;
-if (proposal.consequent_atom.predicate == 30 && proposal.concept_id == 36)
-debug_observation = proof;
 		}
 		subtract(T.proof_axioms, old_axioms);
 		if (!add(T.proof_axioms, new_axioms))
@@ -1354,15 +1446,51 @@ bool do_mh_universal_elim(
 	return true;
 }
 
-template<typename Formula, typename ProofPrior, typename Canonicalizer>
+
+template<typename Formula, typename Canonicalizer>
+inline bool do_mh_change_set_size(
+		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		unsigned int selected_set, unsigned int new_size,
+		double log_proposal_probability_ratio)
+{
+#if !defined(NDEBUG)
+	if (isnan(log_proposal_probability_ratio))
+		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
+#endif
+
+	if (sample_uniform<double>() < exp(log_proposal_probability_ratio))
+		T.sets.template get_size_axiom<false>(selected_set, new_size);
+	return true;
+}
+
+template<typename ProofPrior, typename SizePrior>
+struct theory_prior {
+	ProofPrior proof_prior;
+	SizePrior set_size_prior;
+
+	theory_prior(const ProofPrior& proof_prior, const SizePrior& set_size_prior) :
+		proof_prior(proof_prior), set_size_prior(set_size_prior) { }
+};
+
+template<typename ProofPrior, typename SizePrior>
+inline theory_prior<ProofPrior, SizePrior> make_theory_prior(
+		const ProofPrior& proof_prior, const SizePrior& size_prior)
+{
+	return theory_prior<ProofPrior, SizePrior>(proof_prior, size_prior);
+}
+
+template<typename Formula, typename Canonicalizer, typename ProofPrior, typename SizePrior>
 bool do_mh_step(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		ProofPrior& proof_prior)
+		theory_prior<ProofPrior, SizePrior>& theory_prior)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
 	typedef natural_deduction<Formula> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
+
+	array<unsigned int> unfixed_sets(8);
+	if (!T.sets.get_unfixed_sets(unfixed_sets, T.observations)) return false;
 
 	/* count all eliminable extensional edges */
 	array<extensional_edge<Formula>> eliminable_extensional_edges(8);
@@ -1392,7 +1520,7 @@ bool do_mh_step(
 	double log_proposal_probability_ratio = 0.0;
 
 	/* select an axiom from `T` uniformly at random */
-	unsigned int axiom_count = T.ground_axiom_count + eliminable_extensional_edges.length;
+	unsigned int axiom_count = T.ground_axiom_count + eliminable_extensional_edges.length + unfixed_sets.length;
 	unsigned int random = sample_uniform(axiom_count);
 	if (!log_cache<double>::instance().ensure_size(axiom_count + 1)) return false;
 	log_proposal_probability_ratio -= -log_cache<double>::instance().get(axiom_count);
@@ -1402,24 +1530,24 @@ bool do_mh_step(
 			concept<ProofCalculus>& c = entry.value;
 			if (random < c.types.size) {
 				atom<false, 1> a = {c.types.keys[random], {0}};
-				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
 			}
 			random -= c.types.size;
 			if (random < c.negated_types.size) {
 				atom<true, 1> a = {c.negated_types.keys[random], {0}};
-				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
 			}
 			random -= c.negated_types.size;
 			if (random < c.relations.size) {
 				relation rel = c.relations.keys[random];
 				atom<false, 2> a = {rel.predicate, {rel.arg1, rel.arg2}};
-				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
 			}
 			random -= c.relations.size;
 			if (random < c.negated_relations.size) {
 				relation rel = c.relations.keys[random];
 				atom<true, 2> a = {rel.predicate, {rel.arg1, rel.arg2}};
-				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, proof_prior);
+				return propose_universal_intro(T, a, entry.key, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
 			}
 			random -= c.negated_relations.size;
 		}
@@ -1428,7 +1556,13 @@ bool do_mh_step(
 
 	if (random < eliminable_extensional_edges.length) {
 		/* we've selected a universally-quantified formula */
-		return propose_universal_elim(T, eliminable_extensional_edges[random], axiom_count, log_proposal_probability_ratio, proof_prior);
+		return propose_universal_elim(T, eliminable_extensional_edges[random], axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
+	}
+	random -= eliminable_extensional_edges.length;
+
+	if (random < unfixed_sets.length) {
+		/* we've selected to resample the size of a set */
+		return propose_change_set_size(T, unfixed_sets[random], axiom_count, log_proposal_probability_ratio, theory_prior.set_size_prior);
 	}
 
 	fprintf(stderr, "propose ERROR: Unable to select axiom.\n");

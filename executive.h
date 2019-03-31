@@ -17,11 +17,11 @@ inline void free_logical_forms(Formula** logical_forms, unsigned int count)
 }
 
 template<typename ArticleSource, typename Parser, typename Formula,
-	typename Canonicalizer, typename ProofPrior, typename Printer>
+	typename Canonicalizer, typename TheoryPrior, typename Printer>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const sentence& s,
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		unsigned int article_name, ProofPrior& proof_prior, Printer& printer)
+		unsigned int article_name, TheoryPrior& theory_prior, Printer& printer)
 {
 	unsigned int parse_count, new_constant;
 	Formula* logical_forms[2];
@@ -44,7 +44,7 @@ bool read_sentence(
 			free_logical_forms(logical_forms, parse_count);
 
 			//for (unsigned int t = 0; t < 10; t++)
-			//	if (!do_mh_step(T, proof_prior)) return false;
+			//	if (!do_mh_step(T, theory_prior)) return false;
 			return success;
 		}
 
@@ -58,7 +58,7 @@ bool read_sentence(
 			}
 			next_article = unrecognized[1].id;
 		}
-		if (!read_article(next_article, articles, parser, T, proof_prior, printer)) {
+		if (!read_article(next_article, articles, parser, T, theory_prior, printer)) {
 			free_logical_forms(logical_forms, parse_count);
 			return false;
 		}
@@ -81,18 +81,18 @@ bool read_sentence(
 	}
 
 	//for (unsigned int t = 0; t < 10; t++)
-	//	if (!do_mh_step(T, proof_prior)) return false;
+	//	if (!do_mh_step(T, theory_prior)) return false;
 
 	free_logical_forms(logical_forms, parse_count);
 	return true;
 }
 
 template<typename ArticleSource, typename Parser, typename Formula,
-	typename Canonicalizer, typename ProofPrior, typename Printer>
+	typename Canonicalizer, typename TheoryPrior, typename Printer>
 bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		ProofPrior& proof_prior, Printer& printer)
+		TheoryPrior& theory_prior, Printer& printer)
 {
 	bool article_exists;
 	const article& doc = articles.get(article_name, article_exists);
@@ -102,7 +102,7 @@ bool read_article(
 	}
 
 	for (unsigned int i = 0; i < doc.sentence_count; i++) {
-		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, proof_prior, printer))
+		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, theory_prior, printer))
 			return false;
 	}
 	return true;
