@@ -66,9 +66,7 @@ struct extensional_set_vertex
 	array_map<unsigned int, Proof*> children;
 
 	static inline void free(extensional_set_vertex<ProofCalculus>& vertex) {
-		for (auto entry : vertex.parents) {
-			core::free(*entry.value); if (entry.value->reference_count == 0) core::free(entry.value);
-		} for (auto entry : vertex.children) {
+		for (auto entry : vertex.children) {
 			core::free(*entry.value); if (entry.value->reference_count == 0) core::free(entry.value);
 		}
 		core::free(vertex.parents);
@@ -179,6 +177,31 @@ struct extensional_set_graph
 		core::free(vertices[vertex_id]);
 	}
 
+	inline bool add_edge(unsigned int parent, unsigned int child, Proof* axiom)
+	{
+		if (!vertices[parent].children.ensure_capacity(vertices[parent].children.size + 1)
+		 || !vertices[child].parents.ensure_capacity(vertices[child].parents.size + 1))
+			return false;
+#if !defined(NDEBUG)
+		if (vertices[parent].children.contains(child)) {
+			fprintf(stderr, "extensional_edge.add_edge WARNING: The given edge already exists.\n");
+			return false;
+		}
+#endif
+
+		unsigned int index = vertices[parent].children.size;
+		vertices[parent].children.keys[index] = child;
+		vertices[parent].children.values[index] = axiom;
+		vertices[parent].children.size++;
+
+		index = vertices[child].parents.size;
+		vertices[child].parents.keys[index] = parent;
+		vertices[child].parents.values[index] = axiom;
+		vertices[child].parents.size++;
+		axiom->reference_count++;
+		return true;
+	}
+
 	template<typename Formula>
 	inline Proof* get_edge(unsigned int parent, unsigned int child,
 			Formula* parent_formula, Formula* child_formula, bool& new_edge)
@@ -205,7 +228,7 @@ struct extensional_set_graph
 			vertices[child].parents.keys[index] = parent;
 			vertices[child].parents.values[index] = new_axiom;
 			vertices[child].parents.size++;
-			new_axiom->reference_count += 2;
+			new_axiom->reference_count++;
 			return new_axiom;
 		} else {
 			new_edge = false;
@@ -220,7 +243,7 @@ struct extensional_set_graph
 			fprintf(stderr, "extensional_set_graph.remove_edge WARNING: The set %u is not in `vertices[%u].children`.\n", child, parent);
 #endif
 		Proof* axiom = vertices[parent].children.values[index];
-		core::free(*axiom); core::free(*axiom);
+		core::free(*axiom);
 		if (axiom->reference_count == 0) core::free(axiom);
 		vertices[parent].children.remove_at(index);
 		index = vertices[child].parents.index_of(parent);
@@ -328,6 +351,19 @@ struct set_info
 		set_size = new_size;
 		size_axiom->formula->binary.right->integer = new_size;
 	}
+
+	/* NOTE: this function does not check the consistency of the new size */
+	inline bool set_size_axiom(Proof* axiom) {
+		if (axiom == size_axiom) return true;
+		if (size_axiom->children.length > 0) return false;
+		core::free(*size_axiom);
+		if (size_axiom->reference_count == 0)
+			core::free(size_axiom);
+		size_axiom = axiom;
+		axiom->reference_count++;
+		set_size = axiom->formula->binary.right->integer;
+		return true;
+	}
 };
 
 template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
@@ -369,9 +405,12 @@ struct set_reasoning
 	hash_map<Formula, unsigned int> set_ids;
 	hash_map<unsigned int, unsigned int> element_map;
 
+	hash_multiset<unsigned int> symbols_in_formulas;
+
 	set_reasoning() :
 			extensional_graph(1024), intensional_graph(1024),
-			capacity(1024), set_count(0), set_ids(2048), element_map(2048)
+			capacity(1024), set_count(0), set_ids(2048),
+			element_map(2048), symbols_in_formulas(256)
 	{
 		sets = (set_info<BuiltInConstants, Formula, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, Formula, ProofCalculus>) * capacity);
 		if (sets == NULL) exit(EXIT_FAILURE);
@@ -664,17 +703,26 @@ struct set_reasoning
 
 	inline bool free_set(Formula* formula, unsigned int set_id)
 	{
-		bool contains; unsigned int bucket;
-		set_ids.get(*formula, contains, bucket);
+		array_multiset<unsigned int> symbols(16);
+		if (!get_constants(*formula, symbols)) return false;
+		symbols_in_formulas.subtract<true>(symbols);
+
+		bool contains;
+		unsigned int bucket = set_ids.table.index_of(*formula, contains);
 		core::free(set_ids.table.keys[bucket]);
-		core::set_empty(set_ids.table.keys[bucket]);
+		set_ids.table.remove_at(bucket);
 		return free_set(set_id);
 	}
 
 	inline bool get_set_id(Formula* formula, unsigned int& set_id, bool& is_new) {
 		bool contains; unsigned int bucket;
+		if (!set_ids.check_size()) return false;
 		set_id = set_ids.get(*formula, contains, bucket);
 		if (!contains) {
+			array_multiset<unsigned int> symbols(16);
+			if (!get_constants(*formula, symbols)) return false;
+			symbols_in_formulas.add(symbols);
+
 			if (!init(set_ids.table.keys[bucket], *formula)) {
 				return false;
 			} else if (!new_set(formula, set_id)) {
@@ -1085,6 +1133,37 @@ struct set_reasoning
 		else return true;
 	}
 
+	/* NOTE: this function does not check for consistency */
+	bool add_subset_axiom(Proof* axiom)
+	{
+		Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
+		Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+
+		if (!set_ids.check_size(set_ids.table.size + 2)) return false;
+
+		unsigned int antecedent_set, consequent_set;
+		bool is_antecedent_new, is_consequent_new;
+		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new)) {
+			return false;
+		} else if (!get_set_id(consequent, consequent_set, is_consequent_new)) {
+			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+			return false;
+		}
+
+#if !defined(NDEBUG)
+		if (consequent_set == antecedent_set)
+			fprintf(stderr, "set_reasoning.add_subset_axiom WARNING: `consequent` and `antecedent` are the same set.\n");
+#endif
+
+		if (!extensional_graph.add_edge(consequent_set, antecedent_set, axiom)) {
+			/* if either the antecedent or consequent sets have no references, free them */
+			if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
+			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+			return false;
+		}
+		return true;
+	}
+
 	template<bool ResolveInconsistencies>
 	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, int& unfixed_set_count_change)
 	{
@@ -1256,7 +1335,7 @@ struct set_reasoning
 	{
 #if !defined(NDEBUG)
 		if (consequent_set == antecedent_set)
-			fprintf(stderr, "set_reasoning.decrement_subset_axiom WARNING: `consequent` and `antecedent` are the same set.\n");
+			fprintf(stderr, "set_reasoning.remove_subset_relation WARNING: `consequent` and `antecedent` are the same set.\n");
 #endif
 
 		extensional_graph.remove_edge(consequent_set, antecedent_set);
@@ -1288,16 +1367,8 @@ struct set_reasoning
 		return true;
 	}
 
-	bool decrement_subset_axiom(Proof* subset_axiom)
+	bool free_subset_axiom(Proof* subset_axiom)
 	{
-		free(*subset_axiom);
-#if !defined(NDEBUG)
-		if (subset_axiom->reference_count < 2)
-			fprintf(stderr, "decrement_subset_axiom ERROR: Detected double free.\n");
-#endif
-
-		if (subset_axiom->reference_count > 2) return true;
-
 		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
 		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
 		antecedent->reference_count++;
@@ -1306,9 +1377,9 @@ struct set_reasoning
 #if !defined(NDEBUG)
 		bool contains;
 		unsigned int antecedent_set = set_ids.get(*antecedent, contains);
-		if (!contains) fprintf(stderr, "set_reasoning.decrement_subset_axiom WARNING: No such set for given antecedent.\n");
+		if (!contains) fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given antecedent.\n");
 		unsigned int consequent_set = set_ids.get(*consequent, contains);
-		if (!contains) fprintf(stderr, "set_reasoning.decrement_subset_axiom WARNING: No such set for given consequent.\n");
+		if (!contains) fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given consequent.\n");
 #else
 		unsigned int antecedent_set = set_ids.get(*antecedent);
 		unsigned int consequent_set = set_ids.get(*consequent);
@@ -1500,16 +1571,18 @@ struct set_reasoning
 				for (unsigned int parent : intensional_graph.vertices[current].parents) {
 					if (old_ancestors.contains(parent)) continue;
 					if (!old_ancestors.add(parent) || !stack.add(parent)) {
-						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 						if (old_set_id != 0) sets[old_set_id].elements.add(element);
-						sets[new_set_id].elements.length--; return false;
+						sets[new_set_id].elements.length--;
+						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+						return false;
 					}
 				} for (const auto& entry : extensional_graph.vertices[current].parents) {
 					if (old_ancestors.contains(entry.key)) continue;
 					if (!old_ancestors.add(entry.key) || !stack.add(entry.key)) {
-						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 						if (old_set_id != 0) sets[old_set_id].elements.add(element);
-						sets[new_set_id].elements.length--; return false;
+						sets[new_set_id].elements.length--;
+						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+						return false;
 					}
 				}
 			}
@@ -1524,16 +1597,18 @@ struct set_reasoning
 			for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (old_ancestors.contains(parent) || new_ancestors.contains(parent)) continue;
 				if (!new_ancestors.add(parent) || !stack.add(parent)) {
-					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--; return false;
+					sets[new_set_id].elements.length--;
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					return false;
 				}
 			} for (const auto& entry : extensional_graph.vertices[current].parents) {
 				if (old_ancestors.contains(entry.key) || new_ancestors.contains(entry.key)) continue;
 				if (!new_ancestors.add(entry.key) || !stack.add(entry.key)) {
-					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--; return false;
+					sets[new_set_id].elements.length--;
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					return false;
 				}
 			}
 		}
@@ -1543,9 +1618,10 @@ struct set_reasoning
 		for (unsigned int new_ancestor : new_ancestors) {
 			hash_set<unsigned int> provable_elements(16);
 			if (!get_provable_elements(new_ancestor, provable_elements)) {
-				if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 				if (old_set_id != 0) sets[old_set_id].elements.add(element);
-				sets[new_set_id].elements.length--; return false;
+				sets[new_set_id].elements.length--;
+				if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+				return false;
 			}
 
 			if (sets[new_ancestor].set_size >= provable_elements.size) continue;
@@ -1555,16 +1631,18 @@ struct set_reasoning
 					violates this bound, change the sizes of other sets to increase the bound */
 				array<unsigned int> stack(8); bool graph_changed;
 				if (!ResolveInconsistencies || !increase_set_size(new_ancestor, provable_elements.size, stack, graph_changed)) {
-					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--; return false;
+					sets[new_set_id].elements.length--;
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					return false;
 				}
 				if (sets[new_ancestor].set_size >= provable_elements.size)
 					break;
 				if (!graph_changed) {
-					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--; return false;
+					sets[new_set_id].elements.length--;
+					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+					return false;
 				}
 			}
 		}
@@ -1684,9 +1762,13 @@ struct set_reasoning
 		return are_disjoint(sets[first_set].set_formula(), sets[second_set].set_formula());
 	}
 
+	inline bool is_unfixed(Proof* size_axiom, const hash_set<Proof*>& observations) const {
+		return (size_axiom->children.length == 0
+			&& !observations.contains(size_axiom));
+	}
+
 	inline bool is_unfixed(unsigned int set_id, const hash_set<Proof*>& observations) const {
-		return (sets[set_id].size_axiom->children.length == 0
-			&& !observations.contains(sets[set_id].size_axiom));
+		return is_unfixed(sets[set_id].size_axiom, observations);
 	}
 
 	bool get_unfixed_sets(array<unsigned int>& unfixed_set_ids, const hash_set<Proof*>& observations) {

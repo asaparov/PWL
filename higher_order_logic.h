@@ -9,6 +9,7 @@
 #define HIGHER_ORDER_LOGIC_H_
 
 #include <core/lex.h>
+#include <math/multiset.h>
 #include <cstdint>
 
 using namespace core;
@@ -49,10 +50,13 @@ inline bool print_subscript(unsigned int number, Stream& out) {
 	static const char* subscripts[] = { "₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉" };
 	if (number == 0)
 		return print(subscripts[0], out);
+	array<uint8_t> digits(32);
 	while (number > 0) {
-		if (!print(subscripts[number % 10], out)) return false;
+		if (!digits.add(number % 10)) return false;
 		number /= 10;
 	}
+	for (unsigned int i = digits.length; i > 0; i--)
+		if (!print(subscripts[digits[i - 1]], out)) return false;
 	return true;
 }
 
@@ -944,6 +948,46 @@ inline bool get_parameters(const hol_term& src, array<unsigned int>& parameters)
 	return !visit(src, visitor);
 }
 
+struct index_computer {
+	const hol_term& term;
+	array<unsigned int>& indices;
+	unsigned int index;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, index_computer& visitor) {
+	if (term == visitor.term) {
+		if (!visitor.indices.add(visitor.index)) return false;
+	}
+	visitor.index++;
+	return true;
+}
+
+inline bool compute_indices(const hol_term& src,
+		const hol_term& term, array<unsigned int>& indices)
+{
+	index_computer visitor = {term, indices, 0};
+	return visit(src, visitor);
+}
+
+struct constant_collector {
+	array_multiset<unsigned int>& constants;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, constant_collector& visitor) {
+	if (Type == hol_term_type::CONSTANT)
+		return visitor.constants.add(term.constant);
+	return true;
+}
+
+inline bool get_constants(const hol_term& src,
+		array_multiset<unsigned int>& constants)
+{
+	constant_collector visitor = {constants};
+	return visit(src, visitor);
+}
+
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
 	dst_constant = src_constant;
 	return true;
@@ -1395,7 +1439,7 @@ inline hol_term* apply(hol_term* src, const term_substituter& substituter) {
 		substituter.dst->reference_count++;
 		return substituter.dst;
 	} else {
-		return src;
+		return default_apply<Type>(src, substituter);
 	}
 }
 
@@ -1421,7 +1465,6 @@ struct index_substituter {
 template<hol_term_type Type, int VariableShift>
 inline hol_term* apply(hol_term* src, index_substituter<VariableShift>& substituter)
 {
-	hol_term* dst;
 	if (substituter.term_index_count > 0 && *substituter.term_indices == substituter.current_term_index) {
 		if (substituter.src == NULL) {
 			substituter.src = src;
@@ -1429,15 +1472,16 @@ inline hol_term* apply(hol_term* src, index_substituter<VariableShift>& substitu
 			/* this term is not identical to other substituted terms, which should not happen */
 			return NULL;
 		}
-		dst = substituter.dst;
+		hol_term* dst = substituter.dst;
 		dst->reference_count++;
 		substituter.term_indices++;
 		substituter.term_index_count--;
+		substituter.current_term_index++;
+		return dst;
 	} else {
-		dst = src;
+		substituter.current_term_index++;
+		return default_apply<Type>(src, substituter);
 	}
-	substituter.current_term_index++;
-	return dst;
 }
 
 /* NOTE: this function assumes `src.type == SrcType` */
@@ -2561,8 +2605,6 @@ inline bool compute_lambda_type(
 	free(variable_types.values[variable_types.size]); free(right_type);
 	return types.template add<hol_term_type::LAMBDA>(term, expected_type);
 }
-
-unsigned int debug = 0; /* TODO: delete this */
 
 template<bool PolymorphicEquality, typename ComputedTypes>
 inline bool compute_apply_type(

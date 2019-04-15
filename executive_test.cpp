@@ -213,6 +213,8 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
+unsigned int debug = 0; /* TODO: delete this */
+
 template<bool AutomaticallyFree, typename MultisetType,
 	template<typename> class Collection, typename T>
 double log_probability_ratio(
@@ -226,7 +228,15 @@ double log_probability_ratio(
 	while (i < size(old_observations) && j < size(new_observations))
 	{
 		if (get_key(old_observations, i) == get_key(new_observations, j)) {
+#if !defined(NDEBUG)
+			bool contains;
+			const T& key = get_key(old_observations, i);
+			unsigned int count = tables.counts.get(key, contains);
+			if (!contains)
+				print("log_probability_ratio WARNING: The given observation is not in the chinese_restaurant_process.\n", stderr);
+#else
 			unsigned int count = tables.counts.get(get_key(old_observations, i));
+#endif
 			int diff = (int) get_value(new_observations, j) - (int) get_value(old_observations, i);
 			if (count + diff == 0) {
 				/* this cluster is being removed */
@@ -811,8 +821,17 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 	}
 }
 
+unsigned int constant_offset = 0;
+
+template<typename Stream>
+bool print_special_string(unsigned int key, Stream& out) {
+	return print('c', out) && print_subscript(key - constant_offset, out);
+}
+
 int main(int argc, const char** argv)
 {
+	log_cache<double>::instance().ensure_size(1024);
+
 	FILE* in = fopen("simple_set_reasoning_articles.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
@@ -864,6 +883,7 @@ int main(int argc, const char** argv)
 
 	/* read the articles */
 	theory<hol_term, natural_deduction<hol_term>, standard_canonicalizer<true, false>> T(names.table.size + 1);
+	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
 	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
@@ -877,19 +897,21 @@ int main(int argc, const char** argv)
 	auto theory_prior = make_theory_prior(proof_prior, geometric_distribution(0.2));
 	const string** reverse_name_map = invert(names);
 	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
-	read_article(names.get("Nemo"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Dory"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
-	/*read_article(names.get("Bob"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Kate"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Sam"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Byron"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Alex"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Lee"), corpus, parser, T, theory_prior, printer);
-	read_article(names.get("Amy"), corpus, parser, T, theory_prior, printer);*/
+
+	bool success = true;
+	success &= read_article(names.get("Nemo"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Dory"), corpus, parser, T, theory_prior, printer);
+	//success &= read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
+	//success &= read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
+	//success &= read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
+	//success &= read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
+	/*success &= read_article(names.get("Bob"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Kate"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Sam"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Byron"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Alex"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Lee"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("Amy"), corpus, parser, T, theory_prior, printer);*/
 
 	array_map<hol_term*, unsigned int> tracked_logical_forms(2);
 	/*tracked_logical_forms.put(
@@ -907,12 +929,13 @@ int main(int argc, const char** argv)
 			)
 		), 0);*/
 
-	constexpr unsigned int iterations = 10000;
+	unsigned int iterations = (success ? 120000 : 0);
 	timer stopwatch;
 	auto scribe = parser.get_printer(printer);
 array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
 		//printf("[%u]\n", t);
+T.check_proof_axioms();
 T.sets.are_elements_unique();
 T.sets.check_freeable_sets();
 T.sets.are_descendants_valid();
@@ -927,6 +950,8 @@ for (const auto& entry : set_size_distribution.counts)
 fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribution.sum);
 			stopwatch.start();
 		}
+if (t == 7)
+fprintf(stderr, "DEBUG: BREAKPOINT\n");
 		do_mh_step(T, theory_prior);
 
 		for (auto entry : tracked_logical_forms)
@@ -945,6 +970,8 @@ fflush(histogram_file); fclose(histogram_file);
 	for (const auto& entry : tracked_logical_forms) {
 		print("p(", stdout); print(*entry.key, stdout, scribe); print(" axiom) ≈ ", stdout); print((double) entry.value / iterations, stdout); print('\n', stdout);
 	}
+for (const auto& entry : set_size_distribution.counts)
+fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribution.sum);
 
 	for (auto entry : tracked_logical_forms) {
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);

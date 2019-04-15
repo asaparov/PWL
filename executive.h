@@ -42,10 +42,16 @@ bool read_sentence(
 			bool success = T.add_formula(logical_forms[0], new_constant)
 						&& parser.add_definition(s, logical_forms[0], new_constant);
 			free_logical_forms(logical_forms, parse_count);
+			if (!success) {
+				print("read_sentence ERROR: Unable to add definition to theory.\n", stderr);
+				print("  Sentence:     '", stderr); print(s, stderr, printer); print("'\n", stderr);
+				print("  Logical form: ", stderr); print(*logical_forms[0], stderr, printer); print("\n", stderr);
+				return false;
+			}
 
 			//for (unsigned int t = 0; t < 10; t++)
 			//	if (!do_mh_step(T, theory_prior)) return false;
-			return success;
+			return true;
 		}
 
 		/* find an article in order to learn about the unrecognized word */
@@ -76,6 +82,9 @@ bool read_sentence(
 
 	/* add the most probable logical form to the theory */
 	if (!T.add_formula(logical_forms[0], new_constant)) {
+		print("read_sentence ERROR: Unable to add logical form to theory.\n", stderr);
+		print("  Sentence:     '", stderr); print(s, stderr, printer); print("'\n", stderr);
+		print("  Logical form: ", stderr); print(*logical_forms[0], stderr, printer); print("\n", stderr);
 		free_logical_forms(logical_forms, parse_count);
 		return false;
 	}
