@@ -1,0 +1,40 @@
+
+# This is the root nonterminal for declarative sentences.
+S nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+S -> S':singular PERIOD:null
+S -> S':plural PERIOD:null
+S -> ADVP (COMMA) S
+S -> S (COMMA) ADVP
+
+S' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
+# S' {g(a)} -> DP {a} VP {^[x]:g(x)}
+# S' {~g(a)} -> DP {a} VP {^[x]:~g(x)}
+S' -> DP:select_arg VP:delete_arg
+# S' {![x]:(f(x) => g(x))} -> DP {![x]:f(x)} VP {^[x]:g(x)}
+# S' {~![x]:(f(x) => g(x))} -> DP {~![x]:f(x)} VP {^[x]:g(x)}
+S' -> DP:remove_consequent VP:select_consequent
+# S' {~![x]:(f(x) => g(x))} -> DP {![x]:f(x)} VP {^[x]:~g(x)}
+S' -> DP:remove_consequent_not VP:select_not_consequent
+# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ![x]:(X(x) => h(x)))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[x]:h(x)}
+# where F could be subset or =; this rule also includes multiplicative quantification
+S' -> DP:remove_set_universal VP:select_set_consequent
+# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ~![x]:(X(x) => h(x)))} -> DP {~?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[x]:h(x)}
+S' -> DP:not_remove_set_universal VP:select_set_consequent
+# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ~![x]:(X(x) => h(x)))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[x]:~h(x)}
+S' -> DP:remove_set_universal VP:select_not_set_consequent
+# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ![x,y]:(X(x) & Y(y) => v(x,y))))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[X]:?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ![x,y]:(X(x) & Y(y) => v(x,y)))}
+# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ~![x,y]:(X(x) & Y(y) => v(x,y))))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[X]:?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ~![x,y]:(X(x) & Y(y) => v(x,y)))}
+# note: the quantifier ![x,y] could also be weak
+S' -> DP:remove_set_existential VP:select_set_existential
+# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ~![x,y]:(X(x) & Y(y) => v(x,y))))} -> DP {~?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[X]:?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ![x,y]:(X(x) & Y(y) => v(x,y)))}
+S' -> DP:not_remove_set_existential VP:select_set_existential_remove_not
+# S' {?[x]:f(x)} -> THERE IS DP {?[x]:f(x)}
+# S' {~?[x]:f(x)} -> THERE IS DP {~?[x]:f(x)}
+S' -> THERE:null IS:null DP:identity
+# S' {?[x]:(f(x) & g(x))} -> DP {?[x]:f(x)} VP:{^[x]:g(x)}
+# S' {~?[x]:(f(x) & g(x))} -> DP {~?[x]:f(x)} VP:{^[x]:g(x)}
+S' -> DP:remove_right_conjunct VP:select_right_conjunct
+# S' {~?[x]:(f(x) & g(x))} -> DP {?[x]:f(x)} VP:{^[x]:~g(x)}
+S' -> DP:remove_right_conjunct_not VP:select_not_right_conjunct
+
+DP nonterminal {} {1.0} {1.0} {} 10 1.0 {}

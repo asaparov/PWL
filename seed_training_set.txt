@@ -1,0 +1,101 @@
+ >> There are 7.7 billion people.
+	{?[P]:(P=^[x]:person(x) & size(P)=7700000000)}
+
+ >> There are 7,700,000,000 people.
+	{?[P]:(P=^[x]:person(x) & size(P)=7700000000)}
+
+ >> All cats are mammals.
+	{![x]:(cat(x) => mammal(x))}
+
+ >> Every cat is a mammal.
+	{![x]:(cat(x) => mammal(x))}
+
+ >> Every farmer who owns a donkey beats it.
+	{![f]:(farmer(x) & ?[d]:(own(x,d) & donkey(d)) => beat(x,#1))}
+
+ >> It was Jessie Bear's birthday.
+	{#1=birthday_of(jessie)}
+	{#1=today}
+
+	She was having a party.
+	{female(#1) & ?[y]:(party(y) & have(#1,y))}
+	{#1=jessie}
+
+	She asked her two best friends to come to the party.
+	{female(#1) & ?[B]:((size(B,2) & B=best_friends(#1)) & ?[z]:(party(z) & ![y]:(B(y) => ask(#1,go(y,z)))))}
+	{#1=jessie}
+
+	She made a big cake, and hung up some balloons.
+	{female(#1) & ?[y]:((big(y) & cake(y)) & make(#1,y)) & ?[B]:(subset(B,^[b]:(balloon(b))) & ![b]:(B(b) => hang(#1,b)))}
+	{#1=jessie}
+
+	Soon her friend Lion came over.
+	{(female(#1) & friend(lion,#1)) & soon(come_over)(lion)}
+	{#1=jessie}
+
+	Then her friend Tiger came over.
+	{(female(#1) & friend(tiger,#1)) & then(come_over)(tiger)}
+	{#1=jessie}
+
+	Lion and Tiger brought presents with them.
+	{?[S]:(S=^[x]:(x=lion | x=tiger) & ![x]:(S(x) => ?[P]:(subset(P,^[p]:(present(p))) & ![p]:(P(p) => with(bring,x)(x,p)))))}
+
+	Jessie hugged her friends.
+	{(female(#1) & ?[F]:(subset(F,^[f]:(friend(f,#1)))) & ![f]:(F(f) => hug(jessie,f)))}
+	{#1=jessie}
+
+	She asked them if they would like to have cake.
+	{female(#1) & ![s]:(#2(s) => ask(#1,want(s,?[c]:(cake(c) & have(s,c)))))}
+	{#1=jessie}
+
+	Yes! said Lion.
+	{say(lion,T)}
+
+	Yes yes! said Tiger.
+	{say(tiger,T & T)}
+
+	Jessie cut the cake, and they all ate it together.
+	{?[c]:(cake(c) & cut(jessie,c)) & ![x]:(#1(x) => together(eat)(x,#2))}
+	{#1=^[y]:(y=jessie | y=lion | y=tiger)}
+
+	Then Jessie opened her presents.
+	{?[P]:(P=^[p]:(female(#1) & belongs(p,#1) & present(p)) & ![p]:(P(p) => then(open)(jessie,p)))}
+
+	She got a new jump rope and a fun game.
+	{female(#1) & ?[y]:(new(y) & jump_rope(y) & receive(#1,y)) & ?[y]:(fun(y) & game(y) & receive(#1,y))}
+	{#1=jessie}
+
+	She asked Lion and Tiger to play the game with her.
+	{female(#1) & ?[S]:(S=^[s]:(s=lion | s=tiger) & ![s]:(S(s) => ask(#1,![g]:(game(g) & with(play,#1)(s,g)))))}
+	{#1=jessie}
+
+	The friends played and played.
+	{?[F]:(clique(F,^[a,b]:friend(a,b)) & ![f]:(F(f) => play(f) & play(f)))}
+
+	They all had a good time.
+	{![s]:(#1(s) => happy(s))}
+	{#1=^[y]:(y=jessie | y=lion | y=tiger)}
+
+	Soon it was time for the party to be over.
+	{?[t]:(soon(t) & time(t) & ?[p]:(party(p) & t=end(p)))}
+
+	Lion and Tiger hugged Jessie and said goodbye to her.
+	{?[S]:(S=^[s]:(s=lion | s=tiger) & ![s]:(S(s) => hug(s,jessie) & ?[g]:(valediction(g) & to(say,#1)(s,g))))}
+	{#1=jessie}
+
+	Thanks for a great birthday! Jessie Bear told her two best friends.
+	{?[B]:(female(#1) & B=best_friends(#1) & size(B,2) & ![b]:(B(b) => to(say,b)(jessie,?[t]:(thanks(t) & ?[y]:(great(y) & birthday(y) & for(t,y))))))}
+	{#1=jessie}
+
+ >> Who was having a birthday?
+	{^[x]:(today=birthday_of(x))}
+	{^[x]:(?[b]:(birthday(b) & have(x,b)))}
+
+ >> Who didn't come to the party?
+	{^[x]:(?[p]:(party(p) & ~go(x,p)))}
+
+ >> How did Jessie get ready for the party?
+	{?[p]:(party(p) & how(prepare,x)(jessie,p)))}
+
+ >> How many friends came to Jessie's party?
+	{^[x]:(?[F]:(clique(F,^[a,b]:friend(a,b)) & size(F)=x & ?[p]:(have(jessie,p) & party(p) & ![f]:(F(f) => go(f,p)))))}
