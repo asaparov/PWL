@@ -6,35 +6,121 @@ S -> S':plural PERIOD:null
 S -> ADVP (COMMA) S
 S -> S (COMMA) ADVP
 
+
 S' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
-# S' {g(a)} -> DP {a} VP {^[x]:g(x)}
-# S' {~g(a)} -> DP {a} VP {^[x]:~g(x)}
+
+# S' {g(a)} -> DP {^[Q]:Q(a)} VP {^[x]:g(x)}
+# S' {~g(a)} -> DP {^[Q]:Q(a)} VP {^[x]:~g(x)}
 S' -> DP:select_arg VP:delete_arg
-# S' {![x]:(f(x) => g(x))} -> DP {![x]:f(x)} VP {^[x]:g(x)}
-# S' {~![x]:(f(x) => g(x))} -> DP {~![x]:f(x)} VP {^[x]:g(x)}
+
+# S' {![x]:(f(x) => g(x))} -> DP {^[Q]:![x]:(f(x) -> Q(x))} VP {^[x]:g(x)}
+# S' {~![x]:(f(x) => g(x))} -> DP {^[Q]:~![x]:(f(x) -> Q(x))} VP {^[x]:g(x)}
 S' -> DP:remove_consequent VP:select_consequent
-# S' {~![x]:(f(x) => g(x))} -> DP {![x]:f(x)} VP {^[x]:~g(x)}
+# S' {~![x]:(f(x) => g(x))} -> DP {^[Q]:![x]:(f(x) -> Q(x))} VP {^[x]:~g(x)}
 S' -> DP:remove_consequent_not VP:select_not_consequent
-# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ![x]:(X(x) => h(x)))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[x]:h(x)}
-# where F could be subset or =; this rule also includes multiplicative quantification
+
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...))...)}
+#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[h]:![x1]:(X1(x1) => h)))}
+#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...)))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...))...)}
+#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[h]:~![x1]:(X1(x1) => h)))}
+#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...)))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => h(x1,...,xn))...))...)}
+#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[h]:?[x1]:(X1(x1) & h)))}
+#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...)))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => h(x1,...,xn))...))...)}
+#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[h]:~?[x1]:(X1(x1) & h)))}
+#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...)))...)}
+# where F1,...,Fn are set-defining functions like subset or =
+# TODO: add a version of these two rules for weak universal quantification
 S' -> DP:remove_set_universal VP:select_set_consequent
-# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ~![x]:(X(x) => h(x)))} -> DP {~?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[x]:h(x)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...))...)}
+#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[h]:![x1]:(X1(x1) => h)))}
+#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(~![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...)))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => h(x1,...,xn))...))...)}
+#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[h]:?[x1]:(X1(x1) & h)))}
+#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(~![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => h(x1,...,xn))...)))...)}
 S' -> DP:not_remove_set_universal VP:select_set_consequent
-# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ~![x]:(X(x) => h(x)))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[x]:~h(x)}
-S' -> DP:remove_set_universal VP:select_not_set_consequent
-# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ![x,y]:(X(x) & Y(y) => v(x,y))))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[X]:?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ![x,y]:(X(x) & Y(y) => v(x,y)))}
-# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ~![x,y]:(X(x) & Y(y) => v(x,y))))} -> DP {?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[X]:?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ~![x,y]:(X(x) & Y(y) => v(x,y)))}
-# note: the quantifier ![x,y] could also be weak
-S' -> DP:remove_set_existential VP:select_set_existential
-# S' {?[X]:(F(X,^[x]:f(x)) & g(X) & ?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ~![x,y]:(X(x) & Y(y) => v(x,y))))} -> DP {~?[X]:(F(X,^[x]:f(x)) & g(X))} VP {^[X]:?[Y]:(G(Y,^[y]:h(y)) & u(Y) & ![x,y]:(X(x) & Y(y) => v(x,y)))}
-S' -> DP:not_remove_set_existential VP:select_set_existential_remove_not
+
 # S' {?[x]:f(x)} -> THERE IS DP {?[x]:f(x)}
 # S' {~?[x]:f(x)} -> THERE IS DP {~?[x]:f(x)}
 S' -> THERE:null IS:null DP:identity
-# S' {?[x]:(f(x) & g(x))} -> DP {?[x]:f(x)} VP:{^[x]:g(x)}
-# S' {~?[x]:(f(x) & g(x))} -> DP {~?[x]:f(x)} VP:{^[x]:g(x)}
+
+# S' {?[x]:(f(x) & g(x))} -> DP {^[Q]:?[x]:(f(x) & Q(x))} VP:{^[x]:g(x)}
 S' -> DP:remove_right_conjunct VP:select_right_conjunct
-# S' {~?[x]:(f(x) & g(x))} -> DP {?[x]:f(x)} VP:{^[x]:~g(x)}
-S' -> DP:remove_right_conjunct_not VP:select_not_right_conjunct
+
+
+VP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+VP -> VP COMMA:null VP
+VP -> VP AND VP
+VP -> VP COMMA:null AND VP
+VP -> VP OR VP
+VP -> VP COMMA:null OR VP
+
 
 DP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# DP {?[x]:f(x)} -> A NP {?[x]:f(x)}
+# DP {^[Q]:?[x]:(f(x) & Q(x))} -> A NP {^[Q]:?[x]:(f(x) & Q(x))}
+# DP {^[Q]:![x]:(f(x) -> Q(x))} -> A NP {^[Q]:![x]:(f(x) -> Q(x))}
+# DP {^[Q]:?[S]:(F(S,^[x]:f(x)) & Q(^[h]:![x]:(S(x) => h)))} -> A NP {^[Q]:?[S]:(F(S,^[x]:f(x)) & Q(^[h]:![x]:(S(x) => h)))}
+#   e.g. "A group of students walks down the street."
+DP -> A:null NP:concord_singular
+
+# DP {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[h]:(~)![x]:(S(x) => h)))}
+#  -> DP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[h]:(~)![x]:(x1(x) => h)))} if x1 is a set
+#     COMMA
+#     DP {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[h]:(~)![x]:(S(x) => h)))}
+# note: xi could also be constants, rather than existentially-quantified variables
+DP -> DP COMMA:null DP
+
+# DP {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[h]:(~)![x]:(S(x) => h)))}
+#  -> DP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[h]:(~)![x]:(x1(x) => h)))} if x1 is a set
+#     (COMMA) AND
+#     DP {^[Q]:?[x2]:(f2(x2) & (~)Q(x2))} or {^[Q]:?[x2]:(f2(x2) & Q(^[h]:(~)![x]:(x2(x) => h)))} if x2 is a set
+# note: xi could also be constants, rather than existentially-quantified variables
+DP -> DP AND:null DP
+DP -> DP COMMA:null AND:null DP
+
+# DP {^[Q]:~![x]:(f(x) -> Q(x))} -> A NP {^[Q]:![x]:(f(x) -> Q(x))}
+DP -> NOT:null ALL:null NP
+# DP {^[Q]:![X]:(f(X) & Q(^[h]:~![x]:(X(x) => h)))} -> A NP {^[Q]:![X]:(f(X) & Q(^[h]:![x]:(X(x) => h)))}
+DP -> NOT:null ALL:null NP
+
+DP -> DP:apos NP
+DP -> THE NP
+DP -> DP OR DP
+DP -> DP COMMA:null OR DP
+
+
+NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+NP -> NP'
+NP -> NP PP
+NP -> NP COMP CP
+NP -> NP VP:keep_present_participle
+NP -> NP VP:flip_predicate_keep_past_participle
+NP -> NP COMMA:null NP
+NP -> NP AND NP
+NP -> NP COMMA:null AND NP
+NP -> NP OR NP
+NP -> NP COMMA:null OR NP
+
+
+NP' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+NP' -> N
+NP' -> ADJP NP'
+
+
+PP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+PP -> P DP
+PP -> PP COMMA:null PP
+PP -> PP AND PP
+PP -> PP COMMA:null AND PP
+PP -> PP OR PP
+PP -> PP COMMA:null OR PP
+
+
+ALL nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+ALL -> "every"
+ALL -> "each"
+ALL -> "all"
