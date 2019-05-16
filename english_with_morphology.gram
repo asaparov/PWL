@@ -1,3 +1,68 @@
+# We use neo-Davidsonian/event semantics to represent meaning in logical form.
+# Thus, all verbs, nouns, adjectives, adverbs, etc are expressed as quantified
+# variables. The "head" of any logical form is the right-most scope (not
+# necessarily the deepest). For example:
+#
+#  "cats are mammals"
+#  ![x]:(U(x) & cat(x) => mammal(x))
+#
+#  "4 cats are sleeping"
+#  ?[X]:(subset(X,^[x]:(U(x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(sleep(s) & arg1(s)=x)))
+#
+#  "there is a cat"
+#  ?[x]:(U(x) & cat(x))
+#
+#  "3 teachers grade 6 exams"
+#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & ![x,y]:(X(x) & Y(y) => ?[g]:(grade(g) & arg2(g)=y & arg1(g)=x))))
+#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & !W[x,y]:(X(x) & Y(y) => ?[g]:(grade(g) & arg2(g)=y & arg1(g)=x))))
+#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ![x]:(X(x) => ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & ![y]:(Y(y) => ?[g]:(grade(g) & arg2(g)=y & arg1(g)=x)))))
+# where !W is the weak universal quantifier, which is defined as:
+# !W[x1,...,xn]:(X1(x1) & ... & Xn(xn) => f(x1,...,xn)) =
+#     ![x1]:(X1(x1) => ?[x2,...,xn]:(X2(x2) & ... & Xn(xn) & f(x1,...,xn)))
+#   & ![x2]:(X2(x2) => ?[x1,x3,...,xn]:(X1(x1) & X3(x3) & ... & Xn(xn) & f(x1,...,xn)))
+#   & ![x3]:(X3(x3) => ?[x1,...,x2,x4,...,xn]:(X1(x1) & ... & X2(x2) & X4(x4) & ... & Xn(xn) & f(x1,...,xn)))
+#   & ![x4]:(X4(x4) => ?[x1,...,x3,x5,...,xn]:(X1(x1) & ... & X3(x3) & X5(x5) & ... & Xn(xn) & f(x1,...,xn)))
+#   & ... & ![xn]:(Xn(xn) => ?[x1,...,x(n-1)]:(X1(x1) & ... & X(n-1)(x(n-1)) & f(x1,...,xn)))
+#
+#  "a dog likes every cat"
+#  ?[d]:(U(d) & dog(d) & ![c]:(U(c) & cat(c) => ?[l]:(like(l) & arg2(l)=c & arg1(l)=d)))
+#  ![c]:(U(c) & cat(c) => ?[d]:(U(d) & dog(d) & ?[l]:(like(l) & arg2(l)=c & arg1(l)=d)))
+#
+#  "not every cat is a tabby"
+#  "not all cats are tabbies"
+#  ~![c]:(U(c) & cat(c) => tabby(c))
+#
+#  "every cat isn't a tabby"
+#  "all cats aren't tabbies"
+#  ~![c]:(U(c) & cat(c) => tabby(c))
+#  ![c]:(U(c) & cat(c) => ~tabby(c))
+#
+#  "a cat and dog are sleeping"
+#  ?[X]:(?[c]:(U(c) & cat(c) & ?[d]:(U(d) & dog(d) & X=^[x]:(x=c | x=d))) & ![x]:(X(x) => ?[s]:(sleep(s) & arg1(s)=x)))
+#
+#  "4 cats, 2 dogs, and a bird are sleeping"
+#  ?[X]:(?[C]:(subset(C,^[x]:(U(x) & cat(x))) & size(C)=4 & ?[D]:(subset(D,^[x]:(U(x) & dog(x))) & size(D)=2 & ?[b]:(U(b) & bird(b) & X=^[x]:(x=C | x=D | x=^[y]:y=b)))) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[s]:(sleep(s) & arg1(s)=x))))
+#
+#  "a man and his dog were walking in the park"
+#  ?[X]:(?[m]:(U(m) & man(m) & ?[d]:(U(d) & dog(d) & male(#1) & ?[o]:(owns(o) & arg1(o)=#1 & arg2(o)=d) & X=^[x]:(x=m | x=d))) & ![x]:(X(x) => ?[w]:(walk(w) & ?[p]:(U(p) & park(p) & arg2(w)=p) & arg1(w)=x)))
+#
+#  "10 girls and boys are in class"
+#  ?[X]:(?[G]:(G=^[x]:(U(x) & girl(x)) & ?[B]:(B=^[x]:(U(x) & boy(x)) & X=^[x]:(x=G | x=B))) & ![Y]:(X(Y) => size(Y)=10) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[l]:(located(l) & ?[c]:(U(c) & class(c) & arg2(l)=c) & arg1(l)=x))))
+#  ?[X]:(?[G]:(G=^[x]:(U(x) & girl(x)) & ?[B]:(B=^[x]:(U(x) & boy(x)) & X=^[x]:(x=G | x=B))) & sum(X,^[Y]:size(Y))=10 & ![Y]:(X(Y) => ![x]:(Y(x) => ?[l]:(located(l) & ?[c]:(U(c) & class(c) & arg2(l)=c) & arg1(l)=x))))
+#
+#  "Jane is the only doctor"
+#  ?[o]:(only(o) & arg2(o)=^[x]:doctor(x) & arg1(o)=jane) [or maybe we should do] ?[o]:(only(o) & ?[D]:(D=^[x]:doctor(x) & arg2(o)=D) & arg1(o)=jane)
+#
+#  "i did not get much money"
+#  ?[m]:(money(m) & ?[l]:(large_amount(l) & arg1(l)=m) & ~[r]:(receive(r) & arg2(r)=m & arg1(r)=me))
+#
+#  "i don't like Ralph's destroying the barn"
+#  ?[d]:(destroy(d) & arg1(d)=ralph & ~?[l]:(like(l) & arg2(l)=d & arg1(l)=me))
+# note: we could require `ralph` and `me` be part of U in the discourse model
+#
+#  "the cat's purring is soothing"
+#  ?[c]:(cat(c) & ?[p]:(purr(p) & arg1(p)=c & ?[s]:(sooth(s) & arg1(s)=p)))
+
 
 # This is the root nonterminal for declarative sentences.
 S nonterminal {} {1.0} {1.0} {} 10 1.0 {}
