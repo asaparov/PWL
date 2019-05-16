@@ -21,96 +21,107 @@ S -> S FOR S
 
 S' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
 
-# S' {g(a)} -> DP {^[Q]:Q(a)} VP {^[x]:g(x)}
-# S' {~g(a)} -> DP {^[Q]:Q(a)} VP {^[x]:~g(x)}
-# S' {![x]:(f(x) => g(h(x)))} -> DP {^[Q]:![x]:(f(x) => Q(h(x)))} VP {^[x]:g(x)}
-# S' {~![x]:(f(x) => g(h(x)))} -> DP {^[Q]:~![x]:(f(x) => Q(h(x)))} VP {^[x]:g(x)}
+# S' {g(a)} -> DP {a} VP {g(x)}
+# S' {~g(a)} -> DP {a} VP {~g(x)}
+# S' {![x]:(f(x) => g(h(x)))} -> DP {![x]:(f(x) => h(x))} VP {g(x)}
+# S' {~![x]:(f(x) => g(h(x)))} -> DP {~![x]:(f(x) => h(x))} VP {g(x)}
 # note: h is optional here (it could be the identity ^[x]:x)
-# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))...))...)}
-#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[g]:![x1]:(X1(x1) => g(h1(x1)))))}
-#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(^[x1]:![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2),...,hn(xn)))...)))...)}
-# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))...))...)}
-#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[g]:~![x1]:(X1(x1) => g(h1(x1)))))}
-#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(^[x1]:![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2),...,hn(xn)))...)))...)}
-# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))...))...)}
-#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[g]:?[x1]:(X1(x1) & g(h1(x1)))))}
-#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(^[x1]:![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2),...,hn(xn)))...)))...)}
-# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))...))...)}
-#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[g]:~?[x1]:(X1(x1) & g(h1(x)))))}
-#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(^[x1]:![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2),...,hn(xn)))...)))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn)))...))...)}
+#  -> DP {?[X1]:(F1(X1,^[x]:f1(x)) & ![x1]:(X1(x1) => h1(x1)))}
+#     VP {?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn)))...))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn)))...))...)}
+#  -> DP {?[X1]:(F1(X1,^[x]:f1(x)) & ~![x1]:(X1(x1) => h1(x1)))}
+#     VP {?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn)))...))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn)))...))...)}
+#  -> DP {?[X1]:(F1(X1,^[x]:f1(x)) & ?[x1]:(X1(x1) & h1(x1)))}
+#     VP {?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn)))...))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn)))...))...)}
+#  -> DP {?[X1]:(F1(X1,^[x]:f1(x)) & ~?[x1]:(X1(x1) & h1(x)))}
+#     VP {?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn)))...))...)}
 # where F1,...,Fn are set-defining functions like subset or =
-# note: h1, ..., hn are optional (they could be the identity ^[x]:x)
+# note: h1 and h2 are optional (they could be the identity ^[x]:x)
 # TODO: add a version of these two rules for weak universal quantification
 S' -> DP:remove_set_universal VP:select_set_consequent
-# S' {~![x]:(f(x) => g(h(x)))} -> DP {^[Q]:![x]:(f(x) => Q(h(x)))} VP {^[x]:~g(x)}
+# S' {~![x]:(f(x) => g(h(x)))} -> DP {![x]:(f(x) => h(x))} VP {~g(x)}
 # note: h is optional here (it could be the identity ^[x]:x)
-# S' {?[x]:(f(x) & g(h(x)))} -> DP {^[Q]:?[x]:(f(x) & Q(h(x)))} VP:{^[x]:g(x)}
-# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))...))...)}
-#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[g]:![x1]:(X1(x1) => g(h1(x1)))))}
-#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(^[x1]:~![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2),...,hn(xn)))...)))...)}
-# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))...))...)}
-#  -> DP {^[Q]:?[X1]:(F1(X1,^[x]:f1(x)) & Q(^[g]:?[x1]:(X1(x1) & g(h1(x1)))))}
-#     VP {^[Q]:?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & Q(^[x1]:~![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2),...,hn(xn)))...)))...)}
+# S' {?[x]:(f(x) & g(h(x)))} -> DP {?[x]:(f(x) & h(x))} VP:{g(x)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x1]:(X1(x1) => ... => ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn)))...))...)}
+#  -> DP {?[X1]:(F1(X1,^[x]:f1(x)) & ![x1]:(X1(x1) => h1(x1)))}
+#     VP {?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn)))...))...)}
+# S' {?[X1]:(F1(X1,^[x]:f1(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~?[x1]:(X1(x1) & ... => ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn)))...))...)}
+#  -> DP {?[X1]:(F1(X1,^[x]:f1(x)) & ?[x1]:(X1(x1) & h1(x1)))}
+#     VP {?[X2]:(F2(X2,^[x]:f2(x)) & ... & ?[Xn]:(Fn(Xn,^[x]:fn(x)) & ~![x2]:(X2(x2) => ... => ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn)))...))...)}
 S' -> DP:not_remove_set_universal VP:select_set_consequent
 
-# S' {?[x]:f(x)} -> THERE IS DP {^[Q]:?[x]:(f(x) & Q(x))}
-# S' {~?[x]:f(x)} -> THERE IS DP {^[Q]:~?[x]:(f(x) & Q(x))}
+# S' {?[x]:f(x)} -> THERE IS DP {?[x]:f(x)}
+# S' {~?[x]:f(x)} -> THERE IS DP {~?[x]:f(x)}
 S' -> THERE:null IS:null DP:identity
 
 
 VP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
-# this depends on whether there are any sets/variables that are shared by the conjuncts/disjuncts in the consequent
+# VP {?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & (~)![x1,...,xn]:(X1(x1) & ... & Xn(xn) => g(h(x2,...,xn), x1)))...)}
+#  -> VP {?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & (~)![x2,...,xn]:(X2(x2) & ... & Xn(xn) => h(x2,...,xn)))...)} # all sets and variables that are not required by h are removed
+#     PP {?[X1]:(F1(X1) & ![x1]:(X1(x1) => g(z,x1)))} # any other sets and variables required by g are also kept
+# note: x1,...,xn could also be individuals rather than sets
+# this rule should not be selected if there are any sets/variables that are shared by both g and h
 VP -> VP PP
 
-# VP {^[x1,...,xk]:((~)f1(x1,...,xk) & ... & (~)fn(x1,...,xk))}
-#  -> VP {^[x1,...,xk]:(~)f1(x1,...,xk)}
+# VP {?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & (~)![x1,...,xn]:(X1(x1) & ... & Xn(xn) => g(h1(x1,...,xm),hn(xn))))...)}
+#  -> VP {?[X1]:(F1(X1) & ... & ?[Xm]:(Fm(Xm) & (~)![x1,...,xm]:(X1(x1) & ... & Xm(xm) => g(h1(x1,...,xm),xn)))...)} # all sets and variables that are not required by hn(xn) are removed
+#     PP {?[Xn]:(Fn(Xn) & ![xn]:(Xn(xn) => g(x1,...,xm,hn(xn)))))} # any other sets and variables required by g are also kept
+# note: x1,...,xn could also be individuals rather than sets
+# this rule should not be selected if there are any sets/variables that are shared by both g and h
+VP -> VP PP
+
+# VP {(~)f1(x1,...,xk) & ... & (~)fn(x1,...,xk)}
+#  -> VP {(~)f1(x1,...,xk)}
 #     COMMA
-#     VP {^[x1,...,xk]:((~)f2(x1,...,xk) & ... & (~)fn(x1,...,xk))}
-# VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk) & ... & (~)fn(x1,...xj,y1,...,yk))))}
-#  -> VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk))))} # the sets and variables unused by f1 are removed
+#     VP {(~)f2(x1,...,xk) & ... & (~)fn(x1,...,xk)}
+# VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj) & ... & (~)fn(x1,...xj)))}
+#  -> VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj)))} # the sets and variables unused by f1 are removed
 #     COMMA
-#     VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj,y1,...,yk) & ... & (~)fn(x1,...xj,y1,...,yk))))} # the sets and variables unused by f2,...,fn are removed
-# VP {^[x1,...,xk]:((~)f1(x1,...,xk) | ... | (~)fn(x1,...,xk))}
-#  -> VP {^[x1,...,xk]:(~)f1(x1,...,xk)}
+#     VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj) & ... & (~)fn(x1,...xj)))} # the sets and variables unused by f2,...,fn are removed
+# VP {(~)f1(x1,...,xk) | ... | (~)fn(x1,...,xk)}
+#  -> VP {(~)f1(x1,...,xk)}
 #     COMMA
-#     VP {^[x1,...,xk]:((~)f2(x1,...,xk) | ... | (~)fn(x1,...,xk))}
-# VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk) | ... | (~)fn(x1,...xj,y1,...,yk))))}
-#  -> VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk))))} # the sets and variables unused by f1 are removed
+#     VP {(~)f2(x1,...,xk) | ... | (~)fn(x1,...,xk)}
+# VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj) | ... | (~)fn(x1,...xj)))}
+#  -> VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj)))} # the sets and variables unused by f1 are removed
 #     COMMA
-#     VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj,y1,...,yk) | ... | (~)fn(x1,...xj,y1,...,yk))))} # the sets and variables unused by f2,...,fn are removed
+#     VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj) | ... | (~)fn(x1,...xj)))} # the sets and variables unused by f2,...,fn are removed
 VP -> VP COMMA:null VP
 
-# VP {^[x1,...,xk]:((~)f1(x1,...,xk) & (~)f2(x1,...,xk))}
-#  -> VP {^[x1,...,xk]:(~)f1(x1,...,xk)}
+# VP {(~)f1(x1,...,xk) & (~)f2(x1,...,xk)}
+#  -> VP {(~)f1(x1,...,xk)}
 #     (COMMA) AND
-#     VP {^[x1,...,xk]:(~)f2(x1,...,xk)}
-# VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk) & (~)f2(x1,...xj,y1,...,yk))))}
-#  -> VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk))))} # the sets and variables unused by f1 are removed
+#     VP {(~)f2(x1,...,xk)}
+# VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj) & (~)f2(x1,...xj)))}
+#  -> VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj)))} # the sets and variables unused by f1 are removed
 #     (COMMA) AND
-#     VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj,y1,...,yk))))} # the sets and variables unused by f2 are removed
+#     VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj)))} # the sets and variables unused by f2 are removed
 VP -> VP AND VP
 VP -> VP COMMA:null AND VP
 
-# VP {^[x1,...,xk]:((~)f1(x1,...,xk) | (~)f2(x1,...,xk))}
-#  -> VP {^[x1,...,xk]:(~)f1(x1,...,xk)}
+# VP {(~)f1(x1,...,xk) | (~)f2(x1,...,xk)}
+#  -> VP {(~)f1(x1,...,xk)}
 #     (COMMA) OR
-#     VP {^[x1,...,xk]:(~)f2(x1,...,xk)}
-# VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk) | (~)f2(x1,...xj,y1,...,yk))))}
-#  -> VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj,y1,...,yk))))} # the sets and variables unused by f1 are removed
+#     VP {(~)f2(x1,...,xk)}
+# VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj) | (~)f2(x1,...xj)))}
+#  -> VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f1(x1,...xj)))} # the sets and variables unused by f1 are removed
 #     (COMMA) OR
-#     VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj,y1,...,yk))))} # the sets and variables unused by f2 are removed
+#     VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => (~)f2(x1,...xj)))} # the sets and variables unused by f2 are removed
 VP -> VP OR VP
 VP -> VP COMMA:null OR VP
 
-# VP {^[x1,...,xk]:(~f1(x1,...,xk) & ~f2(x1,...,xk))}
-#  -> VP {^[x1,...,xk]:~f1(x1,...,xk)}
-#     (COMMA) OR
-#     VP {^[x1,...,xk]:f2(x1,...,xk)}
-# VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => ~f1(x1,...xj,y1,...,yk) & ~f2(x1,...xj,y1,...,yk))))}
-#  -> VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => ~f1(x1,...xj,y1,...,yk))))} # the sets and variables unused by f1 are removed
-#     (COMMA) OR
-#     VP {^[Q]:?[X1,...,Xj]:(... & Q(^[y1,...,yk]:![x1,...,xj]:(X1(x1) & ... & Xj(xj) => f2(x1,...xj,y1,...,yk))))} # the sets and variables unused by f2 are removed
+# VP {~f1(x1,...,xk) & ~f2(x1,...,xk)}
+#  -> VP {~f1(x1,...,xk)}
+#     (COMMA) NOR
+#     VP {f2(x1,...,xk)}
+# VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => ~f1(x1,...xj) & ~f2(x1,...xj)))}
+#  -> VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => ~f1(x1,...xj)))} # the sets and variables unused by f1 are removed
+#     (COMMA) NOR
+#     VP {?[X1,...,Xj]:(... & ![x1,...,xj]:(X1(x1) & ... & Xj(xj) => f2(x1,...xj)))} # the sets and variables unused by f2 are removed
 # this depends on whether f1 and f2 are negated
 VP -> VP NOR VP # TODO: the second VP requires do-support
 VP -> VP COMMA:null NOR VP # TODO: the second VP requires do-support
@@ -122,57 +133,57 @@ DP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # DP {A} -> A NP {A}
 DP -> DP'
 
-# DP {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => ![y]:(x(y) => g(h(y))))))} if xi are set-valued
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => g(h(x)))))} if xi are individuals
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & ?[y]:(x(y) & g(h(y))))))} if xi are set-valued
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & g(h(x)))))} if xi are individuals
-#  -> DP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[g]:(~)![x]:(x1(x) => g(h(x)))))} if x1 is a set
+# DP {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))} if xi are set-valued
+# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => h(x)))} if xi are individuals
+# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))} if xi are set-valued
+# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & h(x)))} if xi are individuals
+#  -> DP {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)![x]:(x1(x) => h(x)))} if x1 is a set
 #     COMMA
-#     DP {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => ![y]:(x(y) => g(h(y))))))}
-#     or {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => g(h(x)))))}
-#     or {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & ?[y]:(x(y) & g(h(y))))))}
-#     or {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & g(h(x)))))}
+#     DP {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))}
+#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => h(x)))}
+#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))}
+#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & h(x)))}
 # note: xi could also be constants, rather than existentially-quantified variables
 # note: if xi is a set containing a singleton, S would look like ^[x]:(... | x=^[y]:y=singleton | ...)
 DP -> DP COMMA:null DP:comma
 
-# DP {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)![x]:(S(x) => ![y]:(x(y) => g(h(y))))))}
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)![x]:(S(x) => g(h(x)))))}
-#  -> DP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[g]:(~)![x]:(x1(x) => g(h(x)))))} if x1 is a set
+# DP {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))}
+# or {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => h(x)))}
+#  -> DP {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)![x]:(x1(x) => h(x)))} if x1 is a set
 #     (COMMA) AND
-#     DP {^[Q]:?[x2]:(f2(x2) & (~)Q(x2))} or {^[Q]:?[x2]:(f2(x2) & Q(^[g]:(~)![x]:(x2(x) => g(h(x)))))} if x2 is a set
+#     DP {?[x2]:(f2(x2) & (~)h(x2))} or {?[x2]:(f2(x2) & (~)![x]:(x2(x) => h(x)))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
 DP -> DP AND:null DP
 DP -> DP COMMA:null AND:null DP
 
-# DP {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)?[x]:(S(x) & ?[y]:(x(y) & g(h(y))))))}
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)?[x]:(S(x) & g(h(x)))))}
-#  -> DP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[g]:(~)?[x]:(x1(x) & g(h(x)))))} if x1 is a set
-#     (COMMA) AND
-#     DP {^[Q]:?[x2]:(f2(x2) & (~)Q(x2))} or {^[Q]:?[x2]:(f2(x2) & Q(^[g]:(~)?[x]:(x2(x) & g(h(x)))))} if x2 is a set
+# DP {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))}
+# or {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & h(x)))}
+#  -> DP {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)?[x]:(x1(x) & h(x)))} if x1 is a set
+#     (COMMA) OR
+#     DP {?[x2]:(f2(x2) & (~)h(x2))} or {?[x2]:(f2(x2) & (~)?[x]:(x2(x) & h(x)))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
 DP -> DP OR:null DP
 DP -> DP COMMA:null OR:null DP
 
-# DP {^[Q]:~![x]:(f(x) -> Q(x))} -> NO NP {^[Q]:![x]:(f(x) -> Q(x))}
-# DP {^[Q]:~?[x]:(f(x) & Q(x))} -> NO NP {^[Q]:?[x]:(f(x) & Q(x))}
-# DP {^[Q]:![X]:(f(X) & Q(^[g]:~![x]:(X(x) => g(h(x)))))} -> NO NP {^[Q]:![X]:(f(X) & Q(^[g]:![x]:(X(x) => g(h(x)))))}
-# DP {^[Q]:![X]:(f(X) & Q(^[g]:~?[x]:(X(x) & g(h(x)))))} -> NO NP {^[Q]:![X]:(f(X) & Q(^[g]:?[x]:(X(x) & g(h(x)))))}
-# this depends on whether the quantifier inside `Q` is negated
+# DP {~![x]:(f(x) -> h(x))} -> NO NP {![x]:(f(x) -> h(x))}
+# DP {~?[x]:(f(x) & h(x))} -> NO NP {?[x]:(f(x) & h(x))}
+# DP {![X]:(f(X) & ~![x]:(X(x) => h(x)))} -> NO NP {![X]:(f(X) & ![x]:(X(x) => h(x)))}
+# DP {![X]:(f(X) & ~?[x]:(X(x) & h(x)))} -> NO NP {![X]:(f(X) & ?[x]:(X(x) & h(x)))}
+# this depends on whether the head quantifier is negated
 DP -> NO NP
 DP -> NOT DP
 
-# DP {^[Q]:Q(a)} -> NAME {a}
+# DP {a} -> NAME {a}
 # this depends on whether `a` is a constant vs a predicate, or a more complex formula
 DP -> NAME
 
-# DP {^[Q]:(A & Q(h(a,c)))} => ADV {^[Q,x]:Q(h(x,c))} DP {^[Q]:(A & Q(a))}
-# DP {^[Q]:(A & Q(h(c,a)))} => ADV {^[Q,x]:Q(h(c,x))} DP {^[Q]:(A & Q(a))}
-# where e.g. h could be * and c could be 2
+# DP {A & h(a,c)} => ADV {h(x,c)} DP {A & a}
+# DP {A & h(c,a)} => ADV {h(c,x)} DP {A & a}
+# where e.g. h could be multiply and c could be 2, which can be expressed as "twice the ..."
 DP -> ADV DP:adv
 
-# DP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:![x]:(X(x) => g(h(x)))))} -> EACH NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:![x]:(X(x) => g(h(x)))))}
-# DP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:?[x]:(X(x) & g(h(x)))))} -> EACH NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:?[x]:(X(x) & g(h(x)))))}
+# DP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))} -> EACH NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
+# DP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))} -> EACH NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
 DP -> EACH:no_adv NP
@@ -181,23 +192,23 @@ DP -> EACH:no_adv NP
 #   e.g. "A group of students walks down the street."
 DP -> A:null NP:concord_singular
 
-# DP {^[Q]:![X]:(F(subset(X,^[x]:f(x))) & Q(^[g]:![x]:(X(x) => g(h(x)))))} -> SOME NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:![x]:(X(x) => g(h(x)))))}
-# DP {^[Q]:![X]:(F(subset(X,^[x]:f(x))) & Q(^[g]:?[x]:(X(x) & g(h(x)))))} -> SOME NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:?[x]:(X(x) & g(h(x)))))}
+# DP {![X]:(F(subset(X,^[x]:f(x))) & ![x]:(X(x) => h(x)))} -> SOME NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
+# DP {![X]:(F(subset(X,^[x]:f(x))) & ?[x]:(X(x) & h(x)))} -> SOME NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
 # this depends on whether the set is defined using `subset` rather than with functions like `half` or as S=^[x]:f(x);
 DP -> SOME NP
 
 # DP {A} -> DEF_DP {A}
 DP -> DEF_DP
 
-# DP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:![x]:(X(x) => g(h(x)))))} -> ALL DEF_NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:![x]:(X(x) => g(h(x)))))}
-# DP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:?[x]:(X(x) & g(h(x)))))} -> ALL DEF_NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:?[x]:(X(x) & g(h(x)))))}
+# DP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))} -> ALL DEF_NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
+# DP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))} -> ALL DEF_NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
 DP -> ALL DEF_DP
 DP -> ALL DP'
 
-# DP {^[Q]:![X]:(F(half(X,^[x]:f(x))) & Q(^[g]:![x]:(X(x) => g(h(x)))))} -> HALF DEF_NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:![x]:(X(x) => g(h(x)))))}
-# DP {^[Q]:![X]:(F(half(X,^[x]:f(x))) & Q(^[g]:?[x]:(X(x) & g(h(x)))))} -> HALF DEF_NP {^[Q]:![X]:(F(X=^[x]:f(x)) & Q(^[g]:?[x]:(X(x) & g(h(x)))))}
+# DP {![X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => h(x)))} -> HALF DEF_NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
+# DP {![X]:(F(half(X,^[x]:f(x))) & ?[x]:(X(x) & h(x)))} -> HALF DEF_NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
 # this depends on whether the set is defined using `half` rather than with functions like `subset` or as S=^[x]:f(x);
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
 DP -> HALF DEF_DP
@@ -209,59 +220,59 @@ DEF_DP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # DEF_DP {A} -> THE NP {A}
 DEF_DP -> THE DP'
 
-# DP {^[Q]:![x]:(this(x) & f(x) => Q(h(x)))} -> THIS NP {^[Q]:![x]:(f(x) => Q(h(x)))}
-# DP {^[Q]:?[x]:(this(x) & Q(h(x)))} -> THIS NP {^[Q]:?[x]:Q(h(x))}
-# DP {^[Q]:?[S]:(this(S) & F(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))} -> THIS NP {^[Q]:?[S]:(F(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))}
-# DP {^[Q]:?[S]:(this(S) & F(S) & Q(^[g]:?[x]:(S(x) & g(h(x)))))} -> THIS NP {^[Q]:?[S]:(F(S) & Q(^[g]:?[x]:(S(x) & g(h(x)))))}
+# DP {![x]:(this(x) & f(x) => h(x))} -> THIS NP {![x]:(f(x) => h(x))}
+# DP {?[x]:(this(x) & h(x))} -> THIS NP {?[x]:h(x)}
+# DP {?[S]:(this(S) & F(S) & ![x]:(S(x) => h(x)))} -> THIS NP {?[S]:(F(S) & ![x]:(S(x) => h(x)))}
+# DP {?[S]:(this(S) & F(S) & ?[x]:(S(x) & h(x)))} -> THIS NP {?[S]:(F(S) & ?[x]:(S(x) & h(x)))}
 # this depends on whether the head predicate of the left conjunct is `this`
 DEF_DP -> THIS DP'
 
-# DP {^[Q]:![x]:(that(x) & f(x) => Q(h(x)))} -> THIS NP {^[Q]:![x]:(f(x) => Q(h(x)))}
-# DP {^[Q]:?[x]:(that(x) & Q(h(x)))} -> THIS NP {^[Q]:?[x]:Q(h(x))}
-# DP {^[Q]:?[S]:(that(S) & F(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))} -> THIS NP {^[Q]:?[S]:(F(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))}
-# DP {^[Q]:?[S]:(that(S) & F(S) & Q(^[g]:?[x]:(S(x) & g(h(x)))))} -> THIS NP {^[Q]:?[S]:(F(S) & Q(^[g]:?[x]:(S(x) & g(h(x)))))}
+# DP {![x]:(that(x) & f(x) => h(x))} -> THIS NP {![x]:(f(x) => h(x))}
+# DP {?[x]:(that(x) & h(x))} -> THIS NP {?[x]:h(x)}
+# DP {?[S]:(that(S) & F(S) & ![x]:(S(x) => h(x)))} -> THIS NP {?[S]:(F(S) & ![x]:(S(x) => h(x)))}
+# DP {?[S]:(that(S) & F(S) & ?[x]:(S(x) & h(x)))} -> THIS NP {?[S]:(F(S) & ?[x]:(S(x) & h(x)))}
 # this depends on whether the head predicate of the left conjunct is `that`
 DEF_DP -> THAT DP'
 
-# DEF_DP {^[Q]:?[x]:(belongs(x,a) & f(x,Q))} -> DP {^[Q]:Q(a)} DP' {^[Q]:?[x]:f(x,Q)}
-# DEF_DP {^[Q]:?[x]:(?[y]:(g(y) & belongs(x,h(y))) & f(x,Q))} -> DP {^[Q]:?[y]:(g(y) & Q(h(y)))} DP' {^[Q]:?[x]:f(x,Q)}
-# DEF_DP {^[Q]:?[S]:(![x]:(S(x) => belongs(x,a)) & f(S,Q))} -> DP {^[Q]:Q(a))} DP' {^[Q]:?[S]:f(S,Q)}
-# DEF_DP {^[Q]:?[S]:(?[y]:(g(y) & ![x]:(S(x) => belongs(x,h(y)))) & f(S,Q))} -> DP {^[Q]:?[y]:(g(y) & Q(h(y)))} DP' {^[Q]:?[S]:f(S,Q)}
-# DEF_DP {^[Q]:?[S]:(?[T]:(g(T) & ![x]:(S(x) => ![y]:(T(y) => belongs(x,h(y))))) & f(S,Q))} -> DP {^[Q]:?[T]:(g(T) & ![y]:(T(y) => Q(h(y))))} DP' {^[Q]:?[S]:f(S,Q)}
+# DEF_DP {?[x]:(belongs(x,a) & f(x))} -> DP {a} DP' {?[x]:f(x)}
+# DEF_DP {?[x]:(?[y]:(g(y) & belongs(x,h(y))) & f(x))} -> DP {?[y]:(g(y) & h(y))} DP' {?[x]:f(x)}
+# DEF_DP {?[S]:(![x]:(S(x) => belongs(x,a)) & f(S))} -> DP {a} DP' {?[S]:f(S)}
+# DEF_DP {?[S]:(?[y]:(g(y) & ![x]:(S(x) => belongs(x,h(y)))) & f(S))} -> DP {?[y]:(g(y) & h(y))} DP' {?[S]:f(S)}
+# DEF_DP {?[S]:(?[T]:(g(T) & ![x]:(S(x) => ![y]:(T(y) => belongs(x,h(y))))) & f(S))} -> DP {?[T]:(g(T) & ![y]:(T(y) => h(y)))} DP' {?[S]:f(S)}
 # note: in the above, the head predicate could also be `intended` rather than `belongs`
 DEF_DP -> DP:poss DP'
 
-# DEF_DP {^[Q]:?[x]:(f(x) & Q(h(x)))} -> DP {^[Q]:?[x]:(f(x) & Q(x))} DP' {^[Q,x]:Q(h(x))}
-# DEF_DP {^[Q]:![x]:(f(x) => Q(h(x)))} -> DP {^[Q]:![x]:(f(x) => Q(x))} DP' {^[Q,x]:Q(h(x))}
-# DEF_DP {^[Q]:?[S]:(f(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))} -> DP {^[Q]:?[S]:(f(S) & Q(^[g]:![x]:(S(x) => g(x))))} DP' {^[Q,x]:Q(h(x))}
-# DEF_DP {^[Q]:?[S]:(f(S) & Q(^[g]:?[x]:(S(x) & g(h(x)))))} -> DP {^[Q]:?[S]:(f(S) & Q(^[g]:?[x]:(S(x) & g(x))))} DP' {^[Q,x]:Q(h(x))}
+# DEF_DP {?[x]:(f(x) & h(x))} -> DP {?[x]:(f(x) & x)} DP' {h(x)}
+# DEF_DP {![x]:(f(x) => h(x))} -> DP {![x]:(f(x) => x)} DP' {h(x)}
+# DEF_DP {?[S]:(f(S) & ![x]:(S(x) => h(x)))} -> DP {?[S]:(f(S) & ![x]:(S(x) => x))} DP' {h(x)}
+# DEF_DP {?[S]:(f(S) & ?[x]:(S(x) & h(x)))} -> DP {?[S]:(f(S) & ?[x]:(S(x) & x))} DP' {h(x)}
 # this depends on whether there is a predicate inside the Q, and its arguments (which argument is `x` in?) and arity
 DEF_DP -> DP:poss DP'
 
-# DEF_DP {^[Q]:?[x]:(f(x) & Q(h(a,x)))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:?[x]:(f(x) & Q(h(y,x)))}
-# DEF_DP {^[Q]:?[x]:(f(x) & Q(h(x,a)))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:?[x]:(f(x) & Q(h(x,y)))}
-# DEF_DP {^[Q]:![x]:(f(x) => Q(h(a,x)))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:![x]:(f(x) => Q(h(y,x)))}
-# DEF_DP {^[Q]:![x]:(f(x) => Q(h(x,a)))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:![x]:(f(x) => Q(h(x,y)))}
-# DEF_DP {^[Q]:?[x]:(f(x) & ?[y]:(g(y) & Q(h(y,x))))} -> DP {^[Q]:?[y]:(g(y) & Q(y))} DP' {^[Q,y]:?[x]:(f(x) & Q(h(y,x)))}
-# DEF_DP {^[Q]:?[x]:(f(x) & ?[y]:(g(y) & Q(h(x,y))))} -> DP {^[Q]:?[y]:(g(y) & Q(y))} DP' {^[Q,y]:?[x]:(f(x) & Q(h(x,y)))}
-# DEF_DP {^[Q]:![x]:(f(x) => ?[y]:(g(y) & Q(h(y,x))))} -> DP {^[Q]:?[y]:(g(y) & Q(y))} DP' {^[Q,y]:![x]:(f(x) => Q(h(y,x)))}
-# DEF_DP {^[Q]:![x]:(f(x) => ?[y]:(g(y) & Q(h(x,y))))} -> DP {^[Q]:?[y]:(g(y) & Q(y))} DP' {^[Q,y]:![x]:(f(x) => Q(h(x,y)))}
-# DEF_DP {^[Q]:?[x]:(f(x) & ![y]:(g(y) => Q(h(y,x))))} -> DP {^[Q]:![y]:(g(y) => Q(y))} DP' {^[Q,y]:?[x]:(f(x) & Q(h(y,x)))}
-# DEF_DP {^[Q]:?[x]:(f(x) & ![y]:(g(y) => Q(h(x,y))))} -> DP {^[Q]:![y]:(g(y) => Q(y))} DP' {^[Q,y]:?[x]:(f(x) & Q(h(x,y)))}
-# DEF_DP {^[Q]:![x]:(f(x) => ![y]:(g(y) => Q(h(y,x))))} -> DP {^[Q]:![y]:(g(y) => Q(y))} DP' {^[Q,y]:![x]:(f(x) => Q(h(y,x)))}
-# DEF_DP {^[Q]:![x]:(f(x) => ![y]:(g(y) => Q(h(x,y))))} -> DP {^[Q]:![y]:(g(y) => Q(y))} DP' {^[Q,y]:![x]:(f(x) => Q(h(x,y)))}
-# DEF_DP {^[Q]:?[S]:(f(S) & Q(^[g]:![x]:(S(x) => g(h(a,x)))))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:?[S]:(f(S) & Q(^[g]:![x]:(S(x) => g(h(y,x)))))}
-# DEF_DP {^[Q]:?[S]:(f(S) & Q(^[g]:![x]:(S(x) => g(h(x,y)))))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:?[S]:(f(S) & Q(^[g]:![x]:(S(x) => g(h(x,y)))))}
-# DEF_DP {^[Q]:?[S]:(f(S) & Q(^[g]:?[x]:(S(x) & g(h(a,x)))))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:?[S]:(f(S) & Q(^[g]:?[x]:(S(x) & g(h(y,x)))))}
-# DEF_DP {^[Q]:?[S]:(f(S) & Q(^[g]:?[x]:(S(x) & g(h(x,y)))))} -> DP {^[Q]:Q(a)} DP' {^[Q,y]:?[S]:(f(S) & Q(^[g]:?[x]:(S(x) & g(h(x,y)))))}
+# DEF_DP {?[x]:(f(x) & h(a,x))} -> DP {a} DP' {?[x]:(f(x) & h(y,x))}
+# DEF_DP {?[x]:(f(x) & h(x,a))} -> DP {a} DP' {?[x]:(f(x) & h(x,y))}
+# DEF_DP {![x]:(f(x) => h(a,x))} -> DP {a} DP' {![x]:(f(x) => h(y,x))}
+# DEF_DP {![x]:(f(x) => h(x,a))} -> DP {a} DP' {![x]:(f(x) => h(x,y))}
+# DEF_DP {?[x]:(f(x) & ?[y]:(g(y) & h(y,x)))} -> DP {?[y]:(g(y) & y)} DP' {?[x]:(f(x) & h(y,x))}
+# DEF_DP {?[x]:(f(x) & ?[y]:(g(y) & h(x,y)))} -> DP {?[y]:(g(y) & y)} DP' {?[x]:(f(x) & h(x,y))}
+# DEF_DP {![x]:(f(x) => ?[y]:(g(y) & h(y,x)))} -> DP {?[y]:(g(y) & y)} DP' {![x]:(f(x) => h(y,x))}
+# DEF_DP {![x]:(f(x) => ?[y]:(g(y) & h(x,y)))} -> DP {?[y]:(g(y) & y)} DP' {![x]:(f(x) => h(x,y))}
+# DEF_DP {?[x]:(f(x) & ![y]:(g(y) => h(y,x)))} -> DP {![y]:(g(y) => y)} DP' {?[x]:(f(x) & h(y,x))}
+# DEF_DP {?[x]:(f(x) & ![y]:(g(y) => h(x,y)))} -> DP {![y]:(g(y) => y)} DP' {?[x]:(f(x) & h(x,y))}
+# DEF_DP {![x]:(f(x) => ![y]:(g(y) => h(y,x)))} -> DP {![y]:(g(y) => y)} DP' {![x]:(f(x) => h(y,x))}
+# DEF_DP {![x]:(f(x) => ![y]:(g(y) => h(x,y)))} -> DP {![y]:(g(y) => y)} DP' {![x]:(f(x) => h(x,y))}
+# DEF_DP {?[S]:(f(S) & ![x]:(S(x) => h(a,x)))} -> DP {a} DP' {?[S]:(f(S) & ![x]:(S(x) => h(y,x)))}
+# DEF_DP {?[S]:(f(S) & ![x]:(S(x) => h(x,y)))} -> DP {a} DP' {?[S]:(f(S) & ![x]:(S(x) => h(x,y)))}
+# DEF_DP {?[S]:(f(S) & ?[x]:(S(x) & h(a,x)))} -> DP {a} DP' {?[S]:(f(S) & ?[x]:(S(x) & h(y,x)))}
+# DEF_DP {?[S]:(f(S) & ?[x]:(S(x) & h(x,y)))} -> DP {a} DP' {?[S]:(f(S) & ?[x]:(S(x) & h(x,y)))}
 # ...there are many more (where in the last four examples, `a` could be an existentially or universally-quantified variable, or a variable quantified over a set)
-# this depends on whether there is a predicate inside the Q, and its arguments (which argument is `x` in?) and arity
+# this depends on whether there is a predicate in the head, and its arguments (which argument is `x` in?) and arity
 DEF_DP -> DP:poss DP'
 
 
 DP' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
-# DP {^[Q]:?[S]:(f(S) & F(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))} -> Q {^[S]:f(S)} NP {^[Q]:?[S]:(F(S) & Q(^[g]:![x]:(S(x) => g(h(x)))))}
+# DP {?[S]:(f(S) & F(S) & ![x]:(S(x) => h(x)))} -> Q {f(S)} NP {?[S]:(F(S) & ![x]:(S(x) => h(x)))}
 # this depends on whether the head predicate of the left conjunct is one that expresses information about the size of the set
 DP' -> Q NP
 
@@ -289,17 +300,17 @@ NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # NP {A} -> NP' {A}
 NP -> NP'
 
-# NP {^[Q]:?[x]:(f(x) & Q(h(x)))} -> NP {^[x]:h(x)} PP {^[Q]:?[x]:(f(x) & Q(x))}
-# NP {^[Q]:?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & Q(^[g]:(~)![x1]:(X1(x1) => ... ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))))))}
-#  -> NP {^[Q,x1]:?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & Q(^[g]:(~)![x2]:(X2(x2) => ... ![xn]:(Xn(xn) => g(h1(x1),h2(x2),...,hn(xn)))))))}
-#     PP {^[Q]:?[X1]:(F1(X1) & Q(^[g]:![x1]:(X1(x1) => g(x1))))}
-# NP {^[Q]:?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & Q(^[g]:(~)?[x1]:(X1(x1) => ... ![xn]:(Xn(xn) => g(h1(x1),...,hn(xn)))))))}
-#  -> NP {^[Q,x1]:?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & Q(^[g]:(~)![x2]:(X2(x2) => ... ![xn]:(Xn(xn) => g(h1(x1),h2(x2),...,hn(xn)))))))}
-#     PP {^[Q]:?[X1]:(F1(X1) & Q(^[g]:?[x1]:(X1(x1) => g(x1))))}
+# NP {?[x]:(f(x) & h(x))} -> NP {h(x)} PP {?[x]:(f(x) & x)}
+# NP {?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & (~)![x1]:(X1(x1) => ... ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn))))))}
+#  -> NP {?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & (~)![x2]:(X2(x2) => ... ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn))))))}
+#     PP {?[X1]:(F1(X1) & ![x1]:(X1(x1) => h1(x1)))}
+# NP {?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & (~)?[x1]:(X1(x1) => ... ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn))))))}
+#  -> NP {?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & (~)![x2]:(X2(x2) => ... ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn))))))}
+#     PP {?[X1]:(F1(X1) & ?[x1]:(X1(x1) => h1(x1)))}
 #  e.g. "destruction of the barn(s)", "destruction of the barn(s) by the termites"
 NP -> NP PP
 
-# NP {^[Q]:?[S]:(?[T]:(F(T) & G(S,^[x]:(u(x) & v(x,T)))) & Q(^[g]:![x]:(S(x) => g(h(x)))))} -> NP {^[Q]:?[S]:(G(S,^[x]:u(x)) & Q(^[g]:![x]:(S(x) => g(h(x)))))} PP {^[Q]:?[T]:(F(T) & Q(^[x]:v(x,T)))}
+# NP {?[S]:(?[T]:(F(T) & G(S,^[x]:(u(x) & v(x,T)))) & ![x]:(S(x) => h(x)))} -> NP {?[S]:(G(S,^[x]:u(x)) & ![x]:(S(x) => h(x)))} PP {?[T]:(F(T) & v(x,T))}
 #  e.g. "tree(s) by all the cats"
 # note: S and T could be existentially or universally-quantified individuals rather than set-valued, as well; they could also be constants
 NP -> NP PP
@@ -309,34 +320,34 @@ NP -> NP COMMA:null REL COMMA:null
 NP -> NP VP:keep_present_participle
 NP -> NP VP:flip_predicate_keep_past_participle
 
-# NP {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => ![y]:(x(y) => g(h(y))))))} if xi are set-valued
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => g(h(x)))))} if xi are individuals
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & ?[y]:(x(y) & g(h(y))))))} if xi are set-valued
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & g(h(x)))))} if xi are individuals
-#  -> NP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[g]:(~)![x]:(x1(x) => g(h(x)))))} if x1 is a set
+# NP {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))} if xi are set-valued
+# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => h(x)))} if xi are individuals
+# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))} if xi are set-valued
+# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & h(x)))} if xi are individuals
+#  -> NP {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)![x]:(x1(x) => h(x)))} if x1 is a set
 #     COMMA
-#     NP {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => ![y]:(x(y) => g(h(y))))))}
-#     or {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)![x]:(S(x) => g(h(x)))))}
-#     or {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & ?[y]:(x(y) & g(h(y))))))}
-#     or {^[Q]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & Q(^[g]:(~)?[x]:(S(x) & g(h(x)))))}
+#     NP {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))}
+#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => h(x)))}
+#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))}
+#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & h(x)))}
 # note: xi could also be constants, rather than existentially-quantified variables
 # note: if xi is a set containing a singleton, S would look like ^[x]:(... | x=^[y]:y=singleton | ...)
 NP -> NP COMMA:null NP:comma
 
-# NP {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)![x]:(S(x) => ![y]:(x(y) => g(h(y))))))}
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)![x]:(S(x) => g(h(x)))))}
-#  -> NP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[g]:(~)![x]:(x1(x) => g(h(x)))))} if x1 is a set
+# NP {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))}
+# or {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => h(x)))}
+#  -> NP {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)![x]:(x1(x) => h(x)))} if x1 is a set
 #     (COMMA) AND
-#     NP {^[Q]:?[x2]:(f2(x2) & (~)Q(x2))} or {^[Q]:?[x2]:(f2(x2) & Q(^[g]:(~)![x]:(x2(x) => g(h(x)))))} if x2 is a set
+#     NP {?[x2]:(f2(x2) & (~)h(x2))} or {?[x2]:(f2(x2) & (~)![x]:(x2(x) => h(x)))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
 NP -> NP AND:null NP
 NP -> NP COMMA:null AND:null NP
 
-# NP {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)?[x]:(S(x) & ?[y]:(x(y) & g(h(y))))))}
-# or {^[Q]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & Q(^[g]:(~)?[x]:(S(x) & g(h(x)))))}
-#  -> NP {^[Q]:?[x1]:(f1(x1) & (~)Q(x1))} or {^[Q]:?[x1]:(f1(x1) & Q(^[g]:(~)?[x]:(x1(x) & g(h(x)))))} if x1 is a set
+# NP {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))}
+# or {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & h(x)))}
+#  -> NP {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)?[x]:(x1(x) & h(x)))} if x1 is a set
 #     (COMMA) AND
-#     NP {^[Q]:?[x2]:(f2(x2) & (~)Q(x2))} or {^[Q]:?[x2]:(f2(x2) & Q(^[g]:(~)?[x]:(x2(x) & g(h(x)))))} if x2 is a set
+#     NP {?[x2]:(f2(x2) & (~)h(x2))} or {?[x2]:(f2(x2) & (~)?[x]:(x2(x) & h(x)))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
 NP -> NP OR:null NP
 NP -> NP COMMA:null OR:null NP
