@@ -4,18 +4,49 @@
 # necessarily the deepest). For example:
 #
 #  "cats are mammals"
-#  ![x]:(U(x) & cat(x) => mammal(x))
+#  ![x]:(U(x) & cat(x) => ?[t]:(type(t) & present(t) & arg2(t)=mammal & arg1(t)=x))
+# where `present` is relative to the current discourse time, so it could be
+# defined as something like ![x]:(present(x) = time(x)(T)) where
+# time(x) returns the set of times at which the event x is true, and T is the
+# current time in the discourse model.
 #
-#  "4 cats are sleeping"
-#  ?[X]:(subset(X,^[x]:(U(x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(sleep(s) & arg1(s)=x)))
+# Generally, every event that corresponds to a verb is modified with
+# information about the time at which the event occurs. We can do this with the
+# following axioms:
+#   ![x,t]:(progressive(x,t) = ?[r]:(r>0 & ![s]:(s>(t-r) & s<(t+r) => time(x)(t))))
+#   ![x,t]:(perfect(x,t) = ![r]:(time(x)(r) => r<t))
+#   ![x,t]:(perfect_progressive(x,t) = perfect(x,t) & ?[r]:(r>0 & ![s]:(s>(t-r) & s<t => time(x)(t))))
+#   ![x]:(present(x) = time(x)(T))
+#   ![x]:(past(x) = ?[t]:(t<T & time(x)(t)))
+#   ![x]:(future(x) = ?[t]:(t>T & time(x)(t)))
+#   ![x]:(present_progressive(x) = progressive(x,T))
+#   ![x]:(present_perfect(x) = perfect(x,T))
+#   ![x]:(present_perfect_progressive(x) = perfect_progressive(x,T))
+#   ![x]:(past_progressive(x) = ?[t]:(t<T & progressive(x,t)))
+#   ![x]:(past_perfect(x) = ?[t]:(t<T & perfect(x,T)))
+#   ![x]:(past_perfect_progressive(x) = ?[t]:(t<T & perfect_progressive(x,T)))
+#   ![x]:(future_progressive(x) = ?[t]:(t>T & progressive(x,t)))
+#   ![x]:(future_perfect(x) = ?[t]:(t>T & perfect(x,T)))
+#   ![x]:(future_perfect_progressive(x) = ?[t]:(t>T & perfect_progressive(x,T)))
+# TODO: add time information to the below logical forms too
+#
+#  "4 cats sleep"
+#  ?[X]:(subset(X,^[x]:(U(x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(sleep(s) & present(s) & arg1(s)=x)))
+#
+#  "4 cats slept"
+#  ?[X]:(subset(X,^[x]:(U(x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(sleep(s) & past(s) & arg1(s)=x)))
+#
+#  "4 cats will have been sleeping"
+#  ?[X]:(subset(X,^[x]:(U(x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(sleep(s) & future_perfect_progressive(s) & arg1(s)=x)))
 #
 #  "there is a cat"
-#  ?[x]:(U(x) & cat(x))
+#  ?[x]:(U(x) & cat(x)) [OR] ?[c]:(U(x) & cat(x) & ?[l]:(position(l) & present(l) & arg2(l)=L & arg1(l)=x))
+# where L is the current discourse location.
 #
 #  "3 teachers grade 6 exams"
-#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & ![x,y]:(X(x) & Y(y) => ?[g]:(grade(g) & arg2(g)=y & arg1(g)=x))))
-#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & !W[x,y]:(X(x) & Y(y) => ?[g]:(grade(g) & arg2(g)=y & arg1(g)=x))))
-#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ![x]:(X(x) => ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & ![y]:(Y(y) => ?[g]:(grade(g) & arg2(g)=y & arg1(g)=x)))))
+#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & ![x,y]:(X(x) & Y(y) => ?[g]:(grade(g) & present(g) & arg2(g)=y & arg1(g)=x))))
+#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & !W[x,y]:(X(x) & Y(y) => ?[g]:(grade(g) & present(g) & arg2(g)=y & arg1(g)=x))))
+#  ?[X]:(subset(X,^[x]:(U(x) & teacher(x))) & size(X)=3 & ![x]:(X(x) => ?[Y]:(subset(Y,^[y]:(U(y) & exam(y))) & size(Y)=6 & ![y]:(Y(y) => ?[g]:(grade(g) & present(g) & arg2(g)=y & arg1(g)=x)))))
 # where !W is the weak universal quantifier, which is defined as:
 # !W[x1,...,xn]:(X1(x1) & ... & Xn(xn) => f(x1,...,xn)) =
 #     ![x1]:(X1(x1) => ?[x2,...,xn]:(X2(x2) & ... & Xn(xn) & f(x1,...,xn)))
@@ -25,43 +56,80 @@
 #   & ... & ![xn]:(Xn(xn) => ?[x1,...,x(n-1)]:(X1(x1) & ... & X(n-1)(x(n-1)) & f(x1,...,xn)))
 #
 #  "a dog likes every cat"
-#  ?[d]:(U(d) & dog(d) & ![c]:(U(c) & cat(c) => ?[l]:(like(l) & arg2(l)=c & arg1(l)=d)))
-#  ![c]:(U(c) & cat(c) => ?[d]:(U(d) & dog(d) & ?[l]:(like(l) & arg2(l)=c & arg1(l)=d)))
+#  ?[d]:(U(d) & dog(d) & ![c]:(U(c) & cat(c) => ?[l]:(like(l) & present(l) & arg2(l)=c & arg1(l)=d)))
+#  ![c]:(U(c) & cat(c) => ?[d]:(U(d) & dog(d) & ?[l]:(like(l) & present(l) & arg2(l)=c & arg1(l)=d)))
 #
 #  "not every cat is a tabby"
 #  "not all cats are tabbies"
-#  ~![c]:(U(c) & cat(c) => tabby(c))
+#  ~![c]:(U(c) & cat(c) => ?[t]:(type(t) & present(t) & arg2(t)=tabby & arg1(t)=c))
 #
 #  "every cat isn't a tabby"
 #  "all cats aren't tabbies"
-#  ~![c]:(U(c) & cat(c) => tabby(c))
-#  ![c]:(U(c) & cat(c) => ~tabby(c))
+#  ~![c]:(U(c) & cat(c) => ?[t]:(type(t) & present(t) & arg2(t)=tabby & arg1(t)=c))
+#  ![c]:(U(c) & cat(c) => ~?[t]:(type(t) & present(t) & arg2(t)=tabby & arg1(t)=c))
 #
 #  "a cat and dog are sleeping"
-#  ?[X]:(?[c]:(U(c) & cat(c) & ?[d]:(U(d) & dog(d) & X=^[x]:(x=c | x=d))) & ![x]:(X(x) => ?[s]:(sleep(s) & arg1(s)=x)))
+#  ?[X]:(?[c]:(U(c) & cat(c) & ?[d]:(U(d) & dog(d) & X=^[x]:(x=c | x=d))) & ![x]:(X(x) => ?[s]:(sleep(s) & present(s) & arg1(s)=x)))
 #
 #  "4 cats, 2 dogs, and a bird are sleeping"
-#  ?[X]:(?[C]:(subset(C,^[x]:(U(x) & cat(x))) & size(C)=4 & ?[D]:(subset(D,^[x]:(U(x) & dog(x))) & size(D)=2 & ?[b]:(U(b) & bird(b) & X=^[x]:(x=C | x=D | x=^[y]:y=b)))) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[s]:(sleep(s) & arg1(s)=x))))
+#  ?[X]:(?[C]:(subset(C,^[x]:(U(x) & cat(x))) & size(C)=4 & ?[D]:(subset(D,^[x]:(U(x) & dog(x))) & size(D)=2 & ?[b]:(U(b) & bird(b) & X=^[x]:(x=C | x=D | x=^[y]:y=b)))) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[s]:(sleep(s) & present(s) & arg1(s)=x))))
 #
 #  "a man and his dog were walking in the park"
-#  ?[X]:(?[m]:(U(m) & man(m) & ?[d]:(U(d) & dog(d) & male(#1) & ?[o]:(owns(o) & arg1(o)=#1 & arg2(o)=d) & X=^[x]:(x=m | x=d))) & ![x]:(X(x) => ?[w]:(walk(w) & ?[p]:(U(p) & park(p) & arg2(w)=p) & arg1(w)=x)))
+#  ?[X]:(?[m]:(U(m) & man(m) & ?[d]:(U(d) & dog(d) & male(#1) & ?[o]:(own(o) & arg1(o)=#1 & arg2(o)=d) & X=^[x]:(x=m | x=d))) & ![x]:(X(x) => ?[w]:(walk(w) & past_progressive(w) & ?[p]:(U(p) & park(p) & arg2(w)=p) & arg1(w)=x)))
 #
 #  "10 girls and boys are in class"
-#  ?[X]:(?[G]:(G=^[x]:(U(x) & girl(x)) & ?[B]:(B=^[x]:(U(x) & boy(x)) & X=^[x]:(x=G | x=B))) & ![Y]:(X(Y) => size(Y)=10) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[l]:(located(l) & ?[c]:(U(c) & class(c) & arg2(l)=c) & arg1(l)=x))))
-#  ?[X]:(?[G]:(G=^[x]:(U(x) & girl(x)) & ?[B]:(B=^[x]:(U(x) & boy(x)) & X=^[x]:(x=G | x=B))) & sum(X,^[Y]:size(Y))=10 & ![Y]:(X(Y) => ![x]:(Y(x) => ?[l]:(located(l) & ?[c]:(U(c) & class(c) & arg2(l)=c) & arg1(l)=x))))
+#  ?[X]:(?[G]:(G=^[x]:(U(x) & girl(x)) & ?[B]:(B=^[x]:(U(x) & boy(x)) & X=^[x]:(x=G | x=B))) & ![Y]:(X(Y) => size(Y)=10) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[p]:(position(p) & ?[c]:(U(c) & class(c) & arg2(p)=c) & arg1(p)=x))))
+#  ?[X]:(?[G]:(G=^[x]:(U(x) & girl(x)) & ?[B]:(B=^[x]:(U(x) & boy(x)) & X=^[x]:(x=G | x=B))) & sum(X,^[Y]:size(Y))=10 & ![Y]:(X(Y) => ![x]:(Y(x) => ?[p]:(position(p) & present(p) & ?[c]:(U(c) & class(c) & arg2(p)=c) & arg1(p)=x))))
 #
 #  "Jane is the only doctor"
-#  ?[o]:(only(o) & arg2(o)=^[x]:doctor(x) & arg1(o)=jane) [or maybe we should do] ?[o]:(only(o) & ?[D]:(D=^[x]:doctor(x) & arg2(o)=D) & arg1(o)=jane)
+#  ?[o]:(only(o) & present(o) & arg2(o)=^[x]:(U(x) & doctor(x)) & arg1(o)=jane) [or maybe we should do] ?[o]:(only(o) & present(o) & ?[D]:(D=^[x]:(U(x) & doctor(x)) & arg2(o)=D) & arg1(o)=jane)
 #
 #  "i did not get much money"
-#  ?[m]:(money(m) & ?[l]:(large_amount(l) & arg1(l)=m) & ~[r]:(receive(r) & arg2(r)=m & arg1(r)=me))
+#  ?[m]:(U(m) & money(m) & ?[l]:(large_amount(l) & arg1(l)=m) & ~[r]:(receive(r) & past(r) & arg2(r)=m & arg1(r)=me))
 #
 #  "i don't like Ralph's destroying the barn"
-#  ?[d]:(destroy(d) & arg1(d)=ralph & ~?[l]:(like(l) & arg2(l)=d & arg1(l)=me))
-# note: we could require `ralph` and `me` be part of U in the discourse model
+#  "i don't like Ralph's destruction of the barn"
+#  ?[d]:(destroy(d) & progressive(d) & ?[b]:(U(b) & barn(b) & arg2(d)=b) & arg1(d)=ralph & ~?[l]:(like(l) & present(l) & arg2(l)=d & arg1(l)=me))
+# note: we could require constant arguments (e.g. `ralph` and `me`) to be part of U in the discourse model
+#
+#  "i don't like the destruction of the barns by the teenagers"
+#  ![x]:(U(x) & teenager(x) => ![y]:(U(y) & barn(y) => ?[d]:(destroy(d) & arg2(d)=y & arg1(d)=x & ~?[l]:(like(l) & arg2(l)=d & arg1(l)=me))))
+#    [OR]
+#  ?[X]:(X=^[x]:(U(x) & teenager(x)) & ?[Y]:(Y=^[y]:(U(y) & barn(y)) & ![x]:(X(x) => ![y]:(Y(y) => ?[d]:(destroy(d) & arg2(d)=y & arg1(d)=x & ~?[l]:(like(l) & arg2(l)=d & arg1(l)=me))))))
 #
 #  "the cat's purring is soothing"
-#  ?[c]:(cat(c) & ?[p]:(purr(p) & arg1(p)=c & ?[s]:(sooth(s) & arg1(s)=p)))
+#  ?[c]:(U(c) & cat(c) & ?[p]:(purr(p) & progressive(p) & arg1(p)=c & ?[s]:(sooth(s) & progressive(s) & arg1(s)=p)))
+#
+#  "Joan's pen is good"
+#  ?[p]:(U(p) & pen(p) & ?[o]:(own(o) & arg2(o)=p & arg1(o)=joan) & ?[g]:(good(g) & present(g) & arg1(g)=p))
+#
+#  "Joan's pens are good"
+#  ![x]:(U(x) & pen(x) & ?[o]:(own(o) & arg2(o)=x & arg1(o)=joan) => ?[g]:(good(g) & present(g) & arg1(g)=x))
+#    [OR]
+#  ?[X]:(X=^[p]:(U(p) & pen(p) & ?[o]:(own(o) & arg2(o)=p & arg1(o)=joan)) & ![x]:(X(x) => ?[g]:(good(g) & present(g) & arg1(g)=x)))
+#
+#  "the students' pens are good"
+#  ?[X]:(?[Y]:(Y=^[y]:(U(y) & student(y)) & X=^[x]:(U(x) & pen(x) & ?[y]:(Y(y) & ?[o]:(own(o) & arg2(o)=x & arg1(o)=y)))) & ![x]:(X(x) => ?[g]:(good(g) & present(g) & arg1(g)=x)))
+#
+#  "i saw the trees by all the cats"
+#  ?[X]:(X=^[x]:(U(x) & cat(x)) & ?[Y]:(Y=^[y]:(U(y) & tree(y) & ![x]:(X(x) => ?[n]:(near(n) & arg2(n)=y & arg1(n)=x))) & ![y]:(Y(y) => ?[s]:(see(s) & past(s) & arg2(s)=y & arg1(s)=me))))
+#    [OR]
+#  ![y]:(U(y) & tree(y) & ![x]:(U(x) & cat(x) => ?[n]:(near(n) & arg2(n)=y & arg1(n)=x)) => ?[s]:(see(s) & past(s) & arg2(s)=y & arg1(s)=me))
+#
+#  "he works a lot to earn money for school"
+#  U(#1) & male(#1) & ?[w]:(work(w) & present(w) & ?[p]:(purpose(p) & ?[e]:(earn(e) & ?[m]:(U(m) & money(m) & arg2(e)=m) & arg2(p)=e) arg1(p)=w) & arg1(w)=#1)
+#
+#  "the ladder collapsed because it was old"
+#  ?[l]:(U(l) & ladder(l) & ?[c]:(collapse(c) & past(c) & ?[r]:(reason(r) & ?[o]:(old(o) & past(o) & arg1(o)=#1 & arg2(r)=o) & arg1(r)=c) & arg1(c)=l))
+#
+#  "Mr. Bibby wrote the letter with a pencil"
+#  ?[p]:(U(p) & pencil(p) & ?[l]:(U(l) & letter(l) & ?[w]:(write(w) & arg2(w)=l & arg1(w)=bibby)))
+#
+#  "the students wrote the letters with the pencils"
+#  ?[S]:(S=^[s]:(U(s) & student(s)) & ?[L]:(L=^[l]:(U(l) & letter(l)) & ?[P]:(P=^[p]:(U(p) & pencil(p)) & !W[s,l,p]:(S(s) & L(l) & P(p) => ?[w]:(wrote(w) & past(w) & arg2(w)=l & ?[x]:(with(x) & arg2(x)=p & arg1(x)=w) & arg1(w)=s))))))
+#
+#  "she sat on the table"
+#  U(#1) & female(#1) & ?[s]:(sit(s) & past(s) & ?[o]:(on_top_of(o) & ?[t]:(U(t) & table(t) & arg2(o)=t) & arg1(o)=s) & arg1(s)=#1)
 
 
 # This is the root nonterminal for declarative sentences.
@@ -304,6 +372,7 @@ DEF_DP -> THAT DP'
 # DEF_DP {?[S]:(![x]:(S(x) => belongs(x,a)) & f(S))} -> DP {a} DP' {?[S]:f(S)}
 # DEF_DP {?[S]:(?[y]:(g(y) & ![x]:(S(x) => belongs(x,h(y)))) & f(S))} -> DP {?[y]:(g(y) & h(y))} DP' {?[S]:f(S)}
 # DEF_DP {?[S]:(?[T]:(g(T) & ![x]:(S(x) => ![y]:(T(y) => belongs(x,h(y))))) & f(S))} -> DP {?[T]:(g(T) & ![y]:(T(y) => h(y)))} DP' {?[S]:f(S)}
+# TODO: this is wrong; as written, this is stating for every x in S={x:f(x)} and every y in T={y:g(y)}, y owns x. but we want T to be the set {y:g(y) & some x owns y}
 # note: in the above, the head predicate could also be `intended` rather than `belongs`
 DEF_DP -> DP:poss DP'
 
