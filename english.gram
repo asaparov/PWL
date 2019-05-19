@@ -8,7 +8,9 @@
 # where `present` is relative to the current discourse time, so it could be
 # defined as something like ![x]:(present(x) = time(x)(T)) where
 # time(x) returns the set of times at which the event x is true, and T is the
-# current time in the discourse model.
+# current time in the discourse model. Also, `U` is the current universe of
+# discourse. `U` can either contain the entire universe, as a default,
+# U=^[x]:T, or it could change dynamically according to the discourse model.
 #
 # Generally, every event that corresponds to a verb is modified with
 # information about the time at which the event occurs. We can do this with the
@@ -130,6 +132,51 @@
 #
 #  "she sat on the table"
 #  U(#1) & female(#1) & ?[s]:(sit(s) & past(s) & ?[o]:(on_top_of(o) & ?[t]:(U(t) & table(t) & arg2(o)=t) & arg1(o)=s) & arg1(s)=#1)
+#
+#  "the birds hear each other"
+#  ![X]:(X=^[x]:(U(x) & bird(x)) & ![x,y]:(X(x) & Y(x) & ~(x=y) => ?[h]:(hear(h) & arg2(h)=y & arg1(h)=x)))
+#
+#  "some relative of each villager and some relative of each townsman hate each other"
+#  ?[a]:(U(a) & ![x]:(U(x) & villager(x) => ?[r]:(related_to(r) & arg2(r)=x & arg1(r)=a)) & ?[b]:(U(b) & ![x]:(U(x) & townsman(x) => ?[r]:(related_to(r) & arg2(r)=x & arg1(r)=b)) & ?[X]:(X=^[x]:(x=a | x=b) & ![x,y]:(X(x) & Y(x) & ~(x=y) => ?[h]:(hate(h) & arg2(h)=y & arg1(h)=x)))))
+#
+#  "in either case, i am going"
+#  ?[X]:(subset(X,^[x]:(U(x) & case(x))) & size(X)=2 & ![x]:(X(x) => (true(x) => ?[g]:(go(g) & progressive(g) & arg1(g)=me))))
+#
+#  "if it rains, the grass will be wet"
+#  ?[r]:(rain(r) & present(r) & arg1(r)=#1) => ?[g]:(U(g) & grass(g) & ?[w]:(wet(w) & future(w) & arg1(w)=g))
+#
+#  "he ran with difficulty"
+#  U(#1) & male(#1) & ?[r]:(run(r) & past(r) & ?[d]:(difficult(d) & arg1(d)=r) & arg1(r)=#1)
+#
+#  "he stood in silence"
+#  U(#1) & male(#1) & ?[s]:(stand(s) & past(s) & ?[x]:(silently(x) & arg1(x)=s) & arg1(s)=#1)
+# where we could define ![x]:(silently(x) = ?[s]:(is_silent(s) & arg1(s)=arg1(x) & ![t]:(time(x)(t) => time(s)(t))))
+#
+#  "she helped me with my homework"
+#  U(#1) & female(#1) & ?[h]:(help(h) & past(h) & arg2(h)=me & ?[x]:(U(x) & homework(x) & ?[o]:(own(o) & arg2(o)=x & arg1(o)=me) & ?[w]:(with(w) & arg2(w)=x & arg1(w)=h)) & arg1(h)=#1)
+#
+#  "he stayed for two weeks"
+#  U(#1) & male(#1) & ?[s]:(stay(s) & past(s) & ?[d]:(duration(d) & arg2(d)=(2*week) & arg1(d)=s) & arg1(s)=#1)
+#
+#  "it is under the bush"
+#  U(#1) & ?[u]:(is_under(u) & ?[b]:(U(b) & bush(b) & arg2(u)=b) & arg1(u)=#1)
+#
+#  "the party is at seven o'clock"
+#  ?[p]:(U(p) & party(p) & start_time(p)=(7:00pm))
+#    [OR]
+#  ?[p]:(U(p) & party(p) & ?[s]:(start_time(s) & arg2(s)=(7:00pm) & arg1(s)=p))
+# where we could define ![x,t]:((start_time(x)=t) = ![s]:(time(x)(s) => t<=s))
+# TODO: how do we represent date/time constants?
+#
+#  "she will leave after she has had breakfast"
+#  U(#1) & female(#1) & ?[l]:(leave(l) & future(l) & ?[a]:(after(a) & ?[e]:(eat(e) & U(#2) & female(#2) & ?[b]:(U(b) & breakfast(b) & arg2(e)=b) & arg1(e)=#2 & arg2(a)=e) & arg1(a)=l) & arg1(l)=#1)
+# where we could define ![a,x,y]:((after(a) & arg1(a)=x & arg2(a)=y) = ~?[s,t]:(time(x)(s) & time(y)(t) & s<t))
+#
+#  "the ball rotated quickly and heated up slowly"
+#  ?[b]:(U(b) & ball(b) & ?[r]:(rotate(r) & past(r) & ?[q]:(quickly(q) & arg1(q)=r) & ?[h]:(heat_up(h) & past(h) & ?[s]:(slowly(s) & arg1(s)=h) & ?[X]:(X=^[x]:(x=r | x=h) & ![x]:(X(x) => arg1(x)=b)))))
+#
+#  "the ball rotated and heated up slowly"
+#  ?[b]:(U(b) & ball(b) & ?[r]:(rotate(r) & past(r) & ?[h]:(heat_up(h) & past(h) & ?[X]:(X=^[x]:(x=r | x=h) & ![x]:(X(x) => ?[s]:(slowly(s) & arg1(s)=x) & arg1(x)=b)))))
 
 
 # This is the root nonterminal for declarative sentences.
