@@ -10,26 +10,28 @@
 # time(x) returns the set of times at which the event x is true, and T is the
 # current time in the discourse model. Also, `U` is the current universe of
 # discourse. `U` can either contain the entire universe, as a default,
-# U=^[x]:T, or it could change dynamically according to the discourse model.
+# U=^[x]:T, or it could change dynamically according to the discourse model. We
+# also might add an axiom like:
+#     ![t,x,y]:((type(t) & arg1(t)=x & arg2(t)=y) = y(x))
 #
 # Generally, every event that corresponds to a verb is modified with
 # information about the time at which the event occurs. We can do this with the
 # following axioms:
 #   ![x,t]:(progressive(x,t) = ?[r]:(r>0 & ![s]:(s>(t-r) & s<(t+r) => time(x)(t))))
 #   ![x,t]:(perfect(x,t) = ![r]:(time(x)(r) => r<t))
-#   ![x,t]:(perfect_progressive(x,t) = perfect(x,t) & ?[r]:(r>0 & ![s]:(s>(t-r) & s<t => time(x)(t))))
+#   ![x,t]:(perfect_progressive(x,t) = (perfect(x,t) & ?[r]:(r>0 & ![s]:(s>(t-r) & s<t => time(x)(t)))))
 #   ![x]:(present(x) = time(x)(T))
-#   ![x]:(past(x) = ?[t]:(t<T & time(x)(t)))
-#   ![x]:(future(x) = ?[t]:(t>T & time(x)(t)))
 #   ![x]:(present_progressive(x) = progressive(x,T))
 #   ![x]:(present_perfect(x) = perfect(x,T))
 #   ![x]:(present_perfect_progressive(x) = perfect_progressive(x,T))
+#   ![x]:(past(x) = ?[t]:(t<T & time(x)(t)))
 #   ![x]:(past_progressive(x) = ?[t]:(t<T & progressive(x,t)))
-#   ![x]:(past_perfect(x) = ?[t]:(t<T & perfect(x,T)))
-#   ![x]:(past_perfect_progressive(x) = ?[t]:(t<T & perfect_progressive(x,T)))
+#   ![x]:(past_perfect(x) = ?[t]:(t<T & perfect(x,t)))
+#   ![x]:(past_perfect_progressive(x) = ?[t]:(t<T & perfect_progressive(x,t)))
+#   ![x]:(future(x) = ?[t]:(t>T & time(x)(t)))
 #   ![x]:(future_progressive(x) = ?[t]:(t>T & progressive(x,t)))
-#   ![x]:(future_perfect(x) = ?[t]:(t>T & perfect(x,T)))
-#   ![x]:(future_perfect_progressive(x) = ?[t]:(t>T & perfect_progressive(x,T)))
+#   ![x]:(future_perfect(x) = ?[t]:(t>T & perfect(x,t)))
+#   ![x]:(future_perfect_progressive(x) = ?[t]:(t>T & perfect_progressive(x,t)))
 # TODO: add time information to the below logical forms too
 #
 #  "4 cats sleep"
@@ -60,6 +62,17 @@
 #  "a dog likes every cat"
 #  ?[d]:(U(d) & dog(d) & ![c]:(U(c) & cat(c) => ?[l]:(like(l) & present(l) & arg2(l)=c & arg1(l)=d)))
 #  ![c]:(U(c) & cat(c) => ?[d]:(U(d) & dog(d) & ?[l]:(like(l) & present(l) & arg2(l)=c & arg1(l)=d)))
+#
+#  "a dog is liked by every cat"
+#  ?[d]:(U(d) & dog(d) & ![c]:(U(c) & cat(c) => ?[l]:(inverse(like)(l) & present(l) & arg2(l)=c & arg1(l)=d)))
+#  ![c]:(U(c) & cat(c) => ?[d]:(U(d) & dog(d) & ?[l]:(inverse(like)(l) & present(l) & arg2(l)=c & arg1(l)=d)))
+# where we can have an axiom like:
+#    ![e,t,x,y]:((inverse(t)(e) & arg1(e)=x & arg2(e)=y) = (t(e) & arg1(e)=y & arg2(e)=x))
+# In fact, the passive voice is always realized in semantics using the
+# `inverse` function.
+#
+#  "Noah entertained and was reviewed"
+#  ?[X]:(?[e]:(entertain(e) & past(e) & ?[r]:(inverse(review)(r) & past(r) & X=^[x]:(x=e | x=r))) & ^[x]:(X(x) => arg1(x)=noah))
 #
 #  "not every cat is a tabby"
 #  "not all cats are tabbies"
@@ -100,7 +113,7 @@
 #  ?[X]:(X=^[x]:(U(x) & teenager(x)) & ?[Y]:(Y=^[y]:(U(y) & barn(y)) & ![x]:(X(x) => ![y]:(Y(y) => ?[d]:(destroy(d) & arg2(d)=y & arg1(d)=x & ~?[l]:(like(l) & arg2(l)=d & arg1(l)=me))))))
 #
 #  "the cat's purring is soothing"
-#  ?[c]:(U(c) & cat(c) & ?[p]:(purr(p) & progressive(p) & arg1(p)=c & ?[s]:(sooth(s) & progressive(s) & arg1(s)=p)))
+#  ?[p]:(purr(p) & progressive(p) & ?[c]:(U(c) & cat(c) & arg1(p)=c) & ?[s]:(sooth(s) & progressive(s) & arg1(s)=p))
 #
 #  "Joan's pen is good"
 #  ?[p]:(U(p) & pen(p) & ?[o]:(own(o) & arg2(o)=p & arg1(o)=joan) & ?[g]:(good(g) & present(g) & arg1(g)=p))
@@ -110,6 +123,29 @@
 #    [OR]
 #  ?[X]:(X=^[p]:(U(p) & pen(p) & ?[o]:(own(o) & arg2(o)=p & arg1(o)=joan)) & ![x]:(X(x) => ?[g]:(good(g) & present(g) & arg1(g)=x)))
 #
+# TODO: move the below rules into the grammar
+# S' {?[x]:f(x)} -> THERE IS DP {^[P]:?[x]:(f(x) & P(x))}
+# NOTE: This above rule is only really useful if we choose to represent "there
+# is a cat" as something like ?[x]:(U(x) & cat(x)).
+# S' {... & ?[y]:(... & g(y)=a & ...)} -> DP {a} VP {... & ?[y]:(... & g(y)=x & ...)}
+# S' {... & (~)![x]:(f(x) => ... & ?[y]:(... & g(y)=x & ...))} -> DP {^[P]:(~)![x]:(f(x) => P(x))} VP {... & ?[y]:(... & g(y)=x & ...)}
+# S' {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y]:(... & g(y)=x & ...)))} -> DP {^[P]:?[X]:(f(X) & (~)![x]:(X(x) => P(x))} VP {... & ?[y]:(... & g(y)=x & ...)}
+# where g is arg1 or arg2.
+# NOTE: The above two rules, during the inverse transformation, the scope of X
+# and x can be positioned anywhere above the scope of y. However, to avoid
+# overgenerating semantically-equivalent logical forms, for each equivalence
+# class of semantically-equivalent inverse logical forms, we only output a
+# single logical form (for example, by choosing the logical form in the
+# equivalence class in which the scope of X and x are maximal). Also, the above
+# rule can be extended to other kinds of quantification over X, such as
+# existential or weak universal quantifier. Also, note that f(X) and f(x)
+# cannot depend on any variables other than those declared within f(X) and
+# f(x). But note that in the example "a cat and dog are sleeping", f(X)
+# includes the definition for "cat" and "dog". In the above two rules, g(x) is
+# the right-most conjunct in that scope that has no unbound variables.
+# S' {... & (~)![x]:(f(x) => ... & ?[y]:(... & g(x) & ...))} -> DP {^[P]:![x]:(f(x) => P(x))} VP {... & (~)?[y]:(... & g(x) & ...)}
+# S' {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y]:(... & g(x) & ...)))} -> DP {^[P]:?[X]:(f(X) & ![x]:(X(x) => P(x))} VP {... & (~)?[y]:(... & g(x) & ...)}
+# NOTE: The previous note also applies to the above two rules.
 #  "the students' pens are good"
 #  ?[X]:(?[Y]:(Y=^[y]:(U(y) & student(y)) & X=^[x]:(U(x) & pen(x) & ?[y]:(Y(y) & ?[o]:(own(o) & arg2(o)=x & arg1(o)=y)))) & ![x]:(X(x) => ?[g]:(good(g) & present(g) & arg1(g)=x)))
 #
