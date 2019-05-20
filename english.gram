@@ -213,6 +213,14 @@
 #
 #  "the ball rotated and heated up slowly"
 #  ?[b]:(U(b) & ball(b) & ?[r]:(rotate(r) & past(r) & ?[h]:(heat_up(h) & past(h) & ?[X]:(X=^[x]:(x=r | x=h) & ![x]:(X(x) => ?[s]:(slowly(s) & arg1(s)=x) & arg1(x)=b)))))
+#
+#  "Emma and Noah met."
+#  ?[X]:(X=^[x]:(x=emma | x=noah) & ?[m]:(collective_meet(m) & past(m) & arg1(m)=X))
+#
+#  "Emma and Noah lifted the stone."
+#  ?[X]:(X=^[x]:(x=emma | x=noah) & ?[s]:(U(s) & stone(s) & ?[l]:(lift(l) & past(l) & arg2(l)=s & arg1(l)=X)))
+# Here, "Emma and Noah" has a *collective* interpretation, which also occurs in
+# many other sentences in English.
 
 
 # This is the root nonterminal for declarative sentences.
