@@ -1,33 +1,33 @@
  >> There are 7.7 billion people.
-	{?[P]:(P=^[x]:person(x) & size(P)=7700000000)}
+	{?[P]:(P=^[x]:(U(0,x) & person(x)) & size(P)=7700000000)}
 
  >> There are 7,700,000,000 people.
-	{?[P]:(P=^[x]:person(x) & size(P)=7700000000)}
+	{?[P]:(P=^[x]:(U(0,x) & person(x)) & size(P)=7700000000)}
 
  >> All cats are mammals.
-	{![x]:(cat(x) => mammal(x))}
+	{![x]:(U(0,x) & cat(x) => ?[t]:(type(t) & present(t) & arg2(t)=mammal & arg1(t)=x & true(t)))}
 
  >> Every cat is a mammal.
-	{![x]:(cat(x) => mammal(x))}
+	{![x]:(U(0,x) & cat(x) => ?[t]:(type(t) & present(t) & arg2(t)=mammal & arg1(t)=x & true(t)))}
 
  >> Every farmer who owns a donkey beats it.
-	{![f]:(farmer(x) & ?[d]:(own(x,d) & donkey(d)) => beat(x,#1))}
+	{![f]:(U(0,f) & farmer(f) & ?[d]:(U(0,d) & donkey(d) & ?[o]:(own(o) & present(o) & arg1(o)=f & arg2(o)=d)) => ?[i]:(U(0,i) & ref(i) & ?[b]:(arg1(b)=f & beat(b) & present(b) & arg2(b)=i & true(b))))}
 
  >> It was Jessie Bear's birthday.
-	{#1=birthday_of(jessie)}
-	{#1=today}
+	{?[i]:(U(0,i) & ref(i) & ?[b]:(arg1(b)=jessie & birthday(b) & past(b) & arg2(b)=i & true(b)))}
+	{i=today}
 
 	She was having a party.
-	{female(#1) & ?[y]:(party(y) & have(#1,y))}
-	{#1=jessie}
+	{?[s]:(U(0,s) & female_ref(0,s) & ?[h]:(arg1(h)=s & have(h) & present_progressive(h) & ?[p]:(U(1,p) & party(p) & arg2(h)=p) & true(h))}
+	{s=jessie}
 
 	She asked her two best friends to come to the party.
-	{female(#1) & ?[B]:((size(B,2) & B=best_friends(#1)) & ?[z]:(party(z) & ![y]:(B(y) => ask(#1,go(y,z)))))}
-	{#1=jessie}
+	{?[s]:(U(0,s) & female_ref(0,s) & ?[h]:(U(1,h) & female_ref(1,h) & ?[B]:(B=^[x]:(U(2,x) & ?[b]:(arg1(b)=h & best_friend(b) & arg2(b)=x)) & size(B)=2 & ![x]:(B(x) => ?[a]:(arg1(a)=s & ask(a) & past(a) & ?[g]:(go(g) & arg2(a)=g & ?[p]:(U(3,p) & party(p) & arg2(g)=p)) & true(a))))))}
+	{s=jessie,h=jessie}
 
 	She made a big cake, and hung up some balloons.
-	{female(#1) & ?[y]:((big(y) & cake(y)) & make(#1,y)) & ?[B]:(subset(B,^[b]:(balloon(b))) & ![b]:(B(b) => hang(#1,b)))}
-	{#1=jessie}
+	{?[s]:(U(0,s) & female_ref(0,s) & ?[m]:(arg1(m)=s & make(m) & past(m) & ?[c]:(U(1,c) & cake(c) & ?[b]:(is_big(b) & arg1(b)=c) & arg2(m)=c) & true(m)) & ?[B]:(subset(B,^[b]:(U(2,b) & balloon(b))) & ![b]:(B(b) => ?[h]:(arg1(h)=s & hang(h) & past(h) & arg2(h)=b & true(h)))))}
+	{s=jessie}
 
 	Soon her friend Lion came over.
 	{(female(#1) & friend(lion,#1)) & soon(come_over)(lion)}
