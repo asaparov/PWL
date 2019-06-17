@@ -4,7 +4,7 @@
 # necessarily the deepest). For example:
 #
 #  "cats are mammals"
-#  ![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & same(s) & present(s) & ?[m]:(U(1,m) & mammal(m) & arg2(t)=m)))
+#  ![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & same(s) & present(s) & ?[m]:(U(1,m) & mammal(m) & arg2(s)=m)))
 # where `present` is relative to the deictic origo, so it could be defined as
 # something like ![x]:(present(x) = time(x)(T)) where time(x) returns the set
 # of times at which the event x is true, and T is the current time in the
@@ -13,8 +13,6 @@
 # U=^[x]:T, or it could change dynamically according to the discourse model.
 # The first argument to `U` is an index that increases by one each time `U`
 # function is invoked (and so its semantics can differ even within a sentence).
-# We also might add an axiom like:
-#     ![t,x,y]:((type(t) & arg1(t)=x & arg2(t)=y) = y(x))
 #
 # Generally, every event that corresponds to a verb is modified with
 # information about the time at which the event occurs. We can do this with the
@@ -84,12 +82,12 @@
 #
 #  "not every cat is a tabby"
 #  "not all cats are tabbies"
-#  ~![c]:(U(0,c) & cat(c) => ?[t]:(arg1(t)=c & type(t) & present(t) & arg2(t)=tabby))
+#  ~![c]:(U(0,c) & cat(c) => ?[s]:(arg1(s)=c & same(s) & present(s) & ?[t]:(U(1,t) & tabby(t) & arg2(s)=t))
 #
 #  "every cat isn't a tabby"
 #  "all cats aren't tabbies"
-#  ~![c]:(U(0,c) & cat(c) => ?[t]:(arg1(t)=c & type(t) & present(t) & arg2(t)=tabby))
-#  ![c]:(U(0,c) & cat(c) => ~?[t]:(arg1(t)=c & type(t) & present(t) & arg2(t)=tabby))
+#  ~![c]:(U(0,c) & cat(c) => ?[s]:(arg1(s)=c & same(s) & present(s) & ?[t]:(U(1,t) & tabby(t) & arg2(s)=t))
+#  ![c]:(U(0,c) & cat(c) => ~?[s]:(arg1(s)=c & same(s) & present(s) & ?[t]:(U(1,t) & tabby(t) & arg2(s)=t))
 #
 #  "a cat and dog are sleeping"
 #  ?[X]:(?[c]:(U(0,c) & cat(c) & ?[d]:(U(1,d) & dog(d) & X=^[x]:(x=c | x=d))) & ![x]:(X(x) => ?[s]:(arg1(s)=x & sleep(s) & present(s))))
@@ -502,7 +500,7 @@ VP_R -> VP_R:try_remove_comma COMMA ADVP_R:try_remove_comma # for arg2
 VP_R -> VP_R:try_remove_comma PP:try_remove_comma
 VP_R -> VP_R:try_remove_comma ADJP_R:try_remove_comma
 
-# for prepositional verbs (i.e. "pay back", "look forward to", etc)
+# for prepositional verbs (i.e. "look forward to", etc)
 # VP_R {... & (~)?[y1]:(p(y1) & f1(y1) & f(y1)) & ... & (~)?[yn]:(p(yn) & fn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:(p(y1) & f1(y1)) & ... & (~)?[yn]:(p(yn) & fn(yn))}
 #     PP {... & ?[y]:(p(y) & f(y))}
@@ -1146,7 +1144,7 @@ PP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 PP -> P:require_no_preposition DP:try_remove_comma
 # e.g. "friend of Mary's", "eyes of Mary's"
 PP -> P:require_no_preposition DP:add_genitive,try_remove_comma
-# for prepositional verbs (i.e. "pay back", "look forward to", etc)
+# for prepositional verbs (i.e. "look forward to", etc)
 PP -> P_PLACEHOLDER:require_preposition DP:try_remove_comma
 
 # PP {^[P]:(... & ?[x]:(p(x) & ?[y]:(f(y) & arg1/arg2(x)=y) & P(x)))}
