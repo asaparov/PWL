@@ -4,7 +4,7 @@
 # necessarily the deepest). For example:
 #
 #  "cats are mammals"
-#  ![x]:(U(0,x) & cat(x) => ?[t]:(arg1(t)=x & type(t) & present(t) & arg2(t)=mammal))
+#  ![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & same(s) & present(s) & ?[m]:(U(1,m) & mammal(m) & arg2(t)=m)))
 # where `present` is relative to the deictic origo, so it could be defined as
 # something like ![x]:(present(x) = time(x)(T)) where time(x) returns the set
 # of times at which the event x is true, and T is the current time in the
@@ -122,6 +122,11 @@
 #  "i did not get much money"
 #  ?[m]:(U(0,m) & money(m) & ?[l]:(large_amount(l) & arg1(l)=m) & ~?[r]:(arg1(r)=me & receive(r) & past(r) & arg2(r)=m))
 #
+#  "i did not get very much money"
+#  ?[m]:(U(0,m) & money(m) & ?[l]:(very(large_amount)(l) & arg1(l)=m) & ~?[r]:(arg1(r)=me & receive(r) & past(r) & arg2(r)=m))
+#    [OR]
+#  ?[m]:(U(0,m) & money(m) & ?[l]:(?[v]:(very(v) & arg1(v)=l) & large_amount(l) & arg1(l)=m) & ~?[r]:(arg1(r)=me & receive(r) & past(r) & arg2(r)=m))
+#
 #  "i don't like Ralph's destroying the barn"
 #  "i don't like Ralph's destruction of the barn"
 #  ?[d]:(arg1(d)=ralph & destroy(d) & progressive(d) & ?[b]:(U(0,b) & barn(b) & arg2(d)=b) & ~?[l]:(arg1(l)=me & like(l) & present(l) & arg2(l)=d))
@@ -168,7 +173,7 @@
 #  ?[x]:(U(0,x) & female_ref(0,x) & ?[s]:(arg1(s)=x & sit(s) & past(s) & ?[o]:(on_top_of(o) & ?[t]:(U(1,t) & table(t) & arg2(o)=t) & arg1(o)=s)))
 #
 #  "the birds hear each other"
-#  ![X]:(X=^[x]:(U(0,x) & bird(x)) & ![x,y]:(X(x) & Y(x) & ~(x=y) => ?[h]:(arg1(h)=x & hear(h) & arg2(h)=y)))
+#  ?[X]:(X=^[x]:(U(0,x) & bird(x)) & ![x,y]:(X(x) & Y(x) & ~(x=y) => ?[h]:(arg1(h)=x & hear(h) & arg2(h)=y)))
 #
 #  "some relative of each villager and some relative of each townsman hate each other"
 #  ?[a]:(U(0,a) & ![x]:(U(1,x) & villager(x) => ?[r]:(related_to(r) & arg2(r)=x & arg1(r)=a)) & ?[b]:(U(2,b) & ![x]:(U(3,x) & townsman(x) => ?[r]:(related_to(r) & arg2(r)=x & arg1(r)=b)) & ?[X]:(X=^[x]:(x=a | x=b) & ![x,y]:(X(x) & Y(x) & ~(x=y) => ?[h]:(arg1(h)=x & hate(h) & arg2(h)=y)))))
@@ -268,6 +273,46 @@
 #
 #  "she walked and sat under every tree and near every rock"
 #  {?[s]:(U(0,s) & female_ref(s) & ?[T]:(T=^[x]:(U(1,x) & tree(x)) & ?[R]:(R=^[y]:(U(2,y) & rock(y)) & ![x]:(T(x) => ![y]:(R(y) => ?[w]:(arg1(w)=s & walk(w) & past(w) & ?[u]:(under(u) & arg1(u)=w & arg2(u)=x) & ?[n]:(near(n) & arg1(n)=w & arg2(n)=y)) & ?[a]:(arg1(a)=s & sit(a) & past(a) & ?[u]:(under(u) & arg1(u)=a & arg2(u)=x) & ?[n]:(near(n) & arg1(n)=a & arg2(n)=y)))))))}
+#
+#  "John wants and is able to swim and dance"
+#  "John wants to and is able to swim and dance"
+#  {?[s]:(swim(s) & ?[d]:(dance(d) & ?[X]:(X=^[x]:(x=s | x=d) & ![x]:(X(x) => ?[w]:(arg1(w)=john & want(w) & present(w) & arg2(w)=x) & ?[c]:(arg1(c)=john & capable_of(c) & present(c) & arg2(c)=x)))))}
+#
+#  "the house is Kim's"
+#  {?[h]:(U(0,h) & house(h) & ?[o]:(arg1(o)=h & inverse(own)(o) & present(o) & arg2(o)=kim))}
+#
+#  "the pencils are the students'"
+#  {?[X]:(X=^[x]:(U(0,x) & pencil(x)) & ?[Y]:(Y=^[y]:(Y(1,y) & student(y)) & ![x,y]:(X(x) & Y(y) => ?[o]:(arg1(o)=x & inverse(own)(o) & present(o) & arg2(o)=y))))}
+#
+#  "flower seller has carnations"
+#  {?[C]:(subset(C,^[x]:(U(0,x) & carnation(x))) & ?[x]:(?[s]:(?[f]:(U(1,f) & flower(f) & arg2(s)=f) sell(s) & arg1(s)=x) & U(2,x) & ![c]:(C(c) => ?[o]:(arg1(o)=x & own(o) & present(o) & arg2(o)=c))))}
+#
+#  "Sirius is brighter"
+#  {?[g]:(arg1(g)=sirius & greater(brightness)(g) & present(g))}
+#
+#  "Sirius is brighter than Vega"
+#  {?[g]:(arg1(g)=sirius & greater(brightness)(g) & present(g) & arg2(g)=vega)}
+# where we can add an axiom such as ![x,y,f]:(?[g]:(greater(f)(g) & arg1(g)=x & arg2(g)=y) & ~is_real_number(y) & ?[b]:(f(b) & arg1(b)=y) = ?[g]:(greater(f)(g) & arg1(g)=x & ?[b]:(brightness(b) & arg1(b)=y & arg2(g)=arg2(b))))
+# as well as equivalent axioms for things like height, shortness, size, length, etc.
+#
+#  "i see a brighter star than Vega"
+#  "i see a star brighter than Vega"
+#  {?[s]:(arg1(s)=me & see(s) & present(s) & ?[x]:(U(0,x) & star(x) & ?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=vega) & arg2(s)=x))}
+#
+#  "Sirius is brighter than we thought"
+#  ?[X]:(X=us & ![x]:(X(x) => ?[g]:(arg1(g)=sirius & greater(brightness)(g) & ?[t]:(arg1(t)=x & think(t) & past(t) & arg2(t)=arg2(g)))))
+#
+#  "Sirius is the brightest star"
+#  {?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[X]:(X=^[x]:(U(0,x) & star(x)) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g) & arg2(g)=X)))}
+#
+#  "Sirius is the brightest"
+#  {?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g)))}
+#
+#  "John swam extremely quickly"
+#  {?[s]:(arg1(s)=john & swim(s) & past(s) & ?[q]:(?[e]:(extreme(e) & arg1(e)=q) & quick(q) & arg1(q)=s))}
+#
+#  "John arrived 10 minutes late"
+#  {?[a]:(arg1(s)=john & arrive(a) & past(a) & ?[l]:(arg2(l)=(10*minute) & late(l) & arg1(l)=a))}
 
 
 # This is the root nonterminal for declarative sentences.
@@ -276,86 +321,98 @@ S -> S':singular
 S -> S':plural
 
 # S {... & (~)?[y1]:(f(y1) & g(y1)) & ... & (~)?[yn]:(f(yn) & g(yn))}
-#  -> ADVP {... & f'}
+#  -> ADVP_R {... & f'}
 #     (COMMA)
 #     S {... & (~)?[y1]:g(y1) & ... & (~)?[yn]:g(yn)}
 # where f(y) = (~)?[z]:(h(z) & arg2(z)=y) and f' = (~)?[z]:h(z)
 #    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg2(zn)=y) and f' = (~)?[z1]:h1(z1) & ... & (~)?[zn]:hn(zn)
 #    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg2(zn)=y) and f' = (~)?[z1]:h1(z1) | ... | (~)?[zn]:hn(zn)
-S -> ADVP:remove_comma COMMA S:remove_comma
-S -> ADVP:remove_comma S:remove_comma
+S -> ADVP_R:try_remove_comma,try_remove_nullable_subject COMMA S:try_remove_comma
+S -> ADVP_R:try_remove_comma,try_remove_nullable_subject S:try_remove_comma
 
 # S {?[X]:(h(X) & ![x]:(X(x) => (true(x) => g(x))))}
 #  -> PP {^[P]:?[X]:(h(X) & ![x]:(X(x) => (true(x) => P(x))))}
 #     (COMMA)
 #     S {g(x)}
 # S {... & (~)?[y1]:(f(y1) & g(y1)) & ... & (~)?[yn]:(f(yn) & g(yn))}
-#  -> PP {... & f'}
+#  -> PP {^[P]:(... & f')}
 #     (COMMA)
 #     S {... & (~)?[y1]:g(y1) & ... & (~)?[yn]:g(yn)}
 # S {... & ![x]:(h(x) => (~)?[y1]:(f(y1,x) & g(y1)) & ... & (~)?[yn]:(f(yn,x) & g(yn)))}
-#  -> PP {... & ![x]:(h(x) => f'(x))}
+#  -> PP {^[P]:(... & ![x]:(h(x) => f'(x)))}
 #     (COMMA)
 #     S {... & (~)?[y1]:g(y1) & ... & (~)?[yn]:g(yn)}
-# where f(y) = (~)?[z]:(h(z) & arg2(z)=y) and f' = (~)?[z]:h(z)
-#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg2(zn)=y) and f' = (~)?[z1]:h1(z1) & ... & (~)?[zn]:hn(zn)
-#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg2(zn)=y) and f' = (~)?[z1]:h1(z1) | ... | (~)?[zn]:hn(zn)
-S -> PP:remove_comma S:remove_comma
-S -> PP:remove_comma COMMA S:remove_comma
+# where f(y) = (~)?[z]:(h(z) & arg2(z)=y) and f' = (~)?[z]:(h(z) & P(z))
+#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg2(zn)=y) and f' = (~)?[z1]:(h1(z1) & P(z1)) & ... & (~)?[zn]:(hn(zn) & P(zn))
+#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg2(zn)=y) and f' = (~)?[z1]:(h1(z1) & P(z1)) | ... | (~)?[zn]:(hn(zn) & P(zn))
+S -> PP:try_remove_comma,try_remove_nullable_subject S:try_remove_comma
+S -> PP:try_remove_comma,try_remove_nullable_subject COMMA S:try_remove_comma
+
+# S {... & (~)?[y1]:(f(y1) & p(y1) & f1(y1)) & ... & (~)?[yn]:(f(yn) & p(yn) & fn(yn))}
+#  -> ADJP_R/PP {^[P]:(... & ?[y]:(p(y) & f(y) & P(y)))}
+#     S' {... & (~)?[y1]:(p(y1) & f1(y1)) & ... & (~)?[yn]:(p(yn) & fn(yn))}
+# where f(y) = (~)?[z]:(h(z) & arg2(z)=y)
+#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg2(zn)=y)
+#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg2(zn)=y)
+# This rule removes the predicate `p` from the event corresponding to the verb
+# (and so the verb is semantically empty) such as in "flawed was the argument"
+# and "in the tree was the cat". (called preposing)
+S -> PP:try_remove_comma,try_remove_nullable_subject S':try_remove_comma,add_nullable_subject
+S -> ADJP_R:try_remove_comma,try_remove_nullable_subject S':try_remove_comma,add_nullable_subject
 
 # S {?[X]:(f(X) & ![x]:(X(x) => (true(x) => g(x))))}
 #  -> S {g(x)}
 #     (COMMA)
-#     PP {^[P]:?[X]:(f(X) & ![x]:(X(x) => (true(x) => P(x))))}
+#     PP {?[X]:(f(X) & ![x]:(X(x) => (true(x) => P(x))))}
 # NOTE: We don't allow other adjuncts here to avoid the spurious ambiguity
 # where the PP could also attach at VP.
-S -> S:remove_comma PP:remove_comma
-S -> S:remove_comma COMMA PP:remove_comma
+S -> S:try_remove_comma PP:try_remove_comma,try_remove_nullable_subject
+S -> S:try_remove_comma COMMA PP:try_remove_comma,try_remove_nullable_subject
 
 # S {A => B} -> IF S {A} (COMMA) (THEN) S {B}
-S -> IF S:remove_comma S:remove_comma
-S -> IF S:remove_comma COMMA S:remove_comma
-S -> IF S:remove_comma THEN S:remove_comma
-S -> IF S:remove_comma COMMA THEN S:remove_comma
+S -> IF S:try_remove_comma S:try_remove_comma
+S -> IF S:try_remove_comma COMMA S:try_remove_comma
+S -> IF S:try_remove_comma THEN S:try_remove_comma
+S -> IF S:try_remove_comma COMMA THEN S:try_remove_comma
 
 # S {A => B} -> S {B} (COMMA) IF S {A}
-S -> S:remove_comma IF S:remove_comma
-S -> S:remove_comma COMMA IF S:remove_comma
+S -> S:try_remove_comma IF S:try_remove_comma
+S -> S:try_remove_comma COMMA IF S:try_remove_comma
 
 # S {A1 & ... & An} -> S {A1} COMMA S {A2 & ... & An}
 # S {A1 | ... | An} -> S {A1} COMMA S {A2 | ... | An}
 # S {~A1 & ... & ~An} -> S {~A1} COMMA S {~A2 & ... & ~An}
 # In the NOR rule, the negation can appear in front of the scope ?[y], or in
 # front of any parent scope.
-S -> S:remove_comma COMMA S:add_comma
+S -> S:try_remove_comma COMMA S:add_comma
 
 # S {A1 & A2} -> S {A1} (COMMA) AND S {A2}
-S -> S:remove_comma COMMA AND S:remove_comma
-S -> S:remove_comma AND S:remove_comma
+S -> S:try_remove_comma COMMA AND S:try_remove_comma
+S -> S:try_remove_comma AND S:try_remove_comma
 
 # S {A1 | A2} -> S {A1} (COMMA) OR S {A2}
-S -> S:remove_comma COMMA OR S:remove_comma
-S -> S:remove_comma OR S:remove_comma
+S -> S:try_remove_comma COMMA OR S:try_remove_comma
+S -> S:try_remove_comma OR S:try_remove_comma
 
 # S {A1 | A2} -> S {A1} (COMMA) NOR S {A2}
-S -> S:remove_comma COMMA NOR VP_R:add_req_aux,remove_comma
-S -> S:remove_comma NOR VP_R:add_req_aux,remove_comma
+S -> S:try_remove_comma COMMA NOR VP_R:add_req_aux,try_remove_comma
+S -> S:try_remove_comma NOR VP_R:add_req_aux,try_remove_comma
 
 # S {... & ?[y1]:(g1(y1) & ?[r]:(arg1(r)=y1 & reason(r) & ?[z]:(h(z) & arg2(r)=z))) & ... & ?[yn]:(gn(yn) & ?[r]:(arg1(r)=yn & reason(r) & ?[z]:(h(z) & arg2(r)=z)))}
 #  -> S {... & ?[y1]:g1(y1) & ... & ?[yn]:gn(yn)}
 #     (COMMA) BECAUSE/FOR S {f(...)}
-S -> S:remove_comma COMMA BECAUSE S:remove_comma
-S -> S:remove_comma BECAUSE S:remove_comma
-S -> S:remove_comma COMMA FOR S:remove_comma
-S -> S:remove_comma FOR S:remove_comma
+S -> S:try_remove_comma COMMA BECAUSE S:try_remove_comma
+S -> S:try_remove_comma BECAUSE S:try_remove_comma
+S -> S:try_remove_comma COMMA FOR S:try_remove_comma
+S -> S:try_remove_comma FOR S:try_remove_comma
 
 # S {... & ?[y1]:(?[r]:(arg1(r)=y1 & reason(r) & ?[z]:(h(z) & arg2(r)=z)) & g1(y1)) & ... & ?[yn]:(?[r]:(arg1(r)=yn & reason(r) & ?[z]:(h(z) & arg2(r)=z)) & gn(yn))}
 #  -> BECAUSE/FOR S {?[z]:h(z)}
 #     (COMMA) S {?[y1]:g1(y1) & ... & ?[yn]:gn(yn)}
-S -> BECAUSE S:remove_comma COMMA S:remove_comma
-S -> BECAUSE S:remove_comma S:remove_comma
-S -> FOR S:remove_comma COMMA S:remove_comma
-S -> FOR S:remove_comma S:remove_comma
+S -> BECAUSE S:try_remove_comma COMMA S:try_remove_comma
+S -> BECAUSE S:try_remove_comma S:try_remove_comma
+S -> FOR S:try_remove_comma COMMA S:try_remove_comma
+S -> FOR S:try_remove_comma S:try_remove_comma
 
 
 S' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
@@ -363,20 +420,23 @@ S' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
 # S' {(~)?[x]:f(x)} -> THERE IS DP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
 # NOTE: This above rule is only really useful if we choose to represent "there
 # is a cat" as something like ?[x]:(U(0,x) & cat(x)).
-S' -> THERE IS DP
+S' -> THERE IS DP:try_remove_nullable_subject
 
-# S' {... & ?[y1]:(... & arg1(y1)=a & ...) & ... & ?[yn]:(... & arg1(yn)=a & ...}
+# S' {... & (~)?[y1]:(... & arg1(y1)=a & ...) & ... & (~)?[yn]:(... & arg1(yn)=a & ...}
 #  -> DP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
-#     VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-# S' {... & (~)?[x]:(f(x) & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
-#     VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-# S' {... & (~)![x]:(f(x) => ... & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x)))}
-#     VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-# S' {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...)))}
-#  -> DP {^[P]:?[X]:(f(X) & (~)![x]:(X(x) => P(x)))}
-#     VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
+#     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+# S' {... & (~)?[x]:(f(x) & (~)?[y1]:(... & arg1(y1)=x & ...) & ... & (~)?[yn]:(... & arg1(yn)=x & ...))} if x is not a set variable
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x))))}
+#     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+# S' {... & (~)![x]:(f(x) => ... & (~)?[y1]:(... & arg1(y1)=x & ...) & ... & (~)?[yn]:(... & arg1(yn)=x & ...))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x))))}
+#     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+# S' {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & (~)?[y1]:(... & arg1(y1)=x & ...) & ... & (~)?[yn]:(... & arg1(yn)=x & ...)))}
+#  -> DP {^[P]:(... & ?[X]:(f(X) & (~)![x]:(X(x) => P(x))))}
+#     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+# S' {... & ?[X]:(f(X) & (~)?[y1]:(... & arg1(y1)=X & ...) & ... & (~)?[yn]:(... & arg1(yn)=X & ...))} if X is a set variable
+#  -> DP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
+#     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
 # NOTE: The above three rules, during the inverse transformation, the scope of
 # X and x can be positioned anywhere above the scope of y. However, to avoid
 # producing semantically-equivalent logical forms, for each equivalence class
@@ -389,128 +449,217 @@ S' -> THERE IS DP
 # the example "a cat and dog are sleeping", f(X) includes the definition for
 # "cat" and "dog". In the above three rules, the scope of y is the right-most
 # and top-most scope of an event variable (a object with arguments).
-S' -> DP VP_R
+S' -> DP:try_remove_nullable_subject VP_R:try_remove_nullable_subject
 
 # NOTE: The above note also applies to these rules.
 # S' {... & ~?[x]:(f(x) & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & ?[x]:(X(x) & P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ?[x]:(X(x) & P(x))))}
 #     VP_R {... & ~?[y1]:(...) & ... & ~?[yn]:(...)}
 # S' {... & ~![x]:(f(x) => ... & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & ![x]:(X(x) => P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ![x]:(X(x) => P(x))))}
 #     VP_R {... & ~?[y1]:(...) & ... & ~?[yn]:(...)}
 # S' {... & ?[X]:(f(X) & ~![x]:(X(x) => ... & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...)))}
-#  -> DP {^[P]:?[X]:(f(X) & ![x]:(X(x) => P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
 #     VP_R {... & ~?[y1]:(...) & ... & ~?[yn]:(...)}
-S' -> DP VP_R
+S' -> DP:try_remove_nullable_subject VP_R:try_remove_nullable_subject
+
+S' -> VP_R:remove_nullable_subject
 
 
 VP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # VP_R {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
-#     ADVP/PP {... & f'}
-# where f(y) = (~)?[z]:(h(z) & arg1/arg2(z)=y) and f' = (~)?[z]:h(z)
-#    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:h1(z1) & ... & (~)?[zn]:hn(zn)
-#    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:h1(z1) | ... | (~)?[zn]:hn(zn)
-# Note that f(y) may also contain variables which are universally-quantified
-# (above the scope of yi). In this case, the universal quantifiers are also
-# moved into f'.
+#     ADVP_R/PP {^[P]:(... & f')}
+# where f(y) = (~)?[z]:(h(z) & arg1/arg2(z)=y) and f' = (~)?[z]:(h(z) & P(z))
+#    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:(h1(z1) & P(z1)) & ... & (~)?[zn]:(hn(zn) & P(zn))
+#    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:(h1(z1) & P(z1)) | ... | (~)?[zn]:(hn(zn) & P(zn))
+# Note that f(y) may also contain variables which are universally-quantified,
+# above the scope of zi, either within the scope of yi (e.g. "it flew faster
+# than every bird") or above it ("i have been to every restaurant"). In this
+# case, the universal quantifiers are also moved into f'.
+# NOTE: This rule also works if the yi's are ORed.
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-VP_R -> VP_R:remove_comma PP:remove_comma # for arg1
-VP_R -> VP_R:remove_comma ADVP:remove_comma # for arg1
-VP_R -> VP_R:remove_comma COMMA PP:remove_comma # for arg1
-VP_R -> VP_R:remove_comma COMMA ADVP:remove_comma # for arg1
-VP_R -> VP_R:remove_comma PP:remove_comma # for arg2
-VP_R -> VP_R:remove_comma ADVP:remove_comma # for arg2
-VP_R -> VP_R:remove_comma COMMA PP:remove_comma # for arg2
-VP_R -> VP_R:remove_comma COMMA ADVP:remove_comma # for arg2
+VP_R -> VP_R:try_remove_comma PP:try_remove_comma # for arg1
+VP_R -> VP_R:try_remove_comma ADVP_R:try_remove_comma # for arg1
+VP_R -> VP_R:try_remove_comma COMMA PP:try_remove_comma # for arg1
+VP_R -> VP_R:try_remove_comma COMMA ADVP_R:try_remove_comma # for arg1
+VP_R -> VP_R:try_remove_comma PP:try_remove_comma # for arg2
+VP_R -> VP_R:try_remove_comma ADVP_R:try_remove_comma # for arg2
+VP_R -> VP_R:try_remove_comma COMMA PP:try_remove_comma # for arg2
+VP_R -> VP_R:try_remove_comma COMMA ADVP_R:try_remove_comma # for arg2
 
+# VP_R {... & (~)?[y1]:(p(y1) & f1(y1) & f(y1)) & ... & (~)?[yn]:(p(yn) & fn(yn) & f(yn))}
+#  -> VP_R {... & (~)?[y1]:f1(y1) & ... & (~)?[yn]:fn(yn)}
+#     ADJP_R/PP {^[P]:(... & ?[y]:(p(y) & f(y) & P(y)))}
+# This rule removes the predicate `p` from the event corresponding to the verb
+# (and so the verb is semantically empty) such as in "the cat is blue" and "the
+# cat is in the tree". `fi` contains verb-specific terms such as `present` as
+# well as any adjuncts of y whereas `f` contains everything else, such as the
+# arguments.
+VP_R -> VP_R:try_remove_comma PP:try_remove_comma
+VP_R -> VP_R:try_remove_comma ADJP_R:try_remove_comma
+
+# for prepositional verbs (i.e. "pay back", "look forward to", etc)
 # VP_R {... & (~)?[y1]:(p(y1) & f1(y1) & f(y1)) & ... & (~)?[yn]:(p(yn) & fn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:(p(y1) & f1(y1)) & ... & (~)?[yn]:(p(yn) & fn(yn))}
 #     PP {... & ?[y]:(p(y) & f(y))}
-# where f(y) = (~)?[z]:(h(z) & arg2(z)=y)
-#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg2(zn)=y)
-#    or f(y) = (~)?[z1]:(h1(z1) & arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg2(zn)=y)
-VP_R -> VP_R:remove_comma PP:remove_comma
+# where `p` is the predicate, `fi` contains verb-specific terms such as
+# `present` as well as any adjuncts of y whereas `f` contains everything else,
+# such as the arguments.
+VP_R -> VP_R:try_remove_comma,add_preposition PP:try_remove_comma,add_preposition
 
-# VP_R {... & ?[y1]:(... & arg1/arg2/arg3(y1)=a & ...) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=a & ...}
-#  -> VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
+# We need this rule for constructions like "she brought down the bed" and "she brought the bed down".
+VP_R -> VP_R:try_remove_comma,add_particle PARTICLE_PLACEHOLDER
+
+# VP_R {... & (~)?[y1]:(inverse(own)(y1) & arg2(y1)=a & ...) & ... & (~)?[yn]:(inverse(own)(yn) & arg2(yn)=a & ...}
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
 #     DP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
-# VP_R {... & (~)?[x]:(f(x) & ?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=x & ...))}
-#  -> VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#     DP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
-# VP_R {... & (~)![x]:(f(x) => ... & ?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=x & ...))}
-#  -> VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#     DP {^[P]:?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x)))}
-# VP_R {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=x & ...)))}
-#  -> VP_R {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#     DP {^[P]:?[X]:(f(X) & (~)![x]:(X(x) => P(x)))}
-# e.g. "it is not red nor is it red"
-VP_R -> VP_R:remove_comma DP:remove_comma,remove_req_aux # for arg1 (subject-auxiliary inversion)
-VP_R -> VP_R:remove_comma DP:remove_comma # for arg2
-VP_R -> VP_R:remove_comma DP:remove_comma # for arg3 (NOTE: we could make this semantic and have only two args)
+# VP_R {... & (~)?[x]:(f(x) & (~)?[y1]:(inverse(own)(y1) & arg2(y1)=x & ...) & ... & (~)?[yn]:(inverse(own)(yn) & arg2(yn)=x & ...))} if x is not a set variable
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x))))}
+# VP_R {... & (~)![x]:(f(x) => ... & (~)?[y1]:(inverse(own)(y1) & arg2(y1)=x & ...) & ... & (~)?[yn]:(inverse(own)(yn) & arg2(yn)=x & ...))}
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x))))}
+# VP_R {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & (~)?[y1]:(inverse(own)(y1) & arg2(y1)=x & ...) & ... & (~)?[yn]:(inverse(own)(yn) & arg2(yn)=x & ...)))}
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP {^[P]:(... & ?[X]:(f(X) & (~)![x]:(X(x) => P(x))))}
+# VP_R {... & ?[X]:(f(X) & (~)?[y1]:(inverse(own)(y1) & arg2(y1)=X & ...) & ... & (~)?[yn]:(inverse(own)(yn) & arg2(yn)=X & ...))} if X is a set variable
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
+# e.g. "the pencil is Emma's", "the pencils are the students'"
+VP_R -> VP_R:try_remove_comma DP:add_genitive,singular,try_remove_comma
+VP_R -> VP_R:try_remove_comma DP:add_genitive,plural,try_remove_comma
+
+# VP_R {... & (~)?[y1]:(... & arg1/arg2/arg3(y1)=a & ...) & ... & (~)?[yn]:(... & arg1/arg2/arg3(yn)=a & ...)}
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP/ADJP_R {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
+# VP_R {... & (~)?[x]:(f(x) & (~)?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & (~)?[yn]:(... & arg1/arg2/arg3(yn)=x & ...))} if x is not a set variable
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP/ADJP_R {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x))))}
+# VP_R {... & (~)![x]:(f(x) => ... & (~)?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & (~)?[yn]:(... & arg1/arg2/arg3(yn)=x & ...))}
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP/ADJP_R {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x))))}
+# VP_R {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & (~)?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & (~)?[yn]:(... & arg1/arg2/arg3(yn)=x & ...)))}
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP/ADJP_R {^[P]:(... & ?[X]:(f(X) & (~)![x]:(X(x) => P(x))))}
+# VP_R {... & ?[X]:(f(X) & (~)?[y1]:(... & arg1/arg2/arg3(y1)=X & ...) & ... & (~)?[yn]:(... & arg1/arg2/arg3(yn)=X & ...))} if X is a set variable
+#  -> VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
+#     DP/ADJP_R {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
+# e.g. "it is not a cat nor is it a dog"
+VP_R -> VP_R:try_remove_comma DP:try_remove_comma,require_no_inverse,remove_req_aux # for arg1 (subject-auxiliary inversion; e.g. "is it a boy?")
+VP_R -> VP_R:try_remove_comma DP:try_remove_comma,require_no_inverse # for arg2
+VP_R -> VP_R:try_remove_comma DP:try_remove_comma,require_no_inverse # for arg3 (NOTE: we could make this semantic and have only two args)
+VP_R -> VP_R:try_remove_comma ADJP_R:try_remove_comma,require_no_inverse,remove_req_aux # for arg1 (subject-auxiliary inversion; e.g. "is he angry?")
+VP_R -> VP_R:try_remove_comma ADJP_R:try_remove_comma,require_no_inverse # for arg2
+VP_R -> VP_R:try_remove_comma ADJP_R:try_remove_comma,require_no_inverse # for arg3 (NOTE: we could make this semantic and have only two args)
+VP_R -> VP_R:try_remove_comma BY DP:try_remove_comma,require_inverse # for arg2
+VP_R -> VP_R:try_remove_comma BY DP:try_remove_comma,require_inverse # for arg3 (NOTE: we could make this semantic and have only two args)
 
 # for gapping and stripping
 # VP_R {... & (~)?[y]:(empty_ref(0,y) & f(y))}
-#  -> ADVP/PP {... & f'}
+#  -> ADVP_R/PP {... & f'}
 # VP_R {... & ![x]:(h(x) => (~)?[y]:(empty_ref(0,y) & f(y,x)))}
-#  -> ADVP/PP {... & ![x]:(h(x) => f'(x))}
+#  -> ADVP_R/PP {... & ![x]:(h(x) => f'(x))}
 # where f(y) = (~)?[z]:(h(z) & arg1/arg2(z)=y) and f' = (~)?[z]:h(z)
 #    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:h1(z1) & ... & (~)?[zn]:hn(zn)
 #    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:h1(z1) | ... | (~)?[zn]:hn(zn)
 # Note that f(y) may also contain variables which are universally-quantified
 # (above the scope of yi). In this case, the universal quantifiers are also
 # moved into f'.
-VP_R -> PP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,remove_comma # for arg1
-VP_R -> ADVP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,remove_comma # for arg1
-VP_R -> PP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,remove_comma # for arg2
-VP_R -> ADVP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,remove_comma # for arg2
+VP_R -> PP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma # for arg1
+VP_R -> ADVP_R:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma # for arg1
+VP_R -> PP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma # for arg2
+VP_R -> ADVP_R:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma # for arg2
 
 # for gapping and stripping
 # VP_R {... & ?[y]:(empty_ref(y) & arg2/arg3(y)=a}
 #  -> DP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
-# VP_R {... & (~)?[x]:(f(x) & ?[y]:(empty_ref(y) & arg2/arg3(y)=x))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
+# VP_R {... & (~)?[x]:(f(x) & ?[y]:(empty_ref(y) & arg2/arg3(y)=x))} if x is not a set variable
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x))))}
 # VP_R {... & (~)![x]:(f(x) => ... & ?[y]:(empty_ref(y) & arg2/arg3(y)=x))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x))))}
 # VP_R {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y]:(empty_ref(y) & arg2/arg3(y)=x)))}
-#  -> DP {^[P]:?[X]:(f(X) & (~)![x]:(X(x) => P(x)))}
-VP_R -> DP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,remove_comma # for arg2
-VP_R -> DP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,remove_comma # for arg3
+#  -> DP {^[P]:(... & ?[X]:(f(X) & (~)![x]:(X(x) => P(x))))}
+# VP_R {... & ?[X]:(f(X) & ?[y]:(empty_ref(y) & arg2/arg3(y)=X))} if X is a set variable
+#  -> DP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
+VP_R -> DP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma # for arg2
+VP_R -> DP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma # for arg3
+VP_R -> BY DP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_inverse,try_remove_comma # for arg2
+VP_R -> BY DP:require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_inverse,try_remove_comma # for arg3
 
 # VP_R {A1 & ... & An} -> VP_R {A1} COMMA VP_R {A2 & ... & An}
 # VP_R {A1 | ... | An} -> VP_R {A1} COMMA VP_R {A2 | ... | An}
-VP_R -> VP_R:remove_comma COMMA VP_R:add_comma
+VP_R -> VP_R:try_remove_comma COMMA VP_R:add_comma
 
 # VP_R {A1 & A2} -> VP_R {A1} (COMMA) AND VP_R {A2}
-VP_R -> VP_R:remove_comma COMMA AND VP_R:remove_comma
-VP_R -> VP_R:remove_comma AND VP_R:remove_comma
+VP_R -> VP_R:try_remove_comma COMMA AND VP_R:try_remove_comma
+VP_R -> VP_R:try_remove_comma AND VP_R:try_remove_comma
 
 # VP_R {A1 | A2} -> VP_R {A1} (COMMA) OR VP_R {A2}
-VP_R -> VP_R:remove_comma COMMA OR VP_R:remove_comma
-VP_R -> VP_R:remove_comma OR VP_R:remove_comma
+VP_R -> VP_R:try_remove_comma COMMA OR VP_R:try_remove_comma
+VP_R -> VP_R:try_remove_comma OR VP_R:try_remove_comma
 
 # VP_R {~A1 & ~A2} -> VP_R {A1} (COMMA) NOR VP_R {A2}
-VP_R -> VP_R:remove_comma COMMA NOR VP_R:remove_comma,add_req_aux
-VP_R -> VP_R:remove_comma NOR VP_R:remove_comma,add_req_aux
+VP_R -> VP_R:try_remove_comma COMMA NOR VP_R:try_remove_comma,add_req_aux
+VP_R -> VP_R:try_remove_comma NOR VP_R:try_remove_comma,add_req_aux
+
+# VP_R {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
+#  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
+#     S {... & f'}
+# where f(y) = (~)?[z]:(h(z) & arg2(y)=z) and f' = (~)?[z]:h(z)
+# VP_R {... & ?[X]:(X=^[x]:(x=z1 | ... | x=zm) & ... & ![x]:(X(x) => (~)?[y1]:(g1(y1) & arg2(y1)=x) & ... & (~)?[yn]:(gn(yn) & arg2(yn)=x)))}
+#  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
+#     S {... & (?[z1]:(...) & ... & ?[zm]:(...))}
+# VP_R {... & ?[X]:(X=^[x]:(x=z1 | ... | x=zm) & ... & ?[x]:(X(x) & (~)?[y1]:(g1(y1) & arg2(y1)=x) & ... & (~)?[yn]:(gn(yn) & arg2(yn)=x)))}
+#  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
+#     S {... & (?[z1]:(...) | ... | ?[zm]:(...))}
+# where f(y) = (~)?[z]:(h(z) & arg2(y)=z) and f' = (~)?[z]:h(z)
+# NOTE: z could also be universally quantified above the scope of yi
+VP_R -> VP_R:try_remove_comma S:try_remove_comma,add_to_infinitive,add_nullable_subject
+VP_R -> VP_R:try_remove_comma S:try_remove_comma,add_infinitive,add_nullable_subject
+# e.g. "i think Emma returned the books yesterday"
+VP_R -> VP_R:try_remove_comma S:try_remove_comma # TODO: remove grammatical features from S
 
 # TODO: we could require that here are no additional right adjuncts in the head scope
-VP_R -> VP_L:remove_comma
+VP_R -> VP_L:try_remove_comma
 
 
 VP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
-VP_L -> ADVP VP_L:require_no_req_aux
+
+# VP_L {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
+#  -> (COMMA) ADVP_R/PP {^[P]:(... & f')}
+#     (COMMA) VP_L {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
+# where f(y) = (~)?[z]:(h(z) & arg1/arg2(z)=y) and f' = (~)?[z]:(h(z) & P(z))
+#    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:(h1(z1) & P(z1)) & ... & (~)?[zn]:(hn(zn) & P(zn))
+#    or f(y) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=y) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=y) and f' = (~)?[z1]:(h1(z1) & P(z1)) | ... | (~)?[zn]:(hn(zn) & P(zn))
+# Note that f(y) may also contain variables which are universally-quantified,
+# above the scope of zi, either within the scope of yi (e.g. "it flew faster
+# than every bird") or above it ("i have been at every restaurant"). In this
+# case, the universal quantifiers are also moved into f'.
+#
+# An example of a sentence with coordination in both the verb and adverb is:
+#  "she walked and sat under every tree and near every rock"
+VP_L -> ADVP_L VP_L:require_no_req_aux
 VP_L -> COMMA PP:require_no_req_aux COMMA VP_L
+
 VP_L -> WILL VP_R:remove_future,add_infinitive,add_aux,remove_req_aux # future tense
 VP_L -> HAVE VP_R:require_no_future,remove_perfect,add_past_participle,add_aux,remove_req_aux # perfect aspect
 VP_L -> BE VP_R:require_no_future,require_no_perfect,remove_progressive,add_present_participle,add_aux,remove_req_aux # progressive aspect
 VP_L -> DO VP_R:require_no_future,require_no_perfect,require_no_progressive,add_infinitive,add_aux,remove_req_aux # do-support
 VP_L -> NOT VP_R:require_aux,remove_not,remove_req_aux
 VP_L -> BE VP_R:require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,remove_req_aux # passive voice
+VP_L -> TO VP_R:add_infinitive,remove_to_infinitive,require_no_future,require_no_req_aux
 VP_L -> MODAL VP_R:add_infinitive,remove_req_aux
-VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref
+
+# VP_L {?[x]:p(x)} -> V {p}
+VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_finite
+
+# VP_L {?[x]:T} -> BE
+# This is the semantically empty "be"/"is"/"was"/"were" as in "the cat is blue" and "the cat is in the tree".
+VP_L -> BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_finite
 
 # for gapping and stripping
 VP_L -> WILL:remove_future,remove_req_aux,require_only_empty_ref # future tense
@@ -525,15 +674,15 @@ VP_L -> MODAL:remove_req_aux,require_empty_ref
 #  -> DP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
 #     VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
 # VP_L {... & (~)?[x]:(f(x) & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x))))}
 #     VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
 # VP_L {... & (~)![x]:(f(x) => ... & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...))}
-#  -> DP {^[P]:?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x))))}
 #     VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
 # VP_L {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y1]:(... & arg1(y1)=x & ...) & ... & ?[yn]:(... & arg1(yn)=x & ...)))}
-#  -> DP {^[P]:?[X]:(f(X) & (~)![x]:(X(x) => P(x)))}
+#  -> DP {^[P]:(... & ?[X]:(f(X) & (~)![x]:(X(x) => P(x))))}
 #     VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-# e.g. "it is not red nor will it be red"
+# e.g. "it is not a cat nor will it be a cat"
 VP_L -> DP VP_L:require_no_req_aux # for subject-auxiliary inversion
 
 
@@ -541,165 +690,195 @@ VP_L -> DP VP_L:require_no_req_aux # for subject-auxiliary inversion
 DP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # DP {A} -> A DP' {A}
-DP -> DP':remove_comma
+DP -> DP':try_remove_comma,remove_adv
 
-# DP {^[P]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y))))} if xi are set-valued
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => P(x)))} if xi are individuals
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & ![y]:(x(y) => P(y))))} if xi are set-valued
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x)))} if xi are individuals
-#  -> DP {^[P]:?[x1]:(f1(x1) & (~)P(x1))}
-#     or {^[P]:?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x)))} if x1 is a set
+# DP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))} if xi are set-valued
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))} if xi are individuals
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & ![y]:(x(y) => P(y)))))} if xi are set-valued
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x))))} if xi are individuals
+#  -> DP {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     COMMA
-#     DP {^[P]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y))))}
-#     or {^[P]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => P(x)))}
-#     or {^[P]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y))))}
-#     or {^[P]:?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x)))}
+#     DP {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x))))}
 # note: xi could also be constants, rather than existentially-quantified variables
 # note: if xi is a set containing a singleton, S would look like ^[x]:(... | x=^[y]:y=singleton | ...)
-DP -> DP:remove_comma COMMA:null DP:add_comma
+DP -> DP:try_remove_comma,try_remove_genitive COMMA DP:add_comma,remove_adv
 
-# DP {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y))))}
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x)))}
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y))))}
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x)))}
-#  -> DP {^[P]:?[x1]:(f1(x1) & (~)P(x1))}
-#     or {^[P]:?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x)))} if x1 is a set
+# DP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+#  -> DP {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) AND
-#     DP {^[P]:?[x2]:(f2(x2) & (~)P(x2))}
-#     or {^[P]:?[x2]:(f2(x2) & (~)![x]:(x2(x) => P(x)))} if x2 is a set
+#     DP {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     or {^[P]:(... & ?[x2]:(f2(x2) & (~)![x]:(x2(x) => P(x))))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
-DP -> DP:remove_comma AND:null DP:remove_comma
-DP -> DP:remove_comma COMMA:null AND:null DP:remove_comma
+DP -> DP:try_remove_comma,try_remove_genitive AND DP:try_remove_comma,remove_adv
+DP -> DP:try_remove_comma,try_remove_genitive COMMA AND DP:try_remove_comma,remove_adv
 
-# DP {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y))))}
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x)))}
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y))))}
-# or {^[P]:?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x)))}
-#  -> DP {^[P]:?[x1]:(f1(x1) & (~)P(x1))}
-#     or {^[P]:?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x)))} if x1 is a set
+# DP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+#  -> DP {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) OR
-#     DP {^[P]:?[x2]:(f2(x2) & (~)P(x2))}
-#     or {^[P]:?[x2]:(f2(x2) & (~)?[x]:(x2(x) & P(x)))} if x2 is a set
+#     DP {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     or {^[P]:(... & ?[x2]:(f2(x2) & (~)?[x]:(x2(x) & P(x))))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
-DP -> DP:remove_comma OR:null DP:remove_comma
-DP -> DP:remove_comma COMMA:null OR:null DP:remove_comma
+DP -> DP:try_remove_comma,try_remove_genitive OR DP:try_remove_comma,remove_adv
+DP -> DP:try_remove_comma,try_remove_genitive COMMA OR DP:try_remove_comma,remove_adv
 
-# DP {^[P]:![X]:(f(X) & ~![x]:(X(x) => P(x)))} -> NO NP {^[P]:![X]:(f(X) & ![x]:(X(x) => P(x)))}
-# DP {^[P]:![X]:(f(X) & ~?[x]:(X(x) & P(x)))} -> NO NP {^[P]:![X]:(f(X) & ?[x]:(X(x) & P(x)))}
+# DP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~![x]:(X(x) => P(x))))} -> NO NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))} -> NO NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))}
+# DP {^[P]:(... & ?[X]:(f(X) & ~![x]:(X(x) => P(x))))} -> NOT DP {^[P]:?[X]:(f(X) & ![x]:(X(x) => P(x)))}
+# DP {^[P]:(... & ?[X]:(f(X) & ~?[x]:(X(x) & P(x))))} -> NOT DP {^[P]:?[X]:(f(X) & ?[x]:(X(x) & P(x)))}
 # this depends on whether the head quantifier is negated
-DP -> NO NP:remove_comma
-DP -> NOT DP:remove_comma # TODO: this could be a source of spurious ambiguity: [[NOT DP] AND [DP]] vs [NOT [DP AND DP]]
+DP -> NO NP_R:try_remove_comma,remove_adv
+DP -> NOT DP:try_remove_comma,remove_adv
 
-# DP {a} -> NAME {a}
-# this depends on whether `a` is a constant vs a predicate, or a more complex formula
-DP -> NAME
-
-# DP {A & h(a,c)} => ADV {h(x,c)} DP {A & a}
-# DP {A & h(c,a)} => ADV {h(c,x)} DP {A & a}
-# where e.g. h could be multiply and c could be 2, which can be expressed as "twice the ..."
-DP -> ADV DP:adv,remove_comma
-
-# DP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))} -> EACH NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
-# DP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))} -> EACH NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
+# DP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> EACH NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-DP -> EACH:no_adv NP:remove_comma
+DP -> EACH NP_R:try_remove_comma,require_no_adv
 
-# DP {A} -> A NP {A}
+# DP {A} -> A NP_R {A}
 #   e.g. "A group of students walks down the street."
-DP -> A:null NP:concord_singular,remove_comma
+DP -> A NP_R:concord_singular,try_remove_comma,remove_adv
 
-# DP {![X]:(F(subset(X,^[x]:f(x))) & ![x]:(X(x) => h(x)))} -> SOME NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
-# DP {![X]:(F(subset(X,^[x]:f(x))) & ?[x]:(X(x) & h(x)))} -> SOME NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
+# DP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> SOME NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ?[x]:(X(x) & P(x))))} -> SOME NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
 # this depends on whether the set is defined using `subset` rather than with functions like `half` or as S=^[x]:f(x);
-DP -> SOME NP:remove_comma
+DP -> SOME NP_R:try_remove_comma,remove_adv
 
 # DP {A} -> DEF_DP {A}
-DP -> DEF_DP:remove_comma
+DP -> DEF_DP:try_remove_comma,remove_adv
 
-# DP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))} -> ALL DEF_NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
-# DP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))} -> ALL DEF_NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
+# DP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> ALL DEF_DP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-DP -> ALL DEF_DP:remove_comma
-DP -> ALL DP':remove_comma
+DP -> ALL DEF_DP:try_remove_comma,remove_adv
+DP -> ALL DP':try_remove_comma,remove_adv
 
-# DP {![X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => h(x)))} -> HALF DEF_NP {![X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => h(x)))}
-# DP {![X]:(F(half(X,^[x]:f(x))) & ?[x]:(X(x) & h(x)))} -> HALF DEF_NP {![X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & h(x)))}
+# DP {^[P]:(... & ?[X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> HALF DEF_DP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DP {^[P]:(... & ?[X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> HALF A NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined using `half` rather than with functions like `subset` or as S=^[x]:f(x);
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-DP -> HALF DEF_DP:remove_comma
-DP -> HALF A NP:remove_comma
+DP -> HALF DEF_DP:try_remove_comma,remove_adv
+DP -> HALF A NP_R:try_remove_comma,remove_adv
+
+# DP {^[P]:(... & ?[X]:(F(f(X,A)) & (~)![x]:(X(x) => P(x))))} -> ADV {f} DP {^[P]:(... & ?[X]:(F(X=A) & (~)![x]:(X(x) => P(x))))}
+# DP {^[P]:(... & ?[X]:(F(f(X,A)) & (~)?[x]:(X(x) & P(x))))} -> ADV {f} DP {^[P]:(... & ?[X]:(F(X=A) & (~)?[x]:(X(x) & P(x))))}
+# NOTE: If A is an existentially-quantified variable, we replace all
+# occurrences of A with X (such as in the construction "almost half the cats").
+# this depends on whether `f` is `half`, `subset`, or `almost`
+DP -> ADV DP:try_remove_comma,add_adv
+
+# DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ![x]:(X(x) => P(x))))} -> VP_R {... & f(x)} if X is not a union
+# DP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ?[x]:(X(x) & P(x))))} -> VP_R {... & f(x)} if X is not a union
+# DP {^[P]:(... & ?[X]:(X=^[x]:(x=x1 | ... | x=xn) & ![x]:(X(x) => P(x))))} -> VP_R {... & ?[x1]:(...) & ... & ?[xn]:(...)} if X is a union
+# DP {^[P]:(... & ?[X]:(X=^[x]:(x=x1 | ... | x=xn) & ?[x]:(X(x) & P(x))))} -> VP_R {... & ?[x1]:(...) & ... & ?[xn]:(...)} if X is a union
+DP -> VP_R:add_present_participle
 
 
 DEF_DP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
-# DEF_DP {A} -> THE NP {A}
+# DEF_DP {A} -> THE DP' {A}
 DEF_DP -> THE DP'
 
-# DP {![x]:(this(x) & f(x) => h(x))} -> THIS NP {![x]:(f(x) => h(x))}
-# DP {?[x]:(this(x) & h(x))} -> THIS NP {?[x]:h(x)}
-# DP {?[S]:(this(S) & F(S) & ![x]:(S(x) => h(x)))} -> THIS NP {?[S]:(F(S) & ![x]:(S(x) => h(x)))}
-# DP {?[S]:(this(S) & F(S) & ?[x]:(S(x) & h(x)))} -> THIS NP {?[S]:(F(S) & ?[x]:(S(x) & h(x)))}
+# DP {^[P]:(... & ?[S]:(this(S) & F(S) & ![x]:(S(x) => P(x))))} -> THIS DP' {^[P]:(... & ?[S]:(F(S) & ![x]:(S(x) => P(x))))}
+# DP {^[P]:(... & ?[S]:(this(S) & F(S) & ?[x]:(S(x) & P(x))))} -> THIS DP' {^[P]:(... & ?[S]:(F(S) & ?[x]:(S(x) & P(x))))}
 # this depends on whether the head predicate of the left conjunct is `this`
 DEF_DP -> THIS DP'
 
-# DP {![x]:(that(x) & f(x) => h(x))} -> THIS NP {![x]:(f(x) => h(x))}
-# DP {?[x]:(that(x) & h(x))} -> THIS NP {?[x]:h(x)}
-# DP {?[S]:(that(S) & F(S) & ![x]:(S(x) => h(x)))} -> THIS NP {?[S]:(F(S) & ![x]:(S(x) => h(x)))}
-# DP {?[S]:(that(S) & F(S) & ?[x]:(S(x) & h(x)))} -> THIS NP {?[S]:(F(S) & ?[x]:(S(x) & h(x)))}
+# DP {^[P]:(... & ?[S]:(that(S) & F(S) & ![x]:(S(x) => P(x))))} -> THIS DP' {^[P]:(... & ?[S]:(F(S) & ![x]:(S(x) => P(x))))}
+# DP {^[P]:(... & ?[S]:(that(S) & F(S) & ?[x]:(S(x) & P(x))))} -> THIS DP' {^[P]:(... & ?[S]:(F(S) & ?[x]:(S(x) & P(x))))}
 # this depends on whether the head predicate of the left conjunct is `that`
 DEF_DP -> THAT DP'
 
-# DEF_DP {?[x]:(belongs(x,a) & f(x))} -> DP {a} DP' {?[x]:f(x)}
-# DEF_DP {?[x]:(?[y]:(g(y) & belongs(x,h(y))) & f(x))} -> DP {?[y]:(g(y) & h(y))} DP' {?[x]:f(x)}
-# DEF_DP {?[S]:(![x]:(S(x) => belongs(x,a)) & f(S))} -> DP {a} DP' {?[S]:f(S)}
-# DEF_DP {?[S]:(?[y]:(g(y) & ![x]:(S(x) => belongs(x,h(y)))) & f(S))} -> DP {?[y]:(g(y) & h(y))} DP' {?[S]:f(S)}
-# DEF_DP {?[S]:(?[T]:(g(T) & ![x]:(S(x) => ![y]:(T(y) => belongs(x,h(y))))) & f(S))} -> DP {?[T]:(g(T) & ![y]:(T(y) => h(y)))} DP' {?[S]:f(S)}
-# TODO: this is wrong; as written, this is stating for every x in S={x:f(x)} and every y in T={y:g(y)}, y owns x. but we want T to be the set {y:g(y) & some x owns y}
-# note: in the above, the head predicate could also be `intended` rather than `belongs`
-DEF_DP -> DP:poss DP'
+# DEF_DP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(own(o) & arg2(o)=x & arg1(o)=a) & f(x))) & ![x]:(X(x) => P(x))))}
+#  -> DP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
+#     DP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DEF_DP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(own(o) & arg2(o)=x & ?[y]:(g(y) & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:g(x) & ?[x]:(X(x) & P(x))))}
+#     DP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DEF_DP {^[P]:(... & ?[X]:(F(X=^[x]:(?[y]:(g(y) & ?[o]:(own(o) & arg2(o)=x & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:g(x) & ![x]:(X(x) => P(x))))}
+#     DP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DEF_DP {^[P]:(... & ?[X]:(F(X=^[x]:(![y]:(g(y) => ?[o]:(own(o) & arg2(o)=x & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:g(x) & ![x]:(X(x) => P(x))))}
+#     DP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# NOTE: In the last two rules, if `g(y)` is just a set membership test `Y(y)`,
+# then in the left child logical form, we replace `X=^[x]:g(x)` with the
+# definition of `Y` (effectively renaming `Y` to `X`).
+# NOTE: This rule also works if X is existentially-quantified.
+DEF_DP -> DP:add_genitive,singular DP'
+DEF_DP -> DP:add_genitive,plural DP'
+# TODO: the above rule can also be used for `inverse(intended_for)` in addition to `own`
 
-# DEF_DP {?[x]:(f(x) & h(x))} -> DP {?[x]:(f(x) & x)} DP' {h(x)}
-# DEF_DP {![x]:(f(x) => h(x))} -> DP {![x]:(f(x) => x)} DP' {h(x)}
-# DEF_DP {?[S]:(f(S) & ![x]:(S(x) => h(x)))} -> DP {?[S]:(f(S) & ![x]:(S(x) => x))} DP' {h(x)}
-# DEF_DP {?[S]:(f(S) & ?[x]:(S(x) & h(x)))} -> DP {?[S]:(f(S) & ?[x]:(S(x) & x))} DP' {h(x)}
-# this depends on whether there is a predicate inside the Q, and its arguments (which argument is `x` in?) and arity
-DEF_DP -> DP:poss DP'
+# DEF_DP {^[P]:(... & ?[S]:(F(S=^[x]:(arg1/arg2(x)=a & f(x))) & ![x]:(S(x) => P(x))))}
+#  -> DP {^[P]:?[S]:(S=^[x]:(x=a) & ?[x]:(S(x) & P(x)))}
+#     DP' {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# DEF_DP {^[P]:(... & ?[S]:(F(S=^[x]:(?[y]:(g(y) & arg1/arg2(x)=y) & f(x))) & ![x]:(S(x) => P(x))))}
+#  -> DP {^[P]:(... & ?[S]:(S=^[x]:g(x) & ?[x]:(S(x) & P(x))))}
+#     DP' {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# DEF_DP {^[P]:(... & ![y]:(g(y) => ... ?[S]:(F(S=^[x]:(arg1/arg2(x)=y & f(x))) & ![x]:(S(x) => P(x)))))}
+#  -> DP {^[P]:(... & ?[S]:(S=^[x]:g(x) & ![x]:(S(x) => P(x))))}
+#     DP' {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# DEF_DP {^[P]:(... & ?[Y]:(G(Y) & ... & ![y]:(Y(y) => ?[S]:(F(S=^[x]:(arg1/arg2(x)=y & f(x))) & ![x]:(S(x) => P(x))))))}
+#  -> DP {^[P]:(... & ?[S]:(G(S) & ![x]:(S(x) => P(x))))}
+#     DP' {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# NOTE: This rule also works if S is existentially-quantified.
+#  e.g. "the arson's/termites' destruction of the barn(s)"
+DEF_DP -> DP:add_genitive,singular DP' # for arg1
+DEF_DP -> DP:add_genitive,singular DP' # for arg2
+DEF_DP -> DP:add_genitive,plural DP' # for arg1
+DEF_DP -> DP:add_genitive,plural DP' # for arg2
 
-# DEF_DP {?[x]:(f(x) & h(a,x))} -> DP {a} DP' {?[x]:(f(x) & h(y,x))}
-# DEF_DP {?[x]:(f(x) & h(x,a))} -> DP {a} DP' {?[x]:(f(x) & h(x,y))}
-# DEF_DP {![x]:(f(x) => h(a,x))} -> DP {a} DP' {![x]:(f(x) => h(y,x))}
-# DEF_DP {![x]:(f(x) => h(x,a))} -> DP {a} DP' {![x]:(f(x) => h(x,y))}
-# DEF_DP {?[x]:(f(x) & ?[y]:(g(y) & h(y,x)))} -> DP {?[y]:(g(y) & y)} DP' {?[x]:(f(x) & h(y,x))}
-# DEF_DP {?[x]:(f(x) & ?[y]:(g(y) & h(x,y)))} -> DP {?[y]:(g(y) & y)} DP' {?[x]:(f(x) & h(x,y))}
-# DEF_DP {![x]:(f(x) => ?[y]:(g(y) & h(y,x)))} -> DP {?[y]:(g(y) & y)} DP' {![x]:(f(x) => h(y,x))}
-# DEF_DP {![x]:(f(x) => ?[y]:(g(y) & h(x,y)))} -> DP {?[y]:(g(y) & y)} DP' {![x]:(f(x) => h(x,y))}
-# DEF_DP {?[x]:(f(x) & ![y]:(g(y) => h(y,x)))} -> DP {![y]:(g(y) => y)} DP' {?[x]:(f(x) & h(y,x))}
-# DEF_DP {?[x]:(f(x) & ![y]:(g(y) => h(x,y)))} -> DP {![y]:(g(y) => y)} DP' {?[x]:(f(x) & h(x,y))}
-# DEF_DP {![x]:(f(x) => ![y]:(g(y) => h(y,x)))} -> DP {![y]:(g(y) => y)} DP' {![x]:(f(x) => h(y,x))}
-# DEF_DP {![x]:(f(x) => ![y]:(g(y) => h(x,y)))} -> DP {![y]:(g(y) => y)} DP' {![x]:(f(x) => h(x,y))}
-# DEF_DP {?[S]:(f(S) & ![x]:(S(x) => h(a,x)))} -> DP {a} DP' {?[S]:(f(S) & ![x]:(S(x) => h(y,x)))}
-# DEF_DP {?[S]:(f(S) & ![x]:(S(x) => h(x,y)))} -> DP {a} DP' {?[S]:(f(S) & ![x]:(S(x) => h(x,y)))}
-# DEF_DP {?[S]:(f(S) & ?[x]:(S(x) & h(a,x)))} -> DP {a} DP' {?[S]:(f(S) & ?[x]:(S(x) & h(y,x)))}
-# DEF_DP {?[S]:(f(S) & ?[x]:(S(x) & h(x,y)))} -> DP {a} DP' {?[S]:(f(S) & ?[x]:(S(x) & h(x,y)))}
-# ...there are many more (where in the last four examples, `a` could be an existentially or universally-quantified variable, or a variable quantified over a set)
-# this depends on whether there is a predicate in the head, and its arguments (which argument is `x` in?) and arity
-DEF_DP -> DP:poss DP'
+# DEF_DP {^[P]:(... ?[X]:(X=^[x]:(?[o]:(arg1(o)=a & own(o) & arg2(o)=x)) & ![x]:(X(x) => P(x))))}
+#  -> DP {^[P]:(... ?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y))))}
+# DEF_DP {^[P]:(... ?[y]:(f(y) & ... & ?[X]:(X=^[x]:(?[o]:(arg1(o)=y & own(o) & arg2(o)=x)) & ![x]:(X(x) => P(x)))))}
+#  -> DP {^[P]:(... ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) => P(y))))}
+# DEF_DP {^[P]:(... ?[Y]:(F(Y) & ... & ?[X]:(X=^[x]:(?[y]:(Y(y) & ?[o]:(arg1(o)=y & own(o) & arg2(o)=x))) & ![x]:(X(x) => P(x)))))}
+#  -> DP {^[P]:(... ?[Y]:(F(Y) & ?[y]:(Y(y) & P(y))))}
+# DEF_DP {^[P]:(... ?[Y]:(F(Y) & ... & ?[X]:(X=^[x]:(![y]:(Y(y) => ?[o]:(arg1(o)=y & own(o) & arg2(o)=x))) & ![x]:(X(x) => P(x)))))}
+#  -> DP {^[P]:(... ?[Y]:(F(Y) & ![y]:(Y(y) => P(y))))}
+# NOTE: This rule also works if X is existentially-quantified.
+# e.g. "Jason's is better"
+DEF_DP -> DP:require_no_genitive,add_genitive,singular
+
 
 
 DP' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
-# DP {?[S]:(f(S) & F(S) & ![x]:(S(x) => h(x)))} -> Q {f(S)} NP {?[S]:(F(S) & ![x]:(S(x) => h(x)))}
-# this depends on whether the head predicate of the left conjunct is one that expresses information about the size of the set
-DP' -> Q NP
+# DP {^[P]:(... & ?[S]:(f(S) & g(S=^[x]:f(x)) & ...))} -> Q {f(S)} NP_R {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & ...))}
+# this depends on whether the head predicate of the left conjunct f(S) is one that expresses information about the size of the set
+DP' -> Q NP_R
 
-# DEF_DP {A} -> THE NP {A}
-DP' -> NP
+# DP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
+# DP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))} -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
+DP' -> NP_R
 
 
 Q nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# Q {?[l]:(mod(f)(l) & ...)} -> ADV {mod} Q {?[l]:(f(l) & ...)} where f is the type predicate of `l`
+#   [OR]
+# Q {?[l]:(?[m]:(mod(m) & arg1(m)=l) & f(l) & ...)} -> ADV {mod} Q {?[l]:(f(l) & ...)} where f is the type predicate of `l`
+#
+# Q {?[a]:(mod(a) & arg1(a)=A & arg2(a)=B)} -> ADV {mod} Q {A=B}
+#   [OR]
+# Q {f(A,B) -> ADV {f} Q {A=B}
+# The last two rules are for adverbs like "almost", "nearly", "more than", etc.
+Q -> ADVP_L Q
+
+# Q {size(x)=n} -> NUMBER {n}
 Q -> NUMBER
+
 Q -> MUCH
 Q -> MANY
 Q -> MORE
@@ -711,79 +890,451 @@ Q -> LESS
 Q -> LEAST
 
 
-# TODO: add appositives
 # this noun phrase nonterminal is for right-side modifiers
 NP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # NP_R {A} -> NP_L {A}
-NP_R -> NP_L
+NP_R -> NP_L:try_remove_comma
 
-# NP_R {?[x]:(f(x) & h(x))} -> NP_R {h(x)} PP {?[x]:(f(x) & x)}
-# NP_R {?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & (~)![x1]:(X1(x1) => ... ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn))))))}
-#  -> NP_R {?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & (~)![x2]:(X2(x2) => ... ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn))))))}
-#     PP {?[X1]:(F1(X1) & ![x1]:(X1(x1) => h1(x1)))}
-# NP_R {?[X1]:(F1(X1) & ... & ?[Xn]:(Fn(Xn) & (~)?[x1]:(X1(x1) => ... ![xn]:(Xn(xn) => g(h1(x1),h2(x2,...,xn))))))}
-#  -> NP_R {?[X2]:(F2(X2) & ... & ?[Xn]:(Fn(Xn) & (~)![x2]:(X2(x2) => ... ![xn]:(Xn(xn) => g(x1,h2(x2,...,xn))))))}
-#     PP {?[X1]:(F1(X1) & ?[x1]:(X1(x1) => h1(x1)))}
+# appositives
+# NP_R {^[P]:(... & ?[S]:(F(S=^[x]:(... & x=a)) & ...))}
+#  -> NP_R {^[P]:(... & ?[S]:(F(S=^[x]:(...)) & ...))}
+#     DP {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
+# NP_R {^[P]:(... & ?[S]:(F(S=^[x]:(... & ?[y]:(f(y) & x=y))) & ...))}
+#  -> NP_R {^[P]:(... & ?[S]:(F(S=^[x]:(...)) & ...))}
+#     DP {^[P]:?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y)))}
+# e.g. "Kim Jones, President of the Union, ...", "the year 2024"
+NP_R -> NP_R:try_remove_comma,try_remove_genitive DP:try_remove_comma
+NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA DP:try_remove_comma COMMA
+NP_R -> NP_R:try_remove_comma,try_remove_genitive OF DP:try_remove_comma
+
+# NP_R {^[P]:(... & ?[S]:(F(S=^[x]:(arg1/arg2(x)=a & f(x))) & ![x]:(S(x) => P(x))))}
+#  -> NP_R {^[P]:?[S]:(S=^[x]:(x=a) & ?[x]:(S(x) & P(x))}
+#     PP {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# NP_R {^[P]:(... & ?[S]:(F(S=^[x]:(?[y]:(g(y) & arg1/arg2(x)=y) & f(x))) & ![x]:(S(x) => P(x))))}
+#  -> NP_R {^[P]:(... & ?[S]:(S=^[x]:g(x) & ?[x]:(S(x) & P(x))))}
+#     PP {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# NP_R {^[P]:(... & ![y]:(g(y) => ... ?[S]:(F(S=^[x]:(arg1/arg2(x)=y & f(x))) & ![x]:(S(x) => P(x)))))}
+#  -> NP_R {^[P]:(... & ?[S]:(S=^[x]:g(x) & ![x]:(S(x) => P(x))))}
+#     PP {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# NP_R {^[P]:(... & ?[Y]:(G(Y) & ... & ![y]:(Y(y) => ?[S]:(F(S=^[x]:(arg1/arg2(x)=y & f(x))) & ![x]:(S(x) => P(x))))))}
+#  -> NP_R {^[P]:(... & ?[S]:(G(S) & ![x]:(S(x) => P(x))))}
+#     PP {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
+# NOTE: This rule also works if S is existentially-quantified.
 #  e.g. "destruction of the barn(s)", "destruction of the barn(s) by the termites"
-NP_R -> NP_R PP
+NP_R -> NP_R:try_remove_comma,try_remove_genitive PP:try_remove_comma
 
-# NP_R {?[S]:(?[T]:(F(T) & G(S,^[x]:(u(x) & v(x,T)))) & ![x]:(S(x) => h(x)))} -> NP_R {?[S]:(G(S,^[x]:u(x)) & ![x]:(S(x) => h(x)))} PP {?[T]:(F(T) & v(x,T))}
-#  e.g. "tree(s) by all the cats"
-# note: S and T could be existentially or universally-quantified individuals rather than set-valued, as well; they could also be constants
-NP_R -> NP_R PP
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & f(x))) & ![x]:(X(x) => P(x))))}
+#  -> NP_R {^[P]:(... & ?[X]:(... & ![x]:(X(x) => P(x))))}
+#     ADJP_R/PP {^[P]:(... & f')}
+# where f(x) = (~)?[z]:(h(z) & arg1/arg2(z)=x) and f' = (~)?[z]:(h(z) & P(z))
+#    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:(h1(z1) & P(z1)) & ... & (~)?[zn]:(hn(zn) & P(zn))
+#    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:(h1(z1) & P(z1)) | ... | (~)?[zn]:(hn(zn) & P(zn))
+# Note that f(x) may also contain variables which are universally-quantified,
+# above the scope of zi, either within the scope of xi (e.g. "i like the house
+# next to the trees") or above it ("a student from each class spoke to her").
+# In this case, the universal quantifiers are also moved into f'.
+# NOTE: This rule also works if X is existentially-quantified.
+NP_R -> NP_R:try_remove_comma,try_remove_genitive PP:try_remove_comma
+NP_R -> NP_R:try_remove_comma,try_remove_genitive ADJP_R:try_remove_comma
 
-NP_R -> NP_R REL
-NP_R -> NP_R COMMA:null REL COMMA:null
-NP_R -> NP_R VP_R:keep_present_participle
-NP_R -> NP_R VP_R:flip_predicate_keep_past_participle
+# {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(greater/less(f)(g) & arg1(g)=x & arg2(g)=a) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {?[g]:greater/less(f)(g)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
+#     THAN DP {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
+# {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(greater/less(f)(g) & arg1(g)=x & ?[y]:(h(y) & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {?[g]:greater/less(f)(g)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
+#     THAN DP {^[P]:?[Y]:(Y=^[y]:h(y) & ?[y]:(Y(y) & P(y)))}
+# {^[P]:(... & ?[X]:(F(X=^[x]:(... & ![y]:(h(y) => ?[g]:(greater/less(f)(g) & arg1(g)=x & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {?[g]:greater/less(f)(g)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
+#     THAN DP {^[P]:?[Y]:(Y=^[y]:h(y) & ![y]:(Y(y) => P(y)))}
+# {^[P]:(... & ?[Y]:(h(Y) & ... ?[X]:(F(X=^[x]:(... & ![y]:(Y(y) => ?[g]:(greater/less(f)(g) & arg1(g)=x & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x)))))}
+#  -> ADJP_R {?[g]:greater/less(f)(g)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
+#     THAN DP {^[P]:?[Y]:(h(Y) & ![y]:(Y(y) => P(y)))}
+# NOTE: This rule also works if X is existentially-quantified.
+# e.g. "brighter star than Vega"
+NP_R -> ADJP_R:try_remove_comma,try_remove_genitive NP_R:try_remove_comma,try_remove_genitive THAN DP:try_remove_comma
 
-# NP_R {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))} if xi are set-valued
-# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => h(x)))} if xi are individuals
-# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))} if xi are set-valued
-# or {?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & h(x)))} if xi are individuals
-#  -> NP_R {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)![x]:(x1(x) => h(x)))} if x1 is a set
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(... & arg3(g1)=x) & ... & ?[gn]:(... & arg3(gn)=x))) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     S {?[g1]:(...) & ... & ?[gn]:(...)}
+# e.g. "the book I gave Kim"
+NP_R -> NP_R:try_remove_comma,try_remove_genitive S:try_remove_comma # TODO: remove grammatical features from S
+
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(... & arg1(g1)=x) & ... & ?[gn]:(... & arg1(gn)=x))) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     VP_R {?[g1]:(...) & ... & ?[gn]:(...)}
+# e.g. "the cat sleeping on the bed"
+NP_R -> NP_R:try_remove_comma,try_remove_genitive VP_R:keep_present_participle,try_remove_comma
+
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(p1(g1) & ... & arg2(g1)=x) & ... & ?[gn]:(pn(gn) & ... & arg2(gn)=x))) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     VP_R {?[g1]:(inverse(p1)(g1) & ...) & ... & ?[gn]:(inverse(pn)(gn) & ...)}
+# e.g. "the letter written by me"
+NP_R -> NP_R:try_remove_comma,try_remove_genitive VP_R:invert_predicate,keep_past_participle,try_remove_comma
+
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(... & arg1(g1)=x) & ... & ?[gn]:(... & arg1(gn)=x))) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     VP_R {?[g1]:(...) & ... & ?[gn]:(...)}
+# e.g. "the person to see the comet"
+NP_R -> NP_R:try_remove_comma,try_remove_genitive VP_R:add_to_infinitive,try_remove_comma
+
+# TODO: implement these
+NP_R -> NP_R:try_remove_comma,try_remove_genitive REL:try_remove_comma
+NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA REL:try_remove_comma COMMA
+
+# NP_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))} if xi are set-valued
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))} if xi are individuals
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & ![y]:(x(y) => P(y)))))} if xi are set-valued
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x))))} if xi are individuals
+#  -> NP_R {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     COMMA
-#     NP_R {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))}
-#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => h(x)))}
-#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))}
-#     or {?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & h(x)))}
+#     NP_R {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x))))}
 # note: xi could also be constants, rather than existentially-quantified variables
 # note: if xi is a set containing a singleton, S would look like ^[x]:(... | x=^[y]:y=singleton | ...)
-NP_R -> NP_R COMMA:null NP_R:comma
+NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA NP_R:add_comma
 
-# NP_R {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => h(y))))}
-# or {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => h(x)))}
-#  -> NP_R {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)![x]:(x1(x) => h(x)))} if x1 is a set
+# NP_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+#  -> NP_R {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) AND
-#     NP_R {?[x2]:(f2(x2) & (~)h(x2))} or {?[x2]:(f2(x2) & (~)![x]:(x2(x) => h(x)))} if x2 is a set
+#     NP_R {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     or {^[P]:(... & ?[x2]:(f2(x2) & (~)![x]:(x2(x) => P(x))))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
-NP_R -> NP_R AND:null NP_R
-NP_R -> NP_R COMMA:null AND:null NP_R
+NP_R -> NP_R:try_remove_comma,try_remove_genitive AND NP_R:try_remove_comma
+NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA AND NP_R:try_remove_comma
 
-# NP_R {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) & h(y))))}
-# or {?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & h(x)))}
-#  -> NP_R {?[x1]:(f1(x1) & (~)h(x1))} or {?[x1]:(f1(x1) & (~)?[x]:(x1(x) & h(x)))} if x1 is a set
-#     (COMMA) AND
-#     NP_R {?[x2]:(f2(x2) & (~)h(x2))} or {?[x2]:(f2(x2) & (~)?[x]:(x2(x) & h(x)))} if x2 is a set
+# NP_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+#  -> NP_R {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
+#     (COMMA) OR
+#     NP_R {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     or {^[P]:(... & ?[x2]:(f2(x2) & (~)?[x]:(x2(x) & P(x))))} if x2 is a set
 # note: xi could also be constants, rather than existentially-quantified variables
-NP_R -> NP_R OR:null NP_R
-NP_R -> NP_R COMMA:null OR:null NP_R
+NP_R -> NP_R:try_remove_comma,try_remove_genitive OR NP_R:try_remove_comma
+NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA OR NP_R:try_remove_comma
 
 
 # this noun phrase nonterminal is for left-side modifiers
 NP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# NP_L {^[P]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x))))} -> N {a}
+# NP_L {^[P]:(X=^[x]:(U(0,x) & p(x)) & ?[x]:(X(x) & P(x))))} -> N {p}
+# NP_L {^[P]:(X=^[x]:(U(0,x) & p(x)) & ![x]:(X(x) => P(x))))} -> N {p}
+# This depends on whether `p` is an event (i.e. typically has arguments, even
+# if it doesnt in this particular logical form).
 NP_L -> N
-NP_L -> ADJP NP_L
+
+# NP_L {^[P]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x))))} -> V {a}
+# NP_L {^[P]:(X=^[x]:(U(0,x) & p(x)) & ?[x]:(X(x) & P(x))))} -> V {p}
+# NP_L {^[P]:(X=^[x]:(U(0,x) & p(x)) & ![x]:(X(x) => P(x))))} -> V {p}
+# This depends on whether `p` is an event (i.e. typically has arguments, even
+# if it doesnt in this particular logical form).
+NP_L -> V:add_tion
+
+# NP_L {^[P]:(X=^[x]:(?[y]:(p(y) & arg1(p)=x)) & ?[x]:(X(x) & P(x))))} -> V {p}
+# NP_L {^[P]:(X=^[x]:(?[y]:(p(y) & arg1(p)=x)) & ![x]:(X(x) => P(x))))} -> V {p}
+NP_L -> V:add_er # this adds "ers" if the concord is plural, as well as any duplicated consonants if appropriate (i.e. "programmers")
+
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(... & f(x))) & ... & ![x]:(X(x) => P(x))))}
+#  -> ADJP_L {^[P]:(... & f')}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(...) & ... & ![x]:(X(x) => P(x))))}
+# where f(x) = (~)?[z]:(h(z) & arg1/arg2(z)=x) and f' = (~)?[z]:(h(z) & P(z))
+#    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:(h1(z1) & P(z1)) & ... & (~)?[zn]:(hn(zn) & P(zn))
+#    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:(h1(z1) & P(z1)) | ... | (~)?[zn]:(hn(zn) & P(zn))
+# NOTE: This rule also works if X is existentially-quantified or used collectively.
+NP_L -> ADJP_L:try_remove_genitive NP_L
+
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(... & f(x))) & ... & ![x]:(X(x) => P(x))))}
+#  -> ADJP_L {^[P]:(... & f')}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(...) & ... & ![x]:(X(x) => P(x))))}
+# where f(x) = (~)?[z]:(h(z) & arg1/arg2(z)=x) and f' = (~)?[z]:(h(z) & P(z))
+#    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:(h1(z1) & P(z1)) & ... & (~)?[zn]:(hn(zn) & P(zn))
+#    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:(h1(z1) & P(z1)) | ... | (~)?[zn]:(hn(zn) & P(zn))
+# NOTE: This rule also works if X is existentially-quantified or used collectively.
+NP_L -> ADJP_L:try_remove_genitive NP_L
+
+# NP_L {^[P]:(... & ?[X]:(F(X) & ?[g1]:(... & P(arg1(g1)) & ... & greatest/least(f)(g1) & ... & arg2(g1)=X) & ... & ?[gn]:(... & P(arg1(gn)) & ... & greatest/least(f)(gn) & ... & arg2(gn)=X)))}
+#  -> ADJP_L {^[P]:(?[g1]:(greatest/least(f)(g1) & P(g1)) & ... & ?[gn]:(greatest/least(f)(gn) & P(gn)))}
+#     NP_L {^[P]:(... & ?[X]:(F(X) & ?[x]:(X(x) & P(x))))}
+# e.g. "closest and brightest star"
+NP_L -> ADJP_L:try_remove_genitive NP_L
+
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(arg2(s)=a & ... & arg1(s)=x) & U(0,x)))) & ...)}
+#  -> NP_L {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(... & arg1(s)=x) & U(0,x)))) & ...)}
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(?[y]:(f(y) & arg2(s)=y) & ... & arg1(s)=x) & U(0,x)))) & ...)}
+#  -> NP_L {^[P]:?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y)))}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(... & arg1(s)=x) & U(0,x)))) & ...)}
+# e.g. "potion seller"
+NP_L -> NP_L:try_remove_genitive NP_L
+
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[c]:(consists_of(c) & arg1(c)=x & arg2(c)=a) & ...)) & ...))}
+#  -> NP_L {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[c]:(consists_of(c) & ?[y]:(f(y) & arg1(c)=y) & arg2(c)=a) & ...)) & ...))}
+#  -> NP_L {^[P]:?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y)))}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+# e.g. "apple pie"
+# TODO: what about "California Senator"
+NP_L -> NP_L:try_remove_genitive NP_L # for `consists_of` (or maybe `contains`?)
+NP_L -> NP_L:try_remove_genitive NP_L # for `purpose`
+NP_L -> NP_L:try_remove_genitive NP_L # for `located`
+
+# NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[m1]:(g1(m1) & arg1/arg2(m1)=x) & ... & ?[mn]:(gn(mn) & arg1/arg2(mn)=x) & ...)) & ...))}
+#  -> VP_L {?[m1]:g1(m1) & ... & ?[mn]:gn(mn)}
+#     NP_L {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+# e.g. "recently published article", "melting marshmellows"
+NP_L -> VP_L:try_remove_genitive,add_present_participle NP_L
+NP_L -> VP_L:try_remove_genitive,add_past_participle NP_L
+
+# NP_L {^[P]:(... & ?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x))))} -> ENTITY_NAME {a}
+# this depends on whether `a` is a constant vs a predicate, or a more complex formula
+#NP_L -> ENTITY_NAME
+
+# NP_L {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1}
+# NP_L {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1 & last_name(x)=n2) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1 & last_name(x)=n2}
+# NP_L {^[P]:(... & ?[X]:(X=^[x]:(nickname(x,n1)) & ?[x]:(X(x) & P(x))))} -> NAME {nickname(x,n1)}
+NP_L -> NAME
+
+
+#ENTITY_NAME nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+#ENTITY_NAME -> STRING:get_nickname
+#ENTITY_NAME -> STRING:get_first_name
+#ENTITY_NAME -> STRING:get_first_name STRING:get_last_name
+
+NAME nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+# NAME {nickname(x,s)} -> STRING {s}
+NAME -> STRING:select_nickname
+# NAME {first_name(x)=s} -> STRING {s}
+NAME -> STRING:select_first_name
+# NAME {first_name(x)=s1 & last_name(x)=s2} -> STRING {s1} STRING {s2}
+NAME -> STRING:select_first_name STRING:select_last_name
 
 
 PP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
-PP -> P DP
-PP -> PP COMMA:null PP
-PP -> PP AND PP
-PP -> PP COMMA:null AND PP
-PP -> PP OR PP
-PP -> PP COMMA:null OR PP
+
+# PP {^[P]:(... & ?[x]:(p(x) & arg1/arg2(x)=a & P(x)))}
+#  -> P {p}
+#     DP {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
+# PP {^[P]:(... & ?[x]:(p(x) & arg1/arg2(x)=possibility(A) & P(x)))}
+#  -> P {p}
+#     DP {^[P]:A'} where p is something that expresses possibility like `capable_of`, and A' has a `P(z)` term added to the head scope
+# PP {^[P]:(... & ?[x]:(p(x) & ?[y]:(f(y) & arg1/arg2(x)=y) & P(x)))}
+#  -> P {p}
+#     DP {^[P]:?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y)))}
+# PP {^[P]:(... & ![y]:(f(y) => ?[x]:(p(x) & arg1/arg2(x)=y & P(x))))}
+#  -> P {p}
+#     DP {^[P]:?[Y]:(Y=^[y]:f(y) & ![y]:(Y(y) => P(y)))}
+# PP {^[P]:(... & ?[Y]:(F(Y) & ... & ![y]:(Y(y) => ?[x]:(p(x) & arg1/arg2(x)=y & P(x)))))}
+#  -> P {p}
+#     DP {^[P]:?[Y]:(F(Y) & ![y]:(Y(y) => P(y)))}
+# e.g. "house(s) next to the tree(s)"
+PP -> P:require_no_preposition DP:try_remove_comma
+# e.g. "friend of Mary's", "eyes of Mary's"
+PP -> P:require_no_preposition DP:add_genitive,try_remove_comma
+# for prepositional verbs (i.e. "pay back", "look forward to", etc)
+PP -> P_PLACEHOLDER:require_preposition DP:try_remove_comma
+
+# PP {^[P]:(... & ?[x]:(p(x) & ?[y]:(f(y) & arg1/arg2(x)=y) & P(x)))}
+#  -> P {p}
+#     S {... & ?[y]:f(y)}
+# e.g. "before the meeting ended"
+PP -> P:require_no_preposition S:try_remove_comma
+
+# PP {^[P]:(... & ~?[x]:(f(x) & P(x)))}
+#  -> NOT PP {^[P]:(... & ?[x]:(f(x) & P(x)))}
+PP -> NOT PP:try_remove_preposition,try_remove_comma
+
+# PP {^[P]:(... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn)))}
+#  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
+#     COMMA
+#     PP {^[P]:(... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn)))}
+# PP {^[P]:(... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn)))}
+#  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
+#     COMMA
+#     PP {^[P]:(... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn)))}
+PP -> PP:try_remove_preposition,try_remove_comma COMMA PP:try_remove_preposition,add_comma
+
+# PP {^[P]:(... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn)))}
+#  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
+#     (COMMA) AND
+#     PP {^[P]:(... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn)))}
+PP -> PP:try_remove_preposition,try_remove_comma AND PP:try_remove_preposition,try_remove_comma
+PP -> PP:try_remove_preposition,try_remove_comma COMMA AND PP:try_remove_preposition,try_remove_comma
+
+# PP {^[P]:(... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn)))}
+#  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
+#     (COMMA) OR
+#     PP {^[P]:(... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn)))}
+PP -> PP:try_remove_preposition,try_remove_comma OR PP:try_remove_preposition,try_remove_comma
+PP -> PP:try_remove_preposition,try_remove_comma COMMA OR PP:try_remove_preposition,try_remove_comma
+
+
+ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# ADJP_R {^[P]:(... & ?[g1]:(... & p1(g1) & ... & f1(g1)) & ... & ?[gn]:(... & pn(gn) & ... & fn(gn)))}
+#  -> ADJP_R {^[P]:(... & ?[g1]:(...) & ... & ?[gn]:(...))}
+#     PP {^[P]:(... & ?[g1]:(p1(g1) & f1') & ... ?[gn]:(pn(gn) & fn'))}
+# where fi(g) = ?[x]:(... & arg2(g)=x) and fi' = ?[x]:(...)
+# NOTE: `x` could also be universally-quantified, in which case it is passed to the PP.
+# e.g. "afraid of dogs", "capable of swimming"
+ADJP_R -> ADJP_R:try_remove_comma PP:try_remove_comma
+
+# e.g. "glad that you arrived", "uncertain whether or not she arrived", "amazed what an entrance she made"
+# TODO: implement this
+ADJP_R -> ADJP_R REL?
+
+# ADJP_R {^[P]:(... & ?[g1]:(... & f1(g1)) & ... & ?[gn]:(... & fn(gn)))}
+#  -> ADJP_R {^[P]:(... & ?[g1]:(...) & ... & ?[gn]:(...))}
+#     DP {^[P]:(f1' & ... & fn')}
+# where fi(g) = ?[x]:(h(x) & arg2(g)=x) and fi' = ?[x]:(h(x) & P(x))
+# e.g. "worth three dollars"
+ADJP_R -> ADJP_R:try_remove_comma DP:try_remove_comma
+
+# ADJP_R {^[P]:?[g1]:(... & ?[h]:(f(h) & arg2(g1)=h)) & ... & ?[gn]:(... & ?[h]:(f(h) & arg2(gn)=h))}
+#  -> ADJP_R {^[P]:?[g1]:(...) & ... & ?[gn]:(...)}
+#     VP_R {?[g1]:(...) & ... & ?[gn]:(...)}
+# e.g. "happy to help"
+ADJP_R -> ADJP_R:try_remove_comma VP_R:try_remove_comma,add_to_infinitive
+
+# ADJP_R {^[P]:(A1 & ... & An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 & ... & An)}
+# ADJP_R {^[P]:(A1 | ... | An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 | ... | An)}
+ADJP_R -> ADJP_R:try_remove_comma COMMA ADJP_R:add_comma
+
+# ADJP_R {^[P]:(A1 & ... & An)} -> ADJP_R {^[P]:A1} (COMMA) AND ADJP_R {^[P]:(A2 & ... & An)}
+ADJP_R -> ADJP_R:try_remove_comma AND ADJP_R:try_remove_comma
+ADJP_R -> ADJP_R:try_remove_comma COMMA AND ADJP_R:try_remove_comma
+
+# ADJP_R {^[P]:(A1 | ... | An)} -> ADJP_R {^[P]:A1} (COMMA) OR ADJP_R {^[P]:(A2 | ... | An)}
+ADJP_R -> ADJP_R:try_remove_comma OR ADJP_R:try_remove_comma
+ADJP_R -> ADJP_R:try_remove_comma COMMA OR ADJP_R:try_remove_comma
+
+# ADJP_R {A} -> ADJP_L {A}
+ADJP_R -> ADJP_L:try_remove_comma
+
+
+ADJP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# ADJP_L {^[P]:?[g]:(f(g) & P(g))} -> ADJ {f}
+ADJP_L -> ADJ
+
+# ADJP_L {^[P]:?[g]:(greatest/least(f)(g) & P(g))} -> ADJ {f}
+ADJP_L -> ADJ:add_superlative
+
+# ADJP_L {^[P]:?[g]:(greatest/least(f)(g) & P(g))} -> ADJP_L {^[P]:?[g]:(f(g) & P(g))}
+ADJP_L -> MOST ADJP_L # for `greatest` only
+ADJP_L -> LEAST ADJP_L # for `least` only
+
+# ADJP_L {^[P]:?[g]:(greater/less(f)(g) & P(g))} -> ADJ {f}
+ADJP_L -> ADJ:add_comparative
+
+# ADJP_L {^[P]:?[g]:(greater/less(f)(g) & P(g))} -> ADJP_L {^[P]:?[g]:(f(g) & P(g))}
+ADJP_L -> MORE ADJP_L # for `greater` only
+ADJP_L -> LESS ADJP_L # for `less` only
+
+# ADJP_L {^[P]:(... & ~?[g1]:f1(g1) & ... & ~?[gn]:fn(gn))}
+#  -> NOT ADJP_L {^[P]:(... & ?[g1]:f1(g1) & ... & ?[gn]:fn(gn))}
+# e.g. "very tall"
+ADJP_L -> NOT ADJP_L
+
+# ADJP_L {^[P]:(... & (~)?[g1]:((~)?[x]:(... & arg1(x)=g1) & ... & P(g1)) & ... & (~)?[gn]:((~)?[x]:(... & arg1(x)=gn) & ... & P(gn)))}
+#  -> ADVP_L {^[P]:(... & (~)?[x]:(... & P(x)))}
+#     ADJP_L {^[P]:(... & (~)?[g1]:(... & P(g1)) & ... & (~)?[gn]:(... & P(gn)))}
+# e.g. "very tall"
+ADJP_L -> ADVP_L ADJP_L
+
+# ADJP_L {^[P]:(... & (~)?[g1]:(... & f1(g1)) & ... & (~)?[gn]:(... & fn(gn)))}
+#  -> DP {^[P]:(f1' & ... & fn')}
+#     ADJP_L {^[P]:(... & (~)?[g1]:(...) & ... & (~)?[gn]:(...))}
+# where fi(g) = ?[x]:(h(x) & arg2(g)=x) and fi' = ?[x]:(h(x) & P(x))
+# e.g. "500 feet tall"
+ADJP_L -> DP ADJP_L
+
+
+ADVP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# ADVP_R {^[P]:(... & (~)?[g1]:(... & p1(g1) & ... & f1(g1)) & ... & (~)?[gn]:(... & pn(gn) & ... & fn(gn)))}
+#  -> ADVP_R {^[P]:(... & (~)?[g1]:(...) & ... & (~)?[gn]:(...))}
+#     PP {^[P]:(... & (~)?[g1]:(p1(g1) & f1') & ... & (~)?[gn]:(pn(gn) & fn'))}
+# where fi(g) = ?[x]:(... & arg2(g)=x) and fi' = ?[x]:(...)
+# NOTE: `x` could also be universally-quantified, in which case it is passed to the PP.
+# e.g. "differently than him", "equally as effective"
+ADVP_R -> ADVP_R:try_remove_comma PP:try_remove_comma
+
+# e.g. "so softly that no one heard"
+# TODO: implement this
+ADVP_R -> ADVP_R REL?
+
+# ADVP_R {^[P]:(A1 & ... & An)} -> ADVP_R {^[P]:A1} COMMA ADVP_R {^[P]:(A2 & ... & An)}
+# ADVP_R {^[P]:(A1 | ... | An)} -> ADVP_R {^[P]:A1} COMMA ADVP_R {^[P]:(A2 | ... | An)}
+ADVP_R -> ADVP_R:try_remove_comma COMMA ADVP_R:add_comma
+
+# ADVP_R {^[P]:(A1 & ... & An)} -> ADVP_R {^[P]:A1} (COMMA) AND ADVP_R {^[P]:(A2 & ... & An)}
+ADVP_R -> ADVP_R:try_remove_comma AND ADVP_R:try_remove_comma
+ADVP_R -> ADVP_R:try_remove_comma COMMA AND ADVP_R:try_remove_comma
+
+# ADVP_R {^[P]:(A1 | ... | An)} -> ADVP_R {^[P]:A1} (COMMA) OR ADVP_R {^[P]:(A2 | ... | An)}
+ADVP_R -> ADVP_R:try_remove_comma OR ADVP_R:try_remove_comma
+ADVP_R -> ADVP_R:try_remove_comma COMMA OR ADVP_R:try_remove_comma
+
+ADVP_R -> ADVP_L:try_remove_comma
+
+
+ADVP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+# ADVP_L {^[P]:?[g]:(f(g) & P(g))} -> ADV {f}
+ADVP_L -> ADV
+
+# ADVP_L {^[P]:?[g]:(f(g) & P(g))} -> ADJ {f}
+ADVP_L -> ADJ:add_ly
+
+# ADVP_L {^[P]:?[g]:(greatest/least(f)(g) & P(g))} -> ADV {f}
+# e.g. "soonest", "most seriously"
+ADVP_L -> ADV:add_superlative
+
+# ADVP_L {^[P]:?[g]:(greatest/least(f)(g) & P(g))} -> ADVP_L {^[P]:?[g]:(f(g) & P(g))}
+ADVP_L -> MOST ADVP_L:try_remove_comma # for `greatest` only
+ADVP_L -> LEAST ADVP_L:try_remove_comma # for `least` only
+
+# ADVP_L {^[P]:?[g]:(greater/less(f)(g) & P(g))} -> ADV {f}
+# e.g. "sooner", "more seriously"
+ADVP_L -> ADV:add_comparative
+
+# ADVP_L {^[P]:?[g]:(greater/less(f)(g) & P(g))} -> ADVP_L {^[P]:?[g]:(f(g) & P(g))}
+ADVP_L -> MORE ADVP_L:try_remove_comma # for `greater` only
+ADVP_L -> LESS ADVP_L:try_remove_comma # for `less` only
+
+# ADVP_L {^[P]:(... & ~?[g1]:f(g1) & ... & ~?[gn]:f(gn))}
+#  -> NOT ADVP_L {^[P]:(... & ?[g1]:f(g1) & ... & ?[gn]:f(gn))}
+# e.g. "very slowly"
+ADVP_L -> NOT ADVP_L
+
+# ADVP_L {^[P]:(... & (~)?[g1]:((~)?[x]:(... & arg1(x)=g1) & ... & P(g1)) & ... & (~)?[gn]:((~)?[x]:(... & arg1(x)=gn) & ... & P(gn)))}
+#  -> ADVP_L {^[P]:(... & (~)?[x]:(... & P(x)))}
+#     ADVP_L {^[P]:(... & (~)?[g1]:(... & P(g1)) & ... & (~)?[gn]:(... & P(gn)))}
+# e.g. "very slowly"
+ADVP_L -> ADVP_L ADVP_L
+
+# ADVP_L {^[P]:(... & ?[g1]:(... & f1(g1)) & ... & ?[gn]:(... & fn(gn)))}
+#  -> DP {^[P]:(f1' & ... & fn')}
+#     ADVP_L {^[P]:(... & ?[g1]:(...) & ... & ?[gn]:(...))}
+# where fi(g) = ?[x]:(h(x) & arg2(g)=x) and fi' = ?[x]:(h(x) & P(x))
+# e.g. "12 minutes late"
+ADVP_L -> DP ADVP_L
 
 
 ALL nonterminal {} {1.0} {1.0} {} 10 1.0 {}
