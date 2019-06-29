@@ -255,81 +255,60 @@
 #  ?[c]:(arg1(c)=me & capable_of(c) & past(c) & arg2(c)=possibility(?[s]:(arg1(s)=me & swim(s))))
 #
 #  "she made a big cake, and hung up some balloons."
-#  {?[s]:(U(0,s) & female_ref(0,s) & ?[B]:(subset(B,^[b]:(U(2,b) & balloon(b))) & ?[m]:(arg1(m)=s & make(m) & past(m) & ?[c]:(U(1,c) & cake(c) & ?[b]:(is_big(b) & arg1(b)=c) & arg2(m)=c)) & ![b]:(B(b) => ?[h]:(arg1(h)=s & hang(h) & past(h) & arg2(h)=b))))}
+#  ?[s]:(U(0,s) & female_ref(0,s) & ?[B]:(subset(B,^[b]:(U(2,b) & balloon(b))) & ?[m]:(arg1(m)=s & make(m) & past(m) & ?[c]:(U(1,c) & cake(c) & ?[b]:(is_big(b) & arg1(b)=c) & arg2(m)=c)) & ![b]:(B(b) => ?[h]:(arg1(h)=s & hang(h) & past(h) & arg2(h)=b))))
 #
 #  "the doctor watched everyone sleep."
-#  {?[d]:(U(0,d) & doctor(d) & ?[X]:(X=^[x]:(U(1,x) & animate/anthropomorphic(x)) & ![x]:(X(x) => ?[w]:(arg1(w)=d & watch(w) & past(w) & arg2(w)=x))))}
+#  ?[d]:(U(0,d) & doctor(d) & ?[X]:(X=^[x]:(U(1,x) & animate/anthropomorphic(x)) & ![x]:(X(x) => ?[w]:(arg1(w)=d & watch(w) & past(w) & arg2(w)=x))))
 # NOTE: We model pragmatic domain restriction implicitly. In this example,
 # `^[x]:U(0,x)` contains the doctor but `^[x]:U(1,x)` contains everyone being
 # monitored by the doctor but does not contain the doctor.
 #
 #  "John can play the guitar, and Mary, the violin."
-#  {?[c]:(arg1(c)=john & capable_of(c) & present(c) & ?[p]:(arg1(c)=john & play(p) & ?[g]:(U(0,g) & guitar(g) & arg2(p)=g) & arg2(c)=p)) & ?[e]:(arg1(e)=mary & empty_ref(0,e) & ?[v]:(U(1,v) & violin(v) & arg2(e)=v))}
+#  ?[c]:(arg1(c)=john & capable_of(c) & present(c) & ?[p]:(arg1(c)=john & play(p) & ?[g]:(U(0,g) & guitar(g) & arg2(p)=g) & arg2(c)=p)) & ?[e]:(arg1(e)=mary & empty_ref(0,e) & ?[v]:(U(1,v) & violin(v) & arg2(e)=v))
 #
 #  "John can play his guitar. Mary, too."
-#  {?[c]:(arg1(c)=john & capable_of(c) & present(c) & ?[p]:(arg1(c)=john & play(p) & ?[g]:(U(0,g) & guitar(g) & arg2(p)=g) & arg2(c)=p)) & ?[e]:(arg1(e)=mary & empty_ref(0,e) & too(e))}
+#  ?[c]:(arg1(c)=john & capable_of(c) & present(c) & ?[p]:(arg1(c)=john & play(p) & ?[g]:(U(0,g) & guitar(g) & arg2(p)=g) & arg2(c)=p)) & ?[e]:(arg1(e)=mary & empty_ref(0,e) & too(e))
 #
 #  "she walked and sat under every tree and near every rock."
-#  {?[s]:(U(0,s) & female_ref(s) & ?[T]:(T=^[x]:(U(1,x) & tree(x)) & ?[R]:(R=^[y]:(U(2,y) & rock(y)) & ![x]:(T(x) => ![y]:(R(y) => ?[w]:(arg1(w)=s & walk(w) & past(w) & ?[u]:(under(u) & arg1(u)=w & arg2(u)=x) & ?[n]:(near(n) & arg1(n)=w & arg2(n)=y)) & ?[a]:(arg1(a)=s & sit(a) & past(a) & ?[u]:(under(u) & arg1(u)=a & arg2(u)=x) & ?[n]:(near(n) & arg1(n)=a & arg2(n)=y)))))))}
+#  ?[s]:(U(0,s) & female_ref(s) & ?[T]:(T=^[x]:(U(1,x) & tree(x)) & ?[R]:(R=^[y]:(U(2,y) & rock(y)) & ![x]:(T(x) => ![y]:(R(y) => ?[w]:(arg1(w)=s & walk(w) & past(w) & ?[u]:(under(u) & arg1(u)=w & arg2(u)=x) & ?[n]:(near(n) & arg1(n)=w & arg2(n)=y)) & ?[a]:(arg1(a)=s & sit(a) & past(a) & ?[u]:(under(u) & arg1(u)=a & arg2(u)=x) & ?[n]:(near(n) & arg1(n)=a & arg2(n)=y)))))))
 #
 #  "John wants and is able to swim and dance."
 #  "John wants to and is able to swim and dance."
-#  {?[s]:(swim(s) & ?[d]:(dance(d) & ?[X]:(X=^[x]:(x=s | x=d) & ![x]:(X(x) => ?[w]:(arg1(w)=john & want(w) & present(w) & arg2(w)=x) & ?[c]:(arg1(c)=john & capable_of(c) & present(c) & arg2(c)=x)))))}
+#  ?[s]:(swim(s) & ?[d]:(dance(d) & ?[X]:(X=^[x]:(x=s | x=d) & ![x]:(X(x) => ?[w]:(arg1(w)=john & want(w) & present(w) & arg2(w)=x) & ?[c]:(arg1(c)=john & capable_of(c) & present(c) & arg2(c)=x)))))
 #
 #  "the house is Kim's."
-#  {?[h]:(U(0,h) & house(h) & ?[o]:(arg1(o)=h & inverse(own)(o) & present(o) & arg2(o)=kim))}
+#  ?[h]:(U(0,h) & house(h) & ?[o]:(arg1(o)=h & inverse(own)(o) & present(o) & arg2(o)=kim))
 #
 #  "the pencils are the students'."
-#  {?[X]:(X=^[x]:(U(0,x) & pencil(x)) & ?[Y]:(Y=^[y]:(Y(1,y) & student(y)) & ![x,y]:(X(x) & Y(y) => ?[o]:(arg1(o)=x & inverse(own)(o) & present(o) & arg2(o)=y))))}
+#  ?[X]:(X=^[x]:(U(0,x) & pencil(x)) & ?[Y]:(Y=^[y]:(Y(1,y) & student(y)) & ![x,y]:(X(x) & Y(y) => ?[o]:(arg1(o)=x & inverse(own)(o) & present(o) & arg2(o)=y))))
 #
 #  "flower seller has carnations."
-#  {?[C]:(subset(C,^[x]:(U(0,x) & carnation(x))) & ?[x]:(?[s]:(?[f]:(U(1,f) & flower(f) & arg2(s)=f) sell(s) & arg1(s)=x) & U(2,x) & ![c]:(C(c) => ?[o]:(arg1(o)=x & own(o) & present(o) & arg2(o)=c))))}
-#
-#  "Sirius is brighter."
-#  {?[g]:(arg1(g)=sirius & greater(brightness)(g) & present(g))}
-#
-#  "Sirius is brighter than Vega."
-#  {?[g]:(arg1(g)=sirius & greater(brightness)(g) & present(g) & arg2(g)=vega)}
-# where we can add an axiom such as ![x,y,f]:(?[g]:(greater(f)(g) & arg1(g)=x & arg2(g)=y) & ~is_real_number(y) & ?[b]:(f(b) & arg1(b)=y) = ?[g]:(greater(f)(g) & arg1(g)=x & ?[b]:(brightness(b) & arg1(b)=y & arg2(g)=arg2(b))))
-# as well as equivalent axioms for things like height, shortness, size, length, etc.
-#
-#  "i see a brighter star than Vega."
-#  "i see a star brighter than Vega."
-#  {?[s]:(arg1(s)=me & see(s) & present(s) & ?[x]:(U(0,x) & star(x) & ?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=vega) & arg2(s)=x))}
-#
-#  "Sirius is brighter than we thought."
-#  ?[X]:(X=us & ![x]:(X(x) => ?[g]:(arg1(g)=sirius & greater(brightness)(g) & ?[t]:(arg1(t)=x & think(t) & past(t) & arg2(t)=arg2(g)))))
-#
-#  "Sirius is the brightest star."
-#  {?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[X]:(X=^[x]:(U(0,x) & star(x)) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g) & arg2(g)=X)))}
-#
-#  "Sirius is the brightest."
-#  {?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g)))}
+#  ?[C]:(subset(C,^[x]:(U(0,x) & carnation(x))) & ?[x]:(?[s]:(?[f]:(U(1,f) & flower(f) & arg2(s)=f) sell(s) & arg1(s)=x) & U(2,x) & ![c]:(C(c) => ?[o]:(arg1(o)=x & own(o) & present(o) & arg2(o)=c))))
 #
 #  "John swam extremely quickly."
-#  {?[s]:(arg1(s)=john & swim(s) & past(s) & ?[q]:(?[e]:(extreme(e) & arg1(e)=q) & quick(q) & arg1(q)=s))}
+#  ?[s]:(arg1(s)=john & swim(s) & past(s) & ?[q]:(?[e]:(extreme(e) & arg1(e)=q) & quick(q) & arg1(q)=s))
 #
 #  "John arrived 10 minutes late."
-#  {?[a]:(arg1(s)=john & arrive(a) & past(a) & ?[l]:(arg2(l)=(10*minute) & late(l) & arg1(l)=a))}
+#  ?[a]:(arg1(s)=john & arrive(a) & past(a) & ?[l]:(arg2(l)=(10*minute) & late(l) & arg1(l)=a))
 #
 #  "they ran away from the house and from the tree."
-#  {?[T]:(U(0,T) & plural_ref(T) & ![x]:(T(x) => ?[r]:(arg1(r) & run(r) & past(r) & ?[a]:(away(a) & arg1(a)=r & ?[h]:(U(1,h) & house(h) & arg2(a)=h)) & ?[a]:(away(a) & arg1(a)=r & ?[t]:(U(2,t) & tree(t) & arg2(a)=t)))))}
+#  ?[T]:(U(0,T) & plural_ref(T) & ![x]:(T(x) => ?[r]:(arg1(r) & run(r) & past(r) & ?[a]:(away(a) & arg1(a)=r & ?[h]:(U(1,h) & house(h) & arg2(a)=h)) & ?[a]:(away(a) & arg1(a)=r & ?[t]:(U(2,t) & tree(t) & arg2(a)=t)))))
 #
 #  "they ran away from the house and the tree."
-#  {?[T]:(U(0,T) & plural_ref(T) & ![x]:(T(x) => ?[r]:(arg1(r) & run(r) & past(r) & ?[X]:(?[h]:(U(1,h) & house(h) & ?[t]:(U(2,t) & tree(t) & Y=^[y]:(y=h | y=t))) & ![y]:(Y(y) => ?[a]:(away(a) & arg1(a)=r & arg2(a)=y))))))}
+#  ?[T]:(U(0,T) & plural_ref(T) & ![x]:(T(x) => ?[r]:(arg1(r) & run(r) & past(r) & ?[X]:(?[h]:(U(1,h) & house(h) & ?[t]:(U(2,t) & tree(t) & Y=^[y]:(y=h | y=t))) & ![y]:(Y(y) => ?[a]:(away(a) & arg1(a)=r & arg2(a)=y))))))
 #
 #  "that Constance is smart is not surprising."
-#  {~?[x]:(arg1(x)=possibility(?[s]:(arg1(s)=constance & smart(s) & present(s))) & surprise(x) & present_progressive(x))}
+#  ~?[x]:(arg1(x)=possibility(?[s]:(arg1(s)=constance & smart(s) & present(s))) & surprise(x) & present_progressive(x))
 #
 #  "that all cats are mammals is not surprising."
-#  {~?[x]:(arg1(x)=possibility(![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & same(s) & present(s) & ?[m]:(U(1,m) & mammal(m) & arg2(s)=m)))) & surprise(x) & present_progressive(x))}
+#  ~?[x]:(arg1(x)=possibility(![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & same(s) & present(s) & ?[m]:(U(1,m) & mammal(m) & arg2(s)=m)))) & surprise(x) & present_progressive(x))
 #
 #  "i am glad that you arrived."
-#  {?[h]:(arg1(h)=me & happy(h) & present(h) & ?[a]:(arg1(a)=you & arrive(a) & past(a) & arg2(h)=a))}
+#  ?[h]:(arg1(h)=me & happy(h) & present(h) & ?[a]:(arg1(a)=you & arrive(a) & past(a) & arg2(h)=a))
 #
 #  "i will buy what she wants."
 #  "i will buy whatever she wants."
-#  {?[b]:(arg1(b)=me & buy(b) & future(b) & ?[x]:(?[w]:(?[h]:(U(0,h) & female_ref(h) & arg1(w)=h) & want(w) & arg2(w)=x) & arg2(b)=x))}
+#  ?[b]:(arg1(b)=me & buy(b) & future(b) & ?[x]:(?[w]:(?[h]:(U(0,h) & female_ref(h) & arg1(w)=h) & want(w) & arg2(w)=x) & arg2(b)=x))
 #
 #  "are you generous?"
 #  "you are generous?"
@@ -358,7 +337,7 @@
 #  "what stores did Jason run to?"
 #  "to what stores did Jason run?"
 #  "Jason ran to what stores?"
-#  ^[X]:(subset(X,^[s]:(U(s,0) & store(s))) & ![x]:(X(x) => ?[r]:(arg1(r)=jason & run(r) & past(r) & arg2(r)=x)))
+#  ^[X]:(subset(X,^[s]:(U(s,0) & store(s))) & ![x]:(X(x) => ?[r]:(arg1(r)=jason & run(r) & past(r) & arg2(r)=x)))}
 #
 #  "is it red or blue?"
 #  ^[x]:?[i]:(U(0,i) & ref(i) & true(x) & (x=possibility(?[r]:(arg1(r)=i & red(r) & present(r))) | x=possibility(?[b]:(arg1(b)=i & blue(b) & present(b)))))
@@ -393,6 +372,44 @@
 #
 #  "a person walked into the room who looked like Emma."
 #  ?[p]:(U(0,p) & person(p) & ?[w]:(arg1(w)=p & walk(w) & past(w) & ?[r]:(U(1,r) & room(r) & arg2(w)=r)) & ?[v]:(arg1(v)=p & visually_similar(v) & arg2(v)=emma))
+#
+#  "Sirius is brighter."
+#  ?[g]:(arg1(g)=sirius & greater(brightness)(g) & present(g))
+#
+#  "Sirius is brighter than Vega."
+#  ?[g]:(arg1(g)=sirius & greater(brightness)(g) & present(g) & arg2(g)=vega)
+# where we can add an axiom such as ![x,y,f]:(?[g]:(greater(f)(g) & arg1(g)=x & arg2(g)=y) & ~is_real_number(y) & ?[b]:(f(b) & arg1(b)=y) = ?[g]:(greater(f)(g) & arg1(g)=x & ?[b]:(brightness(b) & arg1(b)=y & arg2(g)=arg2(b))))
+# as well as equivalent axioms for things like height, shortness, size, length, etc.
+#
+#  "i see a brighter star than Vega."
+#  "i see a star brighter than Vega."
+#  ?[s]:(arg1(s)=me & see(s) & present(s) & ?[x]:(U(0,x) & star(x) & ?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=vega) & arg2(s)=x))
+#
+#  "Sirius is brighter than we thought."
+#  ?[X]:(X=us & ![x]:(X(x) => ?[g]:(arg1(g)=sirius & greater(brightness)(g) & ?[t]:(arg1(t)=x & think(t) & past(t) & arg2(t)=arg2(g)))))
+#
+#  "Sirius is the brightest star."
+#  ?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[X]:(X=^[x]:(U(0,x) & star(x)) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g) & arg2(g)=X)))
+#
+#  "Sirius is the brightest."
+#  ?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g)))
+#
+#  "last time i went to campus, i took the bus"
+#  ?[t]:(?[l]:(last_time(l) & arg1(l)=t & arg2(l)=^[g]:(arg1(g)=me & go(g) & past(g) & ?[c]:(U(0,c) & campus(c) & arg2(g)=c))) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(1,b) & bus(b) & arg2(t)=b))
+#    [OR]
+#  ?[t]:(?[l]:(last_time(l) & arg1(l)=t & ?[S]:(S=^[g]:(arg1(g)=me & go(g) & past(g) & ?[c]:(U(0,c) & campus(c) & arg2(g)=c)) & arg2(l)=S)) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(1,b) & bus(b) & arg2(t)=b))
+#
+#  "last time, i took the bus"
+#  ?[t]:(?[l]:(last_time(l) & arg1(l)=t) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(0,b) & bus(b) & arg2(t)=b))
+#
+#  "i took the same bus as i took yesterday."
+#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & ?[y]:(arg1(y)=me & take(y) & past(y) & ?[z]:(yesterday(z) & arg1(z)=y) & arg2(y)=arg2(s))) & U(0,b) & bus(b) & arg2(t)=b))
+#
+#  "i took the same bus as i took last time."
+#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & ?[y]:(arg1(y)=me & take(y) & past(y) & ?[z]:(last_time(z) & arg1(z)=y) & arg2(y)=arg2(s))) & U(0,b) & bus(b) & arg2(t)=b))
+#
+#  "i took the same bus as last time."
+#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & ?[y]:(?[z]:(last_time(z) & arg1(z)=y) & arg2(y)=arg2(s))) & U(0,b) & bus(b) & arg2(t)=b))
 
 
 S nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1274,6 +1291,18 @@ NP_R -> NP_R:try_remove_comma,try_remove_genitive ADJP_R:try_remove_comma
 # e.g. "brighter star than Vega"
 NP_R -> ADJP_R:try_remove_comma,try_remove_genitive NP_R:try_remove_comma,try_remove_genitive THAN DP:try_remove_comma
 
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(same(s) & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))) & ...)) & ...))}
+#  -> SAME NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     AS DP {^[P]:(... & ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y))))}
+# e.g. "same bus as last time"
+NP_R -> SAME NP_R:try_remove_comma,try_remove_genitive AS DP:try_remove_comma
+
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(same(s) & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))) & ...)) & ...))}
+#  -> SAME NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     AS S' {... & ?[y]:f(y)}
+# e.g. "same bus as i took last time"
+NP_R -> SAME NP_R:try_remove_comma,try_remove_genitive AS S':try_remove_comma
+
 # NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(... & arg1/arg2/arg3(g1)=x) & ... & ?[gn]:(... & arg1/arg2/arg3(gn)=x))) & ...))}
 #  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
 #     (COMMA) (THAT) S' {?[g1]:(...) & ... & ?[gn]:(...)} (COMMA)
@@ -1286,6 +1315,11 @@ NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA S':try_remove_comma,add_
 #  -> NP_R {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
 #     (COMMA) (THAT) S' {... & ?[y]:g(y)} (COMMA)
 # e.g. "the toys (that) you don't want"
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & arg2(x)=^[g]:f(g))) & ...))}
+#  -> NP_R {^[P]:(... & ?[l1]:(... & P(l1)) & ... & ?[ln]:(... & P(ln)))}
+#     (THAT) S' {... & ?[g]:f(g)}
+# e.g. "last time (that) i went to campus"
+# TODO: This second rule does not allow a comma.
 NP_R -> NP_R:try_remove_comma,try_remove_genitive S':try_remove_comma # TODO: remove grammatical features from S'
 NP_R -> NP_R:try_remove_comma,try_remove_genitive S':try_remove_comma,add_that,add_nullable_subject # TODO: remove grammatical features from S'
 NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA S':try_remove_comma,add_that,add_nullable_subject COMMA # TODO: remove grammatical features from S'
@@ -1618,7 +1652,7 @@ PP -> NOT PP:try_remove_comma
 # PP {^[P]:(... & (~)?[x]:((~)?[v1]:g1(v1) & ... & (~)?[vn]:gn(vn) & f(x) & P(x)))}
 #  -> ADVP_L {^[P]:((~)?[v1]:(g1(v1) ^ P(v1)) & ... & (~)?[vn]:(gn(vn) & P(vn)))}
 #     PP {^[P]:(... & (~)?[x]:(f(x) & P(x)))}
-PP -> ADVP:try_remove_comma PP:try_remove_comma
+PP -> ADVP_L:try_remove_comma PP:try_remove_comma
 
 # PP {^[P]:(... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn)))}
 #  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
