@@ -337,7 +337,7 @@
 #  "what stores did Jason run to?"
 #  "to what stores did Jason run?"
 #  "Jason ran to what stores?"
-#  ^[X]:(subset(X,^[s]:(U(s,0) & store(s))) & ![x]:(X(x) => ?[r]:(arg1(r)=jason & run(r) & past(r) & arg2(r)=x)))}
+#  ^[X]:(subset(X,^[s]:(U(s,0) & store(s))) & ![x]:(X(x) => ?[r]:(arg1(r)=jason & run(r) & past(r) & arg2(r)=x)))
 #
 #  "is it red or blue?"
 #  ^[x]:?[i]:(U(0,i) & ref(i) & true(x) & (x=possibility(?[r]:(arg1(r)=i & red(r) & present(r))) | x=possibility(?[b]:(arg1(b)=i & blue(b) & present(b)))))
@@ -398,9 +398,13 @@
 #  ?[t]:(?[l]:(last_time(l) & arg1(l)=t & arg2(l)=^[g]:(arg1(g)=me & go(g) & past(g) & ?[c]:(U(0,c) & campus(c) & arg2(g)=c))) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(1,b) & bus(b) & arg2(t)=b))
 #    [OR]
 #  ?[t]:(?[l]:(last_time(l) & arg1(l)=t & ?[S]:(S=^[g]:(arg1(g)=me & go(g) & past(g) & ?[c]:(U(0,c) & campus(c) & arg2(g)=c)) & arg2(l)=S)) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(1,b) & bus(b) & arg2(t)=b))
+# where we could have an axiom like ![x,S]:(?[l]:(last_time(l) & arg1(l)=x & arg2(l)=S) = ~?[y]:(S(y) & start_time(y)>end_time(x) & start_time(y)<now))
 #
 #  "last time, i took the bus"
 #  ?[t]:(?[l]:(last_time(l) & arg1(l)=t) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(0,b) & bus(b) & arg2(t)=b))
+#
+#  "last time i had a party, 7 people came"
+#  ?[P]:(P=^[p]:(U(0,p) & person(p)) & size(P)=7 & ![p]:(P(p) => ?[g]:(?[l]:(last_time(l) & arg1(l)=g & arg2(l)=^[h]:(arg1(h)=me & have(h) & past(h) & ?[p]:(U(1,p) & party(p) & arg2(h)=p))) & arg1(g)=p & go(g) & past(g))))
 #
 #  "i took the same bus as i took yesterday."
 #  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & ?[y]:(arg1(y)=me & take(y) & past(y) & ?[z]:(yesterday(z) & arg1(z)=y) & arg2(y)=arg2(s))) & U(0,b) & bus(b) & arg2(t)=b))
@@ -410,6 +414,13 @@
 #
 #  "i took the same bus as last time."
 #  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & ?[y]:(?[z]:(last_time(z) & arg1(z)=y) & arg2(y)=arg2(s))) & U(0,b) & bus(b) & arg2(t)=b))
+#
+#  "Sirius is as bright as Vega."
+#  ?[g]:(arg1(g)=sirius & greater_than_or_equal(brightness)(g) & present(g) & arg2(g)=vega)
+# TODO: implement this in the grammar
+#
+#  "more people came than last time."
+#  ?[P]:(?[g]:(greater(cardinality)(g) & arg1(g)=P & ?[y]:(?[l]:(last_time(l) & arg1(l)=y) & arg2(g)=arg1(y))) & P=^[p]:(U(0,p) & person(p) & ?[g]:(arg1(g)=p & go(g) & past(g))))
 
 
 S nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1271,37 +1282,55 @@ NP_R -> NP_R:try_remove_comma,try_remove_genitive PP:try_remove_comma
 NP_R -> NP_R:try_remove_comma,try_remove_genitive PP:try_remove_comma
 NP_R -> NP_R:try_remove_comma,try_remove_genitive ADJP_R:try_remove_comma
 
-# {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(greater/less(f)(g) & arg1(g)=x & arg2(g)=a) & ...)) & ![x]:(X(x) => P(x))))}
-#  -> ADJP_R {?[g]:greater/less(f)(g)}
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(... & greater/less(f)(g) & arg1(g)=x & arg2(g)=a) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
 #     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
 #     THAN DP {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
-# {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(greater/less(f)(g) & arg1(g)=x & ?[y]:(h(y) & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x))))}
-#  -> ADJP_R {?[g]:greater/less(f)(g)}
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(... & greater/less(f)(g) & arg1(g)=x & ?[y]:(h(y) & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
 #     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
 #     THAN DP {^[P]:?[Y]:(Y=^[y]:h(y) & ?[y]:(Y(y) & P(y)))}
-# {^[P]:(... & ?[X]:(F(X=^[x]:(... & ![y]:(h(y) => ?[g]:(greater/less(f)(g) & arg1(g)=x & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x))))}
-#  -> ADJP_R {?[g]:greater/less(f)(g)}
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ![y]:(h(y) => ?[g]:(... & greater/less(f)(g) & arg1(g)=x & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
 #     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
 #     THAN DP {^[P]:?[Y]:(Y=^[y]:h(y) & ![y]:(Y(y) => P(y)))}
-# {^[P]:(... & ?[Y]:(h(Y) & ... ?[X]:(F(X=^[x]:(... & ![y]:(Y(y) => ?[g]:(greater/less(f)(g) & arg1(g)=x & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x)))))}
-#  -> ADJP_R {?[g]:greater/less(f)(g)}
+# NP_R {^[P]:(... & ?[Y]:(h(Y) & ... ?[X]:(F(X=^[x]:(... & ![y]:(Y(y) => ?[g]:(... & greater/less(f)(g) & arg1(g)=x & arg2(g)=y)) & ...)) & ![x]:(X(x) => P(x)))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
 #     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
 #     THAN DP {^[P]:?[Y]:(h(Y) & ![y]:(Y(y) => P(y)))}
 # NOTE: This rule also works if X is existentially-quantified.
 # e.g. "brighter star than Vega"
 NP_R -> ADJP_R:try_remove_comma,try_remove_genitive NP_R:try_remove_comma,try_remove_genitive THAN DP:try_remove_comma
 
-# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(same(s) & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))) & ...)) & ...))}
-#  -> SAME NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
-#     AS DP {^[P]:(... & ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y))))}
-# e.g. "same bus as last time"
-NP_R -> SAME NP_R:try_remove_comma,try_remove_genitive AS DP:try_remove_comma
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(... & greater/less(f)(g) & arg1(g)=x & ?[y]:(f(y) & arg2(g)=arg1/arg2/arg3(y))) & ...)) & ![x]:(X(x) => P(x))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ![x]:(X(x) => P(x))))}
+#     THAN S' {... & ?[y]:f(y)}
+# e.g. "a brighter star than we thought"
+# NOTE: This rule also works if X is existentially-quantified. Also note that
+# `f(y)` could depend on other quantified variables above the scope of `g` or
+# `X`, in which case those variables are also moved into the logical form for
+# S'.
+NP_R -> ADJP_R:try_remove_comma,try_remove_genitive NP_R:try_remove_comma,try_remove_genitive THAN S':try_remove_comma
 
-# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(same(s) & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))) & ...)) & ...))}
-#  -> SAME NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
-#     AS S' {... & ?[y]:f(y)}
-# e.g. "same bus as i took last time"
-NP_R -> SAME NP_R:try_remove_comma,try_remove_genitive AS S':try_remove_comma
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(p(s) & ... & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))) & ...)) & ...))}
+#  -> ADJP_R {?[s]:(p(s) & ...)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     P {p}
+#     DP {^[P]:(... & ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y))))}
+# e.g. "same bus as last time", "different bus than/from last time"
+NP_R -> ADJP_R:try_remove_comma,try_remove_genitive NP_R:try_remove_comma,try_remove_genitive P:try_remove_comma,try_remove_genitive DP:try_remove_comma
+
+# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(p(s) & ... & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))) & ...)) & ...))}
+#  -> ADJP_R {?[s]:(p(s) & ...)}
+#     NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
+#     P {p}
+#     S' {... & ?[y]:f(y)}
+# e.g. "same bus as i took last time", "different bus than i took last time"
+# NOTE: `f(y)` could depend on other quantified variables above the scope of
+# `g` or `X`, in which case those variables are also moved into the logical
+# form for S'.
+NP_R -> ADJP_R:try_remove_comma,try_remove_genitive NP_R:try_remove_comma,try_remove_genitive P:try_remove_comma,try_remove_genitive S':try_remove_comma
 
 # NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(... & arg1/arg2/arg3(g1)=x) & ... & ?[gn]:(... & arg1/arg2/arg3(gn)=x))) & ...))}
 #  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
@@ -1319,7 +1348,7 @@ NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA S':try_remove_comma,add_
 #  -> NP_R {^[P]:(... & ?[l1]:(... & P(l1)) & ... & ?[ln]:(... & P(ln)))}
 #     (THAT) S' {... & ?[g]:f(g)}
 # e.g. "last time (that) i went to campus"
-# TODO: This second rule does not allow a comma.
+# NOTE: This second rule does not allow a comma.
 NP_R -> NP_R:try_remove_comma,try_remove_genitive S':try_remove_comma # TODO: remove grammatical features from S'
 NP_R -> NP_R:try_remove_comma,try_remove_genitive S':try_remove_comma,add_that,add_nullable_subject # TODO: remove grammatical features from S'
 NP_R -> NP_R:try_remove_comma,try_remove_genitive COMMA S':try_remove_comma,add_that,add_nullable_subject COMMA # TODO: remove grammatical features from S'
@@ -1735,6 +1764,47 @@ ADJP_R -> ADJP_R:try_remove_comma DP:try_remove_comma
 #     VP_R {?[g1]:(...) & ... & ?[gn]:(...)}
 # e.g. "happy to help"
 ADJP_R -> ADJP_R:try_remove_comma VP_R:try_remove_comma,add_to_infinitive
+
+# ADJP_R {^[P]:(... & ?[g]:(... & greater/less(f)(g) & arg1(g)=x & arg2(g)=a))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
+#     THAN DP {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
+# ADJP_R {^[P]:(... & ?[g]:(... & greater/less(f)(g) & arg1(g)=x & ?[y]:(h(y) & arg2(g)=y)))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
+#     THAN DP {^[P]:?[Y]:(Y=^[y]:h(y) & ?[y]:(Y(y) & P(y)))}
+# ADJP_R {^[P]:(... & ![y]:(h(y) => ?[g]:(... & greater/less(f)(g) & arg1(g)=x & arg2(g)=y)))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
+#     THAN DP {^[P]:?[Y]:(Y=^[y]:h(y) & ![y]:(Y(y) => P(y)))}
+# ADJP_R {^[P]:(... & ?[Y]:(h(Y) & ... & ![y]:(Y(y) => ?[g]:(... & greater/less(f)(g) & arg1(g)=x & arg2(g)=y))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
+#     THAN DP {^[P]:?[Y]:(h(Y) & ![y]:(Y(y) => P(y)))}
+# e.g. "brighter than Vega"
+ADJP_R -> ADJP_R:try_remove_comma THAN DP:try_remove_comma
+
+# ADJP_R {^[P]:(... & ?[g]:(... & greater/less(f)(g) & arg1(g)=x & ?[y]:(f(y) & arg2(g)=arg1/arg2/arg3(y))))}
+#  -> ADJP_R {... & ?[g]:greater/less(f)(g)}
+#     THAN S' {... & ?[y]:f(y)}
+# e.g. "brighter than we thought"
+# NOTE: `f(y)` could depend on other quantified variables above the scope of
+# `g` or `X`, in which case those variables are also moved into the logical
+# form for S'.
+ADJP_R -> ADJP_R:try_remove_comma THAN S':try_remove_comma
+
+# ADJP_R {^[P]:(... & ?[s]:(p(s) & ... & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))))}
+#  -> ADJP_R {?[s]:(p(s) & ...)}
+#     P {p}
+#     DP {^[P]:(... & ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y))))}
+# e.g. "same as last time", "different than/from last time"
+ADJP_R -> ADJP_R:try_remove_comma P:try_remove_comma DP:try_remove_comma
+
+# ADJP_R {^[P]:(... & ?[s]:(p(s) & ... & arg1(s)=x & ?[y]:(f(y) & arg2(s)=arg1/arg2/arg3(y))))}
+#  -> ADJP_R {?[s]:(p(s) & ...)}
+#     P {p}
+#     S' {... & ?[y]:f(y)}
+# e.g. "same as i took last time", "different than i took last time"
+# NOTE: `f(y)` could depend on other quantified variables above the scope of
+# `g` or `X`, in which case those variables are also moved into the logical
+# form for S'.
+ADJP_R -> ADJP_R:try_remove_comma P:try_remove_comma S':try_remove_comma
 
 # ADJP_R {^[P]:(A1 & ... & An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 & ... & An)}
 # ADJP_R {^[P]:(A1 | ... | An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 | ... | An)}
