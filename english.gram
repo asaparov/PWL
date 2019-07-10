@@ -386,13 +386,13 @@
 #  ?[s]:(arg1(s)=me & see(s) & present(s) & ?[x]:(?[g]:(greater(brightness)(g) & arg1(g)=x & U(0,x) & star(x) & arg2(g)=vega) & arg2(s)=x))
 #
 #  "i see a star brighter than Vega."
-#  ?[s]:(arg1(s)=me & see(s) & present(s) & ?[x]:(U(0,x) & star(x) & ?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=vega) & arg2(s)=x))
+#  ?[s]:(arg1(s)=me & see(s) & present(s) & ?[x]:(?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=vega) & U(0,x) & star(x) & arg2(s)=x))
 #
 #  "Sirius is brighter than we thought."
 #  ?[X]:(X=us & ![x]:(X(x) => ?[g]:(arg1(g)=sirius & greater(brightness)(g) & ?[t]:(arg1(t)=x & think(t) & past(t) & arg2(t)=arg2(g)))))
 #
 #  "Sirius is the brightest star."
-#  ?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[X]:(X=^[x]:(U(0,x) & star(x)) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g) & arg2(g)=X)))
+#  ?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[X]:(?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g) & arg2(g)=X) & X=^[x]:(U(0,x) & star(x))))
 #
 #  "Sirius is the brightest."
 #  ?[s]:(arg1(s)=sirius & same(s) & present(s) & ?[g]:(greatest(brightness)(g) & arg2(s)=arg1(g)))
@@ -401,8 +401,7 @@
 #  ?[x,r]:(?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=r) & U(0,x) & star(x) & ?[c]:(capable_of(c) & arg2(c)=possibility(?[s]:(arg1(s)=x & inverse(see)(s) & ?[w]:(with(w) & ?[t]:(U(2,t) & telescope(t) & arg1(w)=t)) & ?[y]:(arg1(y)=r & ~?[w]:(with(w) & ?[t]:(U(1,t) & telescope(t) & arg1(w)=t)))))))
 #
 #  "brighter stars could be seen with the telescope than without it"
-#  ?[X,R]:(![x,r]:(X(x) & R(r) => ?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=r)) & subset(X,^[x]:(U(0,x) & star(x))) & ![x]:(X(x) => ?[c]:(capable_of(c) & arg2(c)=possibility(?[s]:(arg1(s)=x & inverse(see)(s) & ?[w]:(with(w) & ?[t]:(U(2,t) & telescope(t) & arg1(w)=t)) & R=^[r]:?[y]:(arg1(y)=r & ~?[w]:(with(w) & ?[t]:(U(1,t) & telescope(t) & arg1(w)=t))))))))
-# TODO: implement this in the grammar (make other comparatives more uniformly represented by the logical forms)
+#  ?[X,R]:(subset(X,^[x]:(![r]:(R(r) => ?[g]:(greater(brightness)(g) & arg1(g)=x & arg2(g)=r)) & U(0,x) & star(x))) & ![x]:(X(x) => ?[c]:(capable_of(c) & arg2(c)=possibility(?[s]:(arg1(s)=x & inverse(see)(s) & ?[w]:(with(w) & ?[t]:(U(2,t) & telescope(t) & arg1(w)=t)) & R=^[r]:?[y]:(arg1(y)=r & ~?[w]:(with(w) & ?[t]:(U(1,t) & telescope(t) & arg1(w)=t))))))))
 #
 #  "last time i went to campus, i took the bus"
 #  ?[t]:(?[l]:(last_time(l) & arg1(l)=t & arg2(l)=^[g]:(arg1(g)=me & go(g) & past(g) & ?[c]:(U(0,c) & campus(c) & arg2(g)=c))) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(1,b) & bus(b) & arg2(t)=b))
@@ -414,13 +413,13 @@
 #  ?[t]:(?[l]:(last_time(l) & arg1(l)=t) & arg1(t)=me & take(t) & past(t) & ?[b]:(U(0,b) & bus(b) & arg2(t)=b))
 #
 #  "i took the same bus as i took yesterday."
-#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & U(0,b) & bus(b) & ?[y]:(arg1(y)=me & take(y) & past(y) & ?[z]:(yesterday(z) & arg1(z)=y) & arg2(y)=arg2(s))) & arg2(t)=b))
+#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b,r]:(?[s]:(same(s) & arg1(s)=b & arg2(s)=r) & U(0,b) & bus(b) & ?[y]:(arg1(y)=me & take(y) & past(y) & arg2(y)=r & ?[z]:(yesterday(z) & arg1(z)=y)) & arg2(t)=b))
 #
 #  "i took the same bus as i took last time."
-#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & ?[y]:(arg1(y)=me & take(y) & past(y) & ?[z]:(last_time(z) & arg1(z)=y) & arg2(y)=arg2(s))) & U(0,b) & bus(b) & arg2(t)=b))
+#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b,r]:(?[s]:(same(s) & arg1(s)=b & arg2(s)=r) & U(0,b) & bus(b) & ?[y]:(arg1(y)=me & take(y) & past(y) & arg2(y)=r & ?[z]:(last_time(z) & arg1(z)=y)) & arg2(t)=b))
 #
 #  "i took the same bus as last time."
-#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b]:(?[s]:(same(s) & arg1(s)=b & U(0,b) & bus(b) & ?[y]:(?[z]:(last_time(z) & arg1(z)=y) & arg2(y)=arg2(s))) & arg2(t)=b))
+#  ?[t]:(arg1(t)=me & take(t) & past(t) & ?[b,r]:(?[s]:(same(s) & arg1(s)=b & arg2(s)=r) & U(0,b) & bus(b) & ?[y]:(arg2(y)=r & ?[z]:(last_time(z) & arg1(z)=y)) & arg2(t)=b))
 #
 #  "Sirius is as bright as Vega."
 #  ?[g]:(arg1(g)=sirius & greater_than_or_equal(brightness)(g) & present(g) & arg2(g)=vega)
@@ -429,23 +428,26 @@
 #  ?[P]:(subset(P,^[p]:(U(0,p) & person(p))) & size(P)=7 & ![p]:(P(p) => ?[g]:(?[l]:(last_time(l) & arg1(l)=g & arg2(l)=^[h]:(arg1(h)=me & have(h) & past(h) & ?[p]:(U(1,p) & party(p) & arg2(h)=p))) & arg1(g)=p & go(g) & past(g))))
 #
 #  "more people came to the party than people came last time i had a party."
-#  ?[P]:(subset(P,^[p]:(U(0,p) & person(p))) & ?[R]:(size(P)>size(R) & ![p]:(P(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & R=^[r]:(U(1,r) & person(r) & ?[g]:(arg1(g)=r & go(g) & past(g) & ?[l]:(last_time(l) & arg1(l)=g & arg2(l)=^[h]:(arg1(h)=me & have(h) & ?[p]:(U(2,p) & party(p) & arg2(h)=p)))))))))
+#  ?[P,R]:(size(P)>size(R) & subset(P,^[p]:(U(0,p) & person(p))) & ![p]:(P(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & R=^[r]:(U(1,r) & person(r) & ?[g]:(arg1(g)=r & go(g) & past(g) & ?[l]:(last_time(l) & arg1(l)=g & arg2(l)=^[h]:(arg1(h)=me & have(h) & ?[p]:(U(2,p) & party(p) & arg2(h)=p))))))))
 #
 #  "more people came than people came last time."
-#  ?[P]:(subset(P,^[p]:(U(0,p) & person(p))) & ?[R]:(size(P)>size(R) & ![p]:(P(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & R=^[r]:(U(1,r) & person(r) & ?[g]:(arg1(g)=r & go(g) & past(g) & ?[l]:(last_time(l) & arg1(l)=g)))))))
+#  ?[P,R]:(size(P)>size(R) & subset(P,^[p]:(U(0,p) & person(p))) & ![p]:(P(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & R=^[r]:(U(1,r) & person(r) & ?[g]:(arg1(g)=r & go(g) & past(g) & ?[l]:(last_time(l) & arg1(l)=g))))))
 #
 #  "more people came than last time."
-#  ?[P]:(subset(P,^[p]:(U(0,p) & person(p))) & ?[R]:(size(P)>size(R) & ![p]:(P(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & R=^[r]:(?[g]:(arg1(g)=r & ?[l]:(last_time(l) & arg1(l)=g))))))))
+#  ?[P,R]:(size(P)>size(R) & subset(P,^[p]:(U(0,p) & person(p))) & ![p]:(P(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & R=^[r]:(?[g]:(arg1(g)=r & ?[l]:(last_time(l) & arg1(l)=g))))))
+#
+#  "more girls but fewer boys came than last time."
+#  ?[P,R]:(?[G,R1]:(size(G)>size(R1) & subset(G,^[g]:(U(0,g) & girl(g))) & ?[B,R2]:(size(B)<size(R2) & subset(B,^[b]:(U(1,b) & boy(b))) & P=^[s]:(s=G | s=B) & R=^[s]:(s=R1 | s=R2))) & ![s]:(P(s) => ![p]:(s(p) => ?[g]:(arg1(g)=p & go(g) & past(g) & ![Ri]:(R(Ri) => Ri=^[r]:(?[g]:(arg1(g)=r & ?[l]:(last_time(l) & arg1(l)=g))))))))
 #
 #  "taller people came than last time."
-#  ?[X,R]:(subset(X,^[x]:(U(0,x) & person(x))) & ![x,r]:(X(x) & R(r) => ?[g]:(greater(height)(g) & arg1(g)=x & arg2(g)=r)) & ?[g]:(arg1(g)=x & go(g) & past(g) & R=^[r]:(?[g]:(arg1(g)=r & ?[l]:(last_time(l) & arg1(l)=g)))))
+#  ?[X,R]:(subset(X,^[x]:(![r]:(R(r) => ?[g]:(greater(height)(g) & arg1(g)=x & arg2(g)=r)) & U(0,x) & person(x))) & ?[g]:(arg1(g)=x & go(g) & past(g) & R=^[r]:(?[g]:(arg1(g)=r & ?[l]:(last_time(l) & arg1(l)=g)))))
 #
 #  "she is older than i am."
 #  ?[g]:(?[h]:(U(0,h) & female_ref(h) & arg1(g)=h) & greater(age)(g) & ?[y]:(arg1(y)=me & arg2(g)=y))
 # where `y` could have type `age_of`.
 #
 #  "she wrote more plays than i wrote novels."
-#  ?[h]:(U(0,h) & female_ref(h) & ?[P]:(subset(P,^[p]:(U(1,p) & play(p))) & ?[N]:(size(P)>size(N) & ![p]:(P(p) => ?[w]:(arg1(w)=h & write(w) & past(w) & arg2(w)=p & N=^[n]:(U(2,n) & novel(n) & ?[w]:(arg1(w)=me & write(w) & past(w) & arg2(w)=n)))))))
+#  ?[h]:(U(0,h) & female_ref(h) & ?[P,N]:(size(P)>size(N) & subset(P,^[p]:(U(1,p) & play(p))) & ![p]:(P(p) => ?[w]:(arg1(w)=h & write(w) & past(w) & arg2(w)=p & N=^[n]:(U(2,n) & novel(n) & ?[w]:(arg1(w)=me & write(w) & past(w) & arg2(w)=n))))))
 #
 #  "we spend more time in France than in Germany."
 #  ?[X]:(X=us & ![x]:(X(x) => ?[s]:(arg1(s)=x & spend_time(s) & present(s) & ?[g]:(greater(time)(g) & arg1(g)=s & ?[l]:(located(l) & arg1(l)=s & arg2(l)=france) & ?[y]:(?[l]:(located(l) & arg1(l)=y & arg2(l)=germany) & arg2(g)=y)))))
@@ -460,7 +462,7 @@
 #  ?[b]:(better(b) & arg1(b)=possibility(?[t]:(try(t) & past(t)) & ?[f]:(fail(f) & past(f))) & arg2(b)=possibility(~?[t]:try(t)))
 #
 #  "the flower is more red than pink."
-#  ?[f]:(U(0,f) & flower(f) & ?[r]:(arg1(r)=f & red(r) & ?[g]:(greater(degree)(g) & arg1(g)=r & ?[p]:(pink(p) & arg2(g)=p))))
+#  ?[f]:(U(0,f) & flower(f) & ?[g]:(greater(degree)(g) & ?[r]:(arg1(r)=f & red(r) & arg1(g)=r & ?[p]:(pink(p) & arg2(g)=p))))
 
 
 S nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -730,20 +732,21 @@ S'' -> S':remove_nullable_subject,add_that VP_R:remove_nullable_subject
 S'' -> S':remove_nullable_subject,add_that,add_subjunctive VP_R:remove_nullable_subject
 
 # comparative constructions
-# S'' {... & ?[y]:(?[x]:(... & (?[g1]:(p(f)(g1) & arg1(g1)=x & ... & arg1(y)=x & ... & h(g1)) & ... & ?[gn]:(p(f)(gn) & arg1(gn)=x & ... & arg1(y)=x & ... & h(gn)))) & ...)}
-#  -> DP {?[P]:(... & ?[X]:(X=^[x]:(... & (?[g]:(p(f)(g1) & arg1(g1)=x) & ... & ?[g]:(p(f)(g1) & arg1(g1)=x)) & ...) & ?[x]:(X(x) & P(x))))}
-#     VP_R {... & ?[y]:(... & ?[g]:(p(f)(g) & h(g)) & ...)}
-# where h(g) = arg2(g)=a
-#    or h(g) = ?[z]:(... & arg2(g)=z) or z could be universally quantified (above the scope of g)
-# NOTE: The predicate could also be a simple `p` rather than `p(f)`.
-# e.g. "a brighter star could be seen with the telescope than without it"
-S'' -> DP:try_remove_nullable_subject,require_no_subordinate VP_R:try_remove_nullable_subject
-
-# comparative constructions where sizes of sets are compared
-# S'' {... & ?[X]:(?[R]:(f(size(X),size(R)) & ... & ![x]:(X(x) => ?[y]:(arg1/arg2/arg3(y)=x & ... & R=^[r]:(... & ?[y]:(arg1/arg2/arg3(y)=r & ...) & ...)))))}
-#  -> DP {^[P]:(... & ?[X]:(?[R]:f(size(X),size(R)) & ... & ![x]:(X(x) => P(x))))}
-#     VP_R {... & ?[R]:(f(size(R)) & ... & ?[y]:(... & R=^[r]:(... & ?[y]:(...) & ...)))}
-# e.g. "more people came than last time"
+# S'' {... & ?[x,r]:(?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & ?[y]:(... & arg1(y)=x & ... & h(r) & ...))}
+#  -> DP {^[P]:(... & ?[X]:(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ...) & ?[x]:(X(x) & P(x))))}
+#     VP_R {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & ?[y]:(... & h(r) & ...))}
+# where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
+# S'' {... & ?[X,R]:(... & f(size(X),size(R)) & ... & F(X=^[x]:(![r]:(R(r) => ?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ... & ![x]:(X(x) => ?[y]:(... & arg1(y)=x & ... & R=^[r]:(...) & ...)))}
+#  -> DP {^[P]:(... & ?[X]:(... & f(size(X)) & ... & F(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x))) & ... & ![x]:(X(x) => P(x))))}
+#     VP_R {... & ?[R]:(f(size(R)) & ... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ... & ?[y]:(... R=^[r]:(...) & ...))}
+# S'' {... & ?[X,R]:(?[X1,R1]:(... & f(size(X1),size(R1)) & ... & F(X1=^[x]:(![r]:(R1(r) => ?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ?[X2,R2]:(... & f(size(X2),size(R2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn) & R=^[S]:(S=R1 | ... | S=Rn))) & ... & ![S]:(X(S) => ![x]:(S(x) => ?[y]:(... & arg1(y)=x & ... & ![Ri]:(R(Ri) => Ri=^[r]:(...)) & ...))))}
+#  -> DP {^[P]:(... & ?[X]:(... & f(size(X)) & ... & F(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x))) & ... & ![x]:(X(x) => P(x))))}
+#     VP_R {... & ?[Rn]:(f(size(Rn)) & ... & ![r]:(Rn(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ... & ?[y]:(... Rn=^[r]:(...) & ...))}
+# NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
+# `f(size(X),size(R))` and `?[gi]:(...)` are optional (but there must be at
+# least one). The term `f(size(X),size(R))` handles comparative constructions
+# where sizes of sets are compared.
+# e.g. "a brighter star could be seen with the telescope than without it", "more people came than last time", "more girls but fewer boys came to the event than last time"
 S'' -> DP:try_remove_nullable_subject,require_no_subordinate VP_R:try_remove_nullable_subject
 
 # S'' {A} -> VP_R {A}
@@ -933,45 +936,41 @@ VP_R -> VP_R:try_remove_comma S':try_remove_comma,add_req_no_aux,add_subordinate
 VP_R -> VP_R:try_remove_comma COMMA S':try_remove_comma,add_req_no_aux,add_subordinate COMMA
 
 # comparative constructions
-# VP_R {... & ?[g]:(... & p(f)(g) & ... & arg2(g)=a)}
-#  -> VP_R {... & ?[g]:(... & p(f)(g) & ...)}
+# VP_R {... & ?[x,r]:(?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & ?[y]:(... & arg1(y)=x & ... & h(r) & ...))}
+#  -> VP_R {... & ?[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ... & ?[y]:(... & arg1(y)=x & ... ))}
 #     P {p}
-#     V_ADJUNCT {?[g]:(p(f)(g) & arg2(g)=a)}
-# VP_R {... & ?[g]:(... & p(f)(g) & ... & ?[y]:(h(y) & arg2(g)=y))}
-#  -> VP_R {... & ?[g]:(... & p(f)(g) & ...)}
-#     P {p}
-#     V_ADJUNCT {?[g]:(p(f)(g) & ?[y]:(h(y) & arg2(g)=y))}
-# VP_R {... & ![y]:(h(y) => ?[g]:(... & p(f)(g) & ... & arg2(g)=y))}
-#  -> VP_R {... & ?[g]:(... & p(f)(g) & ...)}
-#     P {p}
-#     V_ADJUNCT {![y]:(h(y) => ?[g]:(p(f)(g) & arg2(g)=y))}
-# VP_R {... & ?[Y]:(h(Y) & ... & ![y]:(Y(y) => ?[g]:(... & p(f)(g) & ... & arg2(g)=y)))}
-#  -> VP_R {... & ?[g]:(... & p(f)(g) & ...)}
-#     P {p}
-#     V_ADJUNCT {?[Y]:(h(Y) & ![y]:(Y(y) => ?[g]:(p(f)(g) & arg2(g)=y)))}
-# NOTE: `g` is either the head scope or is a child of the head scope (with no
-# arg edges connecting it to the head scope). But it must be the right-most
-# event scope or the right-most term in the head scope.
-# NOTE: The predicate could also be a simple `p` rather than `p(f)`.
-# e.g. "Sirius is brighter than Vega", "a brighter star could be seen with the telescope than without it"
-# TODO: implement V_ADJUNCT or move "P V_ADJUNCT" into a separate COMPARATIVE nonterminal
+#     V_ADJUNCT {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & h(r))}
+# where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
+# VP_R {... & ?[X,R]:(... & f(size(X),size(R)) & ... & F(X=^[x]:(![r]:(R(r) => ?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ... & ![x]:(X(x) => ?[y]:(... & arg1(y)=x & ... & R=^[r]:(...) & ...)))}
+#  -> VP_R {... & ?[X]:(... & f(size(X)) & ... & F(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ...)) & ... & ![x]:(X(x) => ?[y]:(... & arg1(y)=x & ...)))}
+#     P {p} (or `f`, whichever comes last)
+#     V_ADJUNCT {... & ?[R]:(f(size(R)) & ... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ... & R=^[r]:(...))}
+# VP_R {... & ?[X,R]:(?[X1,R1]:(... & f(size(X1),size(R1)) & ... & F(X1=^[x]:(![r]:(R(r) => ?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ?[X2,R2]:(... & f(size(X2),size(R2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn) & R=^[S]:(S=R1 | ... | S=Rn))) & ... & ![S]:(X(S) => ![x]:(S(x) => ?[y]:(... & arg1(y)=x & ... & ![Ri]:(R(Ri) => Ri=^[r]:(...)) & ...))))}
+#  -> VP_R {... & ?[X]:(?[X1]:(... & f(size(X1)) & ... & F(X1=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ...)) & ?[X2]:(... & f(size(X2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn))) & ... & ![S]:(X(S) => ![x]:(S(x) => ?[y]:(... & arg1(y)=x & ...))))}
+#     P {p} (or `f`, whichever comes last)
+#     V_ADJUNCT {... & ?[Rn]:(f(size(Rn)) & ... & ![r]:(Rn(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ... & Rn=^[r]:(...) & ...)}
+# NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
+# `f(size(X),size(R))` and `?[gi]:(...)` are optional (but there must be at
+# least one). The term `f(size(X),size(R))` handles comparative constructions
+# where sizes of sets are compared.
+# e.g. "you can see a brighter star with the telescope than without it", "i saw more people at the party than last time", "there were more girls but fewer boys at the event than last time"
 VP_R -> VP_R:try_remove_comma P V_ADJUNCT:try_remove_comma
 
-# comparative constructions where sizes of sets are compared
-# VP_R {... & ?[X]:(... & ?[R]:(f(size(X),size(R)) & ... & ![x]:(X(x) => ?[y]:(arg1/arg2/arg3(y)=x & ... & R=^[r]:(... & ?[y]:(arg1/arg2/arg3(y)=r & ...) & ...)))))}
-#  -> VP_R {... & ?[X]:(... & ?[R]:f(size(X),size(R)) & ... & ![x]:(X(x) => ?[y]:(arg1/arg2/arg3(y)=x & ...)))}
-#     P {f}
-#     V_ADJUNCT {... & ?[R]:(f(size(R)) & ... & R=^[r]:(... & ?[y]:(arg1/arg2/arg3(y)=r & ...) & ...))}
-# e.g. "i spoke with more people today than i did yesterday"
-# NOTE: This rule requires that both `y` scopes use `x` and `r` in the same way (i.e. both are arg1, etc).
-VP_R -> VP_R:try_remove_comma P V_ADJUNCT:try_remove_comma
-
-# comparative constructions where sizes of sets are compared
-# VP_R {... & ?[R]:(f(size(R)) & ... & ?[y]:(... & R=^[r]:(... & ?[y]:(...) & ...)))}
+# comparative constructions
+# VP_R {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & ?[y]:(... & h(r) & ...))}
 #  -> VP_R {... & ?[y]:(...)}
-#     P {f}
-#     V_ADJUNCT {... & ?[R]:(f(size(R)) & ... & R=^[r]:(... & ?[y]:(...) & ...))}
-# e.g. "more people came than last time", "we saw more animals with the binoculars than we did without them", "more animals could be seen with binoculars than without them"
+#     P {p}
+#     V_ADJUNCT {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & h(r))}
+# where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
+# VP_R {... & ?[R]:(f(size(R)) & ... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ... & ?[y]:(... R=^[r]:(...) & ...))}
+#  -> VP_R {... & ?[y]:(...)}
+#     P {p}
+#     V_ADJUNCT {... & ?[R]:(f(size(R)) & ... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ... & R=^[r]:(...))}
+# NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
+# `f(size(R))` and `?[gi]:(...)` are optional (but there must be at least one).
+# The term `f(size(R))` handles comparative constructions where sizes of sets
+# are compared.
+# e.g. "a brighter star could be seen with the telescope than without it", "more people came than last time", "more girls but fewer boys came to the event than last time"
 VP_R -> VP_R:try_remove_comma P V_ADJUNCT:try_remove_comma
 
 # for gapping and stripping
@@ -1402,26 +1401,25 @@ NP_R -> NP_R:try_remove_comma,try_remove_genitive PP:try_remove_comma
 NP_R -> NP_R:try_remove_comma,try_remove_genitive ADJP_R:try_remove_comma
 
 # comparative constructions
-# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(p(f)(g) & arg1(g)=x & ... & arg2(g)=a))) & ...))}
-#  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(p(f)(g) & arg1(g)=x) & ...)) & ...))}
+# NP_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(... & F(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ...)) & ...))}
 #     P {p}
-#     V_ADJUNCT {?[g]:(p(f)(g) & arg2(g)=a)}
-# NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(p(f)(g) & arg1(g)=x & ... & ?[y]:(h(y) & arg2(g)=y)))) & ...))}
-#  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g]:(p(f)(g) & arg1(g)=x) & ...)) & ...))}
-#     P {p}
-#     V_ADJUNCT {?[g]:(p(f)(g) & ?[y]:(h(y) & arg2(g)=y))}
-# NOTE: The predicate could also be a simple `p` rather than `p(f)`.
-# e.g. "a brighter star than Vega"
-# TODO: implement V_ADJUNCT or move "P V_ADJUNCT" into a separate COMPARATIVE nonterminal
-NP_R -> NP_R P V_ADJUNCT
-
-# comparative constructions where sizes of sets are compared
-# NP_R {^[P]:(... & ?[X]:(?[R]:(f(size(X),size(R)) & ... & R=^[r]:(... & ?[y]:(arg1/arg2/arg3(y)=r & ...) & ...)) & ![x]:(X(x) => P(x))))}
-#  -> NP_R {^[P]:(... & ?[X]:(?[R]:(f(size(X),size(R)) & ...) & ![x]:(X(x) => P(x))))}
-#     P {f}
-#     V_ADJUNCT {?[R]:(f(size(R)) & ... & R=^[r]:(... & ?[y]:(arg1/arg2/arg3(y)=r & ...) & ...))}
-# e.g. "more people than last time came", "we saw more animals than we did yesterday"
-NP_R -> NP_R P V_ADJUNCT
+#     V_ADJUNCT {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & h(r))}
+# where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
+# NP_R {^[P]:(... & ?[X,R]:(... & f(size(X),size(R)) & ... & F(X=^[x]:(![r]:(R(r) => ?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(... & f(size(X)) & ... & F(X=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ...)) & ...))}
+#     P {p} (or `f`, whichever comes last)
+#     V_ADJUNCT {... & ?[R]:(f(size(R)) & ... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ...)}
+# NP_R {^[P]:(... & ?[X,R]:(?[X1,R1]:(... & f(size(X1),size(R1)) & ... & F(X1=^[x]:(![r]:(R(r) => ?[g1]:(p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ?[X2,R2]:(... & f(size(X2),size(R2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn) & R=^[S]:(S=R1 | ... | S=Rn))) & ...))}
+#  -> NP_R {^[P]:(... & ?[X]:(?[X1]:(... & f(size(X1)) & ... & F(X1=^[x]:(?[g1]:(p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(p(fn)(gn) & arg1(gn)=x) & ...)) & ?[X2]:(... & f(size(X2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn))) & ...))}
+#     P {p} (or `f`, whichever comes last)
+#     V_ADJUNCT {... & ?[Rn]:(... & f(size(Rn)) & ... & ![r]:(Rn(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ...)}
+# NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
+# `f(size(X),size(R))` and `?[gi]:(...)` are optional (but there must be at
+# least one). The term `f(size(X),size(R))` handles comparative constructions
+# where sizes of sets are compared.
+# e.g. "brighter star than Vega", "more people than last time", "more girls but fewer boys than last time"
+NP_R -> NP_R:try_remove_comma P V_ADJUNCT:try_remove_comma
 
 # NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(... & ?[g1]:(... & arg1/arg2/arg3(g1)=x) & ... & ?[gn]:(... & arg1/arg2/arg3(gn)=x))) & ...))}
 #  -> NP_R {^[P]:(... & ?[X]:(F(X=^[x]:(...)) & ...))}
@@ -1857,17 +1855,17 @@ ADJP_R -> ADJP_R:try_remove_comma DP:try_remove_comma
 ADJP_R -> ADJP_R:try_remove_comma VP_R:try_remove_comma,add_to_infinitive
 
 # comparative constructions
-# ADJP_R {^[P]:(... & ?[g]:(p(f)(g) & ... & arg2(g)=a))}
-#  -> ADJP_R {^[P]:(... & ?[g]:(p(f)(g) & ...))}
+# ADJP_R {^[P]:(... & ?[r]:(... & ?[g1]:(p(f1)(g1) & ... & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & ... & arg2(gn)=r) & ... & h(r) & ...))}
+#  -> ADJP_R {^[P]:(... & ?[g1]:(p(f1)(g1) & ...) & ... & ?[gn]:(p(fn)(gn) & ...) & ...)}
 #     P {p}
-#     V_ADJUNCT {?[g]:(p(f)(g) & arg2(g)=a)}
-# ADJP_R {^[P]:(... & ?[g]:(p(f)(g) & ... & ?[y]:(h(y) & arg2(g)=y)))}
-#  -> ADJP_R {^[P]:(... & ?[g]:(p(f)(g) & ...))}
-#     P {p}
-#     V_ADJUNCT {?[g]:(p(f)(g) & ?[y]:(h(y) & arg2(g)=y))}
+#     V_ADJUNCT {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & h(r))}
+# where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
+# ADJP_R {^[P]:(... & ?[R]:(... & ![r]:(R(r) => ?[g1]:(p(f1)(g1) & ... & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & ... & arg2(gn)=r)) & ...))}
+#  -> ADJP_R {^[P]:(... & ?[g1]:(p(f1)(g1) & ...) & ... & ?[gn]:(p(fn)(gn) & ...) & ...)}
+#     P {p} (or `f`, whichever comes last)
+#     V_ADJUNCT {... & ?[R]:(... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ...)}
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
-# e.g. "more powerful than my car"
-# TODO: implement V_ADJUNCT or move "P V_ADJUNCT" into a separate COMPARATIVE nonterminal
+# e.g. "more powerful than my car", "brighter than Vega"
 ADJP_R -> ADJP_R:try_remove_comma P V_ADJUNCT:try_remove_comma
 
 # ADJP_R {^[P]:(A1 & ... & An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 & ... & An)}
@@ -1941,6 +1939,20 @@ ADVP_R -> ADVP_R:try_remove_comma PP:try_remove_comma
 # e.g. "so softly that no one heard"
 # TODO: implement this
 ADVP_R -> ADVP_R REL?
+
+# comparative constructions
+# ADVP_R {^[P]:(... & ?[r]:(... & ?[g1]:(p(f1)(g1) & ... & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & ... & arg2(gn)=r) & ... & h(r) & ...))}
+#  -> ADVP_R {^[P]:(... & ?[g1]:(p(f1)(g1) & ...) & ... & ?[gn]:(p(fn)(gn) & ...) & ...)}
+#     P {p}
+#     V_ADJUNCT {... & ?[r]:(?[gn]:(p(fn)(gn) & arg2(gn)=r) & ... & h(r))}
+# where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
+# ADVP_R {^[P]:(... & ?[R]:(... & ![r]:(R(r) => ?[g1]:(p(f1)(g1) & ... & arg2(g1)=r) & ... & ?[gn]:(p(fn)(gn) & ... & arg2(gn)=r)) & ...))}
+#  -> ADVP_R {^[P]:(... & ?[g1]:(p(f1)(g1) & ...) & ... & ?[gn]:(p(fn)(gn) & ...) & ...)}
+#     P {p} (or `f`, whichever comes last)
+#     V_ADJUNCT {... & ?[R]:(... & ![r]:(R(r) => ?[gn]:(p(fn)(gn) & arg2(gn)=r)) & ...)}
+# NOTE: The predicate could also be a simple `p` rather than `p(f)`.
+# e.g. "more persuasively than me"
+ADVP_R -> ADVP_R:try_remove_comma P V_ADJUNCT:try_remove_comma
 
 # comparative constructions
 # ADVP_R {^[P]:(... & ?[g]:(p(f)(g) & ... & arg2(g)=a))}
