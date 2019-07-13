@@ -625,19 +625,20 @@ S' -> BOTH:require_not_correlated S':add_correlated
 # S' {~A1 & ... & ~An} -> S' {~A1} COMMA S' {~A2 & ... & ~An}
 # In the NOR rule, the negation can appear in front of the scope ?[y], or in
 # front of any parent scope.
-S' -> S':try_remove_comma COMMA S':add_comma
+S' -> S':try_remove_comma COMMA S':add_comma # for n > 2
+S' -> S':try_remove_comma COMMA S':add_comma,try_remove_correlated # for n == 2
 
 # S' {A1 & A2} -> S' {A1} (COMMA) AND S' {A2}
-S' -> S':try_remove_comma COMMA AND S':try_remove_comma
-S' -> S':try_remove_comma AND S':try_remove_comma
+S' -> S':try_remove_comma COMMA AND S':try_remove_comma,try_remove_correlated
+S' -> S':try_remove_comma AND S':try_remove_comma,try_remove_correlated
 
 # S' {A1 | A2} -> S' {A1} (COMMA) OR S' {A2}
-S' -> S':try_remove_comma COMMA OR S':try_remove_comma
-S' -> S':try_remove_comma OR S':try_remove_comma
+S' -> S':try_remove_comma COMMA OR S':try_remove_comma,try_remove_correlated
+S' -> S':try_remove_comma OR S':try_remove_comma,try_remove_correlated
 
 # S' {~A1 & ~A2} -> S' {~A1} (COMMA) NOR S' {A2}
-S' -> S':try_remove_comma COMMA NOR VP_R:add_req_aux,try_remove_comma
-S' -> S':try_remove_comma NOR VP_R:add_req_aux,try_remove_comma
+S' -> S':try_remove_comma COMMA NOR VP_R:add_req_aux,try_remove_comma,try_remove_correlated
+S' -> S':try_remove_comma NOR VP_R:add_req_aux,try_remove_comma,try_remove_correlated
 
 
 S'' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
@@ -974,6 +975,9 @@ VP_R -> COMMA S':require_empty_ref,require_no_future,require_no_perfect,require_
 # VP_R {... ?[y]:(... & arg2(y)=possibility(A1 | ... | An))} -> EITHER VP_R {... ?[y]:(... & arg2(y)=possibility(A1 | ... | An))}
 VP_R -> EITHER:require_not_correlated VP_R:add_correlated
 # VP_R {A1 & A2} -> BOTH VP_R {A1 & A2}
+# VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))} -> BOTH VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))}
+VP_R -> BOTH:require_not_correlated VP_R:add_correlated
+# VP_R {A1 & A2} -> NEITHER VP_R {A1 & A2}
 # VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))} -> BOTH VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))}
 VP_R -> BOTH:require_not_correlated VP_R:add_correlated
 
