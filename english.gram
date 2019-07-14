@@ -615,30 +615,44 @@ S' -> THE ADVP_L:try_remove_comma,try_remove_correlated S':try_remove_comma,try_
 S' -> THE ADVP_L:try_remove_comma,try_remove_correlated S':try_remove_comma,try_remove_correlated,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for COMMA THE ADVP_L:try_remove_comma,try_remove_correlated S':try_remove_comma,try_remove_correlated
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # S' {A1 | ... | An} -> EITHER S' {A1 | ... | An}
-S' -> EITHER:require_not_correlated S':add_correlated
+S' -> S':add_either,add_correlated_by_either
+S' -> EITHER:require_not_correlated,require_no_coordination S':add_correlated_by_either
 # S' {A1 & A2} -> BOTH S' {A1 & A2}
-S' -> BOTH:require_not_correlated S':add_correlated
+S' -> S':add_both,add_correlated_by_both
+S' -> BOTH:require_not_correlated,require_no_coordination S':add_correlated_by_both
 
 # S' {A1 & ... & An} -> S' {A1} COMMA S' {A2 & ... & An}
 # S' {A1 | ... | An} -> S' {A1} COMMA S' {A2 | ... | An}
 # S' {~A1 & ... & ~An} -> S' {~A1} COMMA S' {~A2 & ... & ~An}
-# In the NOR rule, the negation can appear in front of the scope ?[y], or in
-# front of any parent scope.
-S' -> S':try_remove_comma COMMA S':add_comma # for n > 2
-S' -> S':try_remove_comma COMMA S':add_comma,try_remove_correlated # for n == 2
+# In the NOR rule, the negation can appear in front of the scope ?[yi], or in
+# front of any parent scope of ?[yi] (within Ai).
+S' -> S':try_remove_comma,try_remove_coordination COMMA S':add_comma,add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination COMMA S':try_remove_comma,try_remove_coordination # for n == 2
 
-# S' {A1 & A2} -> S' {A1} (COMMA) AND S' {A2}
-S' -> S':try_remove_comma COMMA AND S':try_remove_comma,try_remove_correlated
-S' -> S':try_remove_comma AND S':try_remove_comma,try_remove_correlated
+# S' {A1 & ... & An} -> S' {A1} (COMMA) AND S' {A2 & ... & An}
+S' -> S':try_remove_comma,try_remove_coordination COMMA AND S':add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination AND S':add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination COMMA AND S':try_remove_comma,try_remove_coordination # for n == 2
+S' -> S':try_remove_comma,try_remove_coordination AND S':try_remove_comma,try_remove_coordination # for n == 2
 
-# S' {A1 | A2} -> S' {A1} (COMMA) OR S' {A2}
-S' -> S':try_remove_comma COMMA OR S':try_remove_comma,try_remove_correlated
-S' -> S':try_remove_comma OR S':try_remove_comma,try_remove_correlated
+# S' {A1 | ... | An} -> S' {A1} (COMMA) OR S' {A2 | ... | An}
+S' -> S':try_remove_comma,try_remove_coordination COMMA OR S':add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination OR S':add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination COMMA OR S':try_remove_comma,try_remove_coordination # for n == 2
+S' -> S':try_remove_comma,try_remove_coordination OR S':try_remove_comma,try_remove_coordination # for n == 2
 
-# S' {~A1 & ~A2} -> S' {~A1} (COMMA) NOR S' {A2}
-S' -> S':try_remove_comma COMMA NOR VP_R:add_req_aux,try_remove_comma,try_remove_correlated
-S' -> S':try_remove_comma NOR VP_R:add_req_aux,try_remove_comma,try_remove_correlated
+# S' {A1 | ... | An} -> S' {~A1} (COMMA) NOR S' {A2}
+S' -> S':try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR VP_R:add_req_aux,add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR VP_R:add_req_aux,add_coordination # for n > 2
+S' -> S':try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR VP_R:add_req_aux,try_remove_comma,try_remove_coordination # for n == 2
+S' -> S':try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR VP_R:add_req_aux,try_remove_comma,try_remove_coordination # for n == 2
 
 
 S'' nonterminal {has_not} {1.0, 1.0} {1.0, 1.0} {} 10 1.0 {}
@@ -971,31 +985,44 @@ VP_R -> S':require_empty_ref,require_no_future,require_no_perfect,require_no_pro
 VP_R -> COMMA S':require_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,try_remove_comma,add_to_infinitive,add_nullable_subject
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # VP_R {A1 | ... | An} -> EITHER VP_R {A1 | ... | An}
 # VP_R {... ?[y]:(... & arg2(y)=possibility(A1 | ... | An))} -> EITHER VP_R {... ?[y]:(... & arg2(y)=possibility(A1 | ... | An))}
-VP_R -> EITHER:require_not_correlated VP_R:add_correlated
+VP_R -> EITHER:require_not_correlated,require_no_coordination VP_R:add_correlated_by_either
 # VP_R {A1 & A2} -> BOTH VP_R {A1 & A2}
 # VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))} -> BOTH VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))}
-VP_R -> BOTH:require_not_correlated VP_R:add_correlated
-# VP_R {A1 & A2} -> NEITHER VP_R {A1 & A2}
-# VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))} -> BOTH VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))}
-VP_R -> BOTH:require_not_correlated VP_R:add_correlated
+VP_R -> BOTH:require_not_correlated,require_no_coordination VP_R:add_correlated_by_both
+# VP_R {~A1 & ... & ~An} -> NEITHER VP_R {A1 | ... | An}
+# VP_R {... ?[y]:(... & arg2(y)=possibility(~A1 & ... & ~An))} -> NEITHER VP_R {... ?[y]:(... & arg2(y)=possibility(~A1 & ... & ~An))}
+VP_R -> NEITHER:require_not_correlated,require_no_coordination VP_R:add_correlated_by_neither
 
 # VP_R {A1 & ... & An} -> VP_R {A1} COMMA VP_R {A2 & ... & An}
 # VP_R {A1 | ... | An} -> VP_R {A1} COMMA VP_R {A2 | ... | An}
-VP_R -> VP_R:try_remove_comma COMMA VP_R:add_comma
+VP_R -> VP_R:try_remove_comma,try_remove_coordination COMMA VP_R:add_comma,add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination COMMA VP_R:try_remove_comma,try_remove_coordination # for n == 2
 
-# VP_R {A1 & A2} -> VP_R {A1} (COMMA) AND VP_R {A2}
-VP_R -> VP_R:try_remove_comma COMMA AND VP_R:try_remove_comma
-VP_R -> VP_R:try_remove_comma AND VP_R:try_remove_comma
+# VP_R {A1 & ... & An} -> VP_R {A1} (COMMA) AND VP_R {A2 & ... & An}
+VP_R -> VP_R:try_remove_comma,try_remove_coordination COMMA AND VP_R:add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination AND VP_R:add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination COMMA AND VP_R:try_remove_comma,try_remove_coordination # for n == 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination AND VP_R:try_remove_comma,try_remove_coordination # for n == 2
 
-# VP_R {A1 | A2} -> VP_R {A1} (COMMA) OR VP_R {A2}
-VP_R -> VP_R:try_remove_comma COMMA OR VP_R:try_remove_comma
-VP_R -> VP_R:try_remove_comma OR VP_R:try_remove_comma
+# VP_R {A1 | ... | An} -> VP_R {A1} (COMMA) OR VP_R {A2 | ... | An}
+VP_R -> VP_R:try_remove_comma,try_remove_coordination COMMA OR VP_R:add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination OR VP_R:add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination COMMA OR VP_R:try_remove_comma,try_remove_coordination # for n == 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination OR VP_R:try_remove_comma,try_remove_coordination # for n == 2
 
-# VP_R {~A1 & ~A2} -> VP_R {A1} (COMMA) NOR VP_R {A2}
-VP_R -> VP_R:try_remove_comma COMMA NOR VP_R:try_remove_comma,add_req_aux
-VP_R -> VP_R:try_remove_comma NOR VP_R:try_remove_comma,add_req_aux
+# VP_R {A1 | ... | An} -> VP_R {A1} (COMMA) NOR VP_R {A2 | ... | An}
+VP_R -> VP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR VP_R:add_req_aux,add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR VP_R:add_req_aux,add_coordination # for n > 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR VP_R:try_remove_comma,try_remove_coordination,add_req_aux # for n == 2
+VP_R -> VP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR VP_R:try_remove_comma,try_remove_coordination,add_req_aux # for n == 2
 
 # TODO: we could require that here are no additional right adjuncts in the head scope
 VP_R -> VP_L:try_remove_comma
@@ -1135,26 +1162,41 @@ V_ADJUNCT -> COMMA S':try_remove_comma,require_no_preposition,add_req_no_aux,add
 V_ADJUNCT -> S':try_remove_comma,require_no_preposition,add_req_no_aux,add_subordinate
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # V_ADJUNCT {A1 | ... | An} -> EITHER V_ADJUNCT {A1 | ... | An}
-V_ADJUNCT -> EITHER:require_not_correlated V_ADJUNCT:add_correlated
+V_ADJUNCT -> EITHER:require_not_correlated,require_no_coordination V_ADJUNCT:add_correlated_by_either
 # V_ADJUNCT {A1 & A2} -> BOTH V_ADJUNCT {A1 & A2}
-V_ADJUNCT -> BOTH:require_not_correlated V_ADJUNCT:add_correlated
+V_ADJUNCT -> BOTH:require_not_correlated,require_no_coordination V_ADJUNCT:add_correlated_by_both
+# V_ADJUNCT {~A1 & ... & ~An} -> NEITHER V_ADJUNCT {A1 | ... | An}
+V_ADJUNCT -> NEITHER:require_not_correlated,require_no_coordination V_ADJUNCT:add_correlated_by_neither
 
 # V_ADJUNCT {A1 & ... & An} -> V_ADJUNCT {A1} COMMA V_ADJUNCT {A2 & ... & An}
 # V_ADJUNCT {A1 | ... | An} -> V_ADJUNCT {A1} COMMA V_ADJUNCT {A2 | ... | An}
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma COMMA V_ADJUNCT:add_comma
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination COMMA V_ADJUNCT:add_comma,add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination COMMA V_ADJUNCT:try_remove_comma,try_remove_coordination # for n == 2
 
-# V_ADJUNCT {A1 & A2} -> V_ADJUNCT {A1} (COMMA) AND V_ADJUNCT {A2}
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma COMMA AND V_ADJUNCT:try_remove_comma
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma AND V_ADJUNCT:try_remove_comma
+# V_ADJUNCT {A1 & ... & An} -> V_ADJUNCT {A1} (COMMA) AND V_ADJUNCT {A2 & ... & An}
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination COMMA AND V_ADJUNCT:add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination AND V_ADJUNCT:add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination COMMA AND V_ADJUNCT:try_remove_comma,try_remove_coordination # for n == 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination AND V_ADJUNCT:try_remove_comma,try_remove_coordination # for n == 2
 
-# V_ADJUNCT {A1 | A2} -> V_ADJUNCT {A1} (COMMA) OR V_ADJUNCT {A2}
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma COMMA OR V_ADJUNCT:try_remove_comma
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma OR V_ADJUNCT:try_remove_comma
+# V_ADJUNCT {A1 | ... | An} -> V_ADJUNCT {A1} (COMMA) OR V_ADJUNCT {A2 | ... | An}
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination COMMA OR V_ADJUNCT:add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination OR V_ADJUNCT:add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination COMMA OR V_ADJUNCT:try_remove_comma,try_remove_coordination # for n == 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination OR V_ADJUNCT:try_remove_comma,try_remove_coordination # for n == 2
 
-# V_ADJUNCT {~A1 & ~A2} -> V_ADJUNCT {A1} (COMMA) NOR V_ADJUNCT {A2}
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma COMMA NOR V_ADJUNCT:try_remove_comma,add_req_aux
-V_ADJUNCT -> V_ADJUNCT:try_remove_comma NOR V_ADJUNCT:try_remove_comma,add_req_aux
+# V_ADJUNCT {A1 | ... | A2} -> V_ADJUNCT {A1} (COMMA) NOR V_ADJUNCT {A2 | ... | An}
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR V_ADJUNCT:add_req_aux,add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR V_ADJUNCT:add_req_aux,add_coordination # for n > 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR V_ADJUNCT:try_remove_comma,try_remove_coordination,add_req_aux # for n == 2
+V_ADJUNCT -> V_ADJUNCT:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR V_ADJUNCT:try_remove_comma,try_remove_coordination,add_req_aux # for n == 2
 
 
 VP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1303,18 +1345,29 @@ NP -> WHICHEVER NOMINAL_R:try_remove_comma,remove_adv,try_remove_correlated
 NP -> WHATEVER NOMINAL_R:try_remove_comma,remove_adv,try_remove_correlated
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # NP {A} -> EITHER NP {A}
-# where A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))
-NP -> EITHER:require_not_correlated NP:add_correlated
+# where A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))
+NP -> EITHER:require_not_correlated,require_no_coordination NP:add_correlated_by_either
 # NP {A} -> BOTH NP {A}
 # where A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))
 #    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))
 #    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))
-NP -> BOTH:require_not_correlated NP:add_correlated
+NP -> BOTH:require_not_correlated,require_no_coordination NP:add_correlated_by_both
+# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ~?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#  -> NEITHER NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ~?[x]:(S(x) & P(x))))}
+#  -> NEITHER NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
+NP -> NEITHER:require_not_correlated,require_no_coordination NP:add_correlated_by_neither
 
 # NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))} if xi are set-valued
 # or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))} if xi are individuals
@@ -1325,37 +1378,65 @@ NP -> BOTH:require_not_correlated NP:add_correlated
 #     COMMA
 #     NP {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
 #     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))}
-#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
 #     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x))))}
 # NOTE: xi could also be constants, rather than existentially-quantified variables
 # NOTE: if xi is a set containing a singleton, S would look like ^[x]:(... | x=^[y]:y=singleton | ...)
-NP -> NP:try_remove_comma,try_remove_genitive COMMA NP:add_comma,remove_adv
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA NP:add_comma,remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
 
-# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
 #  -> NP {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
 #     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) AND
-#     NP {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     [if n > 2] NP {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
+#     [if n == 2] NP {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
 #     or {^[P]:(... & ?[x2]:(f2(x2) & (~)![x]:(x2(x) => P(x))))} if x2 is a set
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-NP -> NP:try_remove_comma,try_remove_genitive AND NP:try_remove_comma,remove_adv
-NP -> NP:try_remove_comma,try_remove_genitive COMMA AND NP:try_remove_comma,remove_adv
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive AND NP:remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA AND NP:remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive AND NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA AND NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
 
-# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
 #  -> NP {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
 #     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) OR
-#     NP {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     [if n > 2] NP {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
+#     [if n == 2] NP {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
 #     or {^[P]:(... & ?[x2]:(f2(x2) & (~)?[x]:(x2(x) & P(x))))} if x2 is a set
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-NP -> NP:try_remove_comma,try_remove_genitive OR NP:try_remove_comma,remove_adv
-NP -> NP:try_remove_comma,try_remove_genitive COMMA OR NP:try_remove_comma,remove_adv
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive OR NP:remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA OR NP:remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive OR NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA OR NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+
+# NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
+#  -> NP {^[P]:(... & ?[x1]:(f1(x1) & P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & ![x]:(x1(x) => P(x))))} if x1 is a set
+#     (COMMA) OR
+#     [if n > 2] NP {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
+#     [if n == 2] NP {^[P]:(... & ?[x2]:(f2(x2) & P(x2)))}
+#     or {^[P]:(... & ?[x2]:(f2(x2) & ?[x]:(x2(x) & P(x))))} if x2 is a set
+# NOTE: xi could also be constants, rather than existentially-quantified variables
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either NOR NP:remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either COMMA NOR NP:remove_adv,add_coordination # for n > 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either NOR NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+NP -> NP:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either COMMA NOR NP:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
 
 
 DEF_NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1653,18 +1734,29 @@ NOMINAL_R -> PRO:try_remove_comma,remove_adv
 NOMINAL_R -> Q:try_remove_comma,remove_adv
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # NOMINAL_R {A} -> EITHER NOMINAL_R {A}
-# where A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))
-NOMINAL_R -> EITHER:require_not_correlated NOMINAL_R:add_correlated
+# where A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))
+NOMINAL_R -> EITHER:require_not_correlated,require_no_coordination NOMINAL_R:add_correlated_by_either
 # NOMINAL_R {A} -> BOTH NOMINAL_R {A}
 # where A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))
 #    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))
-#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))
+#    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))
 #    or A = ^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))
-NOMINAL_R -> BOTH:require_not_correlated NOMINAL_R:add_correlated
+NOMINAL_R -> BOTH:require_not_correlated,require_no_coordination NOMINAL_R:add_correlated_by_both
+# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ~?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#  -> NEITHER NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ~?[x]:(S(x) & P(x))))}
+#  -> NEITHER NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
+NOMINAL_R -> NEITHER:require_not_correlated,require_no_coordination NOMINAL_R:add_correlated_by_neither
 
 # NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))} if xi are set-valued
 # or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))} if xi are individuals
@@ -1675,37 +1767,65 @@ NOMINAL_R -> BOTH:require_not_correlated NOMINAL_R:add_correlated
 #     COMMA
 #     NOMINAL_R {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
 #     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)![x]:(S(x) => P(x))))}
-#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
 #     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))...) & (~)?[x]:(S(x) & P(x))))}
 # NOTE: xi could also be constants, rather than existentially-quantified variables
 # NOTE: if xi is a set containing a singleton, S would look like ^[x]:(... | x=^[y]:y=singleton | ...)
-NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_genitive COMMA NOMINAL_R:add_comma
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA NOMINAL_R:add_comma,remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
 
-# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
 #  -> NOMINAL_R {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
 #     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) AND
-#     NOMINAL_R {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     [if n > 2] NOMINAL_R {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => ![y]:(x(y) => P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
+#     [if n == 2] NOMINAL_R {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
 #     or {^[P]:(... & ?[x2]:(f2(x2) & (~)![x]:(x2(x) => P(x))))} if x2 is a set
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_genitive AND NOMINAL_R:try_remove_comma
-NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_genitive COMMA AND NOMINAL_R:try_remove_comma
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive AND NOMINAL_R:remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA AND NOMINAL_R:remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive AND NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA AND NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
 
-# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)![x]:(S(x) => P(x))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & ?[y]:(x(y) => P(y)))))}
-# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ?[x2]:(f2(x2) & S=^[x]:(x=x1 | x=x2))) & (~)?[x]:(S(x) & P(x))))}
+# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
 #  -> NOMINAL_R {^[P]:(... & ?[x1]:(f1(x1) & (~)P(x1)))}
 #     or {^[P]:(... & ?[x1]:(f1(x1) & (~)![x]:(x1(x) => P(x))))} if x1 is a set
 #     (COMMA) OR
-#     NOMINAL_R {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
+#     [if n > 2] NOMINAL_R {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)![x]:(S(x) => P(x))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & (~)?[x]:(S(x) & P(x))))}
+#     [if n == 2] NOMINAL_R {^[P]:(... & ?[x2]:(f2(x2) & (~)P(x2)))}
 #     or {^[P]:(... & ?[x2]:(f2(x2) & (~)?[x]:(x2(x) & P(x))))} if x2 is a set
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_genitive OR NOMINAL_R:try_remove_comma
-NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_genitive COMMA OR NOMINAL_R:try_remove_comma
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive OR NOMINAL_R:remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA OR NOMINAL_R:remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive OR NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive COMMA OR NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+
+# NOMINAL_R {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+# or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
+#  -> NOMINAL_R {^[P]:(... & ?[x1]:(f1(x1) & P(x1)))}
+#     or {^[P]:(... & ?[x1]:(f1(x1) & ![x]:(x1(x) => P(x))))} if x1 is a set
+#     (COMMA) OR
+#     [if n > 2] NOMINAL_R {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
+#     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
+#     [if n == 2] NOMINAL_R {^[P]:(... & ?[x2]:(f2(x2) & P(x2)))}
+#     or {^[P]:(... & ?[x2]:(f2(x2) & ?[x]:(x2(x) & P(x))))} if x2 is a set
+# NOTE: xi could also be constants, rather than existentially-quantified variables
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either NOR NOMINAL_R:remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either COMMA NOR NOMINAL_R:remove_adv,add_coordination # for n > 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either NOR NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
+NOMINAL_R -> NOMINAL_R:try_remove_comma,try_remove_coordination,try_remove_genitive,require_not_correlated_by_either COMMA NOR NOMINAL_R:try_remove_comma,try_remove_coordination,remove_adv # for n == 2
 
 
 # pronouns
@@ -1939,10 +2059,18 @@ PP -> ADVP_L:try_remove_comma PP:try_remove_comma,try_remove_correlated
 PP -> P:require_no_preposition,require_empty_ref
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # PP {^[P]:(... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn)))} -> EITHER PP {^[P]:(... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn)))}
-PP -> EITHER:require_not_correlated PP:add_correlated
+PP -> EITHER:require_not_correlated,require_no_coordination PP:add_correlated_by_either
 # PP {^[P]:(... & ((~)?[x1]:f1(x1) & (~)?[x2]:f2(x2)))} -> BOTH PP {^[P]:(... & ((~)?[x1]:f1(x1) & (~)?[x2]:f2(x2)))}
-PP -> BOTH:require_not_correlated PP:add_correlated
+PP -> BOTH:require_not_correlated,require_no_coordination PP:add_correlated_by_both
+# PP {^[P]:(... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn)))} -> NEITHER PP {^[P]:(... & (?[x1]:f1(x1) | ... | ?[xn]:fn(xn)))}
+PP -> NEITHER:require_not_correlated,require_no_coordination PP:add_correlated_by_neither
 
 # PP {^[P]:(... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn)))}
 #  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
@@ -1952,21 +2080,35 @@ PP -> BOTH:require_not_correlated PP:add_correlated
 #  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
 #     COMMA
 #     PP {^[P]:(... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn)))}
-PP -> PP:try_remove_comma COMMA PP:add_comma
+PP -> PP:try_remove_comma,try_remove_coordination COMMA PP:add_comma,add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination COMMA PP:try_remove_comma,try_remove_coordination # for n == 2
 
 # PP {^[P]:(... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn)))}
 #  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
 #     (COMMA) AND
 #     PP {^[P]:(... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn)))}
-PP -> PP:try_remove_comma AND PP:try_remove_comma
-PP -> PP:try_remove_comma COMMA AND PP:try_remove_comma
+PP -> PP:try_remove_comma,try_remove_coordination AND PP:add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination COMMA AND PP:add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination AND PP:try_remove_comma,try_remove_coordination # for n == 2
+PP -> PP:try_remove_comma,try_remove_coordination COMMA AND PP:try_remove_comma,try_remove_coordination # for n == 2
 
 # PP {^[P]:(... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn)))}
 #  -> PP {^[P]:(... & (~)?[x1]:f1(x1))}
 #     (COMMA) OR
 #     PP {^[P]:(... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn)))}
-PP -> PP:try_remove_comma OR PP:try_remove_comma
-PP -> PP:try_remove_comma COMMA OR PP:try_remove_comma
+PP -> PP:try_remove_comma,try_remove_coordination OR PP:add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination COMMA OR PP:add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination OR PP:try_remove_comma,try_remove_coordination # for n == 2
+PP -> PP:try_remove_comma,try_remove_coordination COMMA OR PP:try_remove_comma,try_remove_coordination # for n == 2
+
+# PP {^[P]:(... & (?[x1]:f1(x1) | ... | ?[xn]:fn(xn)))}
+#  -> PP {^[P]:(... & ?[x1]:f1(x1))}
+#     (COMMA) NOR
+#     PP {^[P]:(... & (?[x2]:f2(x2) | ... | ?[xn]:fn(xn)))}
+PP -> PP:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR PP:add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR PP:add_coordination # for n > 2
+PP -> PP:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR PP:try_remove_comma,try_remove_coordination # for n == 2
+PP -> PP:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR PP:try_remove_comma,try_remove_coordination # for n == 2
 
 
 ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -2050,22 +2192,41 @@ ADJP_R -> ADJP_R:try_remove_comma VP_R:try_remove_comma,try_remove_correlated,ad
 ADJP_R -> ADJP_R:try_remove_comma COMP V_ADJUNCT:try_remove_comma,try_remove_correlated
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # ADJP_R {^[P]:(A1 | ... | An)} -> EITHER ADJP_R {^[P]:(A1 | ... | An)}
-ADJP_R -> EITHER:require_not_correlated ADJP_R:add_correlated
+ADJP_R -> EITHER:require_not_correlated,require_no_coordination ADJP_R:add_correlated_by_either
 # ADJP_R {^[P]:(A1 & A2)} -> BOTH ADJP_R {^[P]:(A1 & A2)}
-ADJP_R -> BOTH:require_not_correlated ADJP_R:add_correlated
+ADJP_R -> BOTH:require_not_correlated,require_no_coordination ADJP_R:add_correlated_by_both
+# ADJP_R {^[P]:(~A1 & ... & ~An)} -> EITHER ADJP_R {^[P]:(A1 | ... | An)}
+ADJP_R -> NEITHER:require_not_correlated,require_no_coordination ADJP_R:add_correlated_by_neither
 
 # ADJP_R {^[P]:(A1 & ... & An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 & ... & An)}
 # ADJP_R {^[P]:(A1 | ... | An)} -> ADJP_R {^[P]:A1} COMMA ADJP_R {^[P]:(A2 | ... | An)}
-ADJP_R -> ADJP_R:try_remove_comma COMMA ADJP_R:add_comma
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination COMMA ADJP_R:add_comma,add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination COMMA ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
 
 # ADJP_R {^[P]:(A1 & ... & An)} -> ADJP_R {^[P]:A1} (COMMA) AND ADJP_R {^[P]:(A2 & ... & An)}
-ADJP_R -> ADJP_R:try_remove_comma AND ADJP_R:try_remove_comma
-ADJP_R -> ADJP_R:try_remove_comma COMMA AND ADJP_R:try_remove_comma
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination AND ADJP_R:add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination COMMA AND ADJP_R:add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination AND ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination COMMA AND ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
 
 # ADJP_R {^[P]:(A1 | ... | An)} -> ADJP_R {^[P]:A1} (COMMA) OR ADJP_R {^[P]:(A2 | ... | An)}
-ADJP_R -> ADJP_R:try_remove_comma OR ADJP_R:try_remove_comma
-ADJP_R -> ADJP_R:try_remove_comma COMMA OR ADJP_R:try_remove_comma
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination OR ADJP_R:add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination COMMA OR ADJP_R:add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination OR ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination COMMA OR ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
+
+# ADJP_R {^[P]:(A1 | ... | An)} -> ADJP_R {^[P]:A1} (COMMA) NOR ADJP_R {^[P]:(A2 | ... | An)}
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR ADJP_R:add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR ADJP_R:add_coordination # for n > 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
+ADJP_R -> ADJP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR ADJP_R:try_remove_comma,try_remove_coordination # for n == 2
 
 # ADJP_R {^[P,x]:?[r]:(?[d]:(degree(d) & arg1(d)=r & arg2(d)=x) & ...)}
 #  -> HOW ADJP_R {^[P]:?[r]:(...)}
@@ -2148,22 +2309,41 @@ ADVP_R -> ADVP_R REL?
 ADVP_R -> ADVP_R:try_remove_comma COMP V_ADJUNCT:try_remove_comma,try_remove_correlated
 
 # for correlated coordination
+# NOTE: For the following rules, the coordination doesn't have to be at head
+# scope, it can be the left-most coordination that is a descendant of the head
+# scope as well, so long as there is no negation between the coordination and
+# the root. However, we need some measure of "distance" between the
+# coordination and the head scope to be a feature to decide between the rules
+# at this nonterminal (e.g. "both" moves left much less often than "either").
 # ADVP_R {^[P]:(A1 | ... | An)} -> EITHER ADVP_R {^[P]:(A1 | ... | An)}
-ADVP_R -> EITHER:require_not_correlated ADVP_R:add_correlated
+ADVP_R -> EITHER:require_not_correlated,require_no_coordination ADVP_R:add_correlated_by_either
 # ADVP_R {^[P]:(A1 & A2)} -> BOTH ADVP_R {^[P]:(A1 & A2)}
-ADVP_R -> BOTH:require_not_correlated ADVP_R:add_correlated
+ADVP_R -> BOTH:require_not_correlated,require_no_coordination ADVP_R:add_correlated_by_both
+# ADVP_R {^[P]:(~A1 & ... & ~An)} -> NEITHER ADVP_R {^[P]:(A1 | ... | An)}
+ADVP_R -> NEITHER:require_not_correlated,require_no_coordination ADVP_R:add_correlated_by_neither
 
 # ADVP_R {^[P]:(A1 & ... & An)} -> ADVP_R {^[P]:A1} COMMA ADVP_R {^[P]:(A2 & ... & An)}
 # ADVP_R {^[P]:(A1 | ... | An)} -> ADVP_R {^[P]:A1} COMMA ADVP_R {^[P]:(A2 | ... | An)}
-ADVP_R -> ADVP_R:try_remove_comma COMMA ADVP_R:add_comma
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination COMMA ADVP_R:add_comma,add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination COMMA ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
 
 # ADVP_R {^[P]:(A1 & ... & An)} -> ADVP_R {^[P]:A1} (COMMA) AND ADVP_R {^[P]:(A2 & ... & An)}
-ADVP_R -> ADVP_R:try_remove_comma AND ADVP_R:try_remove_comma
-ADVP_R -> ADVP_R:try_remove_comma COMMA AND ADVP_R:try_remove_comma
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination AND ADVP_R:add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination COMMA AND ADVP_R:add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination AND ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination COMMA AND ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
 
 # ADVP_R {^[P]:(A1 | ... | An)} -> ADVP_R {^[P]:A1} (COMMA) OR ADVP_R {^[P]:(A2 | ... | An)}
-ADVP_R -> ADVP_R:try_remove_comma OR ADVP_R:try_remove_comma
-ADVP_R -> ADVP_R:try_remove_comma COMMA OR ADVP_R:try_remove_comma
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination OR ADVP_R:add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination COMMA OR ADVP_R:add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination OR ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination COMMA OR ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
+
+# ADVP_R {^[P]:(A1 | ... | An)} -> ADVP_R {^[P]:A1} (COMMA) NOR ADVP_R {^[P]:(A2 | ... | An)}
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR ADVP_R:add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR ADVP_R:add_coordination # for n > 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either NOR ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
+ADVP_R -> ADVP_R:try_remove_comma,try_remove_coordination,require_not_correlated_by_either COMMA NOR ADVP_R:try_remove_comma,try_remove_coordination # for n == 2
 
 ADVP_R -> ADVP_L:try_remove_comma
 
