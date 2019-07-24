@@ -1,6 +1,6 @@
 #include "higher_order_logic.h"
 #include "executive.h"
-#include "fake_parser.h"
+#include "hdp_parser.h"
 
 #include <boost/math/special_functions/gamma.hpp>
 
@@ -832,7 +832,13 @@ int main(int argc, const char** argv)
 {
 	log_cache<double>::instance().ensure_size(1024);
 
-	FILE* in = fopen("simple_set_reasoning_articles.txt", "r");
+	hash_map<string, unsigned int> names(256);
+	if (!add_constants_to_string_map(names)) {
+		return EXIT_FAILURE;
+	}
+
+	/* read the seed training set of sentences labeled with logical forms */
+	FILE* in = fopen("seed_training_set.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
 		return EXIT_FAILURE;
@@ -845,14 +851,49 @@ int main(int argc, const char** argv)
 	}
 	fclose(in);
 
-	hash_map<string, unsigned int> names(256);
-	if (!add_constants_to_string_map(names)) {
-		free_tokens(tokens); return EXIT_FAILURE;
+	unsigned int index = 0;
+	array<array_map<sentence, hol_term>> seed_training_set(64);
+	while (index < tokens.length) {
+		if (!seed_training_set.ensure_capacity(seed_training_set.length + 1)
+		 || !array_map_init(seed_training_set[seed_training_set.length], 4))
+		{
+			for (array_map<sentence, hol_term>& paragraph : seed_training_set) {
+				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+				free(paragraph);
+			}
+			free_tokens(tokens);
+			return EXIT_FAILURE;
+		}
+		seed_training_set.length++;
+		if (!article_interpret(tokens, index, seed_training_set.last(), names)) {
+			for (array_map<sentence, hol_term>& paragraph : seed_training_set) {
+				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+				free(paragraph);
+			}
+			free_tokens(tokens);
+			return EXIT_FAILURE;
+		}
+	}
+	free_tokens(tokens); tokens.clear();
+
+	/* construct and train the parser */
+	hdp_parser<hol_term> parser = hdp_parser<hol_term>((unsigned int) built_in_predicates::UNKNOWN, names, "english.gram");
+
+	/* read the articles */
+	in = fopen("simple_set_reasoning_articles.txt", "r");
+	if (in == NULL) {
+		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
+		return EXIT_FAILURE;
 	}
 
-	unsigned int index = 0;
+	if (!article_lex(tokens, in)) {
+		fprintf(stderr, "ERROR: Lexical analysis of article failed.\n");
+		fclose(in); free_tokens(tokens); return EXIT_FAILURE;
+	}
+	fclose(in);
+
+	index = 0;
 	in_memory_article_store corpus;
-	fake_parser<hol_term> parser = fake_parser<hol_term>((unsigned int) built_in_predicates::UNKNOWN);
 	while (index < tokens.length) {
 		unsigned int article_name = 0;
 		article& new_article = *((article*) alloca(sizeof(article)));

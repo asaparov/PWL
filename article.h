@@ -130,7 +130,7 @@ struct in_memory_article_store {
 enum class article_token_type {
 	PERIOD,
 	COLON,
-	NEWLINE,
+	SEMICOLON,
 	TOKEN,
 	FORMULA
 };
@@ -144,8 +144,8 @@ inline bool print(article_token_type type, Stream& stream) {
 		return print('.', stream);
 	case article_token_type::COLON:
 		return print(':', stream);
-	case article_token_type::NEWLINE:
-		return print("NEWLINE", stream);
+	case article_token_type::SEMICOLON:
+		return print(';', stream);
 	case article_token_type::TOKEN:
 		return print("TOKEN", stream);
 	case article_token_type::FORMULA:
@@ -158,7 +158,8 @@ inline bool print(article_token_type type, Stream& stream) {
 enum class article_lexer_state {
 	DEFAULT,
 	TOKEN,
-	FORMULA
+	FORMULA,
+	COMMENT
 };
 
 bool article_emit_symbol(array<article_token>& tokens, const position& start, char symbol) {
@@ -167,6 +168,8 @@ bool article_emit_symbol(array<article_token>& tokens, const position& start, ch
 		return emit_token(tokens, start, start + 1, article_token_type::PERIOD);
 	case ':':
 		return emit_token(tokens, start, start + 1, article_token_type::COLON);
+	case ';':
+		return emit_token(tokens, start, start + 1, article_token_type::SEMICOLON);
 	default:
 		fprintf(stderr, "article_emit_symbol ERROR: Unexpected symbol.\n");
 		return false;
@@ -186,7 +189,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 	while (next != WEOF) {
 		switch (state) {
 		case article_lexer_state::TOKEN:
-			if (next == '.' || next == ':') {
+			if (next == '.' || next == ':' || next == ';') {
 				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN)
 				 || !article_emit_symbol(tokens, current, next))
 					return false;
@@ -198,14 +201,17 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 				state = article_lexer_state::FORMULA;
 				token.clear(); shift = {0};
 				start = current;
+			} else if (next == '#') {
+				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN))
+					return false;
+				state = article_lexer_state::COMMENT;
+				token.clear(); shift = {0};
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN))
 					return false;
 				state = article_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
 				new_line = (next == '\n');
-				if (new_line && !emit_token(tokens, current, current + 1, article_token_type::NEWLINE))
-					return false;
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
 			}
@@ -222,18 +228,26 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 			}
 			break;
 
+		case article_lexer_state::COMMENT:
+			if (next == '\n') {
+				state = article_lexer_state::DEFAULT;
+				new_line = true;
+			}
+			break;
+
 		case article_lexer_state::DEFAULT:
-			if (next == '.' || next == ':') {
+			if (next == '.' || next == ':' || next == ';') {
 				if (!article_emit_symbol(tokens, current, next))
 					return false;
 			} else if (next == '{') {
 				state = article_lexer_state::FORMULA;
 				token.clear(); shift = {0};
 				start = current;
+			} else if (next == '#') {
+				state = article_lexer_state::COMMENT;
+				token.clear(); shift = {0};
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
-				if (new_line && !emit_token(tokens, current, current + 1, article_token_type::NEWLINE))
-					return false;
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
 				state = article_lexer_state::TOKEN;
@@ -373,6 +387,7 @@ inline bool operator != (const sentence_label<Formula>& first, const sentence_la
 	return false;
 }
 
+/* NOTE: we assume that `index < tokens.length` */
 template<typename Formula>
 bool article_interpret(
 		const array<article_token>& tokens,
@@ -382,21 +397,40 @@ bool article_interpret(
 		hash_map<string, unsigned int>& names)
 {
 	unsigned int start = index;
-	if (!expect_token(tokens, index, article_token_type::TOKEN, "article name"))
-		return false;
-	index++;
 	while (tokens[index].type != article_token_type::COLON) {
 		if (!expect_token(tokens, index, article_token_type::TOKEN, "article name"))
 			return false;
 		index++;
 	}
 
-	string name = string(16);
-	if (!concatenate(tokens.data + start, index - start, name)) {
-		fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
-		return false;
-	} else if (!get_token(name, article_name, names)) {
-		return false;
+	if (start == index) {
+		/* the name is empty so generate a unique name */
+		if (!names.check_size()) return false;
+		for (unsigned int article_counter = article_name; ; article_counter++) {
+			int length = snprintf(NULL, 0, "%u", article_counter);
+			if (length < 0) return false;
+
+			string new_name = string(length + 1);
+			snprintf(new_name.data, length + 1, "%u", article_counter);
+			new_name.length = length;
+
+			bool contains; unsigned int bucket;
+			article_name = names.get(new_name, contains, bucket);
+			if (!contains) {
+				names.table.keys[bucket] = new_name;
+				names.table.size++;
+				names.values[bucket] = names.table.size;
+				break;
+			}
+		}
+	} else {
+		string name = string(16);
+		if (!concatenate(tokens.data + start, index - start, name)) {
+			fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
+			return false;
+		} else if (!get_token(name, article_name, names)) {
+			return false;
+		}
 	}
 	index++;
 
@@ -450,13 +484,93 @@ bool article_interpret(
 
 		if (index >= tokens.length) {
 			break;
-		} else if (tokens[index].type == article_token_type::NEWLINE) {
+		} else if (tokens[index].type == article_token_type::SEMICOLON) {
 			index++; break;
 		}
 	}
 
 	move(sentences.data, out.sentences);
 	out.sentence_count = sentences.length;
+	return true;
+}
+
+/* NOTE: we assume that `index < tokens.length` */
+template<typename Formula>
+bool article_interpret(
+		const array<article_token>& tokens,
+		unsigned int& index,
+		array_map<sentence, Formula>& logical_forms,
+		hash_map<string, unsigned int>& names)
+{
+	unsigned int start = index;
+	while (tokens[index].type != article_token_type::COLON) {
+		if (!expect_token(tokens, index, article_token_type::TOKEN, "article name"))
+			return false;
+		index++;
+	}
+
+	if (start == index) {
+		/* the name is empty so generate a unique name */
+		if (!names.check_size()) return false;
+		for (unsigned int article_counter = article_name; ; article_counter++) {
+			int length = snprintf(NULL, 0, "%u", article_counter);
+			if (length < 0) return false;
+
+			string new_name = string(length + 1);
+			snprintf(new_name.data, length + 1, "%u", article_counter);
+			new_name.length = length;
+
+			bool contains; unsigned int bucket;
+			article_name = names.get(new_name, contains, bucket);
+			if (!contains) {
+				names.table.keys[bucket] = new_name;
+				names.table.size++;
+				names.values[bucket] = names.table.size;
+				break;
+			}
+		}
+	} else {
+		string name = string(16);
+		if (!concatenate(tokens.data + start, index - start, name)) {
+			fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
+			return false;
+		} else if (!get_token(name, article_name, names)) {
+			return false;
+		}
+	}
+	index++;
+
+	while (true) {
+		if (!logical_forms.ensure_capacity(logical_forms.size + 1)
+		 || !article_interpret_sentence(tokens, index, logical_forms.keys[sentences.length], new_label.labels, names))
+		{
+			return false;
+		}
+
+		if (!expect_token(tokens, index, article_token_type::FORMULA, "logical form label")) {
+			free(logical_forms.keys[sentences.length]);
+			return false;
+		}
+
+		/* parse the formula */
+		memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
+		in.buffer = tokens[index].text.data;
+		in.length = tokens[index].text.length;
+		in.position = 0; in.shift = {0};
+		if (!parse(in, logical_forms.values[sentences.length], names, tokens[index].start + 1)) {
+			free(logical_forms.keys[sentences.length]);
+			return false;
+		}
+		sentences.length++;
+		index++;
+
+		if (index >= tokens.length) {
+			break;
+		} else if (tokens[index].type == article_token_type::SEMICOLON) {
+			index++; break;
+		}
+	}
+
 	return true;
 }
 
@@ -474,7 +588,7 @@ bool articles_interpret(
 
 		position article_pos = tokens[index].start;
 
-		unsigned int article_name;
+		unsigned int article_name = articles.articles.table.size + 1;
 		article& new_article = *((article*) alloca(sizeof(article)));
 		if (!article_interpret(tokens, index, new_article, article_name, logical_forms, names))
 			return false;
