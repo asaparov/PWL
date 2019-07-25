@@ -878,6 +878,8 @@ int main(int argc, const char** argv)
 
 	/* construct and train the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>((unsigned int) built_in_predicates::UNKNOWN, names, "english.gram");
+	if (!parser.train(seed_training_set, names, 10))
+		return EXIT_FAILURE;
 
 	/* read the articles */
 	in = fopen("simple_set_reasoning_articles.txt", "r");
