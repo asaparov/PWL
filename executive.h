@@ -28,7 +28,7 @@ bool read_sentence(
 	double log_probabilities[2];
 	while (true) {
 		/* attempt to parse the sentence */
-		array<token> unrecognized = array<token>(16);
+		array<sentence_token> unrecognized = array<sentence_token>(16);
 		if (!parser.template parse<2>(s, logical_forms, log_probabilities, parse_count, T, unrecognized)) {
 			print("read_sentence ERROR: Unable to parse sentence '", stderr); print(s, stderr, printer); print("'.\n", stderr);
 			return false;

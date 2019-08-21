@@ -976,7 +976,7 @@ struct set_reasoning
 		}
 		stack[stack.length++] = set;
 
-		unsigned int* clique = NULL; unsigned int clique_count, ancestor_of_clique, upper_bound;
+		unsigned int* clique = NULL; unsigned int clique_count, ancestor_of_clique, upper_bound = 0;
 		if (!get_size_upper_bound(set, upper_bound, clique, clique_count, ancestor_of_clique)) {
 			if (connected_component.size > 1)
 				uncontract_component(set, connected_component);
@@ -1395,7 +1395,7 @@ struct set_reasoning
 	Proof* get_size_axiom(unsigned int set_id, unsigned int new_size)
 	{
 		if (new_size > sets[set_id].set_size) {
-			unsigned int upper_bound;
+			unsigned int upper_bound = 0;
 			if (!get_size_upper_bound(set_id, upper_bound)) return NULL;
 			if (new_size <= upper_bound) {
 				sets[set_id].change_size(new_size);
@@ -1415,7 +1415,7 @@ struct set_reasoning
 				if (!graph_changed) return NULL;
 			}
 		} else if (new_size < sets[set_id].set_size) {
-			unsigned int lower_bound;
+			unsigned int lower_bound = 0;
 			if (!get_size_lower_bound(set_id, lower_bound)) return NULL;
 			if (new_size >= lower_bound) {
 				sets[set_id].change_size(new_size);

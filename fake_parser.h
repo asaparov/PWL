@@ -3,63 +3,6 @@
 
 #include "article.h"
 
-struct constant_relabeler {
-	const array_map<unsigned int, unsigned int>& map;
-};
-
-inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant, constant_relabeler& relabeler) {
-	bool contains;
-	const unsigned int& dst = relabeler.map.get(src_constant, contains);
-	if (contains) {
-		dst_constant = dst;
-		return true;
-	} else {
-		dst_constant = src_constant;
-		return true;
-	}
-}
-
-inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate, constant_relabeler& relabeler) {
-	bool contains;
-	const unsigned int& dst = relabeler.map.get(src_predicate, contains);
-	if (contains) {
-		dst_predicate = dst;
-		return true;
-	} else {
-		dst_predicate = src_predicate;
-		return true;
-	}
-}
-
-inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable, constant_relabeler& relabeler) {
-	return clone_variable(src_variable, dst_variable);
-}
-
-inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parameter, constant_relabeler& relabeler) {
-	return clone_parameter(src_parameter, dst_parameter);
-}
-
-inline bool clone_integer(int src_integer, int& dst_integer, constant_relabeler& relabeler) {
-	return clone_integer(src_integer, dst_integer);
-}
-
-template<typename Formula>
-inline Formula* relabel_constants(const Formula* src,
-		const array_map<unsigned int, unsigned int>& constant_map)
-{
-	Formula* dst = (Formula*) malloc(sizeof(Formula));
-	if (dst == NULL) {
-		fprintf(stderr, "relabel_constants ERROR: Out of memory.\n");
-		return NULL;
-	}
-
-	constant_relabeler relabeler = {constant_map};
-	if (!clone(*src, *dst, relabeler)) {
-		free(dst); return NULL;
-	}
-	return dst;
-}
-
 template<typename Formula, typename Printer>
 struct fake_parser_printer {
 	Printer& constant_printer;
@@ -72,7 +15,7 @@ struct fake_parser_printer {
 template<typename Formula>
 struct fake_parser {
 	hash_map<sentence, sentence_label<Formula>> table;
-	hash_map<token, unsigned int> learned_tokens;
+	hash_map<sentence_token, unsigned int> learned_tokens;
 	hash_map<unsigned int, unsigned int> symbol_map;
 	hash_map<unsigned int, unsigned int> reverse_symbol_map;
 	unsigned int unknown_id;
@@ -89,7 +32,7 @@ struct fake_parser {
 	template<unsigned int K, typename TheoryType>
 	bool parse(const sentence& s, Formula** logical_forms,
 			double* log_probabilities, unsigned int& parse_count,
-			const TheoryType& T, array<token>& unrecognized) const
+			const TheoryType& T, array<sentence_token>& unrecognized) const
 	{
 		static_assert(K > 0, "`K` must be at least 1.");
 

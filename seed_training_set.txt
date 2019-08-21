@@ -1,14 +1,14 @@
 : Cats are mammals.
-   {![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & arg2(s)=m)))};
+	{![x]:((U(0,x) & cat(x)) => ?[s]:((arg1(s)=x) & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & (arg2(s)=m))))};
 
-: 4 cats sleep.
-	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
+#: 4 cats sleep.
+#	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
 
-: 4 cats slept.
-	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & past(s))))};
+#: 4 cats slept.
+#	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & past(s))))};
 
-: 4 cats will have been sleeping.
-	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & future_perfect_progressive(s))))};
+#: 4 cats will have been sleeping.
+#	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & future_perfect_progressive(s))))};
 
 # >> There are 7.7 billion people.
 #	{?[P]:(P=^[x]:(U(0,x) & person(x)) & size(P)=7700000000)}

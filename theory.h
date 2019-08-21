@@ -963,7 +963,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 		unsigned int old_discharged_axiom_count = discharged_axioms.length;
 
-		unsigned int predicate; Term* arg1; Term* arg2;
+		unsigned int predicate = 0; Term* arg1 = nullptr; Term* arg2 = nullptr;
 		switch (proof.type) {
 		case ProofType::AXIOM:
 			if (discharged_axioms.contains(&proof)) break;
@@ -2116,11 +2116,6 @@ private:
 			free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		}
 		return success;
-	}
-
-	template<bool ResolveInconsistencies>
-	inline bool add_new_element_to_set(unsigned int element, Formula* lifted_literal) {
-		return sets.move_element_to_set<ResolveInconsistencies>(element, NULL, lifted_literal);
 	}
 };
 

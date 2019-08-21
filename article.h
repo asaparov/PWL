@@ -6,37 +6,37 @@
 
 using namespace core;
 
-struct token {
+struct sentence_token {
 	unsigned int id;
 
-	static inline void move(const token& src, token& dst) {
+	static inline void move(const sentence_token& src, sentence_token& dst) {
 		dst.id = src.id;
 	}
 
-	static inline unsigned int hash(const token& key) {
+	static inline unsigned int hash(const sentence_token& key) {
 		return default_hash(key.id);
 	}
 
-	static inline bool is_empty(const token& key) {
+	static inline bool is_empty(const sentence_token& key) {
 		return key.id == 0;
 	}
 };
 
-inline bool operator == (const token& first, const token& second) {
+inline bool operator == (const sentence_token& first, const sentence_token& second) {
 	return first.id == second.id;
 }
 
-inline bool operator != (const token& first, const token& second) {
+inline bool operator != (const sentence_token& first, const sentence_token& second) {
 	return first.id != second.id;
 }
 
 template<typename Stream, typename... Printer>
-inline bool print(const token& t, Stream& out, Printer&&... printer) {
+inline bool print(const sentence_token& t, Stream& out, Printer&&... printer) {
 	return print(t.id, out, std::forward<Printer>(printer)...);
 }
 
 struct sentence {
-	token* tokens;
+	sentence_token* tokens;
 	unsigned int length;
 
 	static inline bool is_empty(const sentence& key) {
@@ -58,7 +58,7 @@ struct sentence {
 };
 
 inline bool init(sentence& dst, const sentence& src) {
-	dst.tokens = (token*) malloc(max((size_t) 1, sizeof(token) * src.length));
+	dst.tokens = (sentence_token*) malloc(max((size_t) 1, sizeof(sentence_token) * src.length));
 	if (dst.tokens == NULL) {
 		fprintf(stderr, "init ERROR: Insufficient memory for sentence.tokens.\n");
 		return false;
@@ -298,10 +298,51 @@ inline bool concatenate(lexical_token<TokenType>* tokens, unsigned int token_cou
 bool article_interpret_sentence(
 		const array<article_token>& tokens,
 		unsigned int& index, sentence& out,
+		hash_map<string, unsigned int>& names)
+{
+	array<sentence_token>& sentence_tokens = *((array<sentence_token>*) alloca(sizeof(array<sentence_token>)));
+	if (!array_init(sentence_tokens, 16)) return false;
+	while (true) {
+		unsigned int token_id;
+		if (!expect_token(tokens, index, article_token_type::TOKEN, "sentence token")
+		 || !get_token(tokens[index].text, token_id, names) || !sentence_tokens.add({token_id}))
+		{
+			free(sentence_tokens); return false;
+		}
+		index++;
+
+		if (index < tokens.length && tokens[index].type == article_token_type::COLON) {
+			index++;
+			if (!expect_token(tokens, index, article_token_type::TOKEN, "token label")) {
+				free(sentence_tokens); return false;
+			}
+			/* ignore the token label */
+			index++;
+		}
+
+		if (index >= tokens.length) {
+			read_error("Expected a token or period at end of sentence", tokens[index].start);
+			free(sentence_tokens); return false;
+		} else if (tokens[index].type == article_token_type::PERIOD) {
+			index++; break;
+		} else if (tokens[index].type != article_token_type::TOKEN) {
+			read_error("Expected a token or period at end of sentence", tokens[index].start);
+			free(sentence_tokens); return false;
+		}
+	}
+
+	move(sentence_tokens.data, out.tokens);
+	out.length = sentence_tokens.length;
+	return true;
+}
+
+bool article_interpret_sentence(
+		const array<article_token>& tokens,
+		unsigned int& index, sentence& out,
 		array_map<unsigned int, unsigned int>& labels,
 		hash_map<string, unsigned int>& names)
 {
-	array<token>& sentence_tokens = *((array<token>*) alloca(sizeof(array<token>)));
+	array<sentence_token>& sentence_tokens = *((array<sentence_token>*) alloca(sizeof(array<sentence_token>)));
 	if (!array_init(sentence_tokens, 16)) return false;
 	while (true) {
 		unsigned int token_id;
@@ -385,6 +426,80 @@ inline bool operator != (const sentence_label<Formula>& first, const sentence_la
 		if (first.labels.keys[i] != second.labels.keys[i]
 		 || first.labels.values[i] != second.labels.values[i]) return true;
 	return false;
+}
+
+/* NOTE: we assume that `index < tokens.length` */
+bool article_interpret(
+		const array<article_token>& tokens,
+		unsigned int& index,
+		article& out, unsigned int& article_name,
+		hash_map<string, unsigned int>& names)
+{
+	unsigned int start = index;
+	while (tokens[index].type != article_token_type::COLON) {
+		if (!expect_token(tokens, index, article_token_type::TOKEN, "article name"))
+			return false;
+		index++;
+	}
+
+	if (start == index) {
+		/* the name is empty so generate a unique name */
+		if (!names.check_size()) return false;
+		for (unsigned int article_counter = article_name; ; article_counter++) {
+			int length = snprintf(NULL, 0, "%u", article_counter);
+			if (length < 0) return false;
+
+			string new_name = string(length + 1);
+			snprintf(new_name.data, length + 1, "%u", article_counter);
+			new_name.length = length;
+
+			bool contains; unsigned int bucket;
+			article_name = names.get(new_name, contains, bucket);
+			if (!contains) {
+				names.table.keys[bucket] = new_name;
+				names.table.size++;
+				names.values[bucket] = names.table.size;
+				break;
+			}
+		}
+	} else {
+		string name = string(16);
+		if (!concatenate(tokens.data + start, index - start, name)) {
+			fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
+			return false;
+		} else if (!get_token(name, article_name, names)) {
+			return false;
+		}
+	}
+	index++;
+
+	array<sentence>& sentences = *((array<sentence>*) alloca(sizeof(array<sentence>)));
+	if (!array_init(sentences, 8))
+		return false;
+	while (true) {
+		if (!sentences.ensure_capacity(sentences.length + 1)
+		 || !article_interpret_sentence(tokens, index, sentences[sentences.length], names))
+		{
+			for (sentence& s : sentences) free(s);
+			free(sentences); return false;
+		}
+		sentences.length++;
+
+		if (index < tokens.length && tokens[index].type == article_token_type::FORMULA) {
+			/* skip the logical form */
+			index++;
+		}
+
+		if (index >= tokens.length) {
+			break;
+		} else if (tokens[index].type == article_token_type::SEMICOLON) {
+			index++; break;
+		}
+	}
+
+	move(sentences.data, out.sentences);
+	out.sentence_count = sentences.length;
+	return true;
 }
 
 /* NOTE: we assume that `index < tokens.length` */
@@ -512,7 +627,7 @@ bool article_interpret(
 	if (start == index) {
 		/* the name is empty so generate a unique name */
 		if (!names.check_size()) return false;
-		for (unsigned int article_counter = article_name; ; article_counter++) {
+		for (unsigned int article_counter = index; ; article_counter++) {
 			int length = snprintf(NULL, 0, "%u", article_counter);
 			if (length < 0) return false;
 
@@ -521,7 +636,7 @@ bool article_interpret(
 			new_name.length = length;
 
 			bool contains; unsigned int bucket;
-			article_name = names.get(new_name, contains, bucket);
+			index = names.get(new_name, contains, bucket);
 			if (!contains) {
 				names.table.keys[bucket] = new_name;
 				names.table.size++;
@@ -534,21 +649,22 @@ bool article_interpret(
 		if (!concatenate(tokens.data + start, index - start, name)) {
 			fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
 			return false;
-		} else if (!get_token(name, article_name, names)) {
+		} else if (!get_token(name, index, names)) {
 			return false;
 		}
 	}
 	index++;
 
 	while (true) {
+		array_map<unsigned int, unsigned int> dummy_labels(1);
 		if (!logical_forms.ensure_capacity(logical_forms.size + 1)
-		 || !article_interpret_sentence(tokens, index, logical_forms.keys[sentences.length], new_label.labels, names))
+		 || !article_interpret_sentence(tokens, index, logical_forms.keys[logical_forms.size], dummy_labels, names))
 		{
 			return false;
 		}
 
 		if (!expect_token(tokens, index, article_token_type::FORMULA, "logical form label")) {
-			free(logical_forms.keys[sentences.length]);
+			free(logical_forms.keys[logical_forms.size]);
 			return false;
 		}
 
@@ -557,11 +673,11 @@ bool article_interpret(
 		in.buffer = tokens[index].text.data;
 		in.length = tokens[index].text.length;
 		in.position = 0; in.shift = {0};
-		if (!parse(in, logical_forms.values[sentences.length], names, tokens[index].start + 1)) {
-			free(logical_forms.keys[sentences.length]);
+		if (!parse(in, logical_forms.values[logical_forms.size], names, tokens[index].start + 1)) {
+			free(logical_forms.keys[logical_forms.size]);
 			return false;
 		}
-		sentences.length++;
+		logical_forms.size++;
 		index++;
 
 		if (index >= tokens.length) {

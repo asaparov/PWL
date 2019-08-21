@@ -40,6 +40,10 @@ enum class hol_term_type {
 	LAMBDA,
 
 	INTEGER,
+	STRING,
+	UINT_LIST,
+
+	ANY, /* represents the set of all possible logical forms */
 
 	TRUE,
 	FALSE /* our canonicalization code assumes that FALSE is the last element of this enum */
@@ -147,6 +151,8 @@ struct hol_term
 		unsigned int constant;
 		unsigned int parameter;
 		int integer;
+		string str;
+		sequence uint_list;
 		hol_unary_term unary;
 		hol_binary_term binary;
 		hol_ternary_term ternary;
@@ -154,13 +160,27 @@ struct hol_term
 		hol_quantifier quantifier;
 	};
 
+	hol_term() : type(hol_term_type::ANY), reference_count(1) { }
 	hol_term(hol_term_type type) : type(type), reference_count(1) { }
+
+	hol_term(const hol_term& src) : type(src.type), reference_count(1) {
+		init_helper(src);
+	}
+
 	~hol_term() { free_helper(); }
+
+	inline void operator = (const hol_term& src) {
+		type = src.type;
+		reference_count = 1;
+		init_helper(src);
+	}
 
 	static hol_term* new_variable(unsigned int variable);
 	static hol_term* new_constant(unsigned int constant);
 	static hol_term* new_parameter(unsigned int parameter);
 	static hol_term* new_int(int integer);
+	static hol_term* new_string(const string& str);
+	static hol_term* new_uint_list(const sequence& list);
 	static hol_term* new_atom(unsigned int predicate, hol_term* arg1, hol_term* arg2);
 	static inline hol_term* new_atom(unsigned int predicate, hol_term* arg1);
 	static inline hol_term* new_atom(unsigned int predicate);
@@ -200,6 +220,10 @@ private:
 			parameter = src.parameter; return true;
 		case hol_term_type::INTEGER:
 			integer = src.integer; return true;
+		case hol_term_type::STRING:
+			str = src.str; return true;
+		case hol_term_type::UINT_LIST:
+			uint_list = src.uint_list; return true;
 		case hol_term_type::NOT:
 			unary.operand = src.unary.operand;
 			unary.operand->reference_count++;
@@ -242,6 +266,7 @@ private:
 			quantifier.operand->reference_count++;
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
+		case hol_term_type::ANY:
 			return true;
 		}
 		fprintf(stderr, "hol_term.init_helper ERROR: Unrecognized hol_term_type.\n");
@@ -253,11 +278,17 @@ private:
 
 thread_local hol_term HOL_TRUE(hol_term_type::TRUE);
 thread_local hol_term HOL_FALSE(hol_term_type::FALSE);
+thread_local hol_term HOL_ANY(hol_term_type::ANY);
 
 inline bool init(hol_term& term, const hol_term& src) {
 	term.type = src.type;
 	term.reference_count = 1;
 	return term.init_helper(src);
+}
+
+inline void initialize_any(hol_term& term) {
+	term.type = hol_term_type::ANY;
+	term.reference_count = 1;
 }
 
 inline bool operator == (const hol_unary_term& first, const hol_unary_term& second) {
@@ -301,6 +332,10 @@ bool operator == (const hol_term& first, const hol_term& second)
 		return first.parameter == second.parameter;
 	case hol_term_type::INTEGER:
 		return first.integer == second.integer;
+	case hol_term_type::STRING:
+		return first.str == second.str;
+	case hol_term_type::UINT_LIST:
+		return first.uint_list == second.uint_list;
 	case hol_term_type::NOT:
 		return first.unary == second.unary;
 	case hol_term_type::IF_THEN:
@@ -319,6 +354,7 @@ bool operator == (const hol_term& first, const hol_term& second)
 		return first.quantifier == second.quantifier;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type.\n");
@@ -372,6 +408,10 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 		return type_hash ^ default_hash(key.parameter);
 	case hol_term_type::INTEGER:
 		return type_hash ^ default_hash(key.integer);
+	case hol_term_type::STRING:
+		return type_hash ^ string::hash(key.str);
+	case hol_term_type::UINT_LIST:
+		return type_hash ^ sequence::hash(key.uint_list);
 	case hol_term_type::NOT:
 		return type_hash ^ hol_unary_term::hash(key.unary);
 	case hol_term_type::IF_THEN:
@@ -390,6 +430,7 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 		return type_hash ^ hol_quantifier::hash(key.quantifier);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return type_hash;
 	}
 	fprintf(stderr, "hol_term.hash ERROR: Unrecognized hol_term_type.\n");
@@ -408,6 +449,10 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 		dst.parameter = src.parameter; return;
 	case hol_term_type::INTEGER:
 		dst.integer = src.integer; return;
+	case hol_term_type::STRING:
+		string::move(src.str, dst.str); return;
+	case hol_term_type::UINT_LIST:
+		sequence::move(src.uint_list, dst.uint_list); return;
 	case hol_term_type::NOT:
 		core::move(src.unary, dst.unary); return;
 	case hol_term_type::IF_THEN:
@@ -426,6 +471,7 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 		core::move(src.quantifier, dst.quantifier); return;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return;
 	}
 	fprintf(stderr, "hol_term.move ERROR: Unrecognized hol_term_type.\n");
@@ -483,12 +529,17 @@ inline void hol_term::free_helper() {
 		case hol_term_type::EXISTS:
 		case hol_term_type::LAMBDA:
 			core::free(quantifier); return;
+		case hol_term_type::STRING:
+			core::free(str); return;
+		case hol_term_type::UINT_LIST:
+			core::free(uint_list); return;
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::INTEGER:
+		case hol_term_type::ANY:
 			return;
 		}
 		fprintf(stderr, "hol_term.free_helper ERROR: Unrecognized hol_term_type.\n");
@@ -725,6 +776,12 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 	case hol_term_type::INTEGER:
 		return print(term.integer, out);
 
+	case hol_term_type::STRING:
+		return print('"', out) && print(term.str, out) && print('"', out);
+
+	case hol_term_type::UINT_LIST:
+		return print(term.uint_list.tokens, term.uint_list.length, out, std::forward<Printer>(printer)...);
+
 	case hol_term_type::TRUE:
 		return print(true_symbol<Syntax>::symbol, out);
 
@@ -799,6 +856,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		} else {
 			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
 		}
+
+	case hol_term_type::ANY:
+		return print('*', out);
 	}
 
 	fprintf(stderr, "print ERROR: Unrecognized hol_term_type.\n");
@@ -830,6 +890,10 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return visit<hol_term_type::PARAMETER>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::INTEGER:
 		return visit<hol_term_type::INTEGER>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::STRING:
+		return visit<hol_term_type::STRING>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::UINT_LIST:
+		return visit<hol_term_type::UINT_LIST>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::NOT:
 		return visit<hol_term_type::NOT>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.unary.operand, std::forward<Visitor>(visitor)...);
@@ -877,7 +941,9 @@ bool visit(Term&& term, Visitor&&... visitor)
 	case hol_term_type::TRUE:
 		return visit<hol_term_type::TRUE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::FALSE:
-		return visit<hol_term_type::TRUE>(term, std::forward<Visitor>(visitor)...);
+		return visit<hol_term_type::FALSE>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::ANY:
+		return visit<hol_term_type::ANY>(term, std::forward<Visitor>(visitor)...);
 	}
 	fprintf(stderr, "visit ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -988,6 +1054,21 @@ inline bool get_constants(const hol_term& src,
 	return visit(src, visitor);
 }
 
+struct unambiguity_visitor { };
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, unambiguity_visitor& visitor) {
+	if (Type == hol_term_type::ANY)
+		return false;
+	/* TODO: what about ambiguous constants? */
+	return true;
+}
+
+inline bool is_ambiguous(const hol_term& src) {
+	unambiguity_visitor visitor;
+	return !visit(src, visitor);
+}
+
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
 	dst_constant = src_constant;
 	return true;
@@ -1008,6 +1089,16 @@ inline bool clone_integer(int src_integer, int& dst_integer) {
 	return true;
 }
 
+inline bool clone_string(const string& src_string, string& dst_string) {
+	dst_string = src_string;
+	return true;
+}
+
+inline bool clone_uint_list(const sequence& src_list, sequence& dst_list) {
+	dst_list = src_list;
+	return true;
+}
+
 template<typename... Cloner>
 bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 {
@@ -1022,6 +1113,10 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return clone_parameter(src.parameter, dst.parameter, std::forward<Cloner>(cloner)...);
 	case hol_term_type::INTEGER:
 		return clone_integer(src.integer, dst.integer, std::forward<Cloner>(cloner)...);
+	case hol_term_type::STRING:
+		return clone_string(src.str, dst.str, std::forward<Cloner>(cloner)...);
+	case hol_term_type::UINT_LIST:
+		return clone_uint_list(src.uint_list, dst.uint_list, std::forward<Cloner>(cloner)...);
 	case hol_term_type::NOT:
 		if (!new_hol_term(dst.unary.operand)) return false;
 		if (!clone(*src.unary.operand, *dst.unary.operand, std::forward<Cloner>(cloner)...)) {
@@ -1092,6 +1187,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return true;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "clone ERROR: Unrecognized hol_term_type.\n");
@@ -1103,6 +1199,71 @@ inline bool clone(const hol_term* src, hol_term* dst, Cloner&&... cloner)
 {
 	if (!new_hol_term(dst)) return false;
 	return clone(*src, *dst, std::forward<Cloner>(cloner)...);
+}
+
+struct constant_relabeler {
+	const array_map<unsigned int, unsigned int>& map;
+};
+
+inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant, constant_relabeler& relabeler) {
+	bool contains;
+	const unsigned int& dst = relabeler.map.get(src_constant, contains);
+	if (contains) {
+		dst_constant = dst;
+		return true;
+	} else {
+		dst_constant = src_constant;
+		return true;
+	}
+}
+
+inline bool clone_predicate(unsigned int src_predicate, unsigned int& dst_predicate, constant_relabeler& relabeler) {
+	bool contains;
+	const unsigned int& dst = relabeler.map.get(src_predicate, contains);
+	if (contains) {
+		dst_predicate = dst;
+		return true;
+	} else {
+		dst_predicate = src_predicate;
+		return true;
+	}
+}
+
+inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable, constant_relabeler& relabeler) {
+	return clone_variable(src_variable, dst_variable);
+}
+
+inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parameter, constant_relabeler& relabeler) {
+	return clone_parameter(src_parameter, dst_parameter);
+}
+
+inline bool clone_integer(int src_integer, int& dst_integer, constant_relabeler& relabeler) {
+	return clone_integer(src_integer, dst_integer);
+}
+
+inline bool clone_string(const string& src_string, string& dst_string, constant_relabeler& relabeler) {
+	return clone_string(src_string, dst_string);
+}
+
+inline bool clone_uint_list(const sequence& src_list, sequence& dst_list, constant_relabeler& relabeler) {
+	return clone_uint_list(src_list, dst_list);
+}
+
+template<typename Formula>
+inline Formula* relabel_constants(const Formula* src,
+		const array_map<unsigned int, unsigned int>& constant_map)
+{
+	Formula* dst = (Formula*) malloc(sizeof(Formula));
+	if (dst == NULL) {
+		fprintf(stderr, "relabel_constants ERROR: Out of memory.\n");
+		return NULL;
+	}
+
+	constant_relabeler relabeler = {constant_map};
+	if (!clone(*src, *dst, relabeler)) {
+		free(dst); return NULL;
+	}
+	return dst;
 }
 
 /* NOTE: this function assumes `src.type == Type` */
@@ -1118,6 +1279,8 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 	case hol_term_type::VARIABLE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
 		return src;
 
 	case hol_term_type::NOT:
@@ -1272,6 +1435,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return src;
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type.\n");
@@ -1296,6 +1460,10 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::PARAMETER>(src, std::forward<Function>(function)...);
 	case hol_term_type::INTEGER:
 		return apply<hol_term_type::INTEGER>(src, std::forward<Function>(function)...);
+	case hol_term_type::STRING:
+		return apply<hol_term_type::STRING>(src, std::forward<Function>(function)...);
+	case hol_term_type::UINT_LIST:
+		return apply<hol_term_type::UINT_LIST>(src, std::forward<Function>(function)...);
 	case hol_term_type::NOT:
 		return apply<hol_term_type::NOT>(src, std::forward<Function>(function)...);
 	case hol_term_type::IF_THEN:
@@ -1322,6 +1490,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::TRUE>(src, std::forward<Function>(function)...);
 	case hol_term_type::FALSE:
 		return apply<hol_term_type::FALSE>(src, std::forward<Function>(function)...);
+	case hol_term_type::ANY:
+		return apply<hol_term_type::ANY>(src, std::forward<Function>(function)...);
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type.\n");
 	return NULL;
@@ -1646,6 +1816,10 @@ bool unify(
 		return first.parameter == second.parameter;
 	case hol_term_type::INTEGER:
 		return first.integer == second.integer;
+	case hol_term_type::STRING:
+		return first.str == second.str;
+	case hol_term_type::UINT_LIST:
+		return first.uint_list == second.uint_list;
 	case hol_term_type::NOT:
 		return unify(*first.unary.operand, *second.unary.operand, src_term, dst_term);
 	case hol_term_type::IF_THEN:
@@ -1671,6 +1845,7 @@ bool unify(
 		return unify(*first.quantifier.operand, *second.quantifier.operand, src_term, dst_term);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "unify ERROR: Unrecognized hol_term_type.\n");
@@ -1728,6 +1903,24 @@ hol_term* hol_term::new_int(int integer) {
 	term->reference_count = 1;
 	term->type = hol_term_type::INTEGER;
 	term->integer = integer;
+	return term;
+}
+
+hol_term* hol_term::new_string(const string& str) {
+	hol_term* term;
+	if (!new_hol_term(term)) return NULL;
+	term->reference_count = 1;
+	term->type = hol_term_type::STRING;
+	term->str = str;
+	return term;
+}
+
+hol_term* hol_term::new_uint_list(const sequence& list) {
+	hol_term* term;
+	if (!new_hol_term(term)) return NULL;
+	term->reference_count = 1;
+	term->type = hol_term_type::UINT_LIST;
+	term->uint_list = list;
 	return term;
 }
 
@@ -2093,6 +2286,8 @@ inline bool init(hol_type& type, unsigned int variable) {
 
 const hol_type HOL_BOOLEAN_TYPE(hol_constant_type::BOOLEAN);
 const hol_type HOL_INTEGER_TYPE(hol_constant_type::INDIVIDUAL);
+const hol_type HOL_STRING_TYPE(hol_constant_type::INDIVIDUAL);
+const hol_type HOL_UINT_LIST_TYPE(hol_constant_type::INDIVIDUAL);
 
 inline bool operator == (const hol_type& first, const hol_type& second) {
 	if (first.kind != second.kind) return false;
@@ -2686,6 +2881,14 @@ bool compute_type(const hol_term& term,
 		return types.template push<hol_term_type::INTEGER>(term)
 			&& expect_type(HOL_INTEGER_TYPE, expected_type, type_variables)
 			&& types.template add<hol_term_type::INTEGER>(term, HOL_INTEGER_TYPE);
+	case hol_term_type::STRING:
+		return types.template push<hol_term_type::STRING>(term)
+			&& expect_type(HOL_STRING_TYPE, expected_type, type_variables)
+			&& types.template add<hol_term_type::STRING>(term, HOL_STRING_TYPE);
+	case hol_term_type::UINT_LIST:
+		return types.template push<hol_term_type::UINT_LIST>(term)
+			&& expect_type(HOL_UINT_LIST_TYPE, expected_type, type_variables)
+			&& types.template add<hol_term_type::UINT_LIST>(term, HOL_UINT_LIST_TYPE);
 	case hol_term_type::UNARY_APPLICATION:
 		return compute_apply_type<PolymorphicEquality>(term.binary, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
@@ -2735,6 +2938,9 @@ bool compute_type(const hol_term& term,
 		return types.template push<hol_term_type::FALSE>(term)
 			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
 			&& types.template add<hol_term_type::FALSE>(term, HOL_BOOLEAN_TYPE);
+	case hol_term_type::ANY:
+		return types.template push<hol_term_type::ANY>(term)
+			&& types.template add<hol_term_type::ANY>(term, expected_type);
 	}
 	fprintf(stderr, "compute_type ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -3014,6 +3220,32 @@ inline int_fast8_t compare(
 	return compare(*first.operand, *second.operand);
 }
 
+inline int_fast8_t compare(
+		const string& first,
+		const string& second)
+{
+	if (first.length < second.length) return -1;
+	else if (first.length > second.length) return 1;
+	for (unsigned int i = 0; i < first.length; i++) {
+		if (first.data[i] < second.data[i]) return -1;
+		else if (first.data[i] > second.data[i]) return 1;
+	}
+	return 0;
+}
+
+inline int_fast8_t compare(
+		const sequence& first,
+		const sequence& second)
+{
+	if (first.length < second.length) return -1;
+	else if (first.length > second.length) return 1;
+	for (unsigned int i = 0; i < first.length; i++) {
+		if (first.tokens[i] < second.tokens[i]) return -1;
+		else if (first.tokens[i] > second.tokens[i]) return 1;
+	}
+	return 0;
+}
+
 int_fast8_t compare(
 		const hol_term& first,
 		const hol_term& second)
@@ -3037,6 +3269,10 @@ int_fast8_t compare(
 		if (first.integer < second.integer) return -1;
 		else if (first.integer > second.integer) return 1;
 		else return 0;
+	case hol_term_type::STRING:
+		return compare(first.str, second.str);
+	case hol_term_type::UINT_LIST:
+		return compare(first.uint_list, second.uint_list);
 	case hol_term_type::NOT:
 		return compare(first.unary, second.unary);
 	case hol_term_type::IF_THEN:
@@ -3055,6 +3291,7 @@ int_fast8_t compare(
 		return compare(first.quantifier, second.quantifier);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return 0;
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type.\n");
@@ -3116,6 +3353,8 @@ bool relabel_variables(hol_term& term,
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
 		return true;
 	case hol_term_type::VARIABLE:
 		index = variable_map.index_of(term.variable);
@@ -3148,6 +3387,7 @@ bool relabel_variables(hol_term& term,
 		return relabel_variables(term.quantifier, variable_map);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "relabel_variables ERROR: Unrecognized hol_term_type.\n");
@@ -3246,6 +3486,8 @@ struct hol_scope {
 		unsigned int constant;
 		unsigned int parameter;
 		int integer;
+		string str;
+		sequence uint_list;
 		hol_scope* unary;
 		hol_nary_scope<2> binary;
 		hol_nary_scope<3> ternary;
@@ -3279,6 +3521,10 @@ struct hol_scope {
 			dst.parameter = src.parameter; return;
 		case hol_term_type::INTEGER:
 			dst.integer = src.integer; return;
+		case hol_term_type::STRING:
+			string::move(src.str, dst.str); return;
+		case hol_term_type::UINT_LIST:
+			sequence::move(src.uint_list, dst.uint_list); return;
 		case hol_term_type::AND:
 		case hol_term_type::OR:
 		case hol_term_type::IFF:
@@ -3298,6 +3544,7 @@ struct hol_scope {
 			hol_nary_scope<3>::move(src.ternary, dst.ternary); return;
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
+		case hol_term_type::ANY:
 			return;
 		}
 		fprintf(stderr, "hol_scope.move ERROR: Unrecognized hol_term_type.\n");
@@ -3342,6 +3589,9 @@ private:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::INTEGER:
+		case hol_term_type::STRING:
+		case hol_term_type::UINT_LIST:
+		case hol_term_type::ANY:
 			return true;
 		}
 		fprintf(stderr, "hol_scope.init_helper ERROR: Unrecognized hol_term_type.\n");
@@ -3374,12 +3624,17 @@ private:
 			binary.~hol_nary_scope(); return true;
 		case hol_term_type::BINARY_APPLICATION:
 			ternary.~hol_nary_scope(); return true;
+		case hol_term_type::STRING:
+			core::free(str); return true;
+		case hol_term_type::UINT_LIST:
+			core::free(uint_list); return true;
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::INTEGER:
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
+		case hol_term_type::ANY:
 			return true;
 		}
 		fprintf(stderr, "hol_scope.free_helper ERROR: Unrecognized hol_term_type.\n");
@@ -3486,8 +3741,13 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 		return first.parameter == second.parameter;
 	case hol_term_type::INTEGER:
 		return first.integer == second.integer;
+	case hol_term_type::STRING:
+		return first.str == second.str;
+	case hol_term_type::UINT_LIST:
+		return first.uint_list == second.uint_list;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
@@ -3604,8 +3864,13 @@ int_fast8_t compare(
 		if (first.integer < second.integer) return -1;
 		else if (first.integer > second.integer) return 1;
 		else return 0;
+	case hol_term_type::STRING:
+		return compare(first.str, second.str);
+	case hol_term_type::UINT_LIST:
+		return compare(first.uint_list, second.uint_list);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return 0;
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
@@ -3659,6 +3924,8 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
 		return;
 	case hol_term_type::NOT:
 		shift_variables(*scope.unary, removed_variable); return;
@@ -3681,6 +3948,7 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 		shift_variables(scope.ternary, removed_variable); return;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return;
 	}
 	fprintf(stderr, "shift_variables ERROR: Unrecognized hol_term_type.\n");
@@ -4008,12 +4276,19 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 		return hol_term::new_parameter(scope.parameter);
 	case hol_term_type::INTEGER:
 		return hol_term::new_int(scope.integer);
+	case hol_term_type::STRING:
+		return hol_term::new_string(scope.str);
+	case hol_term_type::UINT_LIST:
+		return hol_term::new_uint_list(scope.uint_list);
 	case hol_term_type::TRUE:
 		HOL_TRUE.reference_count++;
 		return &HOL_TRUE;
 	case hol_term_type::FALSE:
 		HOL_FALSE.reference_count++;
 		return &HOL_FALSE;
+	case hol_term_type::ANY:
+		HOL_ANY.reference_count++;
+		return &HOL_ANY;
 	}
 	fprintf(stderr, "scope_to_term ERROR: Unrecognized hol_term_type.\n");
 	return NULL;
@@ -5443,6 +5718,12 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	case hol_term_type::INTEGER:
 		if (!init(out, hol_term_type::INTEGER)) return false;
 		out.integer = src.integer; return true;
+	case hol_term_type::STRING:
+		if (!init(out, hol_term_type::STRING)) return false;
+		out.str = src.str; return true;
+	case hol_term_type::UINT_LIST:
+		if (!init(out, hol_term_type::UINT_LIST)) return false;
+		out.uint_list = src.uint_list; return true;
 	case hol_term_type::VARIABLE:
 		if (!init(out, hol_term_type::VARIABLE)) return false;
 		index = variable_map.index_of(src.variable);
@@ -5468,6 +5749,8 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 		return init(out, hol_term_type::TRUE);
 	case hol_term_type::FALSE:
 		return init(out, hol_term_type::FALSE);
+	case hol_term_type::ANY:
+		return init(out, hol_term_type::ANY);
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -5662,12 +5945,15 @@ bool is_subset(const hol_term* first, const hol_term* second)
 		exit(EXIT_FAILURE);
 
 	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
 		fprintf(stderr, "is_subset ERROR: `first` does not have type proposition.\n");
 		exit(EXIT_FAILURE);
 	case hol_term_type::AND:
 	case hol_term_type::OR:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		/* this should be unreachable */
 		break;
 	}
@@ -5683,6 +5969,335 @@ inline hol_term* intersect(hol_term* first, hol_term* second)
 	hol_term* canonicalized = canonicalize(*conjunction, canonicalizer);
 	free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
 	return canonicalized;
+}
+
+
+/**
+ * Code to facilitate semantic parsing and generation.
+ */
+
+inline bool any_number(const hol_term& src) {
+	return src.type == hol_term_type::ANY;
+}
+
+/* NOTE: this function assumes src is not ANY */
+inline bool get_number(const hol_term& src, int& value) {
+	if (src.type != hol_term_type::INTEGER)
+		return false;
+	value = src.integer;
+	return true;
+}
+
+inline bool set_number(hol_term& exp,
+		const hol_term& set, int value)
+{
+	if (set.type != hol_term_type::ANY && (set.type != hol_term_type::INTEGER))
+		return false;
+	exp.type = hol_term_type::INTEGER;
+	exp.integer = value;
+	exp.reference_count = 1;
+	return true;
+}
+
+inline bool any_uint_list(const hol_term& src) {
+	return src.type == hol_term_type::ANY;
+}
+
+/* NOTE: this function assumes src is not ANY */
+inline bool get_uint_list(const hol_term& src, sequence& value) {
+	if (src.type != hol_term_type::UINT_LIST)
+		return false;
+	return init(value, src.uint_list);
+}
+
+inline bool set_uint_list(hol_term& exp,
+		const hol_term& set, const sequence& value)
+{
+	if (set.type != hol_term_type::ANY && (set.type != hol_term_type::UINT_LIST))
+		return false;
+	exp.type = hol_term_type::UINT_LIST;
+	exp.uint_list = value;
+	exp.reference_count = 1;
+	return true;
+}
+
+
+/**
+ * Code for intersecting higher-order formulas (e.g. with terms of type ANY).
+ */
+
+bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
+{
+	if (first == second || second->type == hol_term_type::ANY) {
+		dst = first;
+		dst->reference_count++;
+		return true;
+	} else if (first->type == hol_term_type::ANY) {
+		dst = second;
+		dst->reference_count++;
+		return true;
+	}
+
+	unsigned int i, j;
+	hol_term* static_terms[3];
+	hol_term** terms;
+	bool same_as_first, same_as_second;
+	switch (first->type)
+	{
+	case hol_term_type::NOT:
+		if (second->type != hol_term_type::NOT
+		 || !intersect(static_terms[0], first->unary.operand, second->unary.operand))
+			return false;
+		if (static_terms[0] == first->unary.operand) {
+			dst = first;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+		} else if (static_terms[0] == second->unary.operand) {
+			dst = second;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+		} else {
+			if (!new_hol_term(dst)) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+				return false;
+			}
+			dst->type = hol_term_type::NOT;
+			dst->reference_count = 1;
+			dst->unary.operand = static_terms[0];
+		}
+		return true;
+
+	case hol_term_type::UNARY_APPLICATION:
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+		if (second->type != first->type
+		 || !intersect(static_terms[0], first->binary.left, second->binary.left))
+		{
+			return false;
+		} else if (!intersect(static_terms[1], first->binary.right, second->binary.right)) {
+			free(*static_terms[0]);
+			if (static_terms[0]->reference_count == 0)
+				free(static_terms[0]);
+			return false;
+		}
+
+		if (static_terms[0] == first->binary.left && static_terms[1] == first->binary.right) {
+			dst = first;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+			static_terms[1]->reference_count--;
+		} else if (static_terms[1] == second->binary.left && static_terms[1] == second->binary.right) {
+			dst = second;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+			static_terms[1]->reference_count--;
+		} else {
+			if (!new_hol_term(dst)) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+				free(*static_terms[1]);
+				if (static_terms[1]->reference_count == 0)
+					free(static_terms[1]);
+				return false;
+			}
+			dst->type = first->type;
+			dst->reference_count = 1;
+			dst->binary.left = static_terms[0];
+			dst->binary.right = static_terms[1];
+		}
+		return true;
+
+	case hol_term_type::BINARY_APPLICATION:
+		if (second->type != hol_term_type::BINARY_APPLICATION
+		 || !intersect(static_terms[0], first->ternary.first, second->ternary.first))
+		{
+			return false;
+		} else if (!intersect(static_terms[1], first->ternary.second, second->ternary.second)) {
+			free(*static_terms[0]);
+			if (static_terms[0]->reference_count == 0)
+				free(static_terms[0]);
+			return false;
+		} else if (!intersect(static_terms[2], first->ternary.third, second->ternary.third)) {
+			free(*static_terms[0]);
+			if (static_terms[0]->reference_count == 0)
+				free(static_terms[0]);
+			free(*static_terms[1]);
+			if (static_terms[1]->reference_count == 0)
+				free(static_terms[1]);
+			return false;
+		}
+
+		if (static_terms[0] == first->ternary.first && static_terms[1] == first->ternary.second && static_terms[2] == first->ternary.third) {
+			dst = first;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+			static_terms[1]->reference_count--;
+			static_terms[2]->reference_count--;
+		} else if (static_terms[0] == second->ternary.first && static_terms[1] == second->ternary.second && static_terms[2] == second->ternary.third) {
+			dst = second;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+			static_terms[1]->reference_count--;
+			static_terms[2]->reference_count--;
+		} else {
+			if (!new_hol_term(dst)) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+				free(*static_terms[1]);
+				if (static_terms[1]->reference_count == 0)
+					free(static_terms[1]);
+				free(*static_terms[2]);
+				if (static_terms[2]->reference_count == 0)
+					free(static_terms[2]);
+				return false;
+			}
+			dst->type = hol_term_type::BINARY_APPLICATION;
+			dst->reference_count = 1;
+			dst->ternary.first = static_terms[0];
+			dst->ternary.second = static_terms[1];
+			dst->ternary.third = static_terms[2];
+		}
+		return true;
+
+	case hol_term_type::IFF:
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+		if (second->type != first->type
+		 || second->array.length != first->array.length)
+			return false;
+		terms = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
+		if (terms == nullptr) return false;
+		same_as_first = true;
+		same_as_second = true;
+		for (i = 0; i < first->array.length; i++) {
+			if (!intersect(terms[i], first->array.operands[i], second->array.operands[i])) {
+				for (j = 0; j < i; j++) {
+					free(*terms[j]);
+					if (terms[j]->reference_count == 0)
+						free(terms[j]);
+				}
+				free(terms); return false;
+			}
+			if (terms[i] != first->array.operands[i])
+				same_as_first = false;
+			if (terms[i] != second->array.operands[i])
+				same_as_second = false;
+		}
+
+		if (same_as_first) {
+			dst = first;
+			dst->reference_count++;
+			for (i = 0; i < first->array.length; i++)
+				terms[i]->reference_count--;
+			free(terms);
+		} else if (same_as_second) {
+			dst = second;
+			dst->reference_count++;
+			for (i = 0; i < first->array.length; i++)
+				terms[i]->reference_count--;
+			free(terms);
+		} else {
+			if (!new_hol_term(dst)) {
+				for (i = 0; i < first->array.length; i++) {
+					free(*terms[i]);
+					if (terms[i]->reference_count == 0)
+						free(terms[i]);
+				}
+				free(terms); return false;
+			}
+			dst->type = first->type;
+			dst->reference_count = 1;
+			dst->array.length = first->array.length;
+			dst->array.operands = terms;
+		}
+		return true;
+
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		if (second->type != first->type
+		 || second->quantifier.variable != first->quantifier.variable
+		 || !intersect(static_terms[0], first->quantifier.operand, second->quantifier.operand))
+			return false;
+		if (static_terms[0] == first->quantifier.operand) {
+			dst = first;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+		} else if (static_terms[0] == second->quantifier.operand) {
+			dst = second;
+			dst->reference_count++;
+			static_terms[0]->reference_count--;
+		} else {
+			if (!new_hol_term(dst)) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+				return false;
+			}
+			dst->type = first->type;
+			dst->reference_count = 1;
+			dst->quantifier.variable = first->quantifier.variable;
+			dst->quantifier.operand = static_terms[0];
+		}
+		return true;
+	case hol_term_type::INTEGER:
+		if (second->type != hol_term_type::INTEGER
+		 || second->integer != first->integer)
+			return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::STRING:
+		if (second->type != hol_term_type::STRING
+		 || second->str != first->str)
+			return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::UINT_LIST:
+		if (second->type != hol_term_type::UINT_LIST
+		 || second->uint_list != first->uint_list)
+			return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::CONSTANT:
+		if (second->type != hol_term_type::CONSTANT
+		 || second->constant != first->constant)
+			return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::VARIABLE:
+		if (second->type != hol_term_type::VARIABLE
+		 || second->variable != first->variable)
+			return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::PARAMETER:
+		if (second->type != hol_term_type::PARAMETER
+		 || second->parameter != first->parameter)
+			return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+		if (second->type != first->type) return false;
+		dst = first;
+		dst->reference_count++;
+		return true;
+	case hol_term_type::ANY:
+		/* we already handle this before the switch statement */
+		break;
+	}
+	fprintf(stderr, "intersect ERROR: Unrecognied hol_term_type.\n");
+	return false;
 }
 
 
@@ -5709,6 +6324,7 @@ enum class tptp_token_type {
 	EQUALS,
 
 	IDENTIFIER,
+	STRING,
 	SEMICOLON
 };
 
@@ -5751,6 +6367,8 @@ inline bool print(tptp_token_type type, Stream& stream) {
 		return print(';', stream);
 	case tptp_token_type::IDENTIFIER:
 		return print("IDENTIFIER", stream);
+	case tptp_token_type::STRING:
+		return print("STRING", stream);
 	}
 	fprintf(stderr, "print ERROR: Unknown tptp_token_type.\n");
 	return false;
@@ -5759,6 +6377,7 @@ inline bool print(tptp_token_type type, Stream& stream) {
 enum class tptp_lexer_state {
 	DEFAULT,
 	IDENTIFIER,
+	QUOTE
 };
 
 bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char symbol) {
@@ -5855,12 +6474,35 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 					return false;
 				state = tptp_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
+			} else if (next == '"') {
+				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
+					return false;
+				state = tptp_lexer_state::QUOTE;
+				tokens.clear(); shift = {0};
+				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
 					return false;
 				state = tptp_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
 				new_line = (next == '\n');
+			} else {
+				if (!append_to_token(token, next, shift)) return false;
+			}
+			break;
+
+		case tptp_lexer_state::QUOTE:
+			if (next == '\\') {
+				/* this is an escape character */
+				next = fgetwc(input);
+				current.column++;
+				new_line = (next == '\n');
+				if (!append_to_token(token, next, shift)) return false;
+			} else if (next == '"') {
+				if (!emit_token(tokens, token, start, current, tptp_token_type::STRING))
+					return false;
+				state = tptp_lexer_state::DEFAULT;
+				token.clear(); shift = {0};
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
 			}
@@ -5874,6 +6516,10 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			{
 				if (!tptp_lex_symbol(tokens, input, next, current))
 					return false;
+			} else if (next == '"') {
+				state = tptp_lexer_state::QUOTE;
+				tokens.clear(); shift = {0};
+				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
 			} else {
@@ -6080,6 +6726,13 @@ bool tptp_interpret_unary_term(
 		index++;
 		if (!tptp_interpret_quantifier<hol_term_type::LAMBDA>(tokens, index, term, names, variables))
 			return false;
+
+	} else if (tokens[index].type == tptp_token_type::STRING) {
+		/* this is a string */
+		term.type = hol_term_type::STRING;
+		term.reference_count = 1;
+		term.str = tokens[index].text;
+		index++;
 
 	} else if (tokens[index].type == tptp_token_type::IDENTIFIER) {
 		int integer;

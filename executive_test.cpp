@@ -213,8 +213,6 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-unsigned int debug = 0; /* TODO: delete this */
-
 template<bool AutomaticallyFree, typename MultisetType,
 	template<typename> class Collection, typename T>
 double log_probability_ratio(
@@ -574,6 +572,9 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::VARIABLE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
+	case hol_term_type::ANY:
 		return -std::numeric_limits<double>::infinity();
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized hol_term_type.\n");
@@ -651,14 +652,14 @@ inline double log_probability_ratio(
 }
 
 template<typename T>
-struct uniform_distribution {
+struct unif_distribution {
 	typedef default_array<pair<T, array<T>>> ObservationCollection;
 };
 
 template<template<typename> class Collection, typename T>
 double log_probability(
 		const pair<T, Collection<T>>& observation,
-		const uniform_distribution<T>& prior)
+		const unif_distribution<T>& prior)
 {
 	log_cache<double>::instance().ensure_size(size(observation.value) + 1);
 	return -log_cache<double>::instance().get(size(observation.value));
@@ -668,7 +669,7 @@ template<template<typename> class ObservationCollection,
 	template<typename> class Collection, typename T>
 double log_probability(
 		const ObservationCollection<pair<T, Collection<T>>>& observations,
-		const uniform_distribution<T>& prior)
+		const unif_distribution<T>& prior)
 {
 	double value = 0.0;
 	for (const pair<T, Collection<T>>& observation : observations)
@@ -681,7 +682,7 @@ template<template<typename> class ObservationCollection,
 inline double log_probability_ratio(
 		const ObservationCollection<pair<T, Collection<T>>>& old_observations,
 		const ObservationCollection<pair<T, Collection<T>>>& new_observations,
-		const uniform_distribution<T>& prior)
+		const unif_distribution<T>& prior)
 {
 	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
 }
@@ -785,7 +786,7 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 	}
 
 	bool contains;
-	unsigned int predicate; Term const* arg1; Term const* arg2;
+	unsigned int predicate = 0; Term const* arg1 = nullptr; Term const* arg2 = nullptr;
 	if (formula->type == FormulaType::FOR_ALL) {
 		if (formula->quantifier.operand->type == FormulaType::IF_THEN)
 			return contains_subset_axiom(T, formula->quantifier.operand->binary.left, formula->quantifier.operand->binary.right);
@@ -846,7 +847,7 @@ int main(int argc, const char** argv)
 
 	array<article_token> tokens = array<article_token>(256);
 	if (!article_lex(tokens, in)) {
-		fprintf(stderr, "ERROR: Lexical analysis of article failed.\n");
+		fprintf(stderr, "ERROR: Lexical analysis of training data failed.\n");
 		fclose(in); free_tokens(tokens); return EXIT_FAILURE;
 	}
 	fclose(in);
@@ -866,6 +867,7 @@ int main(int argc, const char** argv)
 		}
 		seed_training_set.length++;
 		if (!article_interpret(tokens, index, seed_training_set.last(), names)) {
+			fprintf(stderr, "ERROR: Failed to parse training data.\n");
 			for (array_map<sentence, hol_term>& paragraph : seed_training_set) {
 				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 				free(paragraph);
@@ -877,7 +879,9 @@ int main(int argc, const char** argv)
 	free_tokens(tokens); tokens.clear();
 
 	/* construct and train the parser */
-	hdp_parser<hol_term> parser = hdp_parser<hol_term>((unsigned int) built_in_predicates::UNKNOWN, names, "english.gram");
+	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
+			(unsigned int) built_in_predicates::UNKNOWN,
+			names, "infl.txt", "uncountable.txt", "english.gram");
 	if (!parser.train(seed_training_set, names, 10))
 		return EXIT_FAILURE;
 
@@ -899,7 +903,7 @@ int main(int argc, const char** argv)
 	while (index < tokens.length) {
 		unsigned int article_name = 0;
 		article& new_article = *((article*) alloca(sizeof(article)));
-		if (!corpus.articles.check_size() || !article_interpret(tokens, index, new_article, article_name, parser.table, names)) {
+		if (!corpus.articles.check_size() || !article_interpret(tokens, index, new_article, article_name, names)) {
 			const string* article_name_str = get_name(names, article_name);
 			if (article_name_str == NULL) {
 				fprintf(stderr, "ERROR: Unable to parse article %u.\n", corpus.articles.table.size + 1);
@@ -932,7 +936,7 @@ int main(int argc, const char** argv)
 	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
-	auto universal_introduction_prior = uniform_distribution<unsigned int>();
+	auto universal_introduction_prior = unif_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,

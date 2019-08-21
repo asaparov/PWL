@@ -365,7 +365,7 @@ bool get_conjunct_step(const Formula* atom,
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
-	unsigned int predicate; Term const* arg1; Term const* arg2;
+	unsigned int predicate = 0; Term const* arg1 = nullptr; Term const* arg2 = nullptr;
 	if (atom->type == FormulaType::NOT) {
 		atom = atom->unary.operand;
 		is_atomic(*atom, predicate, arg1, arg2);
@@ -532,6 +532,9 @@ bool intensional_element_of(
 	case FormulaType::CONSTANT:
 	case FormulaType::PARAMETER:
 	case FormulaType::INTEGER:
+	case FormulaType::STRING:
+	case FormulaType::UINT_LIST:
+	case FormulaType::ANY:
 		break;
 	}
 	fprintf(stderr, "intensional_element_of ERROR: Unrecognized formula type.\n");
@@ -1216,7 +1219,7 @@ bool propose_change_set_size(
 		SizePrior& set_size_prior)
 {
 	/* compute the upper and lower bounds of the size of this set */
-	unsigned int lower_bound, upper_bound;
+	unsigned int lower_bound = 0, upper_bound = 0;
 	if (!T.sets.get_size_lower_bound(selected_set, lower_bound)
 	 || !T.sets.get_size_upper_bound(selected_set, upper_bound)) return false;
 
