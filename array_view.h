@@ -99,4 +99,31 @@ inline unsigned int size(const composed_array_view<T, Array>& view) {
 	return 1 + size(view.second);
 }
 
+template<typename T>
+struct excluded_array_view {
+	T* elements;
+	unsigned int length;
+	unsigned int excluded_index;
+
+	excluded_array_view(T* elements, unsigned int original_length, unsigned int excluded_index) :
+			elements(elements), length(original_length - 1), excluded_index(excluded_index) { }
+
+	inline T& operator[] (size_t index) {
+		if (index < excluded_index)
+			return elements[index];
+		else return elements[index + 1];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		if (index < excluded_index)
+			return elements[index];
+		else return elements[index + 1];
+	}
+};
+
+template<typename T>
+inline excluded_array_view<T> make_excluded_array_view(T* elements, unsigned int original_length, unsigned int excluded_index) {
+	return excluded_array_view<T>(elements, original_length, excluded_index);
+}
+
 #endif /* ARRAY_VIEW_H_ */

@@ -43,7 +43,7 @@ enum class hol_term_type {
 	STRING,
 	UINT_LIST,
 
-	ANY, /* represents the set of all possible logical forms */
+	ANY, /* represents the set of all possible logical forms that satisfy some constraints */
 
 	TRUE,
 	FALSE /* our canonicalization code assumes that FALSE is the last element of this enum */
@@ -138,6 +138,21 @@ struct hol_quantifier {
 	static inline void free(hol_quantifier& term);
 };
 
+struct hol_any {
+	hol_term** excluded;
+	unsigned int excluded_count;
+
+	hol_term** included;
+	unsigned int included_count;
+
+	hol_term* included_right_subtree;
+	bool is_head;
+
+	static inline unsigned int hash(const hol_any& key);
+	static inline void move(const hol_any& src, hol_any& dst);
+	static inline void free(hol_any& term);
+};
+
 struct hol_term
 {
 	typedef hol_term_type Type;
@@ -158,10 +173,24 @@ struct hol_term
 		hol_ternary_term ternary;
 		hol_array_term array;
 		hol_quantifier quantifier;
+		hol_any any;
 	};
 
-	hol_term() : type(hol_term_type::ANY), reference_count(1) { }
-	hol_term(hol_term_type type) : type(type), reference_count(1) { }
+	hol_term() : type(hol_term_type::ANY), reference_count(1) {
+		any.excluded = nullptr;
+		any.excluded_count = 0;
+		any.included = nullptr;
+		any.included_count = 0;
+		any.included_right_subtree = nullptr;
+		any.is_head = false;
+	}
+
+	hol_term(hol_term_type type) : type(type), reference_count(1) {
+#if !defined(NDEBUG)
+		if (type != hol_term_type::TRUE && type != hol_term_type::FALSE)
+			fprintf(stderr, "hol_term WARNING: This constructor should only be used if `type` is `TRUE` or `FALSE`.\n");
+#endif
+	}
 
 	hol_term(const hol_term& src) : type(src.type), reference_count(1) {
 		init_helper(src);
@@ -250,7 +279,7 @@ private:
 			array.length = src.array.length;
 			array.operands = (hol_term**) malloc(sizeof(hol_term**) * src.array.length);
 			if (array.operands == NULL) {
-				fprintf(stderr, "hol_term.init_helper ERROR: Insufficient memory for `array.operands.`\n");
+				fprintf(stderr, "hol_term.init_helper ERROR: Insufficient memory for `array.operands`.\n");
 				return false;
 			}
 			for (unsigned int i = 0; i < src.array.length; i++) {
@@ -264,9 +293,48 @@ private:
 			quantifier.variable = src.quantifier.variable;
 			quantifier.operand = src.quantifier.operand;
 			quantifier.operand->reference_count++;
+			return true;
+		case hol_term_type::ANY:
+			any.excluded_count = src.any.excluded_count;
+			if (src.any.excluded_count == 0) {
+				any.excluded = nullptr;
+			} else {
+				any.excluded = (hol_term**) malloc(sizeof(hol_term*) * src.any.excluded_count);
+				if (any.excluded == nullptr) {
+					fprintf(stderr, "hol_term.init_helper ERROR: Insufficient memory for `any.excluded`.\n");
+					return false;
+				}
+				for (unsigned int i = 0; i < src.any.excluded_count; i++) {
+					any.excluded[i] = src.any.excluded[i];
+					any.excluded[i]->reference_count++;
+				}
+			}
+			any.included_count = src.any.included_count;
+			if (src.any.included_count == 0) {
+				any.included = nullptr;
+			} else {
+				any.included = (hol_term**) malloc(sizeof(hol_term*) * src.any.included_count);
+				if (any.included == nullptr) {
+					if (any.excluded != nullptr) {
+						for (unsigned int i = 0; i < any.excluded_count; i++)
+							core::free(*any.excluded[i]);
+						core::free(any.excluded);
+					}	
+					fprintf(stderr, "hol_term.init_helper ERROR: Insufficient memory for `any.included`.\n");
+					return false;
+				}
+				for (unsigned int i = 0; i < src.any.included_count; i++) {
+					any.included[i] = src.any.included[i];
+					any.included[i]->reference_count++;
+				}
+			}
+			any.included_right_subtree = src.any.included_right_subtree;
+			if (any.included_right_subtree != nullptr)
+				any.included_right_subtree->reference_count++;
+			any.is_head = src.any.is_head;
+			return true;
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
-		case hol_term_type::ANY:
 			return true;
 		}
 		fprintf(stderr, "hol_term.init_helper ERROR: Unrecognized hol_term_type.\n");
@@ -278,7 +346,7 @@ private:
 
 thread_local hol_term HOL_TRUE(hol_term_type::TRUE);
 thread_local hol_term HOL_FALSE(hol_term_type::FALSE);
-thread_local hol_term HOL_ANY(hol_term_type::ANY);
+thread_local hol_term HOL_ANY;
 
 inline bool init(hol_term& term, const hol_term& src) {
 	term.type = src.type;
@@ -319,6 +387,33 @@ inline bool operator == (const hol_quantifier& first, const hol_quantifier& seco
 		&& (first.operand == second.operand || *first.operand == *second.operand);
 }
 
+inline bool operator == (const hol_any& first, const hol_any& second) {
+	if (first.excluded_count != second.excluded_count
+	 || first.included_count != second.included_count) return true;
+	for (unsigned int i = 0; i < first.excluded_count; i++) {
+		if (first.excluded[i] != second.excluded[i]
+		 && *first.excluded[i] != *second.excluded[i]) return false;
+	} for (unsigned int i = 0; i < first.included_count; i++) {
+		if (first.included[i] != second.included[i]
+		 && *first.included[i] != *second.included[i]) return false;
+	}
+
+	if (first.included_right_subtree != nullptr) {
+		if (second.included_right_subtree == nullptr) {
+			return false;
+		} else if (first.included_right_subtree != second.included_right_subtree
+				&& *first.included_right_subtree != *second.included_right_subtree)
+		{
+			return false;
+		} else if (first.is_head != second.is_head) {
+			return false;
+		}
+	} else if (second.included_right_subtree != nullptr) {
+		return false;
+	}
+	return true;
+}
+
 bool operator == (const hol_term& first, const hol_term& second)
 {
 	if (hol_term::is_empty(first)) return false;
@@ -352,9 +447,10 @@ bool operator == (const hol_term& first, const hol_term& second)
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return first.quantifier == second.quantifier;
+	case hol_term_type::ANY:
+		return first.any == second.any;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type.\n");
@@ -396,6 +492,18 @@ inline unsigned int hol_quantifier::hash(const hol_quantifier& key) {
 	return default_hash(key.variable) ^ hol_term::hash(*key.operand);
 }
 
+inline unsigned int hol_any::hash(const hol_any& key) {
+	unsigned int hash_value = default_hash(key.excluded_count);
+	for (unsigned int i = 0; i < key.excluded_count; i++)
+		hash_value ^= hol_term::hash(*key.excluded[i]);
+	hash_value = (hash_value * 131071) ^ default_hash(key.included_count);
+	for (unsigned int i = 0; i < key.included_count; i++)
+		hash_value ^= hol_term::hash(*key.included[i]);
+	if (key.included_right_subtree != nullptr)
+		return (hash_value * 127) ^ hol_term::hash(*key.included_right_subtree) ^ default_hash(key.is_head);
+	return hash_value;
+}
+
 inline unsigned int hol_term::hash(const hol_term& key) {
 	/* TODO: precompute these and store them in a table for faster access */
 	unsigned int type_hash = default_hash<hol_term_type, 571290832>(key.type);
@@ -428,9 +536,10 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return type_hash ^ hol_quantifier::hash(key.quantifier);
+	case hol_term_type::ANY:
+		return type_hash ^ hol_any::hash(key.any);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-	case hol_term_type::ANY:
 		return type_hash;
 	}
 	fprintf(stderr, "hol_term.hash ERROR: Unrecognized hol_term_type.\n");
@@ -509,6 +618,15 @@ inline void hol_quantifier::move(const hol_quantifier& src, hol_quantifier& dst)
 	dst.operand = src.operand;
 }
 
+inline void hol_any::move(const hol_any& src, hol_any& dst) {
+	dst.excluded_count = src.excluded_count;
+	dst.excluded = src.excluded;
+	dst.included_count = src.included_count;
+	dst.included = src.included;
+	dst.included_right_subtree = src.included_right_subtree;
+	dst.is_head = src.is_head;
+}
+
 inline void hol_term::free_helper() {
 	reference_count--;
 	if (reference_count == 0) {
@@ -533,13 +651,14 @@ inline void hol_term::free_helper() {
 			core::free(str); return;
 		case hol_term_type::UINT_LIST:
 			core::free(uint_list); return;
+		case hol_term_type::ANY:
+			core::free(any); return;
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::INTEGER:
-		case hol_term_type::ANY:
 			return;
 		}
 		fprintf(stderr, "hol_term.free_helper ERROR: Unrecognized hol_term_type.\n");
@@ -589,6 +708,29 @@ inline void hol_quantifier::free(hol_quantifier& term) {
 	core::free(*term.operand);
 	if (term.operand->reference_count == 0)
 		core::free(term.operand);
+}
+
+inline void hol_any::free(hol_any& term) {
+	if (term.excluded != nullptr) {
+		for (unsigned int i = 0; i < term.excluded_count; i++) {
+			core::free(*term.excluded[i]);
+			if (term.excluded[i]->reference_count == 0)
+				core::free(term.excluded[i]);
+		}
+		core::free(term.excluded);
+	} if (term.included != nullptr) {
+		for (unsigned int i = 0; i < term.included_count; i++) {
+			core::free(*term.included[i]);
+			if (term.included[i]->reference_count == 0)
+				core::free(term.included[i]);
+		}
+		core::free(term.included);
+	}
+	if (term.included_right_subtree != nullptr) {
+		core::free(*term.included_right_subtree);
+		if (term.included_right_subtree->reference_count == 0)
+			core::free(term.included_right_subtree);
+	}
 }
 
 inline bool is_atomic(
@@ -705,6 +847,9 @@ const char true_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊥";
 
 const char empty_string[] = "";
+const char left_curly_brace[] = "{";
+const char right_curly_brace[] = "}";
+const char comma[] = ",";
 
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
 inline bool print_iff(const hol_array_term& term, Stream& out, Printer&&... printer) {
@@ -858,7 +1003,22 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		}
 
 	case hol_term_type::ANY:
-		return print('*', out);
+		if (!print('*', out)) return false;
+		if (term.any.included_count > 0) {
+			if (!print(" with ", out)
+			 || !print<hol_term*, left_curly_brace, right_curly_brace, comma>(term.any.included, term.any.included_count, out, pointer_scribe(), std::forward<Printer>(printer)...))
+				return false;
+		} if (term.any.excluded_count > 0) {
+			if (!print(" without ", out)
+			 || !print<hol_term*, left_curly_brace, right_curly_brace, comma>(term.any.excluded, term.any.excluded_count, out, pointer_scribe(), std::forward<Printer>(printer)...))
+				return false;
+		} if (term.any.included_right_subtree != nullptr) {
+			if (term.any.is_head && !print(" with head ", out)) return false;
+			if (!term.any.is_head && !print(" with right subtree ", out)) return false;
+			if (!print(*term.any.included_right_subtree, out, std::forward<Printer>(printer)...))
+				return false;
+		}
+		return true;
 	}
 
 	fprintf(stderr, "print ERROR: Unrecognized hol_term_type.\n");
@@ -943,7 +1103,15 @@ bool visit(Term&& term, Visitor&&... visitor)
 	case hol_term_type::FALSE:
 		return visit<hol_term_type::FALSE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::ANY:
-		return visit<hol_term_type::ANY>(term, std::forward<Visitor>(visitor)...);
+		if (!visit<hol_term_type::ANY>(term, std::forward<Visitor>(visitor)...)) return false;
+		/* NOTE: by default we do not visit the excluded subtrees */
+		if (term.any.included_count > 0) {
+			for (unsigned int i = 0; i < term.any.included_count; i++)
+				if (!visit(*term.any.included[i], std::forward<Visitor>(visitor)...)) return false;
+		} if (term.any.included_right_subtree != nullptr) {
+			if (!visit(*term.any.included_right_subtree, std::forward<Visitor>(visitor)...)) return false;
+		}
+		return true;
 	}
 	fprintf(stderr, "visit ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -998,15 +1166,35 @@ inline bool contains_constant(const hol_term& src, unsigned int constant) {
 	return !visit(src, visitor);
 }
 
+struct variable_collector {
+	array<unsigned int>& variables;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, const variable_collector& visitor) {
+	if (Type == hol_term_type::VARIABLE) {
+		if (!visitor.variables.contains(term.variable))
+			return visitor.variables.add(term.variable);
+	}
+	return true;
+}
+
+inline bool get_variables(const hol_term& src, array<unsigned int>& variables) {
+	variable_collector visitor = {variables};
+	return !visit(src, visitor);
+}
+
 struct parameter_collector {
 	array<unsigned int>& parameters;
 };
 
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, const parameter_collector& visitor) {
-	if (Type == hol_term_type::PARAMETER)
-		return visitor.parameters.add(term.parameter);
-	else return true;
+	if (Type == hol_term_type::PARAMETER) {
+		if (!visitor.parameters.contains(term.parameter))
+			return visitor.parameters.add(term.parameter);
+	}
+	return true;
 }
 
 inline bool get_parameters(const hol_term& src, array<unsigned int>& parameters) {
@@ -1060,7 +1248,6 @@ template<hol_term_type Type>
 inline bool visit(const hol_term& term, unambiguity_visitor& visitor) {
 	if (Type == hol_term_type::ANY)
 		return false;
-	/* TODO: what about ambiguous constants? */
 	return true;
 }
 
@@ -1165,7 +1352,8 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		if (dst.array.operands == NULL) return false;
 		for (unsigned int i = 0; i < src.array.length; i++) {
 			if (!new_hol_term(dst.array.operands[i])
-			 || !clone(*src.array.operands[i], *dst.array.operands[i], std::forward<Cloner>(cloner)...)) {
+			 || !clone(*src.array.operands[i], *dst.array.operands[i], std::forward<Cloner>(cloner)...))
+			{
 				for (unsigned int j = 0; j < i; j++) {
 					free(*dst.array.operands[j]); free(dst.array.operands[j]);
 				}
@@ -1185,9 +1373,72 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 			free(dst.quantifier.operand); return false;
 		}
 		return true;
+	case hol_term_type::ANY:
+		dst.any.is_head = src.any.is_head;
+		if (src.any.included_right_subtree != nullptr) {
+			if (!new_hol_term(dst.any.included_right_subtree)
+			 || !clone(*src.any.included_right_subtree, *dst.any.included_right_subtree, std::forward<Cloner>(cloner)...))
+			{
+				if (dst.any.included_right_subtree != nullptr)
+					free(dst.any.included_right_subtree);
+				return false;
+			}
+		} else {
+			dst.any.included_right_subtree = nullptr;
+		}
+		if (src.any.excluded_count > 0) {
+			dst.any.excluded = (hol_term**) malloc(sizeof(hol_term*) * src.any.excluded_count);
+			if (dst.any.excluded == nullptr) return false;
+			for (unsigned int i = 0; i < src.any.excluded_count; i++) {
+				if (!new_hol_term(dst.any.excluded[i])
+				 || !clone(*src.any.excluded[i], *dst.any.excluded[i], std::forward<Cloner>(cloner)...))
+				{
+					if (dst.any.included_right_subtree != nullptr) {
+						free(*dst.any.included_right_subtree);
+						free(dst.any.included_right_subtree);
+					}
+					for (unsigned int j = 0; j < i; j++) {
+						free(*dst.any.excluded[j]); free(dst.any.excluded[j]);
+					}
+					if (dst.any.excluded[i] != nullptr) free(dst.any.excluded[i]);
+					free(dst.any.excluded); return false;
+				}
+			}
+		} else {
+			dst.any.excluded = nullptr;
+			dst.any.excluded_count = 0;
+		}
+		if (src.any.included_count > 0) {
+			dst.any.included = (hol_term**) malloc(sizeof(hol_term*) * src.any.included_count);
+			if (dst.any.included == nullptr) return false;
+			for (unsigned int i = 0; i < src.any.included_count; i++) {
+				if (!new_hol_term(dst.any.included[i])
+				 || !clone(*src.any.included[i], *dst.any.included[i], std::forward<Cloner>(cloner)...))
+				{
+					if (dst.any.included_right_subtree != nullptr) {
+						free(*dst.any.included_right_subtree);
+						free(dst.any.included_right_subtree);
+					}
+					if (dst.any.excluded != nullptr) {
+						for (unsigned int j = 0; j < dst.any.excluded_count; j++) {
+							free(*dst.any.excluded[j]); free(dst.any.excluded[j]);
+						}
+						free(dst.any.excluded);
+					}
+					for (unsigned int j = 0; j < i; j++) {
+						free(*dst.any.included[j]); free(dst.any.included[j]);
+					}
+					if (dst.any.included[i] != nullptr) free(dst.any.included[i]);
+					free(dst.any.included); return false;
+				}
+			}
+		} else {
+			dst.any.included = nullptr;
+			dst.any.included_count = 0;
+		}
+		return true;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "clone ERROR: Unrecognized hol_term_type.\n");
@@ -1272,6 +1523,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 {
 	hol_term* new_term;
 	hol_term** new_terms;
+	hol_term** more_new_terms;
 	hol_term* first; hol_term* second; hol_term* third;
 	bool changed;
 	switch (Type) {
@@ -1433,9 +1685,142 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 			return new_term;
 		}
 
+	case hol_term_type::ANY:
+		changed = false;
+		if (src->any.included_right_subtree == nullptr) {
+			first = nullptr;
+		} else {
+			first = apply(src->any.included_right_subtree, std::forward<Function>(function)...);
+			if (first == nullptr) return nullptr;
+			if (first != src->any.included_right_subtree) changed = true;
+		}
+
+		if (src->any.excluded_count > 0) {
+			new_terms = (hol_term**) malloc(sizeof(hol_term*) * src->any.excluded_count);
+			if (new_terms == nullptr) {
+				if (first != src->any.included_right_subtree) {
+					free(*first); if (first->reference_count == 0) free(first);
+				}
+				return false;
+			}
+			for (unsigned int i = 0; i < src->any.excluded_count; i++) {
+				new_terms[i] = apply(src->any.excluded[i], std::forward<Function>(function)...);
+				if (new_terms[i] == nullptr) {
+					if (first != src->any.included_right_subtree) {
+						free(*first); if (first->reference_count == 0) free(first);
+					}
+					for (unsigned int j = 0; j < i; j++) {
+						if (new_terms[j] != src->any.excluded[j]) {
+							free(*new_terms[j]);
+							if (new_terms[j]->reference_count == 0)
+								free(new_terms[j]);
+						}
+					}
+					free(new_terms);
+					return false;
+				} else if (new_terms[i] != src->any.excluded[i]) {
+					changed = true;
+				}
+			}
+		} else {
+			new_terms = nullptr;
+		}
+
+		if (src->any.included_count > 0) {
+			more_new_terms = (hol_term**) malloc(sizeof(hol_term*) * src->any.included_count);
+			if (more_new_terms == nullptr) {
+				if (first != src->any.included_right_subtree) {
+					free(*first); if (first->reference_count == 0) free(first);
+				}
+				if (new_terms != nullptr) {
+					for (unsigned int j = 0; j < src->any.excluded_count; j++) {
+						if (new_terms[j] != src->any.excluded[j]) {
+							free(*new_terms[j]);
+							if (new_terms[j]->reference_count == 0)
+								free(new_terms[j]);
+						}
+					}
+					free(new_terms);
+				}
+				return false;
+			}
+			for (unsigned int i = 0; i < src->any.included_count; i++) {
+				more_new_terms[i] = apply(src->any.included[i], std::forward<Function>(function)...);
+				if (more_new_terms[i] == nullptr) {
+					if (first != src->any.included_right_subtree) {
+						free(*first); if (first->reference_count == 0) free(first);
+					}
+					if (new_terms != nullptr) {
+						for (unsigned int j = 0; j < src->any.excluded_count; j++) {
+							if (new_terms[j] != src->any.excluded[j]) {
+								free(*new_terms[j]);
+								if (new_terms[j]->reference_count == 0)
+									free(new_terms[j]);
+							}
+						}
+						free(new_terms);
+					}
+					for (unsigned int j = 0; j < i; j++) {
+						if (more_new_terms[j] != src->any.included[j]) {
+							free(*more_new_terms[j]);
+							if (more_new_terms[j]->reference_count == 0)
+								free(more_new_terms[j]);
+						}
+					}
+					free(more_new_terms);
+					return false;
+				} else if (more_new_terms[i] != src->any.included[i]) {
+					changed = true;
+				}
+			}
+		} else {
+			more_new_terms = nullptr;
+		}
+
+		if (!changed) {
+			if (new_terms != nullptr) free(new_terms);
+			if (more_new_terms != nullptr) free(more_new_terms);
+			return src;
+		}
+
+		if (!new_hol_term(new_term)) {
+			if (first != src->any.included_right_subtree) {
+				free(*first); if (first->reference_count == 0) free(first);
+			}
+			if (new_terms != nullptr) {
+				for (unsigned int j = 0; j < src->any.excluded_count; j++) {
+					if (new_terms[j] != src->any.excluded[j]) {
+						free(*new_terms[j]);
+						if (new_terms[j]->reference_count == 0)
+							free(new_terms[j]);
+					}
+				}
+				free(new_terms);
+			}
+			if (more_new_terms != nullptr) {
+				for (unsigned int j = 0; j < src->any.included_count; j++) {
+					if (new_terms[j] != src->any.included[j]) {
+						free(*new_terms[j]);
+						if (new_terms[j]->reference_count == 0)
+							free(new_terms[j]);
+					}
+				}
+				free(more_new_terms);
+			}
+			return false;
+		}
+		new_term->type = hol_term_type::ANY;
+		new_term->reference_count = 1;
+		new_term->any.excluded_count = src->any.excluded_count;
+		new_term->any.excluded = src->any.excluded;
+		new_term->any.included_count = src->any.included_count;
+		new_term->any.included = src->any.included;
+		new_term->any.included_right_subtree = first;
+		new_term->any.is_head = src->any.is_head;
+		return new_term;
+
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-	case hol_term_type::ANY:
 		return src;
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type.\n");
@@ -1845,7 +2230,12 @@ bool unify(
 		return unify(*first.quantifier.operand, *second.quantifier.operand, src_term, dst_term);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
+		return true;
 	case hol_term_type::ANY:
+		if (first.any.excluded_count > 0 || second.any.excluded_count > 0) {
+			fprintf(stderr, "unify ERROR: `ANY` support with exclusions is unimplemented.\n");
+			return false;
+		}
 		return true;
 	}
 	fprintf(stderr, "unify ERROR: Unrecognized hol_term_type.\n");
@@ -3221,6 +3611,36 @@ inline int_fast8_t compare(
 }
 
 inline int_fast8_t compare(
+		const hol_any& first,
+		const hol_any& second)
+{
+	if (first.excluded_count < second.excluded_count) return -1;
+	else if (first.excluded_count > second.excluded_count) return 1;
+	else if (first.included_count < second.included_count) return -1;
+	else if (first.included_count > second.included_count) return 1;
+	for (unsigned int i = 0; i < first.excluded_count; i++) {
+		int_fast8_t result = compare(*first.excluded[i], *second.excluded[i]);
+		if (result != 0) return result;
+	} for (unsigned int i = 0; i < first.included_count; i++) {
+		int_fast8_t result = compare(*first.included[i], *second.included[i]);
+		if (result != 0) return result;
+	}
+
+	if (first.included_right_subtree != nullptr) {
+		if (second.included_right_subtree == nullptr) return -1;
+		int_fast8_t result = compare(*first.included_right_subtree, *second.included_right_subtree);
+		if (result != 0) return result;
+
+		if (!first.is_head && second.is_head) return -1;
+		else if (first.is_head && !second.is_head) return 1;
+	} else if (second.included_right_subtree != nullptr) {
+		return 1;
+	}
+
+	return 0;
+}
+
+inline int_fast8_t compare(
 		const string& first,
 		const string& second)
 {
@@ -3289,9 +3709,10 @@ int_fast8_t compare(
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return compare(first.quantifier, second.quantifier);
+	case hol_term_type::ANY:
+		return compare(first.any, second.any);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-	case hol_term_type::ANY:
 		return 0;
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type.\n");
@@ -3385,9 +3806,18 @@ bool relabel_variables(hol_term& term,
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return relabel_variables(term.quantifier, variable_map);
+	case hol_term_type::ANY:
+		for (unsigned int i = 0; i < term.any.excluded_count; i++)
+			if (!relabel_variables(*term.any.excluded[i], variable_map)) return false;
+		for (unsigned int i = 0; i < term.any.included_count; i++)
+			if (!relabel_variables(*term.any.included[i], variable_map)) return false;
+		if (term.any.included_right_subtree == nullptr) {
+			return true;
+		} else {
+			return relabel_variables(*term.any.included_right_subtree, variable_map);
+		}
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-	case hol_term_type::ANY:
 		return true;
 	}
 	fprintf(stderr, "relabel_variables ERROR: Unrecognized hol_term_type.\n");
@@ -5750,7 +6180,8 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	case hol_term_type::FALSE:
 		return init(out, hol_term_type::FALSE);
 	case hol_term_type::ANY:
-		return init(out, hol_term_type::ANY);
+		fprintf(stderr, "canonicalize_scope ERROR: Terms with type `ANY` are unsupported.\n");
+		return false;
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -6022,33 +6453,85 @@ inline bool set_uint_list(hol_term& exp,
 }
 
 
-/**
- * Code for intersecting higher-order formulas (e.g. with terms of type ANY).
- */
+bool subtree_has_intersection(hol_term* term, hol_term* subtree)
+{
+	if (has_intersection(term, subtree)) {
+		return true;
+	} else if (term->type == hol_term_type::ANY) {
+		for (unsigned int i = 0; i < term->any.excluded_count; i++)
+			if (subtree_has_intersection(subtree, term->any.excluded[i])) return false;
+		for (unsigned int i = 0; i < term->any.included_count; i++)
+			if (!subtree_has_intersection(subtree, term->any.included[i])) return false;
+	} else if (subtree->type == hol_term_type::ANY) {
 
+	}
+
+	
+	switch (term->type) {
+	case hol_term_type::NOT:
+
+	case hol_term_type::UNARY_APPLICATION:
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+
+	case hol_term_type::BINARY_APPLICATION:
+
+	case hol_term_type::IFF:
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
+	case hol_term_type::CONSTANT:
+	case hol_term_type::VARIABLE:
+	case hol_term_type::PARAMETER:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
+		/* we already handle this before the switch statement */
+		break;
+	}
+	fprintf(stderr, "subtree_has_intersection ERROR: Unrecognied hol_term_type.\n");
+	return false;
+}
+
+template<bool ComputeIntersection>
 bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 {
-	if (first == second || second->type == hol_term_type::ANY) {
-		dst = first;
-		dst->reference_count++;
+	if (first == second) {
+		if (ComputeIntersection) {
+			dst = first;
+			dst->reference_count++;
+		}
 		return true;
 	} else if (first->type == hol_term_type::ANY) {
-		dst = second;
-		dst->reference_count++;
-		return true;
+		for (unsigned int i = 0; i < first->any.excluded_count; i++)
+			if (subtree_has_intersection(second, first->any.excluded[i])) return false;
+		for (unsigned int i = 0; i < first->any.included_count; i++)
+			if (!subtree_has_intersection(second, first->any.included[i])) return false;
+	} else if (second->type == hol_term_type::ANY) {
+		for (unsigned int i = 0; i < second->any.excluded_count; i++)
+			if (subtree_has_intersection(first, second->any.excluded[i])) return false;
+		for (unsigned int i = 0; i < second->any.included_count; i++)
+			if (!subtree_has_intersection(first, second->any.included[i])) return false;
 	}
 
 	unsigned int i, j;
 	hol_term* static_terms[3];
 	hol_term** terms;
 	bool same_as_first, same_as_second;
-	switch (first->type)
-	{
+	switch (first->type) {
 	case hol_term_type::NOT:
 		if (second->type != hol_term_type::NOT
-		 || !intersect(static_terms[0], first->unary.operand, second->unary.operand))
+		 || !intersect<ComputeIntersection>(static_terms[0], first->unary.operand, second->unary.operand))
 			return false;
-		if (static_terms[0] == first->unary.operand) {
+		if (!ComputeIntersection) {
+			return true;
+		} else if (static_terms[0] == first->unary.operand) {
 			dst = first;
 			dst->reference_count++;
 			static_terms[0]->reference_count--;
@@ -6073,17 +6556,21 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 	case hol_term_type::IF_THEN:
 	case hol_term_type::EQUALS:
 		if (second->type != first->type
-		 || !intersect(static_terms[0], first->binary.left, second->binary.left))
+		 || !intersect<ComputeIntersection>(static_terms[0], first->binary.left, second->binary.left))
 		{
 			return false;
-		} else if (!intersect(static_terms[1], first->binary.right, second->binary.right)) {
-			free(*static_terms[0]);
-			if (static_terms[0]->reference_count == 0)
-				free(static_terms[0]);
+		} else if (!intersect<ComputeIntersection>(static_terms[1], first->binary.right, second->binary.right)) {
+			if (ComputeIntersection) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+			}
 			return false;
 		}
 
-		if (static_terms[0] == first->binary.left && static_terms[1] == first->binary.right) {
+		if (!ComputeIntersection) {
+			return true;
+		} else if (static_terms[0] == first->binary.left && static_terms[1] == first->binary.right) {
 			dst = first;
 			dst->reference_count++;
 			static_terms[0]->reference_count--;
@@ -6112,25 +6599,31 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 
 	case hol_term_type::BINARY_APPLICATION:
 		if (second->type != hol_term_type::BINARY_APPLICATION
-		 || !intersect(static_terms[0], first->ternary.first, second->ternary.first))
+		 || !intersect<ComputeIntersection>(static_terms[0], first->ternary.first, second->ternary.first))
 		{
 			return false;
-		} else if (!intersect(static_terms[1], first->ternary.second, second->ternary.second)) {
-			free(*static_terms[0]);
-			if (static_terms[0]->reference_count == 0)
-				free(static_terms[0]);
+		} else if (!intersect<ComputeIntersection>(static_terms[1], first->ternary.second, second->ternary.second)) {
+			if (ComputeIntersection) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+			}
 			return false;
-		} else if (!intersect(static_terms[2], first->ternary.third, second->ternary.third)) {
-			free(*static_terms[0]);
-			if (static_terms[0]->reference_count == 0)
-				free(static_terms[0]);
-			free(*static_terms[1]);
-			if (static_terms[1]->reference_count == 0)
-				free(static_terms[1]);
+		} else if (!intersect<ComputeIntersection>(static_terms[2], first->ternary.third, second->ternary.third)) {
+			if (ComputeIntersection) {
+				free(*static_terms[0]);
+				if (static_terms[0]->reference_count == 0)
+					free(static_terms[0]);
+				free(*static_terms[1]);
+				if (static_terms[1]->reference_count == 0)
+					free(static_terms[1]);
+			}
 			return false;
 		}
 
-		if (static_terms[0] == first->ternary.first && static_terms[1] == first->ternary.second && static_terms[2] == first->ternary.third) {
+		if (!ComputeIntersection) {
+			return true;
+		} else if (static_terms[0] == first->ternary.first && static_terms[1] == first->ternary.second && static_terms[2] == first->ternary.third) {
 			dst = first;
 			dst->reference_count++;
 			static_terms[0]->reference_count--;
@@ -6169,26 +6662,35 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != first->type
 		 || second->array.length != first->array.length)
 			return false;
-		terms = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
-		if (terms == nullptr) return false;
-		same_as_first = true;
-		same_as_second = true;
+		if (ComputeIntersection) {
+			terms = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
+			if (terms == nullptr) return false;
+			same_as_first = true;
+			same_as_second = true;
+		}
 		for (i = 0; i < first->array.length; i++) {
-			if (!intersect(terms[i], first->array.operands[i], second->array.operands[i])) {
-				for (j = 0; j < i; j++) {
-					free(*terms[j]);
-					if (terms[j]->reference_count == 0)
-						free(terms[j]);
+			if (!intersect<ComputeIntersection>(terms[i], first->array.operands[i], second->array.operands[i])) {
+				if (ComputeIntersection) {
+					for (j = 0; j < i; j++) {
+						free(*terms[j]);
+						if (terms[j]->reference_count == 0)
+							free(terms[j]);
+					}
+					free(terms);
 				}
-				free(terms); return false;
+				return false;
 			}
-			if (terms[i] != first->array.operands[i])
-				same_as_first = false;
-			if (terms[i] != second->array.operands[i])
-				same_as_second = false;
+			if (ComputeIntersection) {
+				if (terms[i] != first->array.operands[i])
+					same_as_first = false;
+				if (terms[i] != second->array.operands[i])
+					same_as_second = false;
+			}
 		}
 
-		if (same_as_first) {
+		if (!ComputeIntersection) {
+			return true;
+		} else if (same_as_first) {
 			dst = first;
 			dst->reference_count++;
 			for (i = 0; i < first->array.length; i++)
@@ -6221,9 +6723,11 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 	case hol_term_type::LAMBDA:
 		if (second->type != first->type
 		 || second->quantifier.variable != first->quantifier.variable
-		 || !intersect(static_terms[0], first->quantifier.operand, second->quantifier.operand))
+		 || !intersect<ComputeIntersection>(static_terms[0], first->quantifier.operand, second->quantifier.operand))
 			return false;
-		if (static_terms[0] == first->quantifier.operand) {
+		if (!ComputeIntersection) {
+			return true;
+		} else if (static_terms[0] == first->quantifier.operand) {
 			dst = first;
 			dst->reference_count++;
 			static_terms[0]->reference_count--;
@@ -6248,6 +6752,7 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != hol_term_type::INTEGER
 		 || second->integer != first->integer)
 			return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
@@ -6255,6 +6760,7 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != hol_term_type::STRING
 		 || second->str != first->str)
 			return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
@@ -6262,6 +6768,7 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != hol_term_type::UINT_LIST
 		 || second->uint_list != first->uint_list)
 			return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
@@ -6269,6 +6776,7 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != hol_term_type::CONSTANT
 		 || second->constant != first->constant)
 			return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
@@ -6276,6 +6784,7 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != hol_term_type::VARIABLE
 		 || second->variable != first->variable)
 			return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
@@ -6283,12 +6792,14 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 		if (second->type != hol_term_type::PARAMETER
 		 || second->parameter != first->parameter)
 			return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		if (second->type != first->type) return false;
+		if (!ComputeIntersection) return true;
 		dst = first;
 		dst->reference_count++;
 		return true;
@@ -6298,6 +6809,11 @@ bool intersect(hol_term*& dst, hol_term* first, hol_term* second)
 	}
 	fprintf(stderr, "intersect ERROR: Unrecognied hol_term_type.\n");
 	return false;
+}
+
+inline bool has_intersection(hol_term* first, hol_term* second) {
+	hol_term* dummy;
+	return intersect<false>(dummy, first, second);
 }
 
 

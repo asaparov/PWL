@@ -587,6 +587,7 @@ S -> S':identity PERIOD
 # for closed interrogatives that are essentially declarative with a question mark
 # S {^[x]:x=A} -> S' {A}
 # S {^[x]:(... & true(x) & (x=possibility(A1) | ... | x=possibility(An)))} -> S' {... & (A1 | ... | An)}
+# e.g. "it is red?", "it is red or blue?"
 #S -> S' QUESTION
 
 # for all other interrogatives
@@ -596,8 +597,8 @@ S -> S':identity QUESTION
 
 # This is the root nonterminal for declarative sentences.
 S' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
-S' -> S'':singular,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct
-S' -> S'':plural,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct
+S' -> S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+S' -> S'':add_plural,require_no_conjunction,try_remove_is_adjunct
 
 # for subordinate clauses
 S' -> THAT S':try_remove_correlated,try_remove_is_adjunct,remove_that
@@ -611,8 +612,8 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 # S' {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
 #  -> V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
 #     (COMMA) S' {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,require_no_correlator S':try_remove_correlated,try_remove_is_adjunct
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,require_no_correlator COMMA S':try_remove_correlated,try_remove_is_adjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator S':try_remove_correlated,try_remove_is_adjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator COMMA S':try_remove_correlated,try_remove_is_adjunct
 
 # (predicative) preposed VP complements/adjuncts
 # S' {... & (~)?[y1]:(f(y1) & U(i1,y1) & p(y1) & f1(y1)) & ... & (~)?[yn]:(f(yn) & U(in,yn) & p(yn) & fn(yn))}
@@ -623,8 +624,8 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 # the tree, the cat is". `fi` contains verb-specific terms such as `present` as
 # well as any adjuncts or other arguments of y whereas `f` contains everything
 # else, such as the argument.
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,require_no_correlator S':try_remove_correlated,try_remove_is_adjunct
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,require_no_correlator COMMA S':try_remove_correlated,try_remove_is_adjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator S':try_remove_correlated,try_remove_is_adjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator COMMA S':try_remove_correlated,try_remove_is_adjunct
 
 # preposed coordination
 # TODO: coordinates from other levels can be moved here to (as well as to other levels), such as NP, NOMINAL_R, N_ADJUNCT
@@ -645,23 +646,23 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 #     PP {?[X]:(f(X) & ![x]:(X(x) => true(x)))}
 # NOTE: We don't allow other adjuncts here to avoid the spurious ambiguity
 # where the PP could also attach at VP.
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct COMMA PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+#S' -> S':require_no_conjunction,try_remove_is_adjunct PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+#S' -> S':require_no_conjunction,try_remove_is_adjunct COMMA PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
 
 # S' {A => B} -> IF/WHETHER S' {A} (COMMA) (THEN) S' {B}
 # S' {^[x]:x=(A => B)} -> IF/WHETHER S' {A} (COMMA) (THEN) S' {^[x]:x=B}
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if S':try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_whether S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_whether COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if,add_subjunctive S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if,add_subjunctive COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if,add_subjunctive THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_if,add_subjunctive COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_whether,add_subjunctive S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,try_remove_is_adjunct,add_whether,add_subjunctive COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if S':try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,add_subjunctive S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,add_subjunctive COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
 
 # (not preposed) correlative comparative constructions
 # S' {... & ?[y]:(?[i]:f(i) & g(y)) => B}
@@ -673,8 +674,8 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 #     THE ADJP_L/ADVP_L {... & ?[i]:(U(k,i) & p(i))}
 #     S' {... & ?[i]:f(i)}
 # e.g. "they work harder the more (money) we pay them.", "he becomes more cynical the older he gets."
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator #S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator #S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator #S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator #S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
 
 # (preposed) correlative comparative constructions
 # S' {... & ?[y]:(?[i]:f1(i) & g1(y)) => ... & ?[y]:(?[i]:f2(i) & g2(y))}
@@ -689,10 +690,10 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 #     S' {... & ?[y]:g2(y)}
 # NOTE: The consequent could also be predicative in the same way as the antecedent.
 # e.g. "the more (money) we pay them, the harder they work.", "the older he gets, the more cynical he becomes."
-#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,require_no_correlator COMMA THE #ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
-#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,require_no_correlator COMMA THE #ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
-#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,require_no_correlator COMMA THE #ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
-#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_that,require_no_whether,require_no_if,require_no_because,require_no_for,require_no_correlator COMMA THE #ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
+#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
+#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
+#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
+#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
 
 S' -> EITHER S':require_not_adjunct,remove_either
 
@@ -1070,8 +1071,8 @@ V_ADJUNCT -> PP:add_is_adjunct
 # V_ADJUNCT {... & ?[X]:(f(X) & ?[y1]:(inverse(own)(y1) & arg2(y1)=X) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=X))} if X is a set variable
 #  -> NP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
 # e.g. "the pencil is Emma's", "the pencils are the students'"
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,singular
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,plural
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,add_singular
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,add_plural
 
 # V_ADJUNCT {... & ?[y1]:(... & arg1/arg2/arg3(y1)=a) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=a)}
 #  -> NP/ADJP_R {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1638,8 +1639,8 @@ DEF_NP -> THE NP':try_remove_correlated
 # then in the left child logical form, we replace `X=^[x]:g(x)` with the
 # definition of `Y` (effectively renaming `Y` to `X`).
 # NOTE: This rule also works if X is existentially-quantified.
-#DEF_NP -> NP:add_genitive,singular NP':try_remove_correlated
-#DEF_NP -> NP:add_genitive,plural NP':try_remove_correlated
+#DEF_NP -> NP:add_genitive,add_singular NP':try_remove_correlated
+#DEF_NP -> NP:add_genitive,add_plural NP':try_remove_correlated
 # TODO: the above rule can also be used for `inverse(intended_for)` in addition to `own`
 
 # DEF_NP {^[P]:(... & ?[S]:(F(S=^[x]:(arg1/arg2(x)=a & f(x))) & ![x]:(S(x) => P(x))))}
@@ -1656,10 +1657,10 @@ DEF_NP -> THE NP':try_remove_correlated
 #     NP' {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => P(x))))}
 # NOTE: This rule also works if S is existentially-quantified.
 #  e.g. "the arson's/termites' destruction of the barn(s)"
-#DEF_NP -> NP:add_genitive,singular NP':try_remove_correlated # for arg1
-#DEF_NP -> NP:add_genitive,singular NP':try_remove_correlated # for arg2
-#DEF_NP -> NP:add_genitive,plural NP':try_remove_correlated # for arg1
-#DEF_NP -> NP:add_genitive,plural NP':try_remove_correlated # for arg2
+#DEF_NP -> NP:add_genitive,add_singular NP':try_remove_correlated # for arg1
+#DEF_NP -> NP:add_genitive,add_singular NP':try_remove_correlated # for arg2
+#DEF_NP -> NP:add_genitive,add_plural NP':try_remove_correlated # for arg1
+#DEF_NP -> NP:add_genitive,add_plural NP':try_remove_correlated # for arg2
 
 # DEF_NP {^[P]:(... ?[X]:(X=^[x]:(?[o]:(arg1(o)=a & own(o) & arg2(o)=x)) & ![x]:(X(x) => P(x))))}
 #  -> NP {^[P]:(... ?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y))))}
@@ -1671,7 +1672,7 @@ DEF_NP -> THE NP':try_remove_correlated
 #  -> NP {^[P]:(... ?[Y]:(F(Y) & ![y]:(Y(y) => P(y))))}
 # NOTE: This rule also works if X is existentially-quantified.
 # e.g. "Jason's is better"
-#DEF_NP -> NP:require_no_genitive,add_genitive,singular
+#DEF_NP -> NP:require_no_genitive,add_genitive,add_singular
 
 
 
@@ -2763,7 +2764,6 @@ ALL -> "every"
 ALL -> "each"
 ALL -> "all"
 
-
 COMP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 COMP -> "as"
 COMP -> "than"
@@ -2772,22 +2772,39 @@ COMP -> "rather than"
 COMP -> "from"
 COMP -> "to"
 
-
 AND nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 AND -> "and"
 AND -> "as well as"
 AND -> "in addition to"
 AND -> "plus"
 
-
 NOT nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 NOT -> "not"
 NOT -> "rather than"
 
-
 PERIOD preterminal {} {1.0} {1.0} {} 10 1.0 {}
 PERIOD -> "."
 
-
 QUESTION preterminal {} {1.0} {1.0} {} 10 1.0 {}
 QUESTION -> "?"
+
+THAT preterminal {} {1.0} {1.0} {} 10 1.0 {}
+THAT -> "that"
+
+WHETHER preterminal {} {1.0} {1.0} {} 10 1.0 {}
+WHETHER -> "whether"
+
+OR preterminal {} {1.0} {1.0} {} 10 1.0 {}
+OR -> "or"
+
+IF preterminal {} {1.0} {1.0} {} 10 1.0 {}
+IF -> "if"
+
+BECAUSE preterminal {} {1.0} {1.0} {} 10 1.0 {}
+BECAUSE -> "because"
+
+FOR preterminal {} {1.0} {1.0} {} 10 1.0 {}
+FOR -> "for"
+
+EITHER preterminal {} {1.0} {1.0} {} 10 1.0 {}
+EITHER -> "either"
