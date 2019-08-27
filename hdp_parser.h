@@ -146,6 +146,72 @@ static inline bool intersect(GrammaticalFlagType& out, GrammaticalFlagType first
 	}
 }
 
+struct grammatical_flags {
+	grammatical_num index_number;
+	grammatical_num concord_number;
+	grammatical_conjunction cnj;
+	grammatical_flag_value flags[(uint_fast8_t) grammatical_flag::COUNT] = { grammatical_flag_value::FALSE };
+	correlator corr;
+	correlator correlated_by;
+
+	grammatical_flags() :
+			index_number(grammatical_num::NONE), concord_number(grammatical_num::NONE),
+			cnj(grammatical_conjunction::NONE), corr(correlator::NONE), correlated_by(correlator::NONE) { }
+
+	grammatical_flags(const grammatical_flags& src) {
+		init(src);
+	}
+
+	inline void operator = (const grammatical_flags& src) {
+		init(src);
+	}
+
+	static inline unsigned int hash(const grammatical_flags& key) {
+		return default_hash(key.index_number)
+			 ^ (3 * default_hash(key.concord_number))
+			 ^ (7 * default_hash(key.cnj))
+			 ^ (31 * default_hash(key.corr))
+			 ^ (127 * default_hash(key.correlated_by))
+			 ^ (8191 * default_hash(key.flags, (uint_fast8_t) grammatical_flag::COUNT));
+	}
+
+	static inline void swap(grammatical_flags& first, grammatical_flags& second) {
+		core::swap(first.index_number, second.index_number);
+		core::swap(first.concord_number, second.concord_number);
+		core::swap(first.cnj, second.cnj);
+		core::swap(first.corr, second.corr);
+		core::swap(first.correlated_by, second.correlated_by);
+		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			core::swap(first.flags[i], second.flags[i]);
+	}
+
+private:
+	inline void init(const grammatical_flags& src) {
+		index_number = src.index_number;
+		concord_number = src.concord_number;
+		cnj = src.cnj;
+		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			flags[i] = src.flags[i];
+		corr = src.corr;
+		correlated_by = src.correlated_by;
+	}
+};
+
+inline bool intersect(grammatical_flags& dst,
+		const grammatical_flags& first,
+		const grammatical_flags& second)
+{
+	if (!intersect(dst.index_number, first.index_number, second.index_number)
+	 || !intersect(dst.concord_number, first.concord_number, second.concord_number)
+	 || !intersect(dst.cnj, first.cnj, second.cnj)
+	 || !intersect(dst.corr, first.corr, second.corr)
+	 || !intersect(dst.correlated_by, first.correlated_by, second.correlated_by))
+		return false;
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if (!intersect(dst.flags[i], first.flags[i], second.flags[i])) return false;
+	return true;
+}
+
 template<typename K, typename V>
 struct static_pair {
 	K key;
@@ -155,39 +221,23 @@ struct static_pair {
 template<typename Formula>
 struct flagged_logical_form
 {
+	grammatical_flags flags;
 	Formula* root;
-	grammatical_num index_number;
-	grammatical_num concord_number;
-	grammatical_conjunction cnj;
-	grammatical_flag_value flags[(uint_fast8_t) grammatical_flag::COUNT] = {0};
-	correlator corr;
-	correlator correlated_by;
 
-	flagged_logical_form() :
-			index_number(grammatical_num::NONE), concord_number(grammatical_num::NONE),
-			cnj(grammatical_conjunction::NONE), corr(correlator::NONE), correlated_by(correlator::NONE) { }
+	flagged_logical_form() { }
 
-	flagged_logical_form(Formula& src) : root(&src),
-			index_number(grammatical_num::NONE), concord_number(grammatical_num::NONE),
-			cnj(grammatical_conjunction::NONE), corr(correlator::NONE), correlated_by(correlator::NONE)
-	{
+	flagged_logical_form(Formula& src) : root(&src) {
 		src.reference_count++;
+	}
+
+	flagged_logical_form(const flagged_logical_form<Formula>& src) : flags(src.flags), root(src.root) {
+		src.root->reference_count++;
 	}
 
 	~flagged_logical_form() { free_helper(); }
 
-	inline void copy_flags_from(const flagged_logical_form<Formula>& src) {
-		index_number = src.index_number;
-		concord_number = src.concord_number;
-		cnj = src.cnj;
-		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			flags[i] = src.flags[i];
-		corr = src.corr;
-		correlated_by = src.correlated_by;
-	}
-
 	inline void operator = (const flagged_logical_form<Formula>& src) {
-		copy_flags_from(src);
+		flags = src.flags;
 		root = src.root;
 		root->reference_count++;
 	}
@@ -197,13 +247,7 @@ struct flagged_logical_form
 	}
 
 	static inline unsigned int hash(const flagged_logical_form<Formula>& src) {
-		return hasher<Formula>::hash(*src.root)
-			 ^ (3 * default_hash(src.index_number))
-			 ^ (7 * default_hash(src.concord_number))
-			 ^ (31 * default_hash(src.cnj))
-			 ^ (127 * default_hash(src.corr))
-			 ^ (8191 * default_hash(src.correlated_by))
-			 ^ (131071 * default_hash(src.flags, (uint_fast8_t) grammatical_flag::COUNT));
+		return hasher<Formula>::hash(*src.root) ^ grammatical_flags::hash(src.flags);
 	}
 
 	static inline void move(
@@ -211,7 +255,7 @@ struct flagged_logical_form
 			flagged_logical_form<Formula>& dst)
 	{
 		dst.root = src.root;
-		dst.copy_flags_from(src);
+		dst.flags = src.flags;
 	}
 
 	static inline void swap(
@@ -219,13 +263,7 @@ struct flagged_logical_form
 			flagged_logical_form<Formula>& second)
 	{
 		core::swap(first.root, second.root);
-		core::swap(first.index_number, second.index_number);
-		core::swap(first.concord_number, second.concord_number);
-		core::swap(first.cnj, second.cnj);
-		core::swap(first.corr, second.corr);
-		core::swap(first.correlated_by, second.correlated_by);
-		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			core::swap(first.flags[i], second.flags[i]);
+		core::swap(first.flags, second.flags);
 	}
 
 	static inline void free(flagged_logical_form<Formula>& lf) {
@@ -436,6 +474,16 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_NOT_CORRELATED, "require_not_correlated"}
 };
 
+inline void initialize_any(grammatical_flags& flags) {
+	flags.concord_number = grammatical_num::ANY;
+	flags.index_number = grammatical_num::ANY;
+	flags.cnj = grammatical_conjunction::ANY;
+	flags.corr = correlator::ANY;
+	flags.correlated_by = correlator::ANY;
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		flags.flags[i] = grammatical_flag_value::ANY;
+}
+
 template<typename Formula>
 inline bool initialize_any(flagged_logical_form<Formula>& lf) {
 	lf.root = (Formula*) malloc(sizeof(Formula));
@@ -444,20 +492,13 @@ inline bool initialize_any(flagged_logical_form<Formula>& lf) {
 		return false;
 	}
 	initialize_any(*lf.root);
-	lf.concord_number = grammatical_num::ANY;
-	lf.index_number = grammatical_num::ANY;
-	lf.cnj = grammatical_conjunction::ANY;
-	lf.corr = correlator::ANY;
-	lf.correlated_by = correlator::ANY;
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		lf.flags[i] = grammatical_flag_value::ANY;
+	initialize_any(lf.flags);
 	return true;
 }
 
-template<typename Formula>
 inline bool operator == (
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second)
+		const grammatical_flags& first,
+		const grammatical_flags& second)
 {
 	if (first.index_number != second.index_number
 	 || first.concord_number != second.concord_number
@@ -467,13 +508,21 @@ inline bool operator == (
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (first.flags[i] != second.flags[i]) return false;
-	return (first.root == second.root) || (*first.root == *second.root);
+	return true;
 }
 
 template<typename Formula>
-inline bool operator != (
+inline bool operator == (
 		const flagged_logical_form<Formula>& first,
 		const flagged_logical_form<Formula>& second)
+{
+	return (first.flags == second.flags)
+		&& ((first.root == second.root) || (*first.root == *second.root));
+}
+
+inline bool operator != (
+		const grammatical_flags& first,
+		const grammatical_flags& second)
 {
 	if (first.index_number != second.index_number
 	 || first.concord_number != second.concord_number
@@ -483,7 +532,33 @@ inline bool operator != (
 		return true;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (first.flags[i] != second.flags[i]) return true;
-	return (first.root != second.root) && (*first.root != *second.root);
+	return false;
+}
+
+template<typename Formula>
+inline bool operator != (
+		const flagged_logical_form<Formula>& first,
+		const flagged_logical_form<Formula>& second)
+{
+	return (first.flags != second.flags)
+		|| ((first.root != second.root) && (*first.root != *second.root));
+}
+
+template<typename Stream>
+inline bool print(const grammatical_flags& flags, Stream& out)
+{
+	bool first = true;
+	if (!print('[', out)
+	 || (first && !print(',', out)) || !print_feature("index", first, flags.index_number, out)
+	 || (first && !print(',', out)) || !print_feature("concord", first, flags.concord_number, out)
+	 || (first && !print(',', out)) || !print_feature(first, flags.cnj, out)
+	 || (first && !print(',', out)) || !print_feature("corr:", first, flags.corr, out)
+	 || (first && !print(',', out)) || !print_feature("corr_by:", first, flags.correlated_by, out))
+		return false;
+
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if ((first && !print(',', out)) || !print_feature(first, (grammatical_flag) i, flags.flags[i], out)) return false;
+	return print(']', out);
 }
 
 template<typename Formula, typename Stream, typename... Printer>
@@ -491,18 +566,7 @@ inline bool print(
 		const flagged_logical_form<Formula>& lf,
 		Stream& out, Printer&&... printer)
 {
-	bool first = true;
-	if (!print(*lf.root, out, std::forward<Printer>(printer)...) || !print('[', out)
-	 || (first && !print(',', out)) || !print_feature("index", first, lf.index_number, out)
-	 || (first && !print(',', out)) || !print_feature("concord", first, lf.concord_number, out)
-	 || (first && !print(',', out)) || !print_feature(first, lf.cnj, out)
-	 || (first && !print(',', out)) || !print_feature("corr:", first, lf.corr, out)
-	 || (first && !print(',', out)) || !print_feature("corr_by:", first, lf.correlated_by, out))
-		return false;
-
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if ((first && !print(',', out)) || !print_feature(first, (grammatical_flag) i, lf.flags[i], out)) return false;
-	return print(']', out);
+	return print(*lf.root, out, std::forward<Printer>(printer)...) && print(lf.flags, out);
 }
 
 /* TODO: take into account the semantic prior during parsing */
@@ -794,117 +858,73 @@ inline bool is_ambiguous(const flagged_logical_form<Formula>& exp) {
 	return is_ambiguous(*exp.root);
 }
 
-inline bool is_built_in(unsigned int constant) {
-	return constant != (unsigned int) built_in_predicates::UNKNOWN
-		&& constant != (unsigned int) built_in_predicates::ARG1
-		&& constant != (unsigned int) built_in_predicates::ARG2
-		&& constant != (unsigned int) built_in_predicates::ARG3
-		&& constant != (unsigned int) built_in_predicates::SIZE;
-}
-
-inline unsigned int get_predicate_of_literal(
-		const hol_term* src,
-		unsigned int scope_variable)
-{
-	if (src->type == hol_term_type::UNARY_APPLICATION
-	 && src->binary.right->type == hol_term_type::VARIABLE
-	 && src->binary.right->variable == scope_variable
-	 && src->binary.left->type == hol_term_type::CONSTANT
-	 && is_built_in(src->binary.left->constant))
-	{
-		return src->binary.left->constant;
-	}
-	return 0;
-}
-
-inline unsigned int get_predicate_of_scope(
-		const hol_term* src,
-		unsigned int scope_variable,
-		unsigned int& index)
-{
-	if (src->type == hol_term_type::AND) {
-		for (unsigned int i = 0; i < src->array.length; i++) {
-			unsigned int predicate = get_predicate_of_literal(src->array.operands[i], scope_variable);
-			if (predicate != 0) {
-				index = i;
-				return predicate;
-			}
-		}
-	} else {
-		unsigned int predicate = get_predicate_of_literal(src, scope_variable);
-		if (predicate != 0) {
-			index = 0;
-			return predicate;
-		}
-	}
-	return 0;
-}
-
-template<unsigned int Arg>
-struct arg_finder {
-	unsigned int head_variable;
-	hol_term* arg;
-};
-
-template<hol_term_type Type, unsigned int Arg>
-inline bool visit(const hol_term& term, arg_finder<Arg>& visitor) {
-	if (Type == hol_term_type::EQUALS) {
-		if (term.binary.left->type == hol_term_type::UNARY_APPLICATION
-		 && term.binary.left->binary.left->type == hol_term_type::CONSTANT
-		 && term.binary.left->binary.left->constant == Arg
-		 && term.binary.left->binary.right->type == hol_term_type::VARIABLE
-		 && term.binary.left->binary.right->variable == visitor.head_variable)
-		{
-			visitor.arg = term.binary.right;
-			return false;
-		}
-	}
-	return true;
-}
-
-template<unsigned int Arg>
-inline hol_term* get_arg(const hol_term& src, unsigned int head_variable) {
-	arg_finder<Arg> visitor;
-	visitor.head_variable = head_variable;
-	visitor.arg = nullptr;
-	visit(src, visitor);
-	return visitor.arg;
-}
-
-template<unsigned int Arg>
+template<uint_fast8_t ArgIndex>
 inline void find_arg(
-		const hol_term* src,
+		hol_term* src,
 		hol_term*& head,
+		hol_term*& predicate,
+		unsigned int max_variable,
 		unsigned int& head_variable,
-		unsigned int& predicate_index,
 		unsigned int& arg_index,
 		hol_term*& arg,
 		bool& negated)
 {
 	arg = nullptr;
-	if (src->type == hol_term_type::EXISTS) {
-		unsigned int predicate = get_predicate_of_scope(src->quantifier.operand, src->quantifier.variable, predicate_index);
-		if (predicate != (unsigned int) built_in_predicates::CAPABLE_OF)
-		{
-			/* we found the head */
-			head = src->quantifier.operand;
-			head_variable = src->quantifier.variable;
+	if (src->type == hol_term_type::ANY) {
+		head = src;
+		head_variable = max_variable + 1;
+		arg = &HOL_ANY;
+		negated = false;
+	} else if (src->type == hol_term_type::HEAD) {
+		if (src->head.args[ArgIndex] == nullptr)
+			return;
+		head = src;
+		head_variable = src->head.variable;
+		arg = src->head.args[ArgIndex];
+		negated = false;
+	} else if (src->type == hol_term_type::EXISTS) {
+		head = src->quantifier.operand;
+		head_variable = src->quantifier.variable;
+		if (head->type != hol_term_type::AND)
+			return;
 
-			if (head->type != hol_term_type::AND)
-				return;
+		/* find the predicate */
+		unsigned int predicate_index = head->array.length;
+		for (unsigned int i = 0; i < head->array.length; i++) {
+			if (src->array.operands[i]->type == hol_term_type::ANY) {
+				predicate = &HOL_ANY;
+				predicate_index = i;
+			} else {
+				predicate = get_predicate_of_literal<built_in_predicates>(src->array.operands[i], head_variable);
+				if (predicate != nullptr) {
+					predicate_index = i;
+					break;
+				}
+			}
+		}
 
-			/* now find the term containing `Arg(x)` where `x` is the head variable */
-			for (unsigned int i = 0; i < head->array.length; i++) {
-				arg = get_arg<Arg>(*head->array.operands[i], head_variable);
+		if (predicate_index == head->array.length)
+			return;
+		if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::CAPABLE_OF)
+			return;
+
+		/* now find the term containing `Arg(x)` where `x` is the head variable */
+		for (unsigned int i = 0; i < head->array.length; i++) {
+			if (i == predicate_index) continue;
+			if (head->array.operands[i]->type == hol_term_type::ANY) {
+				arg_index = i;
+				arg = &HOL_ANY;
+			} else {
+				arg = get_arg<(unsigned int) built_in_predicates::ARG1 + ArgIndex>(*head->array.operands[i], head_variable);
 				if (arg != nullptr) {
 					arg_index = i;
 					break;
 				}
 			}
-			negated = false;
 		}
+		negated = false;
 	} else if (src->type == hol_term_type::NOT) {
-		find_arg<Arg>(src->unary.operand, head, head_variable, predicate_index, arg_index, arg, negated);
+		find_arg<ArgIndex>(src->unary.operand, head, predicate, max_variable, head_variable, arg_index, arg, negated);
 		negated = true;
 	}
 }
@@ -948,19 +968,20 @@ bool prune_independent_siblings(
 	return true;
 }
 
-template<unsigned int Arg, typename MakeDstFunction>
+template<uint_fast8_t ArgIndex, typename MakeDstFunction>
 inline bool apply_arg(
-		const hol_term* src, hol_term*& dst,
+		hol_term* src, hol_term*& dst,
 		array<unsigned int>& dst_variables,
 		array<hol_term*>& siblings,
+		unsigned int max_variable,
 		MakeDstFunction make_dst)
 {
 	/* check if the current scope is the head */
-	hol_term* head; hol_term* arg; bool negated;
-	unsigned int head_variable, predicate_index, arg_index;
-	find_arg<Arg>(src, head, head_variable, predicate_index, arg_index, arg, negated);
+	hol_term* head; hol_term* predicate; hol_term* arg; bool negated;
+	unsigned int head_variable, arg_index;
+	find_arg<ArgIndex>(src, head, predicate, max_variable, head_variable, arg_index, arg, negated);
 	if (arg != nullptr) {
-		dst = make_dst(head, head_variable, predicate_index, arg_index, negated);
+		dst = make_dst(head, head_variable, predicate, arg_index, negated);
 		if (dst == nullptr) return false;
 
 		get_variables(*dst, dst_variables);
@@ -971,10 +992,12 @@ inline bool apply_arg(
 
 	if (src->type == hol_term_type::AND || src->type == hol_term_type::OR) {
 		if (!siblings.ensure_capacity(siblings.length + src->array.length)) return false;
-		find_arg<Arg>(src->array.operands[src->array.length - 1], head, head_variable, predicate_index, arg_index, arg, negated);
+		find_arg<ArgIndex>(src->array.operands[src->array.length - 1], head, predicate, max_variable, head_variable, arg_index, arg, negated);
 
-		if (arg != nullptr) {
-			dst = make_dst(head, head_variable, predicate_index, arg_index, negated);
+		if (arg == nullptr) {
+			return false;
+		} else {
+			dst = make_dst(head, head_variable, predicate, arg_index, negated);
 			if (dst == nullptr) return false;
 
 			get_variables(*dst, dst_variables);
@@ -994,7 +1017,7 @@ inline bool apply_arg(
 			array<unsigned int> new_variables(1 << (core::log2(dst_variables.length == 0 ? 1 : dst_variables.length) + 1));
 			new_variables.append(dst_variables.data, dst_variables.length);
 			for (unsigned int i = 0; i + 1 < src->array.length; i++) {
-				find_arg<Arg>(src->array.operands[i], head, head_variable, predicate_index, arg_index, new_arg, negated);
+				find_arg<ArgIndex>(src->array.operands[i], head, predicate, max_variable, head_variable, arg_index, new_arg, negated);
 				if (new_arg == nullptr || *new_arg != *arg) {
 					for (unsigned int j = 0; j < i; j++) {
 						free(*new_dst[j]);
@@ -1005,7 +1028,7 @@ inline bool apply_arg(
 					break;
 				}
 
-				new_dst[i] = make_dst(head, head_variable, predicate_index, arg_index, negated);
+				new_dst[i] = make_dst(head, head_variable, predicate, arg_index, negated);
 				if (new_dst[i] == nullptr) {
 					for (unsigned int j = 0; j < i; j++) {
 						free(*new_dst[j]);
@@ -1090,6 +1113,7 @@ inline bool apply_arg(
 	}
 
 	/* we didn't find the head, so keep looking */
+	/* NOTE: this function should mirror the semantics of `find_head` in `higher_order_logic.h` */
 	hol_term* new_formula;
 	switch (src->type) {
 	case hol_term_type::VARIABLE:
@@ -1107,11 +1131,8 @@ inline bool apply_arg(
 		dst = nullptr;
 		return true;
 
-	case hol_term_type::ANY:
-		break;
-
 	case hol_term_type::NOT:
-		if (!apply_arg<Arg>(src->unary.operand, new_formula, dst_variables, siblings, make_dst))
+		if (!apply_arg<ArgIndex>(src->unary.operand, new_formula, dst_variables, siblings, max_variable, make_dst))
 			return false;
 		if (new_formula != nullptr) {
 			dst = hol_term::new_not(new_formula);
@@ -1127,7 +1148,7 @@ inline bool apply_arg(
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		if (!apply_arg<Arg>(src->unary.operand, new_formula, dst_variables, siblings, make_dst))
+		if (!apply_arg<ArgIndex>(src->unary.operand, new_formula, dst_variables, siblings, max(max_variable, src->quantifier.variable), make_dst))
 			return false;
 		if (new_formula != nullptr) {
 			if (!dst_variables.contains(src->quantifier.variable)) {
@@ -1150,7 +1171,7 @@ inline bool apply_arg(
 		return true;
 
 	case hol_term_type::IF_THEN:
-		if (!apply_arg<Arg>(src->unary.operand, new_formula, dst_variables, siblings, make_dst))
+		if (!apply_arg<ArgIndex>(src->binary.right, new_formula, dst_variables, siblings, max_variable, make_dst))
 			return false;
 		if (new_formula != nullptr) {
 			dst = hol_term::new_if_then(src->binary.left, new_formula);
@@ -1165,49 +1186,115 @@ inline bool apply_arg(
 
 	case hol_term_type::AND:
 	case hol_term_type::OR:
-		/* we already handle this case above */
+	case hol_term_type::ANY:
+	case hol_term_type::HEAD:
+		/* we already handle these cases above */
 		break;
 	}
 	fprintf(stderr, "apply_arg ERROR: Unrecognized hol_term_type.\n");
 	return false;
 }
 
-template<unsigned int Arg>
+template<uint_fast8_t ArgIndex>
 inline bool select_arg_keep_head(
-		const hol_term* src, hol_term*& dst)
+		hol_term* src, hol_term*& dst)
 {
 	array<hol_term*> siblings(8);
 	array<unsigned int> dst_variables(8);
-	return apply_arg<Arg>(src, dst, dst_variables, siblings,
-			[](hol_term* head, unsigned int head_variable, unsigned int predicate_index, unsigned int arg_index, bool negated) {
-				hol_term* predicate = head->array.operands[predicate_index];
-				hol_term* arg = head->array.operands[arg_index];
-				hol_term* dst = hol_term::new_exists(head_variable, hol_term::new_and(predicate, arg));
-				if (dst != nullptr) {
-					predicate->reference_count++;
-					arg->reference_count++;
+	return apply_arg<ArgIndex>(src, dst, dst_variables, siblings, 0,
+			[](hol_term* head, unsigned int head_variable, hol_term* predicate, unsigned int arg_index, bool negated) {
+				hol_term* dst;
+				if (head->type == hol_term_type::ANY) {
+					if (!new_hol_term(dst)) return (hol_term*) nullptr;
+					dst->type = hol_term_type::HEAD;
+					dst->reference_count = 1;
+					dst->head.variable = head_variable;
+					dst->head.predicate = &HOL_ANY;
+					for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
+						dst->head.args[i] = nullptr;
+					dst->head.args[ArgIndex] = &HOL_ANY;
+					HOL_ANY.reference_count += 2;
+				} else if (head->type == hol_term_type::HEAD) {
+					if (!new_hol_term(dst)) return (hol_term*) nullptr;
+					dst->type = hol_term_type::HEAD;
+					dst->reference_count = 1;
+					dst->head.variable = head_variable;
+					dst->head.predicate = head->head.predicate;
+					dst->head.predicate->reference_count++;
+					for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
+						dst->head.args[i] = nullptr;
+					dst->head.args[ArgIndex] = head->head.args[ArgIndex];
+					dst->head.args[ArgIndex]->reference_count++;
+				} else {
+					hol_term* arg = head->array.operands[arg_index];
+					dst = hol_term::new_exists(head_variable, hol_term::new_and(predicate, arg));
+					if (dst != nullptr) {
+						predicate->reference_count++;
+						arg->reference_count++;
+					}
 				}
 				return dst;
 			});
 }
 
-template<unsigned int Arg>
+template<uint_fast8_t ArgIndex>
 inline bool remove_arg(
-		const hol_term* src, hol_term*& dst)
+		hol_term* src, hol_term*& dst)
 {
 	array<hol_term*> siblings(8);
 	array<unsigned int> dst_variables(8);
-	return apply_arg<Arg>(src, dst, dst_variables, siblings,
-			[](hol_term* head, unsigned int head_variable, unsigned int predicate_index, unsigned int arg_index, bool negated) {
+	return apply_arg<ArgIndex>(src, dst, dst_variables, siblings, 0,
+			[](hol_term* head, unsigned int head_variable, hol_term* predicate, unsigned int arg_index, bool negated) {
 				hol_term* dst;
-				if (negated)
-					dst = hol_term::new_not(hol_term::new_exists(head_variable, hol_term::new_and(make_excluded_array_view(head->array.operands, head->array.length, arg_index))));
-				else dst = hol_term::new_exists(head_variable, hol_term::new_and(make_excluded_array_view(head->array.operands, head->array.length, arg_index)));
-				if (dst != nullptr) {
-					for (unsigned int i = 0; i < head->array.length; i++)
-						if (i != arg_index) head->array.operands[i]->reference_count++;
+				if (head->type == hol_term_type::ANY) {
+					if (!new_hol_term(dst)) return (hol_term*) nullptr;
+					dst->type = hol_term_type::HEAD;
+					dst->reference_count = 1;
+					dst->head.variable = head_variable;
+					dst->head.predicate = &HOL_ANY;
+					HOL_ANY.reference_count++;
+					for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+						if (i == ArgIndex) {
+							dst->head.args[i] = nullptr;
+						} else {
+							dst->head.args[i] = &HOL_ANY;
+							HOL_ANY.reference_count++;
+						}
+					}
+				} else if (head->type == hol_term_type::HEAD) {
+					if (!new_hol_term(dst)) return (hol_term*) nullptr;
+					dst->type = hol_term_type::HEAD;
+					dst->reference_count = 1;
+					dst->head.variable = head_variable;
+					dst->head.predicate = head->head.predicate;
+					dst->head.predicate->reference_count++;
+					for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+						if (i == ArgIndex) {
+							dst->head.args[i] = nullptr;
+						} else {
+							dst->head.args[i] = head->head.args[i];
+							if (dst->head.args[i] != nullptr)
+								dst->head.args[i]->reference_count++;
+						}
+					}
+				} else {
+					dst = hol_term::new_exists(head_variable, hol_term::new_and(make_excluded_array_view(head->array.operands, head->array.length, arg_index)));
+					if (dst != nullptr) {
+						for (unsigned int i = 0; i < head->array.length; i++)
+							if (i != arg_index) head->array.operands[i]->reference_count++;
+					}
 				}
-				return dst;
+
+				if (negated) {
+					hol_term* new_dst = hol_term::new_not(dst);
+					if (new_dst == nullptr) {
+						free(*dst); if (dst->reference_count == 0) free(dst);
+						return (hol_term*) nullptr;
+					}
+					return new_dst;
+				} else {
+					return dst;
+				}
 			});
 }
 
@@ -1217,11 +1304,11 @@ inline bool add_flag(
 		flagged_logical_form<Formula>& dst,
 		grammatical_flag flag)
 {
-	if (src.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE
-	 && src.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	if (src.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE
+	 && src.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
 		return false;
 	dst = src;
-	dst.flags[(uint_fast8_t) flag] = grammatical_flag_value::TRUE;
+	dst.flags.flags[(uint_fast8_t) flag] = grammatical_flag_value::TRUE;
 	return true;
 }
 
@@ -1231,11 +1318,11 @@ inline bool remove_flag(
 		flagged_logical_form<Formula>& dst,
 		grammatical_flag flag)
 {
-	if (src.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE
-	 && src.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	if (src.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE
+	 && src.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
 		return false;
 	dst = src;
-	dst.flags[(uint_fast8_t) flag] = grammatical_flag_value::FALSE;
+	dst.flags.flags[(uint_fast8_t) flag] = grammatical_flag_value::FALSE;
 	return true;
 }
 
@@ -1246,7 +1333,7 @@ inline bool try_remove_flag(
 		grammatical_flag flag)
 {
 	dst = src;
-	dst.flags[(uint_fast8_t) flag] = grammatical_flag_value::FALSE;
+	dst.flags.flags[(uint_fast8_t) flag] = grammatical_flag_value::FALSE;
 	return true;
 }
 
@@ -1256,11 +1343,11 @@ inline bool require_no_flag(
 		flagged_logical_form<Formula>& dst,
 		grammatical_flag flag)
 {
-	if (src.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE
-	 && src.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	if (src.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE
+	 && src.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
 		return false;
 	dst = src;
-	dst.flags[(uint_fast8_t) flag] = grammatical_flag_value::FALSE;
+	dst.flags.flags[(uint_fast8_t) flag] = grammatical_flag_value::FALSE;
 	return true;
 }
 
@@ -1270,10 +1357,10 @@ inline bool add_conjunction(
 		flagged_logical_form<Formula>& dst,
 		grammatical_conjunction cnj)
 {
-	if (src.cnj != grammatical_conjunction::NONE && src.cnj != grammatical_conjunction::ANY)
+	if (src.flags.cnj != grammatical_conjunction::NONE && src.flags.cnj != grammatical_conjunction::ANY)
 		return false;
 	dst = src;
-	dst.cnj = cnj;
+	dst.flags.cnj = cnj;
 	return true;
 }
 
@@ -1283,10 +1370,10 @@ inline bool remove_conjunction(
 		flagged_logical_form<Formula>& dst,
 		grammatical_conjunction cnj)
 {
-	if (src.cnj != cnj && src.cnj != grammatical_conjunction::ANY)
+	if (src.flags.cnj != cnj && src.flags.cnj != grammatical_conjunction::ANY)
 		return false;
 	dst = src;
-	dst.cnj = grammatical_conjunction::NONE;
+	dst.flags.cnj = grammatical_conjunction::NONE;
 	return true;
 }
 
@@ -1296,10 +1383,10 @@ inline bool require_no_conjunction(
 		flagged_logical_form<Formula>& dst,
 		grammatical_conjunction cnj)
 {
-	if (src.cnj == cnj)
+	if (src.flags.cnj == cnj)
 		return false;
 	dst = src;
-	dst.cnj = src.cnj;
+	dst.flags.cnj = src.flags.cnj;
 	return true;
 }
 
@@ -1309,10 +1396,10 @@ inline bool add_correlator(
 		flagged_logical_form<Formula>& dst,
 		correlator corr)
 {
-	if (src.corr != correlator::NONE && src.corr != correlator::ANY)
+	if (src.flags.corr != correlator::NONE && src.flags.corr != correlator::ANY)
 		return false;
 	dst = src;
-	dst.corr = corr;
+	dst.flags.corr = corr;
 	return true;
 }
 
@@ -1322,10 +1409,10 @@ inline bool remove_correlator(
 		flagged_logical_form<Formula>& dst,
 		correlator corr)
 {
-	if (src.corr != corr && src.corr != correlator::ANY)
+	if (src.flags.corr != corr && src.flags.corr != correlator::ANY)
 		return false;
 	dst = src;
-	dst.corr = correlator::NONE;
+	dst.flags.corr = correlator::NONE;
 	return true;
 }
 
@@ -1335,10 +1422,10 @@ inline bool add_correlated_by(
 		flagged_logical_form<Formula>& dst,
 		correlator correlated_by)
 {
-	if (src.correlated_by != correlator::NONE && src.correlated_by != correlator::ANY)
+	if (src.flags.correlated_by != correlator::NONE && src.flags.correlated_by != correlator::ANY)
 		return false;
 	dst = src;
-	dst.correlated_by = correlated_by;
+	dst.flags.correlated_by = correlated_by;
 	return true;
 }
 
@@ -1352,34 +1439,34 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	switch (function.type) {
 	case function_type::EMPTY:
 		dst.root = Formula::new_false();
-		dst.index_number = grammatical_num::NONE;
-		dst.concord_number = grammatical_num::NONE;
-		dst.cnj = grammatical_conjunction::NONE;
-		dst.corr = correlator::NONE;
-		dst.correlated_by = correlator::NONE;
+		dst.flags.index_number = grammatical_num::NONE;
+		dst.flags.concord_number = grammatical_num::NONE;
+		dst.flags.cnj = grammatical_conjunction::NONE;
+		dst.flags.corr = correlator::NONE;
+		dst.flags.correlated_by = correlator::NONE;
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			dst.flags[i] = grammatical_flag_value::FALSE;
+			dst.flags.flags[i] = grammatical_flag_value::FALSE;
 		return dst.root != nullptr;
 	case function_type::IDENTITY:
 		dst = src;
 		return true;
 	case function_type::SELECT_ARG1_KEEP_HEAD:
-		dst.copy_flags_from(src);
-		return select_arg_keep_head<(unsigned int) built_in_predicates::ARG1>(src.root, dst.root);
+		dst.flags = src.flags;
+		return select_arg_keep_head<0>(src.root, dst.root);
 	case function_type::REMOVE_ARG1:
-		dst.copy_flags_from(src);
-		return remove_arg<(unsigned int) built_in_predicates::ARG1>(src.root, dst.root);
+		dst.flags = src.flags;
+		return remove_arg<0>(src.root, dst.root);
 	case function_type::ADD_SINGULAR:
-		if (src.index_number != grammatical_num::NONE && src.index_number != grammatical_num::ANY)
+		if (src.flags.index_number != grammatical_num::NONE && src.flags.index_number != grammatical_num::ANY)
 			return false;
 		dst = src;
-		dst.index_number = grammatical_num::SINGULAR;
+		dst.flags.index_number = grammatical_num::SINGULAR;
 		return true;
 	case function_type::ADD_PLURAL:
-		if (src.index_number != grammatical_num::NONE && src.index_number != grammatical_num::ANY)
+		if (src.flags.index_number != grammatical_num::NONE && src.flags.index_number != grammatical_num::ANY)
 			return false;
 		dst = src;
-		dst.index_number = grammatical_num::PLURAL;
+		dst.flags.index_number = grammatical_num::PLURAL;
 		return true;
 	case function_type::ADD_THAT:
 		return add_conjunction(src, dst, grammatical_conjunction::THAT);
@@ -1404,10 +1491,10 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REMOVE_FOR:
 		return remove_conjunction(src, dst, grammatical_conjunction::FOR);
 	case function_type::REQUIRE_NO_CONJUNCTION:
-		if (src.cnj != grammatical_conjunction::NONE && src.cnj != grammatical_conjunction::ANY)
+		if (src.flags.cnj != grammatical_conjunction::NONE && src.flags.cnj != grammatical_conjunction::ANY)
 			return false;
 		dst = src;
-		dst.cnj = grammatical_conjunction::NONE;
+		dst.flags.cnj = grammatical_conjunction::NONE;
 		return true;
 	case function_type::ADD_IS_ADJUNCT:
 		return add_flag(src, dst, grammatical_flag::IS_ADJUNCT);
@@ -1443,13 +1530,13 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		return remove_correlator(src, dst, correlator::NEITHER);
 	case function_type::TRY_REMOVE_CORRELATOR:
 		dst = src;
-		dst.corr = correlator::NONE;
+		dst.flags.corr = correlator::NONE;
 		return true;
 	case function_type::REQUIRE_NO_CORRELATOR:
-		if (src.corr != correlator::NONE && src.corr != correlator::ANY)
+		if (src.flags.corr != correlator::NONE && src.flags.corr != correlator::ANY)
 			return false;
 		dst = src;
-		dst.corr = correlator::NONE;
+		dst.flags.corr = correlator::NONE;
 		return true;
 	case function_type::ADD_CORRELATED_BY_BOTH:
 		return add_correlated_by(src, dst, correlator::BOTH);
@@ -1459,17 +1546,37 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		return add_correlated_by(src, dst, correlator::NEITHER);
 	case function_type::TRY_REMOVE_CORRELATED:
 		dst = src;
-		dst.correlated_by = correlator::NONE;
+		dst.flags.correlated_by = correlator::NONE;
 		return true;
 	case function_type::REQUIRE_NOT_CORRELATED:
-		if (src.correlated_by != correlator::NONE && src.correlated_by != correlator::ANY)
+		if (src.flags.correlated_by != correlator::NONE && src.flags.correlated_by != correlator::ANY)
 			return false;
 		dst = src;
-		dst.correlated_by = correlator::NONE;
+		dst.flags.correlated_by = correlator::NONE;
 		return true;
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized transformation function.\n");
 	return false;
+}
+
+template<uint_fast8_t ArgIndex>
+inline bool invert_select_arg_keep_head(
+		flagged_logical_form<hol_term>*& inverse,
+		const grammatical_flags& flags,
+		const hol_term* first,
+		const hol_term* second)
+{
+
+}
+
+template<uint_fast8_t ArgIndex>
+inline bool invert_remove_arg(
+		flagged_logical_form<hol_term>*& inverse,
+		const grammatical_flags& flags,
+		const hol_term* first,
+		const hol_term* second)
+{
+
 }
 
 template<typename Formula>
@@ -1479,19 +1586,19 @@ inline bool invert_add_flag(
 		const flagged_logical_form<Formula>& second,
 		grammatical_flag flag)
 {
-	if ((second.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.flags[(uint_fast8_t) flag], first.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
+	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
 		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
-	return intersect(inverse.root, first.root, second.root);
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1501,19 +1608,19 @@ inline bool invert_remove_flag(
 		const flagged_logical_form<Formula>& second,
 		grammatical_flag flag)
 {
-	if ((second.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.flags[(uint_fast8_t) flag], first.flags[(uint_fast8_t) flag], grammatical_flag_value::TRUE))
+	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::TRUE))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
 		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
-	return intersect(inverse.root, first.root, second.root);
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1523,19 +1630,19 @@ inline bool invert_try_remove_flag(
 		const flagged_logical_form<Formula>& second,
 		grammatical_flag flag)
 {
-	if ((second.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.flags[(uint_fast8_t) flag], first.flags[(uint_fast8_t) flag], grammatical_flag_value::ANY))
+	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::ANY))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
 		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
-	return intersect(inverse.root, first.root, second.root);
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1545,19 +1652,19 @@ inline bool invert_require_no_flag(
 		const flagged_logical_form<Formula>& second,
 		grammatical_flag flag)
 {
-	if ((second.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.flags[(uint_fast8_t) flag], first.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
+	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
 		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
-	return intersect(inverse.root, first.root, second.root);
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1567,16 +1674,16 @@ inline bool invert_add_conjunction(
 		const flagged_logical_form<Formula>& second,
 		grammatical_conjunction cnj)
 {
-	if ((second.cnj != cnj && second.cnj != grammatical_conjunction::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.cnj, first.cnj, grammatical_conjunction::NONE))
+	if ((second.flags.cnj != cnj && second.flags.cnj != grammatical_conjunction::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, grammatical_conjunction::NONE))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-	return intersect(inverse.root, first.root, second.root);
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1586,16 +1693,16 @@ inline bool invert_remove_conjunction(
 		const flagged_logical_form<Formula>& second,
 		grammatical_conjunction cnj)
 {
-	if ((second.cnj != grammatical_conjunction::NONE && second.cnj != grammatical_conjunction::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.cnj, first.cnj, cnj))
+	if ((second.flags.cnj != grammatical_conjunction::NONE && second.flags.cnj != grammatical_conjunction::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, cnj))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-	return intersect(inverse.root, first.root, second.root);
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1605,16 +1712,16 @@ inline bool invert_require_no_conjunction(
 		const flagged_logical_form<Formula>& second,
 		grammatical_conjunction cnj)
 {
-	if (second.cnj == cnj
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.cnj, first.cnj, grammatical_conjunction::ANY))
+	if (second.flags.cnj == cnj
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, grammatical_conjunction::ANY))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-	return intersect(inverse.root, first.root, second.root);
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1624,16 +1731,16 @@ inline bool invert_add_correlator(
 		const flagged_logical_form<Formula>& second,
 		correlator corr)
 {
-	if ((second.corr != corr && second.corr != correlator::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.corr, first.corr, correlator::NONE))
+	if ((second.flags.corr != corr && second.flags.corr != correlator::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.corr, first.flags.corr, correlator::NONE))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-	return intersect(inverse.root, first.root, second.root);
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1643,16 +1750,16 @@ inline bool invert_remove_correlator(
 		const flagged_logical_form<Formula>& second,
 		correlator corr)
 {
-	if ((second.corr != correlator::NONE && second.corr != correlator::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.corr, first.corr, corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj))
+	if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.corr, first.flags.corr, corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-	return intersect(inverse.root, first.root, second.root);
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
@@ -1662,183 +1769,27 @@ inline bool invert_add_correlated_by(
 		const flagged_logical_form<Formula>& second,
 		correlator correlated_by)
 {
-	if ((second.correlated_by != correlated_by && second.correlated_by != correlator::ANY)
-	 || !intersect(inverse.index_number, first.index_number, second.index_number)
-	 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-	 || !intersect(inverse.cnj, first.cnj, second.cnj)
-	 || !intersect(inverse.corr, first.corr, second.corr)
-	 || !intersect(inverse.correlated_by, first.correlated_by, correlator::NONE))
+	if ((second.flags.correlated_by != correlated_by && second.flags.correlated_by != correlator::ANY)
+	 || !intersect(inverse.flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(inverse.flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(inverse.flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(inverse.flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(inverse.flags.correlated_by, first.flags.correlated_by, correlator::NONE))
 		return false;
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-	return intersect(inverse.root, first.root, second.root);
+		if (!intersect(inverse.flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return intersect<built_in_predicates>(inverse.root, first.root, second.root);
 }
 
 template<typename Formula>
-inline bool invert(
-		flagged_logical_form<Formula>& inverse,
-		typename flagged_logical_form<Formula>::function function,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second)
+bool init_array(flagged_logical_form<Formula>*& array, unsigned int length)
 {
-	typedef typename flagged_logical_form<Formula>::function_type function_type;
-
-	uint_fast8_t i;
-	flagged_logical_form<Formula> exp;
-	switch (function.type) {
-	case function_type::EMPTY:
-		inverse = first;
-		return true;
-	case function_type::IDENTITY:
-		if (!intersect(inverse.index_number, first.index_number, second.index_number)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.corr, first.corr, second.corr)
-		 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by))
-			return false;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::ADD_SINGULAR:
-		if ((second.index_number != grammatical_num::SINGULAR && second.index_number != grammatical_num::ANY)
-		 || !intersect(inverse.index_number, first.index_number, grammatical_num::NONE)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.corr, first.corr, second.corr)
-		 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by))
-			return false;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::ADD_PLURAL:
-		if ((second.index_number != grammatical_num::PLURAL && second.index_number != grammatical_num::ANY)
-		 || !intersect(inverse.index_number, first.index_number, grammatical_num::NONE)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.corr, first.corr, second.corr)
-		 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by))
-			return false;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::ADD_THAT:
-		return invert_add_conjunction(inverse, first, second, grammatical_conjunction::THAT);
-	case function_type::REMOVE_THAT:
-		return invert_remove_conjunction(inverse, first, second, grammatical_conjunction::THAT);
-	case function_type::REQUIRE_NO_THAT:
-		return invert_require_no_conjunction(inverse, first, second, grammatical_conjunction::THAT);
-	case function_type::ADD_WHETHER:
-		return invert_add_conjunction(inverse, first, second, grammatical_conjunction::WHETHER);
-	case function_type::REMOVE_WHETHER:
-		return invert_remove_conjunction(inverse, first, second, grammatical_conjunction::WHETHER);
-	case function_type::ADD_IF:
-		return invert_add_conjunction(inverse, first, second, grammatical_conjunction::IF);
-	case function_type::REMOVE_IF:
-		return invert_remove_conjunction(inverse, first, second, grammatical_conjunction::IF);
-	case function_type::ADD_BECAUSE:
-		return invert_add_conjunction(inverse, first, second, grammatical_conjunction::BECAUSE);
-	case function_type::REMOVE_BECAUSE:
-		return invert_remove_conjunction(inverse, first, second, grammatical_conjunction::BECAUSE);
-	case function_type::ADD_FOR:
-		return invert_add_conjunction(inverse, first, second, grammatical_conjunction::FOR);
-	case function_type::REMOVE_FOR:
-		return invert_remove_conjunction(inverse, first, second, grammatical_conjunction::FOR);
-	case function_type::REQUIRE_NO_CONJUNCTION:
-		if ((second.cnj != grammatical_conjunction::NONE && second.cnj != grammatical_conjunction::ANY)
-		 || !intersect(inverse.index_number, first.index_number, second.index_number)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.corr, first.corr, second.corr)
-		 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-		 || !intersect(inverse.cnj, first.cnj, grammatical_conjunction::NONE))
-			return false;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::ADD_IS_ADJUNCT:
-		return invert_add_flag(inverse, first, second, grammatical_flag::IS_ADJUNCT);
-	case function_type::TRY_REMOVE_IS_ADJUNCT:
-		return invert_try_remove_flag(inverse, first, second, grammatical_flag::IS_ADJUNCT);
-	case function_type::REQUIRE_NOT_ADJUNCT:
-		return invert_require_no_flag(inverse, first, second, grammatical_flag::IS_ADJUNCT);
-	case function_type::ADD_NULLABLE_SUBJECT:
-		return invert_add_flag(inverse, first, second, grammatical_flag::NULLABLE_SUBJECT);
-	case function_type::REMOVE_NULLABLE_SUBJECT:
-		return invert_remove_flag(inverse, first, second, grammatical_flag::NULLABLE_SUBJECT);
-	case function_type::TRY_REMOVE_NULLABLE_SUBJECT:
-		return invert_try_remove_flag(inverse, first, second, grammatical_flag::NULLABLE_SUBJECT);
-	case function_type::ADD_SUBORDINATE:
-		return invert_add_flag(inverse, first, second, grammatical_flag::SUBORDINATE);
-	case function_type::REMOVE_SUBORDINATE:
-		return invert_remove_flag(inverse, first, second, grammatical_flag::SUBORDINATE);
-	case function_type::TRY_REMOVE_SUBORDINATE:
-		return invert_try_remove_flag(inverse, first, second, grammatical_flag::SUBORDINATE);
-	case function_type::REQUIRE_NO_SUBORDINATE:
-		return invert_require_no_flag(inverse, first, second, grammatical_flag::SUBORDINATE);
-	case function_type::ADD_BOTH:
-		return invert_add_correlator(inverse, first, second, correlator::BOTH);
-	case function_type::ADD_EITHER:
-		return invert_add_correlator(inverse, first, second, correlator::EITHER);
-	case function_type::ADD_NEITHER:
-		return invert_add_correlator(inverse, first, second, correlator::NEITHER);
-	case function_type::REMOVE_BOTH:
-		return invert_remove_correlator(inverse, first, second, correlator::BOTH);
-	case function_type::REMOVE_EITHER:
-		return invert_remove_correlator(inverse, first, second, correlator::EITHER);
-	case function_type::REMOVE_NEITHER:
-		return invert_remove_correlator(inverse, first, second, correlator::NEITHER);
-	case function_type::TRY_REMOVE_CORRELATOR:
-		if ((second.corr != correlator::NONE && second.corr != correlator::ANY)
-		 || !intersect(inverse.index_number, first.index_number, second.index_number)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-		 || !intersect(inverse.corr, first.corr, correlator::ANY))
-			return false;
-		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::REQUIRE_NO_CORRELATOR:
-		if ((second.corr != correlator::NONE && second.corr != correlator::ANY)
-		 || !intersect(inverse.index_number, first.index_number, second.index_number)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.correlated_by, first.correlated_by, second.correlated_by)
-		 || !intersect(inverse.corr, first.corr, correlator::NONE))
-			return false;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::ADD_CORRELATED_BY_BOTH:
-		return invert_add_correlated_by(inverse, first, second, correlator::BOTH);
-	case function_type::ADD_CORRELATED_BY_EITHER:
-		return invert_add_correlated_by(inverse, first, second, correlator::EITHER);
-	case function_type::ADD_CORRELATED_BY_NEITHER:
-		return invert_add_correlated_by(inverse, first, second, correlator::NEITHER);
-	case function_type::TRY_REMOVE_CORRELATED:
-		if ((second.correlated_by != correlator::NONE && second.correlated_by != correlator::ANY)
-		 || !intersect(inverse.index_number, first.index_number, second.index_number)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.corr, first.corr, second.corr)
-		 || !intersect(inverse.correlated_by, first.correlated_by, correlator::ANY))
-			return false;
-		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
-	case function_type::REQUIRE_NOT_CORRELATED:
-		if ((second.correlated_by != correlator::NONE && second.correlated_by != correlator::ANY)
-		 || !intersect(inverse.index_number, first.index_number, second.index_number)
-		 || !intersect(inverse.concord_number, first.concord_number, second.concord_number)
-		 || !intersect(inverse.cnj, first.cnj, second.cnj)
-		 || !intersect(inverse.corr, first.corr, second.corr)
-		 || !intersect(inverse.correlated_by, first.correlated_by, correlator::NONE))
-			return false;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(inverse.flags[i], first.flags[i], second.flags[i])) return false;
-		return intersect(inverse.root, first.root, second.root);
+	array = (flagged_logical_form<Formula>*) malloc(sizeof(flagged_logical_form<Formula>) * length);
+	if (array == nullptr) {
+		fprintf(stderr, "init_array ERROR: Out of memory.\n");
+		return false;
 	}
-	fprintf(stderr, "invert ERROR: Unrecognized transformation function.\n");
-	return false;
+	return true;
 }
 
 template<typename Formula>
@@ -1849,16 +1800,203 @@ bool invert(
 	const flagged_logical_form<Formula>& first,
 	const flagged_logical_form<Formula>& second)
 {
-	inverse_count = 1;
-	inverse = (flagged_logical_form<Formula>*) malloc(sizeof(flagged_logical_form<Formula>));
-	if (inverse == NULL) {
-		fprintf(stderr, "invert ERROR: Out of memory.\n");
-		return false;
-	} else if (!invert(*inverse, function, first, second)) {
-		free(inverse);
-		return false;
+	typedef typename flagged_logical_form<Formula>::function_type function_type;
+
+	uint_fast8_t i;
+	grammatical_flags flags;
+	flagged_logical_form<Formula> exp;
+	switch (function.type) {
+	case function_type::EMPTY:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		*inverse = first;
+		return true;
+	case function_type::IDENTITY:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if (!intersect(inverse->flags, first.flags, second.flags)) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::SELECT_ARG1_KEEP_HEAD:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_select_arg_keep_head<0>(inverse, flags, first.root, second.root);
+	case function_type::REMOVE_ARG1:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_remove_arg<0>(inverse, flags, first.root, second.root);
+	case function_type::ADD_SINGULAR:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.index_number != grammatical_num::SINGULAR && second.flags.index_number != grammatical_num::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, grammatical_num::NONE)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(inverse->flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by))
+			return false;
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::ADD_PLURAL:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.index_number != grammatical_num::PLURAL && second.flags.index_number != grammatical_num::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, grammatical_num::NONE)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(inverse->flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by))
+			return false;
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::ADD_THAT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_conjunction(*inverse, first, second, grammatical_conjunction::THAT);
+	case function_type::REMOVE_THAT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_conjunction(*inverse, first, second, grammatical_conjunction::THAT);
+	case function_type::REQUIRE_NO_THAT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_require_no_conjunction(*inverse, first, second, grammatical_conjunction::THAT);
+	case function_type::ADD_WHETHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_conjunction(*inverse, first, second, grammatical_conjunction::WHETHER);
+	case function_type::REMOVE_WHETHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_conjunction(*inverse, first, second, grammatical_conjunction::WHETHER);
+	case function_type::ADD_IF:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_conjunction(*inverse, first, second, grammatical_conjunction::IF);
+	case function_type::REMOVE_IF:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_conjunction(*inverse, first, second, grammatical_conjunction::IF);
+	case function_type::ADD_BECAUSE:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_conjunction(*inverse, first, second, grammatical_conjunction::BECAUSE);
+	case function_type::REMOVE_BECAUSE:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_conjunction(*inverse, first, second, grammatical_conjunction::BECAUSE);
+	case function_type::ADD_FOR:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_conjunction(*inverse, first, second, grammatical_conjunction::FOR);
+	case function_type::REMOVE_FOR:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_conjunction(*inverse, first, second, grammatical_conjunction::FOR);
+	case function_type::REQUIRE_NO_CONJUNCTION:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.cnj != grammatical_conjunction::NONE && second.flags.cnj != grammatical_conjunction::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, grammatical_conjunction::NONE))
+			return false;
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::ADD_IS_ADJUNCT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_flag(*inverse, first, second, grammatical_flag::IS_ADJUNCT);
+	case function_type::TRY_REMOVE_IS_ADJUNCT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_try_remove_flag(*inverse, first, second, grammatical_flag::IS_ADJUNCT);
+	case function_type::REQUIRE_NOT_ADJUNCT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_require_no_flag(*inverse, first, second, grammatical_flag::IS_ADJUNCT);
+	case function_type::ADD_NULLABLE_SUBJECT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_flag(*inverse, first, second, grammatical_flag::NULLABLE_SUBJECT);
+	case function_type::REMOVE_NULLABLE_SUBJECT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_flag(*inverse, first, second, grammatical_flag::NULLABLE_SUBJECT);
+	case function_type::TRY_REMOVE_NULLABLE_SUBJECT:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_try_remove_flag(*inverse, first, second, grammatical_flag::NULLABLE_SUBJECT);
+	case function_type::ADD_SUBORDINATE:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_flag(*inverse, first, second, grammatical_flag::SUBORDINATE);
+	case function_type::REMOVE_SUBORDINATE:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_flag(*inverse, first, second, grammatical_flag::SUBORDINATE);
+	case function_type::TRY_REMOVE_SUBORDINATE:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_try_remove_flag(*inverse, first, second, grammatical_flag::SUBORDINATE);
+	case function_type::REQUIRE_NO_SUBORDINATE:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_require_no_flag(*inverse, first, second, grammatical_flag::SUBORDINATE);
+	case function_type::ADD_BOTH:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_correlator(*inverse, first, second, correlator::BOTH);
+	case function_type::ADD_EITHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_correlator(*inverse, first, second, correlator::EITHER);
+	case function_type::ADD_NEITHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_correlator(*inverse, first, second, correlator::NEITHER);
+	case function_type::REMOVE_BOTH:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_correlator(*inverse, first, second, correlator::BOTH);
+	case function_type::REMOVE_EITHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_correlator(*inverse, first, second, correlator::EITHER);
+	case function_type::REMOVE_NEITHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_remove_correlator(*inverse, first, second, correlator::NEITHER);
+	case function_type::TRY_REMOVE_CORRELATOR:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+		 || !intersect(inverse->flags.corr, first.flags.corr, correlator::ANY))
+			return false;
+		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::REQUIRE_NO_CORRELATOR:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+		 || !intersect(inverse->flags.corr, first.flags.corr, correlator::NONE))
+			return false;
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::ADD_CORRELATED_BY_BOTH:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_correlated_by(*inverse, first, second, correlator::BOTH);
+	case function_type::ADD_CORRELATED_BY_EITHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_correlated_by(*inverse, first, second, correlator::EITHER);
+	case function_type::ADD_CORRELATED_BY_NEITHER:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		return invert_add_correlated_by(*inverse, first, second, correlator::NEITHER);
+	case function_type::TRY_REMOVE_CORRELATED:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.correlated_by != correlator::NONE && second.flags.correlated_by != correlator::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(inverse->flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, correlator::ANY))
+			return false;
+		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
+	case function_type::REQUIRE_NOT_CORRELATED:
+		inverse_count = 1; if (!init_array(inverse, inverse_count)) return false;
+		if ((second.flags.correlated_by != correlator::NONE && second.flags.correlated_by != correlator::ANY)
+		 || !intersect(inverse->flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(inverse->flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(inverse->flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(inverse->flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(inverse->flags.correlated_by, first.flags.correlated_by, correlator::NONE))
+			return false;
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(inverse->flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return intersect<built_in_predicates>(inverse->root, first.root, second.root);
 	}
-	return true;
+	fprintf(stderr, "invert ERROR: Unrecognized transformation function.\n");
+	return false;
 }
 
 template<typename Formula>
@@ -1928,13 +2066,7 @@ inline bool set_number(flagged_logical_form<Formula>& exp,
 {
 	exp.root = (Formula*) malloc(sizeof(Formula));
 	if (exp.root == nullptr) return false;
-	exp.index_number = set.index_number;
-	exp.concord_number = set.concord_number;
-	exp.cnj = set.cnj;
-	exp.corr = set.corr;
-	exp.correlated_by = set.correlated_by;
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		exp.flags[i] = set.flags[i];
+	exp.flags = set.flags;
 	return set_number(*exp.root, *set.root, value);
 }
 
@@ -1954,13 +2086,7 @@ inline bool set_string(flagged_logical_form<Formula>& exp,
 {
 	exp.root = (Formula*) malloc(sizeof(Formula));
 	if (exp.root == nullptr) return false;
-	exp.index_number = set.index_number;
-	exp.concord_number = set.concord_number;
-	exp.cnj = set.cnj;
-	exp.corr = set.corr;
-	exp.correlated_by = set.correlated_by;
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		exp.flags[i] = set.flags[i];
+	exp.flags = set.flags;
 	return set_uint_list(*exp.root, *set.root, value);
 }
 
