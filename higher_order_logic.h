@@ -1753,25 +1753,137 @@ inline hol_term* substitute(hol_term* src,
 	return dst;
 }
 
-struct term_ref_substituter {
+struct head_substituter {
 	const hol_term* src;
 	hol_term* dst;
 };
 
 template<hol_term_type Type>
-inline hol_term* apply(hol_term* src, const term_ref_substituter& substituter) {
+inline hol_term* apply(hol_term* src, const head_substituter& substituter)
+{
 	if (src == substituter.src) {
 		substituter.dst->reference_count++;
 		return substituter.dst;
-	} else {
+	}
+
+	/* NOTE: this function should mirror the semantics of `apply_arg` in
+	   `hdp_parser.h` and `find_head` in `higher_order_logic.h` */
+	bool changed;
+	hol_term* new_term; hol_term** new_terms;
+	hol_term* first; hol_term* second; hol_term* third;
+	switch (Type) {
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+	case hol_term_type::UNARY_APPLICATION:
+		first = src->binary.left;
+		second = apply(src->binary.right, substituter);
+		if (second == NULL) {
+			return NULL;
+		} else if (second == src->binary.right) {
+			return src;
+		} else {
+			if (!new_hol_term(new_term)) {
+				if (second != src->binary.right) {
+					free(*second); if (second->reference_count == 0) free(second);
+				}
+				return NULL;
+			}
+			new_term->binary.left = first;
+			new_term->binary.right = second;
+			first->reference_count++;
+			if (second == src->binary.right) second->reference_count++;
+			new_term->type = Type;
+			new_term->reference_count = 1;
+			return new_term;
+		}
+
+	case hol_term_type::BINARY_APPLICATION:
+		first = src->ternary.first;
+		second = src->ternary.second;
+		third = apply(src->ternary.third, substituter);
+		if (third == NULL) {
+			return NULL;
+		} else if (third == src->ternary.third) {
+			return src;
+		} else {
+			if (!new_hol_term(new_term)) {
+				if (third != src->ternary.third) {
+					free(*third); if (third->reference_count == 0) free(third);
+				}
+				return NULL;
+			}
+			new_term->ternary.first = first;
+			new_term->ternary.second = second;
+			new_term->ternary.third = third;
+			first->reference_count++;
+			second->reference_count++;
+			if (third == src->ternary.third) third->reference_count++;
+			new_term->type = Type;
+			new_term->reference_count = 1;
+			return new_term;
+		}
+
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IFF:
+		new_terms = (hol_term**) malloc(sizeof(hol_term*) * src->array.length);
+		if (new_terms == NULL) return NULL;
+		changed = false;
+		for (unsigned int i = 0; i + 1 < src->array.length; i++)
+			new_terms[i] = src->array.operands[i];
+		new_terms[src->array.length - 1] = apply(src->array.operands[src->array.length - 1], substituter);
+		if (new_terms[src->array.length - 1] == NULL) {
+			free(new_terms); return NULL;
+		} else if (new_terms[src->array.length - 1] != src->array.operands[src->array.length - 1])
+			changed = true;
+
+		if (!changed) {
+			free(new_terms);
+			return src;
+		} else {
+			if (!new_hol_term(new_term)) {
+				if (new_terms[src->array.length - 1] != src->array.operands[src->array.length - 1]) {
+					free(*new_terms[src->array.length - 1]);
+					if (new_terms[src->array.length - 1]->reference_count == 0)
+						free(new_terms[src->array.length - 1]);
+				}
+				free(new_terms); return NULL;
+			}
+			new_term->array.operands = new_terms;
+			new_term->array.length = src->array.length;
+			if (new_term->array.operands[src->array.length - 1] == src->array.operands[src->array.length - 1])
+				src->array.operands[src->array.length - 1]->reference_count++;
+			new_term->type = Type;
+			new_term->reference_count = 1;
+			return new_term;
+		}
+
+	case hol_term_type::HEAD:
+		return nullptr;
+
+	case hol_term_type::CONSTANT:
+	case hol_term_type::VARIABLE:
+	case hol_term_type::PARAMETER:
+	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
+	case hol_term_type::NOT:
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
 		return default_apply<Type>(src, substituter);
 	}
+	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type when substituting head.\n");
+	return NULL;
 }
 
-inline hol_term* substitute_by_ref(hol_term* src,
+inline hol_term* substitute_head(hol_term* src,
 		const hol_term* src_term, hol_term* dst_term)
 {
-	const term_ref_substituter substituter = {src_term, dst_term};
+	const head_substituter substituter = {src_term, dst_term};
 	hol_term* dst = apply(src, substituter);
 	if (dst == src)
 		dst->reference_count++;
@@ -6216,32 +6328,27 @@ inline hol_term* get_predicate_of_literal(
 template<typename BuiltInPredicates>
 inline void find_head(
 		hol_term* src,
-		hol_term*& head,
-		hol_term*& predicate,
-		bool& negated)
+		hol_term*& head)
 {
 	if (src->type == hol_term_type::ANY) {
 		head = src;
-		negated = false;
 	} else if (src->type == hol_term_type::HEAD) {
 		head = src;
-		negated = false;
 	} else if (src->type == hol_term_type::EXISTS) {
 		head = src;
 
 		/* find the predicate */
 		if (head->type == hol_term_type::ANY) {
-			predicate = &HOL_ANY;
+			return;
 		} else if (head->type != hol_term_type::AND) {
-			predicate = get_predicate_of_literal<BuiltInPredicates>(head, src->quantifier.variable);
+			return;
 		} else {
 			unsigned int predicate_index = head->array.length;
 			for (unsigned int i = 0; i < head->array.length; i++) {
 				if (head->array.operands[i]->type == hol_term_type::ANY) {
-					predicate = &HOL_ANY;
 					predicate_index = i;
 				} else {
-					predicate = get_predicate_of_literal<BuiltInPredicates>(head->array.operands[i], src->quantifier.variable);
+					hol_term* predicate = get_predicate_of_literal<BuiltInPredicates>(head->array.operands[i], src->quantifier.variable);
 					if (predicate != nullptr) {
 						predicate_index = i;
 						break;
@@ -6254,21 +6361,22 @@ inline void find_head(
 				return;
 			}
 		}
-		negated = false;
 	} else if (src->type == hol_term_type::NOT) {
-		find_head<BuiltInPredicates>(src->unary.operand, head, predicate, negated);
-		negated = true;
+		find_head<BuiltInPredicates>(src->unary.operand, head);
 	}
 }
 
-template<typename BuiltInPredicates>
-hol_term* find_head(hol_term* term, hol_term*& predicate, bool& negated)
+template<typename BuiltInPredicates, typename Function>
+hol_term* find_head(hol_term* term, Function apply)
 {
+	apply(term);
+
 	hol_term* head;
-	find_head<BuiltInPredicates>(term, head, predicate, negated);
+	find_head<BuiltInPredicates>(term, head);
 	if (head != nullptr) return head;
 
-	/* NOTE: this function should mirror the semantics of `apply_arg` in `hdp_parser.h` */
+	/* NOTE: this function should mirror the semantics of `apply_arg` in
+	   `hdp_parser.h` and `apply<head_substituter>` in `higher_order_logic.h` */
 	switch (term->type) {
 	case hol_term_type::VARIABLE:
 	case hol_term_type::CONSTANT:
@@ -6285,19 +6393,19 @@ hol_term* find_head(hol_term* term, hol_term*& predicate, bool& negated)
 		return nullptr;
 
 	case hol_term_type::NOT:
-		return find_head<BuiltInPredicates>(term->unary.operand, predicate, negated);
+		return find_head<BuiltInPredicates>(term->unary.operand, apply);
 
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		return find_head<BuiltInPredicates>(term->quantifier.operand, predicate, negated);
+		return find_head<BuiltInPredicates>(term->quantifier.operand, apply);
 
 	case hol_term_type::IF_THEN:
-		return find_head<BuiltInPredicates>(term->binary.right, predicate, negated);
+		return find_head<BuiltInPredicates>(term->binary.right, apply);
 
 	case hol_term_type::AND:
 	case hol_term_type::OR:
-		return find_head<BuiltInPredicates>(term->array.operands[term->array.length - 1], predicate, negated);
+		return find_head<BuiltInPredicates>(term->array.operands[term->array.length - 1], apply);
 
 	case hol_term_type::ANY:
 	case hol_term_type::HEAD:
@@ -6377,13 +6485,16 @@ inline bool intersect_nullable(hol_term*& dst, hol_term* first, hol_term* second
 	}
 }
 
+struct noop {
+	inline void operator() (...) const { }
+};
+
 /* Precondition: The type of `first` is `HEAD`. */
 template<typename BuiltInPredicates, bool ComputeIntersection>
 bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 {
 	/* travel down the right side of `second` until we find a head */
-	hol_term* predicate; bool negated;
-	hol_term* second_head = find_head<BuiltInPredicates>(second, predicate, negated);
+	const hol_term* second_head = find_head<BuiltInPredicates>(second, noop());
 	if (second_head == nullptr) {
 		return false;
 	} else if (second_head->type == hol_term_type::ANY) {
@@ -6456,7 +6567,7 @@ bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 				new_head->head.args[i] = new_args[i];
 		}
 
-		dst = substitute_by_ref(second, second_head, new_head);
+		dst = substitute_head(second, second_head, new_head);
 		if (dst == nullptr) {
 			free(*new_head);
 			if (new_head->reference_count == 0)
@@ -6468,23 +6579,23 @@ bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 	} else {
 #if !defined(NDEBUG)
 		if (second_head->type != hol_term_type::EXISTS)
-			fprintf(stderr, "intersect WARNING: Unexpected hol_term_type returned from `find_head`.\n");
+			fprintf(stderr, "intersect_head WARNING: Unexpected hol_term_type returned from `find_head`.\n");
 #endif
 
-		/* find the predicate */
 		unsigned int head_variable = second_head->quantifier.variable;
 		if (second_head->quantifier.operand->type == hol_term_type::AND) {
 			hol_term* conjunction = second_head->quantifier.operand;
 			for (unsigned int i = 0; i < conjunction->array.length; i++) {
 				if (conjunction->array.operands[i]->type == hol_term_type::ANY)
-					fprintf(stderr, "intersect WARNING: Unable to represent intersection.\n");
+					fprintf(stderr, "intersect_head WARNING: Unable to represent intersection.\n");
 			}
 
+			/* find the predicate */
 			hol_term* new_terms[ARG_COUNT + 1];
 			unsigned int new_term_indices[ARG_COUNT + 1];
 			uint_fast8_t new_term_count = 0;
 			for (unsigned int i = 0; i < conjunction->array.length; i++) {
-				predicate = get_predicate_of_literal<BuiltInPredicates>(conjunction->array.operands[i], head_variable);
+				hol_term* predicate = get_predicate_of_literal<BuiltInPredicates>(conjunction->array.operands[i], head_variable);
 				if (predicate != nullptr) {
 					if (!intersect<BuiltInPredicates, ComputeIntersection>(new_terms[new_term_count], first->head.predicate, predicate))
 						return false;
@@ -6492,15 +6603,18 @@ bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 				}
 			}
 			for (uint_fast8_t k = 0; k < ARG_COUNT; k++) {
-				hol_term* arg;
+				hol_term* arg_term;
 				hol_term* expected_arg = first->head.args[k];
 				unsigned int i;
 				for (i = 0; i < conjunction->array.length; i++) {
-					arg = get_arg<BuiltInPredicates>(*conjunction->array.operands[i], head_variable, k);
-					if (arg != nullptr) break;
+					hol_term* arg = get_arg<BuiltInPredicates>(*conjunction->array.operands[i], head_variable, k);
+					if (arg != nullptr) {
+						arg_term = conjunction->array.operands[i];
+						break;
+					}
 				}
 
-				if ((expected_arg == nullptr && arg != nullptr) || (expected_arg != nullptr && arg == nullptr)) {
+				if ((expected_arg == nullptr && arg_term != nullptr) || (expected_arg != nullptr && arg_term == nullptr)) {
 					if (ComputeIntersection) {
 						for (uint_fast8_t j = 0; j < new_term_count; j++) {
 							free(*new_terms[j]);
@@ -6510,7 +6624,7 @@ bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 					}
 					return false;
 				} else if (expected_arg != nullptr) {
-					if (!intersect<BuiltInPredicates, ComputeIntersection>(new_terms[new_term_count], first->head.args[k], arg))
+					if (!intersect<BuiltInPredicates, ComputeIntersection>(new_terms[new_term_count], first->head.args[k], arg_term))
 						return false;
 					new_term_indices[new_term_count++] = i;
 				}
@@ -6567,7 +6681,7 @@ bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 			for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
 				if (first->head.args[i] != nullptr) return false;
 
-			predicate = get_predicate_of_literal<BuiltInPredicates>(second_head->quantifier.operand, head_variable);
+			hol_term* predicate = get_predicate_of_literal<BuiltInPredicates>(second_head->quantifier.operand, head_variable);
 			if (predicate == nullptr) return false;
 
 			hol_term* new_predicate;
@@ -6592,7 +6706,7 @@ bool intersect_head(hol_term* dst, hol_term* first, hol_term* second)
 				return false;
 			}
 
-			dst = substitute_by_ref(second, second_head, new_head);
+			dst = substitute_head(second, second_head, new_head);
 			if (dst == nullptr) {
 				free(*new_head);
 				if (new_head->reference_count == 0)
