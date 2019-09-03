@@ -535,6 +535,7 @@ bool intensional_element_of(
 	case FormulaType::STRING:
 	case FormulaType::UINT_LIST:
 	case FormulaType::ANY:
+	case FormulaType::HEAD:
 		break;
 	}
 	fprintf(stderr, "intensional_element_of ERROR: Unrecognized formula type.\n");

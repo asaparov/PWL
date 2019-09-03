@@ -1125,6 +1125,32 @@ inline bool get_variables(const hol_term& src, array<unsigned int>& variables) {
 	return !visit(src, visitor);
 }
 
+struct max_declared_variable_collector {
+	bool has_variable;
+	unsigned int variable;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, max_declared_variable_collector& visitor) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		visitor.variable = max(visitor.variable, term.quantifier.variable);
+		visitor.has_variable = true;
+	} else if (Type == hol_term_type::HEAD) {
+		visitor.variable = max(visitor.variable, term.head.variable);
+		visitor.has_variable = true;
+	}
+	return true;
+}
+
+inline bool max_declared_variable(const hol_term& src, unsigned int& max_variable) {
+	max_declared_variable_collector visitor = {false, 0};
+	visit(src, visitor);
+	if (!visitor.has_variable)
+		return false;
+	max_variable = max(max_variable, visitor.variable);
+	return true;
+}
+
 struct parameter_collector {
 	array<unsigned int>& parameters;
 };
@@ -1318,7 +1344,31 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
 		return true;
-	/* TODO: continue implementing `hol_term_type::HEAD` from here onwards */
+	case hol_term_type::HEAD:
+		dst.head.variable = src.head.variable;
+		if (!new_hol_term(dst.head.predicate)
+		 || !clone(*src.head.predicate, *dst.head.predicate, std::forward<Cloner>(cloner)...))
+		{
+			if (dst.head.predicate != nullptr)
+				free(dst.head.predicate);
+			return false;
+		}
+		for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+			if (src.head.args[i] == nullptr) {
+				dst.head.args[i] = nullptr;
+			} else if (!new_hol_term(dst.head.args[i])
+					|| !clone(*src.head.args[i], *dst.head.args[i], std::forward<Cloner>(cloner)...))
+			{
+				for (uint_fast8_t j = 0; j < i; j++) {
+					if (dst.head.args[j] != nullptr) {
+						free(*dst.head.args[j]); free(dst.head.args[j]);
+					}
+				}
+				free(*dst.head.predicate); free(dst.head.predicate);
+				return false;
+			}
+		}
+		return true;
 	}
 	fprintf(stderr, "clone ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -1567,6 +1617,63 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
 		return src;
+
+	case hol_term_type::HEAD:
+		changed = false;
+		first = apply(src->head.predicate, std::forward<Function>(function)...);
+		if (first == nullptr) return nullptr;
+		else if (first != src->head.predicate)
+			changed = true;
+		hol_term* args[ARG_COUNT];
+		for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+			if (src->head.args[i] == nullptr) {
+				args[i] = nullptr;
+				continue;
+			}
+			args[i] = apply(src->head.args[i], std::forward<Function>(function)...);
+			if (args[i] == nullptr) {
+				for (uint_fast8_t j = 0; j < i; j++) {
+					if (args[j] != src->head.args[j]) {
+						free(*args[j]);
+						if (args[j]->reference_count == 0)
+							free(args[j]);
+					}
+				}
+				if (first != src->head.predicate) {
+					free(*first); if (first->reference_count == 0) free(first);
+				}
+				return nullptr;
+			} else if (args[i] != src->head.args[i]) {
+				changed = true;
+			}
+		}
+
+		if (!changed)
+			return src;
+		if (!new_hol_term(new_term)) {
+			for (uint_fast8_t j = 0; j < ARG_COUNT; j++) {
+				if (args[j] != src->head.args[j]) {
+					free(*args[j]);
+					if (args[j]->reference_count == 0)
+						free(args[j]);
+				}
+			}
+			if (first != src->head.predicate) {
+				free(*first); if (first->reference_count == 0) free(first);
+			}
+			return nullptr;
+		}
+		new_term->type = Type;
+		new_term->reference_count = 1;
+		new_term->head.variable = src->head.variable;
+		new_term->head.predicate = first;
+		if (first == src->head.predicate) first->reference_count++;
+		for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+			new_term->head.args[i] = args[i];
+			if (args[i] == src->head.args[i] && args[i] != nullptr)
+				args[i]->reference_count++;
+		}
+		return new_term;
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type.\n");
 	return NULL;
@@ -1622,6 +1729,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::FALSE>(src, std::forward<Function>(function)...);
 	case hol_term_type::ANY:
 		return apply<hol_term_type::ANY>(src, std::forward<Function>(function)...);
+	case hol_term_type::HEAD:
+		return apply<hol_term_type::HEAD>(src, std::forward<Function>(function)...);
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type.\n");
 	return NULL;
@@ -1672,6 +1781,35 @@ inline hol_term* shift_bound_variables(hol_term* src, int shift)
 {
 	bound_variable_shifter shifter(shift);
 	hol_term* dst = apply(src, shifter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct variable_mapper {
+	const array_map<unsigned int, unsigned int>& variable_map;
+};
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, const variable_mapper& mapper) {
+	if (Type == hol_term_type::VARIABLE) {
+		unsigned int new_variable; bool contains;
+		new_variable = mapper.variable_map.get(src->variable, contains);
+		if (!contains) {
+			return src;
+		} else {
+			return hol_term::new_variable(new_variable);
+		}
+	} else {
+		return default_apply<Type>(src, mapper);
+	}
+}
+
+inline hol_term* map_variables(hol_term* src,
+		const array_map<unsigned int, unsigned int>& variable_map)
+{
+	const variable_mapper mapper = {variable_map};
+	hol_term* dst = apply(src, mapper);
 	if (dst == src)
 		dst->reference_count++;
 	return dst;
@@ -1766,10 +1904,10 @@ inline hol_term* apply(hol_term* src, const head_substituter& substituter)
 		return substituter.dst;
 	}
 
-	/* NOTE: this function should mirror the semantics of `apply_arg` in
-	   `hdp_parser.h` and `find_head` in `higher_order_logic.h` */
-	bool changed;
-	hol_term* new_term; hol_term** new_terms;
+	/* NOTE: this function should mirror the semantics of `find_head` and
+	   `apply<head_substituter>` in `higher_order_logic.h`, and `apply_arg` and
+	   `select_arg_inverter` in `hdp_parser.h` */
+	bool changed; hol_term* new_term;
 	hol_term* first; hol_term* second; hol_term* third;
 	switch (Type) {
 	case hol_term_type::IF_THEN:
@@ -1777,8 +1915,8 @@ inline hol_term* apply(hol_term* src, const head_substituter& substituter)
 	case hol_term_type::UNARY_APPLICATION:
 		first = src->binary.left;
 		second = apply(src->binary.right, substituter);
-		if (second == NULL) {
-			return NULL;
+		if (second == nullptr) {
+			return nullptr;
 		} else if (second == src->binary.right) {
 			return src;
 		} else {
@@ -1786,7 +1924,7 @@ inline hol_term* apply(hol_term* src, const head_substituter& substituter)
 				if (second != src->binary.right) {
 					free(*second); if (second->reference_count == 0) free(second);
 				}
-				return NULL;
+				return nullptr;
 			}
 			new_term->binary.left = first;
 			new_term->binary.right = second;
@@ -1801,8 +1939,8 @@ inline hol_term* apply(hol_term* src, const head_substituter& substituter)
 		first = src->ternary.first;
 		second = src->ternary.second;
 		third = apply(src->ternary.third, substituter);
-		if (third == NULL) {
-			return NULL;
+		if (third == nullptr) {
+			return nullptr;
 		} else if (third == src->ternary.third) {
 			return src;
 		} else {
@@ -1810,7 +1948,7 @@ inline hol_term* apply(hol_term* src, const head_substituter& substituter)
 				if (third != src->ternary.third) {
 					free(*third); if (third->reference_count == 0) free(third);
 				}
-				return NULL;
+				return nullptr;
 			}
 			new_term->ternary.first = first;
 			new_term->ternary.second = second;
@@ -1826,35 +1964,65 @@ inline hol_term* apply(hol_term* src, const head_substituter& substituter)
 	case hol_term_type::AND:
 	case hol_term_type::OR:
 	case hol_term_type::IFF:
-		new_terms = (hol_term**) malloc(sizeof(hol_term*) * src->array.length);
-		if (new_terms == NULL) return NULL;
 		changed = false;
-		for (unsigned int i = 0; i + 1 < src->array.length; i++)
-			new_terms[i] = src->array.operands[i];
-		new_terms[src->array.length - 1] = apply(src->array.operands[src->array.length - 1], substituter);
-		if (new_terms[src->array.length - 1] == NULL) {
-			free(new_terms); return NULL;
-		} else if (new_terms[src->array.length - 1] != src->array.operands[src->array.length - 1])
+		first = apply(src->array.operands[src->array.length - 1], substituter);
+		if (first == nullptr) {
+			return nullptr;
+		} else if (first != src->array.operands[src->array.length - 1])
 			changed = true;
 
 		if (!changed) {
-			free(new_terms);
 			return src;
 		} else {
 			if (!new_hol_term(new_term)) {
-				if (new_terms[src->array.length - 1] != src->array.operands[src->array.length - 1]) {
-					free(*new_terms[src->array.length - 1]);
-					if (new_terms[src->array.length - 1]->reference_count == 0)
-						free(new_terms[src->array.length - 1]);
+				if (first != src->array.operands[src->array.length - 1]) {
+					free(*first);
+					if (first->reference_count == 0)
+						free(first);
 				}
-				free(new_terms); return NULL;
+				return nullptr;
 			}
-			new_term->array.operands = new_terms;
-			new_term->array.length = src->array.length;
-			if (new_term->array.operands[src->array.length - 1] == src->array.operands[src->array.length - 1])
-				src->array.operands[src->array.length - 1]->reference_count++;
 			new_term->type = Type;
 			new_term->reference_count = 1;
+			if (first->type == Type && first != src->array.operands[src->array.length - 1]) {
+				/* the new child is the same type as the parent, so merge them */
+				new_term = (hol_term*) realloc(first->array.operands, sizeof(hol_term*) * (src->array.length + first->array.length - 1));
+				if (new_term == nullptr) {
+					if (first != src->array.operands[src->array.length - 1]) {
+						free(*first);
+						if (first->reference_count == 0)
+							free(first);
+					}
+					return nullptr;
+				}
+				for (unsigned int i = new_term->array.length; i > 0; i--)
+					new_term->array.operands[i + src->array.length - 1] = new_term->array.operands[i];
+				for (unsigned int i = 0; i + 1 < src->array.length; i++) {
+					new_term->array.operands[i] = src->array.operands[i];
+					new_term->array.operands[i]->reference_count++;
+				}
+				new_term->array.operands[src->array.length - 1] = first;
+				new_term->array.length = src->array.length + first->array.length - 1;
+			} else {
+				new_term->array.length = src->array.length;
+				new_term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * new_term->array.length);
+				if (new_term->array.operands == nullptr) {
+					if (first != src->array.operands[src->array.length - 1]) {
+						free(*first);
+						if (first->reference_count == 0)
+							free(first);
+					}
+					free(new_term);
+					return nullptr;
+				}
+				for (unsigned int i = 0; i + 1 < src->array.length; i++) {
+					new_term->array.operands[i] = src->array.operands[i];
+					new_term->array.operands[i]->reference_count++;
+				}
+				new_term->array.operands[src->array.length - 1] = first;
+				if (first == src->array.operands[src->array.length - 1])
+					first->reference_count++;
+			}
 			return new_term;
 		}
 
@@ -2113,6 +2281,17 @@ bool unify(
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
+		return true;
+	case hol_term_type::HEAD:
+		if (first.head.variable != second.head.variable) return false;
+		if (!unify(*first.head.predicate, *second.head.predicate, src_term, dst_term)) return false;
+		for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+			if (first.head.args[i] == nullptr) {
+				if (second.head.args[i] == nullptr) continue;
+				else return false;
+			}
+			if (!unify(*first.head.args[i], *second.head.args[i], src_term, dst_term)) return false;
+		}
 		return true;
 	}
 	fprintf(stderr, "unify ERROR: Unrecognized hol_term_type.\n");
@@ -3028,7 +3207,8 @@ inline bool compute_lambda_type(
 		array_map<unsigned int, hol_type>& parameter_types,
 		array<hol_type>& type_variables)
 {
-	if (!types.template push<hol_term_type::LAMBDA>(term)) return false;
+	if (!types.template push<hol_term_type::LAMBDA>(term)
+	 || !variable_types.ensure_capacity(variable_types.size + 1)) return false;
 
 	hol_type& left_type = *((hol_type*) alloca(sizeof(hol_type)));
 	hol_type& right_type = *((hol_type*) alloca(sizeof(hol_type)));
@@ -3066,6 +3246,57 @@ inline bool compute_lambda_type(
 	}
 	free(variable_types.values[variable_types.size]); free(right_type);
 	return types.template add<hol_term_type::LAMBDA>(term, expected_type);
+}
+
+template<bool PolymorphicEquality, typename ComputedTypes>
+inline bool compute_head_type(
+		const hol_head& head, const hol_term& term,
+		ComputedTypes& types, hol_type& expected_type,
+		array_map<unsigned int, hol_type>& constant_types,
+		array_map<unsigned int, hol_type>& variable_types,
+		array_map<unsigned int, hol_type>& parameter_types,
+		array<hol_type>& type_variables)
+{
+	if (!types.template push<hol_term_type::HEAD>(term)
+	 || !expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+	 || !variable_types.ensure_capacity(variable_types.size + 1)
+	 || !type_variables.ensure_capacity(type_variables.length + 1))
+		return false;
+
+	unsigned int new_type_variable = type_variables.length;
+	if (!init(type_variables[new_type_variable], hol_type_kind::ANY))
+		return false;
+	type_variables.length++;
+
+#if !defined(NDEBUG)
+	if (variable_types.contains(head.variable))
+		fprintf(stderr, "compute_head_type WARNING: `variable_types` already contains key %u.\n", head.variable);
+	unsigned int old_variable_types_size = variable_types.size;
+#endif
+	variable_types.keys[variable_types.size] = head.variable;
+	if (!init(variable_types.values[variable_types.size], new_type_variable))
+		return false;
+	variable_types.size++;
+
+	hol_type predicate_type(hol_type(new_type_variable), HOL_BOOLEAN_TYPE);
+	if (!compute_type<PolymorphicEquality>(*head.predicate, types, predicate_type, constant_types, variable_types, parameter_types, type_variables))
+		return false;
+
+	for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+		if (head.args[i] == nullptr) continue;
+		hol_type arg_type(hol_constant_type::BOOLEAN);
+		if (!compute_type<PolymorphicEquality>(*head.args[i], types, arg_type, constant_types, variable_types, parameter_types, type_variables))
+			return false;
+	}
+
+#if !defined(NDEBUG)
+	if (old_variable_types_size + 1 != variable_types.size
+	 || variable_types.keys[variable_types.size - 1] != head.variable)
+		fprintf(stderr, "compute_head_type WARNING: Quantified term is not well-formed.\n");
+#endif
+	variable_types.size--;
+	free(variable_types.values[variable_types.size]);
+	return types.template add<hol_term_type::HEAD>(term, HOL_BOOLEAN_TYPE);
 }
 
 template<bool PolymorphicEquality, typename ComputedTypes>
@@ -3208,6 +3439,9 @@ bool compute_type(const hol_term& term,
 	case hol_term_type::ANY:
 		return types.template push<hol_term_type::ANY>(term)
 			&& types.template add<hol_term_type::ANY>(term, expected_type);
+	case hol_term_type::HEAD:
+		return compute_head_type<PolymorphicEquality>(term.head, term, types,
+				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	}
 	fprintf(stderr, "compute_type ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -3488,6 +3722,30 @@ inline int_fast8_t compare(
 }
 
 inline int_fast8_t compare(
+		const hol_head& first,
+		const hol_head& second)
+{
+	if (first.variable < second.variable) return -1;
+	else if (first.variable > second.variable) return 1;
+
+	int_fast8_t result = compare(*first.predicate, *second.predicate);
+	if (result != 0) return result;
+
+	for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+		if (first.args[i] == nullptr) {
+			if (second.args[i] == nullptr) continue;
+			else return -1;
+		} else if (second.args[i] == nullptr) {
+			return 1;
+		}
+
+		result = compare(*first.args[i], *second.args[i]);
+		if (result != 0) return result;
+	}
+	return 0;
+}
+
+inline int_fast8_t compare(
 		const string& first,
 		const string& second)
 {
@@ -3556,6 +3814,8 @@ int_fast8_t compare(
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return compare(first.quantifier, second.quantifier);
+	case hol_term_type::HEAD:
+		return compare(first.head, second.head);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
@@ -3612,6 +3872,23 @@ inline bool relabel_variables(hol_quantifier& quantifier,
 	return true;
 }
 
+inline bool relabel_variables(hol_head& head,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	if (!new_variable(head.variable, head.variable, variable_map)
+	 || !relabel_variables(*head.predicate, variable_map))
+		return false;
+
+	for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+		if (head.args[i] == nullptr) continue;
+		if (!relabel_variables(*head.args[i], variable_map))
+			return false;
+	}
+
+	variable_map.size--;
+	return true;
+}
+
 bool relabel_variables(hol_term& term,
 		array_map<unsigned int, unsigned int>& variable_map)
 {
@@ -3652,6 +3929,8 @@ bool relabel_variables(hol_term& term,
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return relabel_variables(term.quantifier, variable_map);
+	case hol_term_type::HEAD:
+		return relabel_variables(term.head, variable_map);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
@@ -3813,6 +4092,9 @@ struct hol_scope {
 		case hol_term_type::FALSE:
 		case hol_term_type::ANY:
 			return;
+		case hol_term_type::HEAD:
+			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 		}
 		fprintf(stderr, "hol_scope.move ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -3860,6 +4142,9 @@ private:
 		case hol_term_type::UINT_LIST:
 		case hol_term_type::ANY:
 			return true;
+		case hol_term_type::HEAD:
+			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 		}
 		fprintf(stderr, "hol_scope.init_helper ERROR: Unrecognized hol_term_type.\n");
 		return false;
@@ -3903,6 +4188,9 @@ private:
 		case hol_term_type::FALSE:
 		case hol_term_type::ANY:
 			return true;
+		case hol_term_type::HEAD:
+			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 		}
 		fprintf(stderr, "hol_scope.free_helper ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -4016,6 +4304,9 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
 		return true;
+	case hol_term_type::HEAD:
+		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -4139,6 +4430,9 @@ int_fast8_t compare(
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
 		return 0;
+	case hol_term_type::HEAD:
+		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -4217,6 +4511,9 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
 		return;
+	case hol_term_type::HEAD:
+		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 	}
 	fprintf(stderr, "shift_variables ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
@@ -4556,6 +4853,9 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 	case hol_term_type::ANY:
 		HOL_ANY.reference_count++;
 		return &HOL_ANY;
+	case hol_term_type::HEAD:
+		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 	}
 	fprintf(stderr, "scope_to_term ERROR: Unrecognized hol_term_type.\n");
 	return NULL;
@@ -6018,6 +6318,9 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 		return init(out, hol_term_type::FALSE);
 	case hol_term_type::ANY:
 		return init(out, hol_term_type::ANY);
+	case hol_term_type::HEAD:
+		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `HEAD` is not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `HEAD` */
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -6207,6 +6510,7 @@ bool is_subset(const hol_term* first, const hol_term* second)
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
+	case hol_term_type::HEAD:
 		/* TODO: finish implementing this */
 		fprintf(stderr, "is_subset ERROR: Not implemented.\n");
 		exit(EXIT_FAILURE);
@@ -6297,11 +6601,11 @@ inline bool set_uint_list(hol_term& exp,
 
 template<typename BuiltInPredicates>
 inline bool is_built_in(unsigned int constant) {
-	return constant != (unsigned int) BuiltInPredicates::UNKNOWN
-		&& constant != (unsigned int) BuiltInPredicates::ARG1
-		&& constant != (unsigned int) BuiltInPredicates::ARG2
-		&& constant != (unsigned int) BuiltInPredicates::ARG3
-		&& constant != (unsigned int) BuiltInPredicates::SIZE;
+	return constant == (unsigned int) BuiltInPredicates::UNKNOWN
+		|| constant == (unsigned int) BuiltInPredicates::ARG1
+		|| constant == (unsigned int) BuiltInPredicates::ARG2
+		|| constant == (unsigned int) BuiltInPredicates::ARG3
+		|| constant == (unsigned int) BuiltInPredicates::SIZE;
 }
 
 template<typename BuiltInPredicates>
@@ -6375,8 +6679,9 @@ hol_term* find_head(hol_term* term, Function apply)
 	find_head<BuiltInPredicates>(term, head);
 	if (head != nullptr) return head;
 
-	/* NOTE: this function should mirror the semantics of `apply_arg` in
-	   `hdp_parser.h` and `apply<head_substituter>` in `higher_order_logic.h` */
+	/* NOTE: this function should mirror the semantics of `find_head` and
+	   `apply<head_substituter>` in `higher_order_logic.h`, and `apply_arg` and
+	   `select_arg_inverter` in `hdp_parser.h` */
 	switch (term->type) {
 	case hol_term_type::VARIABLE:
 	case hol_term_type::CONSTANT:

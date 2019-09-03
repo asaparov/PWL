@@ -6,9 +6,9 @@
 #
 # We use neo-Davidsonian/event semantics to represent meaning in logical form.
 # Thus, all verbs, nouns, adjectives, adverbs, etc are expressed as quantified
-# variables. The "head" of any logical form is the right-most scope (not
-# necessarily the deepest) that is an event (excluding `capable_of` events with
-# an event argument). For example:
+# variables. A "head" of any logical form is the scope `y` such that there is
+# no other scope `x` in the logical form with an edge `argn(x)=y` and `y` is
+# not a set variable.
 #
 # We also chose to order the terms in the logical forms to match the order of
 # the words/complements/arguments in the sentence as close as possible. This is
@@ -125,7 +125,7 @@
 #  ?[X]:(?[G]:(G=^[x]:(U(0,x) & girl(x)) & ?[B]:(B=^[x]:(U(1,x) & boy(x)) & X=^[x]:(x=G | x=B))) & sum(X,^[Y]:size(Y))=10 & ![Y]:(X(Y) => ![x]:(Y(x) => ?[p]:(arg1(p)=x & U(2,p) & location(p) & present(p) & ?[c]:(U(3,c) & class(c) & arg2(p)=c)))))
 #
 #  "a cat is not currently but will be in the room."
-#  ?[c]:(U(0,c) & cat(c) & ?[r]:(U(1,r) & room(r) & ?[l]:(arg1(l)=c & U(2,l) & located(l) & present(l) & arg2(l)=r & ?[c]:(U(3,c) & currently(c) & arg1(c)=l)) & ?[l]:(arg1(l)=c & U(4,l) & located(l) & future(l) & arg2(l)=r)))
+#  ?[c]:(U(0,c) & cat(c) & ?[r]:(U(1,r) & room(r) & ?[l]:(arg1(l)=c & U(2,l) & location(l) & present(l) & arg2(l)=r & ?[c]:(U(3,c) & currently(c) & arg1(c)=l)) & ?[l]:(arg1(l)=c & U(4,l) & location(l) & future(l) & arg2(l)=r)))
 #
 #  "Jane is the only doctor."
 #  ?[o]:(arg1(o)=jane & U(0,o) & only(o) & present(o) & arg2(o)=^[x]:(U(1,x) & doctor(x)))
@@ -417,6 +417,9 @@
 #  "brighter stars could be seen with the telescope than without it"
 #  ?[X,R]:(subset(X,^[x]:(![r]:(R(r) => ?[g]:(U(0,g) & greater(brightness)(g) & arg1(g)=x & arg2(g)=r)) & U(1,x) & star(x))) & ![x]:(X(x) => ?[c]:(U(2,c) & capable_of(c) & arg2(c)=possibility(?[s]:(arg1(s)=x & U(3,s) & inverse(see)(s) & ?[w]:(U(4,w) & with(w) & ?[t]:(U(5,t) & telescope(t) & arg1(w)=t)) & R=^[r]:?[y]:(U(6,y) & arg1(y)=r & ~?[w]:(U(7,w) & with(w) & ?[t]:(U(8,t) & telescope(t) & arg1(w)=t))))))))
 #
+#  "you can see brighter stars with the telescope than without it"
+#  ?[X,R]:(subset(X,^[x]:(![r]:(R(r) => ?[g]:(U(0,g) & greater(brightness)(g) & arg1(g)=x & arg2(g)=r)) & U(1,x) & star(x))) & ![x]:(X(x) => ?[c]:(arg1(c)=you & U(2,c) & capable_of(c) & arg2(c)=possibility(?[s]:(arg1(s)=x & U(3,s) & inverse(see)(s) & ?[w]:(U(4,w) & with(w) & ?[t]:(U(5,t) & telescope(t) & arg1(w)=t)) & R=^[r]:?[y]:(U(6,y) & arg1(y)=r & ~?[w]:(U(7,w) & with(w) & ?[t]:(U(8,t) & telescope(t) & arg1(w)=t))))))))
+#
 #  "last time i went to campus, i took the bus"
 #  ?[t]:(?[l]:(U(0,l) & last_time(l) & arg1(l)=t & arg2(l)=^[g]:(arg1(g)=me & U(1,g) & go(g) & past(g) & ?[c]:(U(2,c) & campus(c) & arg2(g)=c))) & arg1(t)=me & U(3,t) & take(t) & past(t) & ?[b]:(U(4,b) & bus(b) & arg2(t)=b))
 #    [OR]
@@ -467,7 +470,7 @@
 #  ?[h]:(U(0,h) & female_ref(0,h) & ?[P,N]:(size(P)>size(N) & subset(P,^[p]:(U(1,p) & play(p))) & ![p]:(P(p) => ?[w]:(arg1(w)=h & U(2,w) & write(w) & past(w) & arg2(w)=p & N=^[n]:(U(3,n) & novel(n) & ?[w]:(arg1(w)=me & U(4,w) & write(w) & past(w) & arg2(w)=n))))))
 #
 #  "we spend more time in France than in Germany."
-#  ?[X]:(X=us & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(0,s) & spend_time(s) & present(s) & ?[g]:(U(1,g) & greater(time)(g) & arg1(g)=s & ?[l]:(U(2,l) & located(l) & arg1(l)=s & arg2(l)=france) & ?[y]:(U(3,y) & ?[l]:(U(4,l) & located(l) & arg1(l)=y & arg2(l)=germany) & arg2(g)=y)))))
+#  ?[X]:(X=us & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(0,s) & spend_time(s) & present(s) & ?[g]:(U(1,g) & greater(time)(g) & arg1(g)=s & ?[l]:(U(2,l) & location(l) & arg1(l)=s & arg2(l)=france) & ?[y]:(U(3,y) & ?[l]:(U(4,l) & location(l) & arg1(l)=y & arg2(l)=germany) & arg2(g)=y)))))
 # TODO: implement this in the grammar
 #
 #  "he plays better drunk than sober."
@@ -578,6 +581,9 @@
 # "Kim's and Pat's children are cute."
 # ?[X]:(X=^[x]:(?[P]:(P=^[p]:(p=kim | p=pat) & ![p]:(P(p) => ?[o]:(arg1(o)=p & U(0,o) & own(o) & arg2(o)=x))) & U(1,x) & child(x)) & ![x]:(X(x) => ?[c]:(arg1(c)=x & U(2,c) & cute(c) & present(c))))
 # TODO: implement this in the grammar
+#
+# "in the tree and afraid, the cat and dog are."
+# ?[c](U(0,c) & cat(c) & ?[d]:(U(1,d) & dog(d) & ?[X]:(X=^[x]:(x=c | x=d) & ![x]:(X(x) => ?[l]:(U(2,l) & location(l) & present(l) & arg1(l)=x & ?[t]:(U(3,t) & tree(t) & arg2(l)=t)) & ?[a]:(U(4,a) & afraid(a) & present(a) & arg1(a)=x)))))
 
 
 S nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -588,7 +594,8 @@ S -> S':identity PERIOD
 # S {^[x]:x=A} -> S' {A}
 # S {^[x]:(... & true(x) & (x=possibility(A1) | ... | x=possibility(An)))} -> S' {... & (A1 | ... | An)}
 # e.g. "it is red?", "it is red or blue?"
-#S -> S' QUESTION
+#S -> S':remove_closed_lambda_equality QUESTION
+#S -> S':remove_lambda_possibilities QUESTION
 
 # for all other interrogatives
 # S {^[x]:A} -> S' {^[x]:A}
@@ -609,36 +616,36 @@ S' -> BECAUSE S':try_remove_correlated,try_remove_is_adjunct,remove_because
 S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 
 # (non-predicative) preposed VP complements/adjuncts
-# S' {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
+# S' {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
 #  -> V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
 #     (COMMA) S' {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator S':try_remove_correlated,try_remove_is_adjunct
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator COMMA S':try_remove_correlated,try_remove_is_adjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator,select_right_conjunct S':try_remove_correlated,try_remove_is_adjunct,remove_right_conjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator,select_right_conjunct COMMA S':try_remove_correlated,try_remove_is_adjunct,remove_right_conjunct
 
 # (predicative) preposed VP complements/adjuncts
-# S' {... & (~)?[y1]:(f(y1) & U(i1,y1) & p(y1) & f1(y1)) & ... & (~)?[yn]:(f(yn) & U(in,yn) & p(yn) & fn(yn))}
-#  -> V_ADJUNCT {... & ?[y]:(U(i,y) & p(y) & f(y))}
-#     (COMMA) S' {... & (~)?[y1]:f1(y1) & ... & (~)?[yn]:fn(yn)}
+# S' {... & (~)?[y1]:(U(i1,y1) & p1(y1) & f(y1) & h1(y1)) & ... & (~)?[yn]:(U(in,yn) & pn(yn) & f(yn) & hn(yn))}
+#  -> V_ADJUNCT {... & ?[y1]:(U(i1,y1) & p1(y1) & h1(y1)) & ... & ?[yn]:(U(in,yn) & pn(yn) & hn(yn))}
+#     (COMMA) S' {... & (~)?[y]:f(y)}
 # This rule removes the predicate `p` from the event corresponding to the verb
 # (and so the verb is semantically empty) such as in "blue, the cat is" and "in
-# the tree, the cat is". `fi` contains verb-specific terms such as `present` as
-# well as any adjuncts or other arguments of y whereas `f` contains everything
+# the tree, the cat is". `f` contains verb-specific terms such as `present` as
+# well as any adjuncts or other arguments of y whereas `h` contains everything
 # else, such as the argument.
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator S':try_remove_correlated,try_remove_is_adjunct
-#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator COMMA S':try_remove_correlated,try_remove_is_adjunct
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator,select_right_conjunct S':try_remove_correlated,try_remove_is_adjunct,remove_right_conjunct,remove_left_predicate_and_factor
+#S' -> V_ADJUNCT:try_remove_nullable_subject,require_no_conjunction,try_remove_is_adjunct,require_no_correlator,select_right_conjunct COMMA S':try_remove_correlated,try_remove_is_adjunct,remove_right_conjunct,remove_left_predicate_and_factor
 
 # preposed coordination
 # TODO: coordinates from other levels can be moved here to (as well as to other levels), such as NP, NOMINAL_R, N_ADJUNCT
-# S' {... & (~)?[y]:(... & (A1 & ... & An) & ...)}
+# S' {... & (~)?[y]:(... & (A1 & ... & An))}
 #  -> AS WELL AS/IN ADDITION TO/PLUS V_ADJUNCT {?[y]:(p(y) & A1)}
-#     COMMA S' {... & (~)?[y]:(... & (A2 & ... & An) & ...)}
-#S' -> AS WELL AS V_ADJUNCT COMMA S'
-#S' -> IN ADDITION TO V_ADJUNCT COMMA S'
-#S' -> PLUS V_ADJUNCT COMMA S'
-# S' {... & (~)?[y]:(... & instead_of(A1, A2) & ...)}
+#     COMMA S' {... & (~)?[y]:(... & (A2 & ... & An))}
+#S' -> AS WELL AS V_ADJUNCT:select_left_conjunct_in_right_conjunct COMMA S':remove_left_conjunct_in_right_conjunct
+#S' -> IN ADDITION TO V_ADJUNCT:select_left_conjunct_in_right_conjunct COMMA S':remove_left_conjunct_in_right_conjunct
+#S' -> PLUS V_ADJUNCT:select_left_conjunct_in_right_conjunct COMMA S':remove_left_conjunct_in_right_conjunct
+# S' {... & (~)?[y]:(... & instead_of(A1, A2))}
 #  -> RATHER THAN V_ADJUNCT {?[y]:(p(y) & A2)}
-#     COMMA S' {... & (~)?[y]:(... & A1 & ...)}
-#S' -> RATHER THAN V_ADJUNCT COMMA S'
+#     COMMA S' {... & (~)?[y]:(... & A1)}
+#S' -> RATHER THAN V_ADJUNCT:select_right_in_right_instead_of COMMA S':remove_right_in_right_instead_of
 
 # S' {?[X]:(f(X) & ![x]:(X(x) => (true(x) => g(x))))}
 #  -> S' {g(x)}
@@ -646,36 +653,36 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 #     PP {?[X]:(f(X) & ![x]:(X(x) => true(x)))}
 # NOTE: We don't allow other adjuncts here to avoid the spurious ambiguity
 # where the PP could also attach at VP.
-#S' -> S':require_no_conjunction,try_remove_is_adjunct PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
-#S' -> S':require_no_conjunction,try_remove_is_adjunct COMMA PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,select_consequent_in_cases PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_consequent_in_cases
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,select_consequent_in_cases COMMA PP:try_remove_nullable_subject,try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_consequent_in_cases
 
 # S' {A => B} -> IF/WHETHER S' {A} (COMMA) (THEN) S' {B}
 # S' {^[x]:x=(A => B)} -> IF/WHETHER S' {A} (COMMA) (THEN) S' {^[x]:x=B}
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if S':try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,add_subjunctive S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,add_subjunctive COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,select_antecedent S':try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,select_antecedent COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,select_antecedent THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,select_antecedent COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,select_antecedent S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,select_antecedent COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive,select_antecedent S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive,select_antecedent COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive,select_antecedent THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_if,add_subjunctive,select_antecedent COMMA THEN S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,add_subjunctive,select_antecedent S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
+#S' -> S':require_no_conjunction,try_remove_is_adjunct,add_whether,add_subjunctive,select_antecedent COMMA S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,remove_antecedent
 
 # (not preposed) correlative comparative constructions
 # S' {... & ?[y]:(?[i]:f(i) & g(y)) => B}
 #  -> S' {B}
 #     THE ADJP_L/ADVP_L {... & ?[i]:f(i)}
 #     S' {... & ?[y]:g(y)}
-# S' {... & ?[i]:(U(j,i) & p(i) & f(y)) => B}
+# S' {... & ?[i]:(U(j,i) & p(i) & f(i)) => B}
 #  -> S' {B}
 #     THE ADJP_L/ADVP_L {... & ?[i]:(U(k,i) & p(i))}
 #     S' {... & ?[i]:f(i)}
 # e.g. "they work harder the more (money) we pay them.", "he becomes more cynical the older he gets."
-#S' -> S':require_no_conjunction THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator #S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
-#S' -> S':require_no_conjunction THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator #S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator
+#S' -> S':require_no_conjunction,select_consequent THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,select_antecedent,remove_left_conjunct
+#S' -> S':require_no_conjunction,select_consequent THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,select_antecedent,remove_left_conjunct
 
 # (preposed) correlative comparative constructions
 # S' {... & ?[y]:(?[i]:f1(i) & g1(y)) => ... & ?[y]:(?[i]:f2(i) & g2(y))}
@@ -690,10 +697,10 @@ S' -> FOR S':try_remove_correlated,try_remove_is_adjunct,remove_for
 #     S' {... & ?[y]:g2(y)}
 # NOTE: The consequent could also be predicative in the same way as the antecedent.
 # e.g. "the more (money) we pay them, the harder they work.", "the older he gets, the more cynical he becomes."
-#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
-#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
-#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADJP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
-#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator COMMA THE #ADVP_L:try_remove_correlated,try_remove_is_adjunct S':try_remove_correlated,try_remove_is_adjunct
+#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,select_antecedent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator,select_antecedent,remove_left_conjunct COMMA THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,select_consequent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,select_consequent,remove_left_conjunct
+#S' -> THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,select_antecedent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator,select_antecedent,remove_left_conjunct COMMA THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,select_consequent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,select_consequent,remove_left_conjunct
+#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,select_antecedent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator,select_antecedent,remove_left_predicate_and_factor COMMA THE ADJP_L:try_remove_correlated,try_remove_is_adjunct,select_consequent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,select_consequent,remove_left_conjunct
+#S' -> THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,select_antecedent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,require_no_conjunction,require_no_correlator,remove_left_predicate_and_factor COMMA THE ADVP_L:try_remove_correlated,try_remove_is_adjunct,select_consequent,select_left_conjunct_without_head S':try_remove_correlated,try_remove_is_adjunct,select_consequent,remove_left_conjunct
 
 S' -> EITHER S':require_not_adjunct,remove_either
 
@@ -705,54 +712,54 @@ S' -> EITHER S':require_not_adjunct,remove_either
 # coordination and the head scope to be a feature to decide between the rules
 # at this nonterminal (e.g. "both" moves left much less often than "either").
 # S' {A1 | ... | An} -> EITHER S' {A1 | ... | An}
-#S' -> S':require_not_correlated,require_not_adjunct,add_either,add_correlated_by_either # this transformation requires the coordination is at the head
-#S' -> EITHER S':require_not_correlated,require_not_adjunct,add_correlated_by_either # this transformation requires the coordination is a descendant of the head
+#S' -> S':require_not_correlated,require_not_adjunct,add_either,add_correlated_by_either,require_disjunction # this transformation requires the coordination is at the head
+#S' -> EITHER S':require_not_correlated,require_not_adjunct,add_correlated_by_either,require_disjunction # this transformation requires the coordination is a descendant of the head
 
 # NOTE: In the below rules, we require that none of the Ai are themselves
 # coordinations with the coordinator (unless Ai is negated).
 # S' {(~)A1 & ... & (~)An} -> S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
-#S' -> S':require_not_adjunct S_COORDINATION:try_remove_correlator,add_and
-#S' -> S':require_not_adjunct S_COORDINATION:try_remove_correlator,add_and,add_comma
+#S' -> S':require_not_adjunct,require_conjunction,select_left_operand S_COORDINATION:try_remove_correlator,add_and,remove_left_operand
+#S' -> S':require_not_adjunct,require_conjunction,select_left_operand S_COORDINATION:try_remove_correlator,add_and,remove_left_operand,add_comma
 # S' {(~)A1 | ... | (~)An} -> S' {(~)A1} S_COORDINATION {(~)A2 | ... | (~)An}
-#S' -> S':require_not_adjunct S_COORDINATION:try_remove_correlator,add_or
-#S' -> S':require_not_adjunct S_COORDINATION:try_remove_correlator,add_or,add_comma
+#S' -> S':require_not_adjunct,require_disjunction,select_left_operand S_COORDINATION:try_remove_correlator,add_or,remove_left_operand
+#S' -> S':require_not_adjunct,require_disjunction,select_left_operand S_COORDINATION:try_remove_correlator,add_or,remove_left_operand,add_comma
 # S' {~A1 & ... & ~An} -> S' {~A1} S_COORDINATION {~A2 & ... & ~An}
 # TODO: We need to store information in the source logical form that there was
 # originally a negation (that this is a negative context), and "nor" can only
 # appear in negative contexts.
-#S' -> S':require_not_adjunct S_COORDINATION:try_remove_correlator,add_nor
-#S' -> S':require_not_adjunct S_COORDINATION:try_remove_correlator,add_nor,add_comma
+#S' -> S':require_not_adjunct,require_negative_conjunction,select_left_operand S_COORDINATION:try_remove_correlator,add_nor,remove_left_operand
+#S' -> S':require_not_adjunct,require_negative_conjunction,select_left_operand S_COORDINATION:try_remove_correlator,add_nor,remove_left_operand,add_comma
 
 # S' {but((~)A1,(~)A2)} -> S' {(~)A1} (COMMA) BUT S' {(~)A2}
-#S' -> S':require_not_adjunct BUT S':try_remove_correlator
-#S' -> S':require_not_adjunct COMMA BUT S':try_remove_correlator
+#S' -> S':require_not_adjunct,select_left_in_but BUT S':try_remove_correlator,select_right_in_but
+#S' -> S':require_not_adjunct,select_left_in_but COMMA BUT S':try_remove_correlator,select_right_in_but
 
 
 S_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # S_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
 # S_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) S' {(~)A1} S_COORDINATION {(~)A2 | ... | (~)An}
-#S_COORDINATION -> COMMA:require_comma S':remove_coordinator,remove_comma S_COORDINATION
+#S_COORDINATION -> COMMA:require_comma S':remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
 # S_COORDINATION {(~)A1} -> (COMMA) S' {(~)A1}
 #S_COORDINATION -> COMMA:require_comma S':remove_coordinator,remove_comma
 
 # S_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
-#S_COORDINATION -> AND:require_and S':remove_coordinator,remove_comma S_COORDINATION
-#S_COORDINATION -> COMMA:require_comma AND:require_and S':remove_coordinator,remove_comma S_COORDINATION
+#S_COORDINATION -> AND:require_and S':remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
+#S_COORDINATION -> COMMA:require_comma AND:require_and S':remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
 # S_COORDINATION {(~)A1} -> (COMMA) AND S' {(~)A1}
 #S_COORDINATION -> AND:require_and S':remove_coordinator,remove_comma
 #S_COORDINATION -> COMMA:require_comma AND:require_and S':remove_coordinator,remove_comma
 
 # S_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
-#S_COORDINATION -> OR:require_or S':remove_coordinator,remove_comma S_COORDINATION
-#S_COORDINATION -> COMMA:require_comma OR:require_or S':remove_coordinator,remove_comma S_COORDINATION
+#S_COORDINATION -> OR:require_or S':remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
+#S_COORDINATION -> COMMA:require_comma OR:require_or S':remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
 # S_COORDINATION {(~)A1} -> (COMMA) OR S' {(~)A1}
 #S_COORDINATION -> OR:require_or S':remove_coordinator,remove_comma
 #S_COORDINATION -> COMMA:require_comma OR:require_or S':remove_coordinator,remove_comma
 
 # S_COORDINATION {~A1 & ... & (~)An} -> (COMMA) NOR VP_R {~A1} S_COORDINATION {(~)A2 & ... & (~)An}
-#S_COORDINATION -> NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma S_COORDINATION
-#S_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma S_COORDINATION
+#S_COORDINATION -> NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
+#S_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,select_left_operand S_COORDINATION:remove_left_operand
 # S_COORDINATION {~A1} -> (COMMA) NOR S' {~A1}
 #S_COORDINATION -> NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma
 #S_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma
@@ -763,21 +770,21 @@ S'' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # S'' {(~)?[x]:f(x)} -> THERE IS NP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
 # NOTE: This above rule is only really useful if we choose to represent "there
 # is a cat" as something like ?[x]:(U(0,x) & cat(x)).
-#S'' -> THERE IS NP:try_remove_nullable_subject,require_no_lambda,try_remove_correlated,require_no_correlator
+#S'' -> THERE IS NP:try_remove_nullable_subject,require_no_lambda,try_remove_correlated,require_no_correlator,predicative
 
 # S'' {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
 #  -> V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
 #     VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
 # where `f` contains the `arg1` term.
-#S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator VP_R:try_remove_nullable_subject,try_remove_correlated
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
 
-# S'' {... & (~)?[x]:(f(x) & ?[y1]:(... & arg1/arg2(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2(yn)=x & ...))}
+# S'' {... & (~)?[x]:(f(x) & ?[y1]:(... & arg1/arg2(y1)=x) & ... & ?[yn]:(... & arg1/arg2(yn)=x))}
 #  -> V_ADJUNCT {... & ?[x]:(f(x) & ?[y1]:(p1(y1) & arg1/arg2(y1)=x) & ... & ?[yn]:(pn(yn) & arg1/arg2(yn)=x))}
 #     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
-# S'' {... & (~)![x]:(f(x) => ... & ?[y1]:(... & arg1/arg2(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2(yn)=x & ...))}
+# S'' {... & (~)![x]:(f(x) => ... & ?[y1]:(... & arg1/arg2(y1)=x) & ... & ?[yn]:(... & arg1/arg2(yn)=x))}
 #  -> V_ADJUNCT {... & ![x]:(f(x) => ... & ?[y1]:(p1(yn) & arg1/arg2(y1)=x) & ... & ?[yn]:(pn(yn) & arg1/arg2(yn)=x))}
 #     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
-# S'' {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y1]:(... & arg1/arg2(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2(yn)=x & ...)))}
+# S'' {... & ?[X]:(f(X) & (~)![x]:(X(x) => ... & ?[y1]:(... & arg1/arg2(y1)=x) & ... & ?[yn]:(... & arg1/arg2(yn)=x)))}
 #  -> V_ADJUNCT {... & ?[X]:(f(X) & ![x]:(X(x) => ... & ?[y1]:(p1(y1) & arg1/arg2(y1)=x) & ... & ?[yn]:(pn(yn) & arg1/arg2(yn)=x)))}
 #     VP_R {... & (~)?[y1]:(...) & ... & (~)?[yn]:(...)}
 # NOTE: This rule also handles open interrogatives but only when the unknown
@@ -790,7 +797,7 @@ S'' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #   ?[X]:(... & ?[R]:(f(size(X),size(R)) & ... & ![r]:(R(r) => ?[y]:(arg1/arg2/arg3(y)=r & ...))) & ... & ![x]:(X(x) => ?[y]:(arg1/arg2/arg3(y)=x & ...)))
 # This rule requires that `arg1(y)=r` and `arg1(y)=x` appear in both
 # consequents (or `arg2(y)=r` and `arg2(y)=x`, etc).
-S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_arg1_keep_head VP_R:try_remove_nullable_subject,try_remove_correlated,remove_arg1
+S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_right_conjunct VP_R:try_remove_nullable_subject,try_remove_correlated,remove_right_conjunct
 # TODO: do we need an arg2 version of this rule?
 
 # open interrogative clauses with movement
@@ -805,6 +812,10 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 #     VP_R {... & ?[r]:f(r)}
 # e.g. "which store did Jason run to?", "what store did Jason run to?", "who is she speaking with?"
 # e.g. "to which store did Jason run?", "with whom is she speaking?" (for the rules with add_preposition)
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_of_lambda # requires do-support unless subordinate
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_of_lambda,add_to_infinitive # requires do-support unless subordinate
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated,remove_right_of_lambda # requires do-support unless subordinate
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator,select_right_of_lambda #VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated,remove_right_of_lambda,add_to_infinitive # requires do-support unless subordinate
 # for predicative subjects
 # S'' {^[x]:(... ?[r]:(g(x,r) & U(i,r) & p(r) & f(r)))}
 #  -> V_ADJUNCT {^[x]:?[r]:(g(x,r) & U(i,r) & p(r))}
@@ -812,10 +823,8 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 # e.g. "how big is the earth?"
 # NOTE: `r` does not have to be the head of the logical form.
 # NOTE: `r` can also be any scope that is an ancestor of x.
-#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated # requires do-support unless subordinate
-#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,add_to_infinitive # requires do-support unless subordinate
-#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated # requires do-support unless subordinate
-#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator #VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated,add_to_infinitive # requires do-support unless subordinate
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda # requires do-support unless subordinate
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda,add_to_infinitive # requires do-support unless subordinate
 
 # open interrogative clauses with movement
 # S'' {^[x]:(... ?[r]:(g(r) & U(i,r) & p(r) & f(r)))}
@@ -824,23 +833,25 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 # NOTE: `r` does not have to be the head of the logical form.
 # This rule removes the predicate `p` from the event corresponding to the verb
 # (and so the verb is semantically empty).
-#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated # requires do-support unless subordinate
-#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,add_to_infinitive # requires do-support unless subordinate
+#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,remove_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda # requires do-support unless subordinate
+#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,remove_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda,add_to_infinitive # requires do-support unless subordinate
 
 # subject-less infinitival closed interrogative clauses
 # S'' {^[x]:x=A} -> VP_R {A}
 # S'' {^[x]:(... & true(x) & (x=possibility(A1) | ... | x=possibility(An)))} -> VP_R {... & (A1 | ... | An)}
-#S'' -> VP_R:remove_subordinate,require_no_arg1,require_to_infinitive
+#S'' -> VP_R:remove_subordinate,require_no_arg1,require_to_infinitive,remove_closed_lambda_equality
+#S'' -> VP_R:remove_subordinate,require_no_arg1,require_to_infinitive,remove_lambda_possibilities
 
 # subject-less infinitival open interrogative clauses
 # S'' {^[x]:A} -> VP_R {^[x]:A}
-#S'' -> VP_R:try_remove_subordinate,require_no_arg1,add_to_infinitive
+#S'' -> VP_R:try_remove_subordinate,require_no_arg1,add_to_infinitive,require_lambda
 
 # closed interrogative clauses, which require subject-auxiliary inversion
 # (excluding closed interrogative clauses we handle at the nonterminal S)
 # S'' {^[x]:x=A} -> VP_R {A}
 # S'' {^[x]:(... & true(x) & (x=possibility(A1) | ... | x=possibility(An)))} -> VP_R {... & (A1 | ... | An)}
-#S'' -> VP_R:try_add_req_aux # requires do-support unless subordinate
+#S'' -> VP_R:try_add_req_aux,remove_closed_lambda_equality # requires do-support unless subordinate
+#S'' -> VP_R:try_add_req_aux,remove_lambda_possibilities # requires do-support unless subordinate
 
 # comparative constructions
 # S'' {... & ?[x,r]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & ?[y]:(... & arg1(y)=x & ... & h(r) & ...))}
@@ -849,16 +860,16 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 # where h(r) could either be `r=a` if r is a constant or it can define a new object like `U(i,r) & p(r) & ...`.
 # S'' {... & ?[X,R]:(... & p_comp(size(X),size(R)) & ... & F(X=^[x]:(![r]:(R(r) => ?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ... & ![x]:(X(x) => ?[y]:(... & arg1(y)=x & ... & R=^[r]:(...) & ...)))}
 #  -> NP {^[P]:(... & ?[X]:(... & p_comp(size(X)) & ... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x))) & ... & ![x]:(X(x) => P(x))))}
-#     VP_R {... & ?[R]:(p_comp(size(R)) & ... & ![r]:(R(r) => ?[g]:(U(i,g) & p(fn)(g) & arg2(g)=r)) & ... & ?[y]:(... R=^[r]:(...) & ...))}
+#     VP_R {... & ?[R]:(p_comp(size(R)) & ... & ![r]:(R(r) => ?[g]:(U(i,g) & p(fn)(g) & arg2(g)=r)) & ... & ?[y]:(... & R=^[r]:(...) & ...))}
 # S'' {... & ?[X,R]:(?[X1,R1]:(... & p_comp(size(X1),size(R1)) & ... & F(X1=^[x]:(![r]:(R1(r) => ?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r)) & ...)) & ?[X2,R2]:(... & p_comp(size(X2),size(R2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn) & R=^[S]:(S=R1 | ... | S=Rn))) & ... & ![S]:(X(S) => ![x]:(S(x) => ?[y]:(... & arg1(y)=x & ... & ![Ri]:(R(Ri) => Ri=^[r]:(...)) & ...))))}
-#  -> NP {^[P]:(... & ?[X]:(... & p_comp(size(X)) & ... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x))) & ... & ![x]:(X(x) => P(x))))}
-#     VP_R {... & ?[Rn]:(p_comp(size(Rn)) & ... & ![r]:(Rn(r) => ?[g]:(U(i,g) & p(fn)(g) & arg2(g)=r)) & ... & ?[y]:(... Rn=^[r]:(...) & ...))}
+#  -> NP {^[P]:(... & ?[X]:(?[X1]:(... & p_comp(size(X1)) & ... & F(X1=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x) & ...)) & ?[X2]:(... & p_comp(size(X2)) & ... & F(X2=^[x]:(...)) & ... & X=^[S]:(S=X1 | ... | S=Xn))) & ... & ![S]:(X(S) => ![x]:(S(x) => P(x)))))}
+#     VP_R {... & ?[Rn]:(p_comp(size(Rn)) & ... & ![r]:(Rn(r) => ?[g]:(U(i,g) & p(fn)(g) & arg2(g)=r)) & ... & ?[y]:(... & Rn=^[r]:(...) & ...))}
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
 # `p_comp(size(X),size(R))` and `?[gi]:(...)` are optional (but there must be
 # at least one). The term `p_comp(size(X),size(R))` handles comparative
 # constructions where sizes of sets are compared.
 # e.g. "a brighter star could be seen with the telescope than without it", "more people came than last time", "more girls but fewer boys came to the event than last time"
-#S'' -> NP:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator VP_R:try_remove_nullable_subject,try_remove_correlated
+#S'' -> NP:require_no_subordinate,select_left_comparator_predicative,try_remove_nullable_subject,try_remove_correlator VP_R:remove_left_comparator,try_remove_nullable_subject,try_remove_correlated
 
 # S'' {A} -> VP_R {A}
 S'' -> VP_R:remove_nullable_subject
@@ -880,7 +891,7 @@ VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjun
 # cat is in the tree". `fi` contains verb-specific terms such as `present` as
 # well as any adjuncts or other arguments of y whereas `f` contains everything
 # else, such as the argument.
-#VP_R -> VP_R V_ADJUNCT:try_remove_correlated,try_remove_correlator
+#VP_R -> VP_R:remove_right_conjunct,remove_left_predicate V_ADJUNCT:select_right_conjunct_and_factor,try_remove_correlated,try_remove_correlator
 
 # comparative constructions
 # VP_R {... & ?[x,r]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & ?[y]:(... & arg1(y)=x & ... & h(r) & ...))}
@@ -897,7 +908,7 @@ VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjun
 # least one). The term `f(size(X),size(R))` handles comparative constructions
 # where sizes of sets are compared.
 # e.g. "you can see a brighter star with the telescope than without it", "i saw more people at the party than last time", "there were more girls but fewer boys at the event than last time"
-#VP_R -> VP_R V_ADJUNCT:try_remove_correlated,try_remove_correlator
+#VP_R -> VP_R:select_left_comparator V_ADJUNCT:remove_left_comparator,try_remove_correlated,try_remove_correlator
 
 # comparative constructions
 # VP_R {... & ?[r]:(?[g]:(U(i,g) & p(f)(g) & arg2(g)=r) & ... & ?[y]:(... & h(r) & ...))}
@@ -911,19 +922,19 @@ VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjun
 # The term `f(size(R))` handles comparative constructions where sizes of sets
 # are compared.
 # e.g. "a brighter star could be seen with the telescope than without it", "more people came than last time", "more girls but fewer boys came to the event than last time"
-VP_R -> VP_R V_ADJUNCT:try_remove_correlated,try_remove_correlator
+#VP_R -> VP_R:remove_right_comparator V_ADJUNCT:select_right_comparator,try_remove_correlated,try_remove_correlator
 
 # for (conditional) closed interrogative finite subordinate clauses
 # VP_R {A => B} -> VP_R {B} (COMMA) IF/WHETHER S' {A} (COMMA)
 # VP_R {^[x]:x=(A => B)} -> VP_R {^[x]:x=B} (COMMA) IF/WHETHER S' {A} (COMMA)
-#VP_R -> VP_R S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether
-#VP_R -> VP_R S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if
-#VP_R -> VP_R COMMA S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether COMMA
-#VP_R -> VP_R COMMA S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if COMMA
-#VP_R -> VP_R S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether,add_subjunctive
-#VP_R -> VP_R S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if,add_subjunctive
-#VP_R -> VP_R COMMA S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether,add_subjunctive COMMA
-#VP_R -> VP_R COMMA S':try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if,add_subjunctive COMMA
+#VP_R -> VP_R:remove_antecedent S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether
+#VP_R -> VP_R:remove_antecedent S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if
+#VP_R -> VP_R:remove_antecedent COMMA S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether COMMA
+#VP_R -> VP_R:remove_antecedent COMMA S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if COMMA
+#VP_R -> VP_R:remove_antecedent S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether,add_subjunctive
+#VP_R -> VP_R:remove_antecedent S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if,add_subjunctive
+#VP_R -> VP_R:remove_antecedent COMMA S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_whether,add_subjunctive COMMA
+#VP_R -> VP_R:remove_antecedent COMMA S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if,add_subjunctive COMMA
 
 # We need this rule for constructions like "she brought down the bed" and "she brought the bed down".
 VP_R -> VP_R:add_particle PARTICLE_PLACEHOLDER
@@ -959,63 +970,67 @@ VP_R -> VP_L:identity
 # at this nonterminal (e.g. "both" moves left much less often than "either").
 # VP_R {A1 | ... | An} -> EITHER VP_R {A1 | ... | An}
 # VP_R {... ?[y]:(... & arg2(y)=possibility(A1 | ... | An))} -> EITHER VP_R {... ?[y]:(... & arg2(y)=possibility(A1 | ... | An))}
-#VP_R -> VP_R:require_not_correlated,add_either,add_correlated_by_either # this transformation requires the coordination is at the head
-#VP_R -> EITHER:require_not_correlated VP_R:add_correlated_by_either # this transformation requires the coordination is a descendant of the head
+#VP_R -> VP_R:require_not_correlated,add_either,add_correlated_by_either,require_disjunction # this transformation requires the coordination is at the head
+#VP_R -> EITHER: VP_R:require_not_correlated,add_correlated_by_either,require_disjunction # this transformation requires the coordination is a descendant of the head
 # VP_R {A1 & A2} -> BOTH VP_R {A1 & A2}
 # VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))} -> BOTH VP_R {... ?[y]:(... & arg2(y)=possibility(A1 & A2))}
-#VP_R -> VP_R:require_not_correlated,add_both,add_correlated_by_both # this transformation requires the coordination is at the head
-#VP_R -> BOTH:require_not_correlated VP_R:add_correlated_by_both # this transformation requires the coordination is a descendant of the head
+#VP_R -> VP_R:require_not_correlated,add_both,add_correlated_by_both,require_binary_conjunction # this transformation requires the coordination is at the head
+#VP_R -> VP_R:require_not_correlated,add_both,add_correlated_by_both,require_binary_conjunction_in_arg2_possibility # this transformation requires the coordination is at the head
+#VP_R -> BOTH VP_R:require_not_correlated,add_correlated_by_both,require_binary_conjunction # this transformation requires the coordination is a descendant of the head
+#VP_R -> BOTH VP_R:require_not_correlated,add_correlated_by_both,require_binary_conjunction_in_arg2_possibility # this transformation requires the coordination is a descendant of the head
 # VP_R {~A1 & ... & ~An} -> NEITHER VP_R {A1 | ... | An}
 # VP_R {... ?[y]:(... & arg2(y)=possibility(~A1 & ... & ~An))} -> NEITHER VP_R {... ?[y]:(... & arg2(y)=possibility(~A1 & ... & ~An))}
-#VP_R -> VP_R:require_not_correlated,add_neither,add_correlated_by_neither # this transformation requires the coordination is at the head
-#VP_R -> NEITHER:require_not_correlated VP_R:add_correlated_by_neither,add_negative # this transformation requires the coordination is a descendant of the head
+#VP_R -> VP_R:require_not_correlated,add_neither,add_correlated_by_neither,negated_conjunction_into_disjunction # this transformation requires the coordination is at the head
+#VP_R -> NEITHER VP_R:require_not_correlated,add_correlated_by_neither,add_negative,negated_conjunction_into_disjunction # this transformation requires the coordination is a descendant of the head
+#VP_R -> VP_R:require_not_correlated,add_neither,add_correlated_by_neither,negated_conjunction_into_disjunction_in_arg2_possibility # this transformation requires the coordination is at the head
+#VP_R -> NEITHER VP_R:require_not_correlated,add_correlated_by_neither,add_negative,negated_conjunction_into_disjunction_in_arg2_possibility # this transformation requires the coordination is a descendant of the head
 
 # NOTE: In the below rules, we require that none of the Ai are themselves
 # coordinations with the coordinator (unless Ai is negated).
 # VP_R {(~)A1 & ... & (~)An} -> VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
-#VP_R -> VP_R VP_COORDINATION:try_remove_correlator,add_and
-#VP_R -> VP_R VP_COORDINATION:try_remove_correlator,add_and,add_comma
+#VP_R -> VP_R:select_left_operand VP_COORDINATION:try_remove_correlator,add_and,remove_left_operand
+#VP_R -> VP_R:select_left_operand VP_COORDINATION:try_remove_correlator,add_and,remove_left_operand,add_comma
 # VP_R {(~)A1 | ... | (~)An} -> VP_R {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-#VP_R -> VP_R VP_COORDINATION:try_remove_correlator,add_or
-#VP_R -> VP_R VP_COORDINATION:try_remove_correlator,add_or,add_comma
+#VP_R -> VP_R:select_left_operand VP_COORDINATION:try_remove_correlator,add_or,remove_left_operand
+#VP_R -> VP_R:select_left_operand VP_COORDINATION:try_remove_correlator,add_or,remove_left_operand,add_comma
 # VP_R {(~)A1 | ... | (~)An} -> VP_R {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-#VP_R -> VP_R VP_COORDINATION:try_remove_correlator,add_nor,require_negative
-#VP_R -> VP_R VP_COORDINATION:try_remove_correlator,add_nor,require_negative,add_comma
+#VP_R -> VP_R:select_left_operand VP_COORDINATION:try_remove_correlator,add_nor,require_negative,remove_left_operand
+#VP_R -> VP_R:select_left_operand VP_COORDINATION:try_remove_correlator,add_nor,require_negative,remove_left_operand,add_comma
 
 # VP_R {but((~)A1,(~)A2)} -> VP_R {(~)A1} (COMMA) BUT VP_R {(~)A2}
-#VP_R -> VP_R BUT VP_R:try_remove_correlator
-#VP_R -> VP_R COMMA BUT VP_R:try_remove_correlator
+#VP_R -> VP_R:select_left_in_but BUT VP_R:try_remove_correlator,select_right_in_but
+#VP_R -> VP_R:select_left_in_but COMMA BUT VP_R:try_remove_correlator,select_right_in_but
 
 # VP_R {instead_of((~)A1,(~)A2)} -> VP_R {(~)A1} (COMMA) NOT VP_R {(~)A2}
-#VP_R -> VP_R NOT VP_R:try_remove_correlator,add_negative
-#VP_R -> VP_R COMMA NOT VP_R:try_remove_correlator,add_negative
+#VP_R -> VP_R:select_left_in_instead_of NOT VP_R:try_remove_correlator,add_negative,select_right_in_instead_of
+#VP_R -> VP_R:select_left_in_instead_of COMMA NOT VP_R:try_remove_correlator,add_negative,select_right_in_instead_of
 
 
 VP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # VP_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
 # VP_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) VP_R {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-#VP_COORDINATION -> COMMA:require_comma VP_R:remove_coordinator,remove_comma VP_COORDINATION
+#VP_COORDINATION -> COMMA:require_comma VP_R:remove_coordinator,remove_comma,select_left_operand VP_COORDINATION:remove_left_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) VP_R {(~)A1}
 #VP_COORDINATION -> COMMA:require_comma VP_R:remove_coordinator,remove_comma
 
 # VP_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
-#VP_COORDINATION -> AND:require_and VP_R:remove_coordinator,remove_comma VP_COORDINATION
-#VP_COORDINATION -> COMMA:require_comma AND:require_and VP_R:remove_coordinator,remove_comma VP_COORDINATION
+#VP_COORDINATION -> AND:require_and VP_R:remove_coordinator,remove_comma,select_left_operand VP_COORDINATION:remove_left_operand
+#VP_COORDINATION -> COMMA:require_comma AND:require_and VP_R:remove_coordinator,remove_comma,select_left_operand VP_COORDINATION:remove_left_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) AND VP_R {(~)A1}
 #VP_COORDINATION -> AND:require_and VP_R:remove_coordinator,remove_comma
 #VP_COORDINATION -> COMMA:require_comma AND:require_and VP_R:remove_coordinator,remove_comma
 
 # VP_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
-#VP_COORDINATION -> OR:require_or VP_R:remove_coordinator,remove_comma VP_COORDINATION
-#VP_COORDINATION -> COMMA:require_comma OR:require_or VP_R:remove_coordinator,remove_comma VP_COORDINATION
+#VP_COORDINATION -> OR:require_or VP_R:remove_coordinator,remove_comma,select_left_operand VP_COORDINATION:remove_left_operand
+#VP_COORDINATION -> COMMA:require_comma OR:require_or VP_R:remove_coordinator,remove_comma,select_left_operand VP_COORDINATION:remove_left_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) OR VP_R {(~)A1}
 #VP_COORDINATION -> OR:require_or VP_R:remove_coordinator,remove_comma
 #VP_COORDINATION -> COMMA:require_comma OR:require_or VP_R:remove_coordinator,remove_comma
 
 # VP_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) NOR VP_R {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-#VP_COORDINATION -> NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative VP_COORDINATION
-#VP_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative VP_COORDINATION
+#VP_COORDINATION -> NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative,select_left_operand VP_COORDINATION:remove_left_operand
+#VP_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative,select_left_operand VP_COORDINATION:remove_left_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) NOR VP_R {(~)A1}
 #VP_COORDINATION -> NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative
 #VP_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative
@@ -1036,14 +1051,14 @@ V_ADJUNCT nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-#V_ADJUNCT -> PP:add_is_adjunct # for arg1
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition # for arg1
-#V_ADJUNCT -> COMMA PP:require_no_preposition,try_remove_correlator # for arg1
-#V_ADJUNCT -> COMMA ADJP_R:require_no_preposition,try_remove_correlator # for arg1
-#V_ADJUNCT -> PP:add_is_adjunct # for arg2
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition # for arg2
-#V_ADJUNCT -> COMMA PP:require_no_preposition,try_remove_correlator # for arg2
-#V_ADJUNCT -> COMMA ADJP_R:require_no_preposition,try_remove_correlator # for arg2
+#V_ADJUNCT -> PP:add_is_adjunct,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA PP:require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA ADJP_R:require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> PP:add_is_adjunct,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA PP:require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA ADJP_R:require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
 
 # predicative complements
 # V_ADJUNCT {A} -> PP/ADJP_R/ADVP_R {A}
@@ -1071,8 +1086,8 @@ V_ADJUNCT -> PP:add_is_adjunct
 # V_ADJUNCT {... & ?[X]:(f(X) & ?[y1]:(inverse(own)(y1) & arg2(y1)=X) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=X))} if X is a set variable
 #  -> NP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
 # e.g. "the pencil is Emma's", "the pencils are the students'"
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,add_singular
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,add_plural
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,select_right_arg2_without_head_predicative_and_factor,add_singular
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,select_right_arg2_without_head_predicative_and_factor,add_plural
 
 # V_ADJUNCT {... & ?[y1]:(... & arg1/arg2/arg3(y1)=a) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=a)}
 #  -> NP/ADJP_R {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1108,14 +1123,14 @@ V_ADJUNCT -> PP:add_is_adjunct
 # This rule requires that `arg1(y)=r` and `arg1(y)=x` appear in both
 # consequents (or `arg2(y)=r` and `arg2(y)=x`, etc).
 # NOTE: The ADJP_R transformations don't have `^[P]`.
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,remove_req_aux,select_arg1_predicative # for arg1
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_arg2_predicative # for arg2
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_arg3_predicative # for arg3 (NOTE: we could make this semantic and have only two args)
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,remove_req_aux # for arg1
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse # for arg2
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse # for arg3 (NOTE: we could make this semantic and have only two args)
-#V_ADJUNCT -> BY NP:require_no_preposition,require_inverse,try_remove_correlated # for arg2
-#V_ADJUNCT -> BY NP:require_no_preposition,require_inverse,try_remove_correlated # for arg3 (NOTE: we could make this semantic and have only two args)
+V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,remove_req_aux,select_right_arg1_without_head_predicative_and_factor # for arg1
+V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_right_arg2_without_head_predicative_and_factor # for arg2
+V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_right_arg3_without_head_predicative_and_factor # for arg3 (NOTE: we could make this semantic and have only two args)
+#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,remove_req_aux,select_right_arg1_without_head_and_factor # for arg1
+#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,select_right_arg2_without_head_and_factor # for arg2
+#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,select_right_arg3_without_head_and_factor # for arg3 (NOTE: we could make this semantic and have only two args)
+#V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_remove_correlated,select_right_arg2_without_head_predicative_and_factor # for arg2
+#V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_remove_correlated,select_right_arg3_without_head_predicative_and_factor # for arg3 (NOTE: we could make this semantic and have only two args)
 
 # V_ADJUNCT {... & ?[y1]:(... & f(y1)) & ... & ?[yn]:(... & f(yn))}
 #  -> (COMMA) (THAT) S' {... & f'}
@@ -1131,51 +1146,52 @@ V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_arg3_predicativ
 # NOTE: The arg1 version is for postposing/it-cleft constructions such as "it
 # didn't worry him that she was early".
 # e.g. "he wants to fly"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_nullable_subject
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_nullable_subject,select_right_arg1_possibility_and_factor
 # e.g. "he wants for Jason to fly"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_for
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_for,select_right_arg1_possibility_and_factor
 # e.g. "i bought it to give to Martha"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_for # for `purpose` predicates
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_for,select_right_arg1_without_head,require_left_predicate_purpose,select_right_arg2_possibility_and_factor # for `purpose` predicates
 # e.g. "he insists she be here", "he insists that she be here"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_subjunctive,add_nullable_subject
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_subjunctive,add_nullable_subject,try_remove_correlator
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_subjunctive,add_nullable_subject,add_that
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_subjunctive,add_nullable_subject,select_right_arg1_possibility_and_factor
+#V_ADJUNCT -> COMMA S':require_no_preposition,add_subjunctive,add_nullable_subject,try_remove_correlator,select_right_arg1_possibility_and_factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_subjunctive,add_nullable_subject,select_right_arg1_possibility_and_factor,add_that
 # e.g. "i think Emma returned the books yesterday", "i think that Emma returned the books yesterday"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition # TODO: remove grammatical features from S'
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_that # TODO: remove grammatical features from S'
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,select_right_arg1_possibility_and_factor # TODO: remove grammatical features from S'
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,select_right_arg1_possibility_and_factor,add_that # TODO: remove grammatical features from S'
 # e.g. "he didn't like it that the barn was destroyed"
-#V_ADJUNCT -> IT S':require_no_preposition,add_that # TODO: remove grammatical features from S'
+#V_ADJUNCT -> IT S':require_no_preposition,add_that,select_right_arg1_without_head # TODO: remove grammatical features from S'
 # e.g. "we must stop him coming back tomorrow"
 # NOTE: The following rule requires a subject to avoid spurious ambiguity with
 # gerund noun phrases (i.e. "i opposed destroying the barn").
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_present_participle # TODO: remove grammatical features from S'
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_present_participle,select_right_arg1_without_head,require_arg1 # TODO: remove grammatical features from S'
 
 # V_ADJUNCT {... & ?[y1]:(... & ?[r]:(arg1(r)=y1 & reason(r) & ?[z]:(h(z) & arg2(r)=z))) & ... & ?[yn]:(... & ?[r]:(arg1(r)=yn & reason(r) & ?[z]:(h(z) & arg2(r)=z)))}
 #  -> (COMMA) BECAUSE/FOR S' {?[z]:h(z)}
-#V_ADJUNCT -> COMMA S':add_because,try_remove_correlator
-#V_ADJUNCT -> S':add_is_adjunct,add_because
-#V_ADJUNCT -> COMMA FOR S':try_remove_correlated,try_remove_correlator
-#V_ADJUNCT -> FOR S':try_remove_correlated
+#V_ADJUNCT -> COMMA S':add_because,try_remove_correlator,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility_and_factor
+#V_ADJUNCT -> S':add_is_adjunct,add_because,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility_and_factor
+#V_ADJUNCT -> COMMA FOR S':try_remove_correlated,try_remove_correlator,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility_and_factor
+#V_ADJUNCT -> FOR S':try_remove_correlated,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility_and_factor
 
 # (non-conditional) closed interrogative finite subordinate clause
 # V_ADJUNCT {... & ?[y1]:(... & f(y1)) & ... & ?[yn]:(... & f(yn))}
 #  -> (COMMA) IF/WHETHER S' {... & f'} (COMMA)
 # where f(y) = arg2(y)=^[x]:A and f' = ^[x]:A
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_whether
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_if
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,add_whether,try_remove_correlator COMMA
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,add_if,try_remove_correlator COMMA
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_whether,add_subjunctive
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_if,add_subjunctive
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,add_whether,add_subjunctive,try_remove_correlator COMMA
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,add_if,add_subjunctive,try_remove_correlator COMMA
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_whether
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_if
+#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_whether,try_remove_correlator COMMA
+#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_if,try_remove_correlator COMMA
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_whether,add_subjunctive
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_if,add_subjunctive
+#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_whether,add_subjunctive,try_remove_correlator COMMA
+#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head_and_factor,require_lambda,add_if,add_subjunctive,try_remove_correlator COMMA
 
 # open interrogative finite subordinate clause
 # V_ADJUNCT {... & ?[y1]:(U(i1,y1) & p(y1) & f(y1)) & ... & ?[yn]:(U(in,yn) & p(yn) & f(yn))}
 #  -> S' {... & f'}
 # where f(y) = arg1/arg2(y)=^[x]:A and f' = ^[x]:A
 # NOTE: The `arg1` form is for subject-auxiliary inversion.
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_subordinate
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_subordinate,select_right_arg1_without_head_and_factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_subordinate,select_right_arg2_without_head_and_factor
 
 # comparative constructions
 # V_ADJUNCT {... & ?[r]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg2(gn)=r) & ... & ?[y]:(p(y) & h(r)))}
@@ -1188,14 +1204,14 @@ V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_arg3_predicativ
 #  -> COMP {p} (or `f`, whichever comes last)
 #     V_ADJUNCT {h'}
 # where h(r) = r=a and h' = ?[gn]:(arg2(gn)=a)
-#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)))
-#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) & h' = ?[x]:(...)
+#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)) (TODO: what is this? where is it even used?)
+#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
 # `f(size(X),size(R))` and `?[gi]:(...)` are optional (but there must be at
 # least one). The term `f(size(X),size(R))` handles comparative constructions
 # where sizes of sets are compared.
 # e.g. "you can see a brighter star with the telescope than without it", "i saw more people at the party than last time", "there were more girls but fewer boys at the event than last time"
-#V_ADJUNCT -> COMP V_ADJUNCT:try_remove_correlated
+#V_ADJUNCT -> COMP:comparator_predicate V_ADJUNCT:try_remove_correlated,select_comparator_arg
 
 # comparative constructions
 # V_ADJUNCT {... & ?[r]:(?[g]:(U(i,g) & p(f)(g) & arg2(g)=r) & ... & ?[y]:(p(y) & h(r)))}
@@ -1205,14 +1221,14 @@ V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_arg3_predicativ
 #     COMP {p}
 #     V_ADJUNCT {h'}
 # where h(r) = r=a and h' = ?[g]:(arg2(g)=a)
-#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[g]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)))
-#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) & h' = ?[x]:(...)
+#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[g]:?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)) (TODO: what is this? where is it even used?)
+#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
 # `f(size(R))` and `?[gi]:(...)` are optional (but there must be at least one).
 # The term `f(size(R))` handles comparative constructions where sizes of sets
 # are compared.
 # e.g. "a brighter star could be seen with the telescope than without it", "more people came than last time", "more girls but fewer boys came to the event than last time"
-#V_ADJUNCT -> COMP V_ADJUNCT:try_remove_correlated
+#V_ADJUNCT -> COMP:comparator_predicate V_ADJUNCT:try_remove_correlated,select_comparator_arg
 
 # for correlated coordination
 # NOTE: For the following rules, the coordination doesn't have to be at head
@@ -1222,61 +1238,61 @@ V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,select_arg3_predicativ
 # coordination and the head scope to be a feature to decide between the rules
 # at this nonterminal (e.g. "both" moves left much less often than "either").
 # V_ADJUNCT {A1 | ... | An} -> EITHER V_ADJUNCT {A1 | ... | An}
-#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_either,add_correlated_by_either # this transformation requires the coordination is at the head
-#V_ADJUNCT -> EITHER:require_not_correlated V_ADJUNCT:add_correlated_by_either # this transformation requires the coordination is a descendant of the head
+#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_either,add_correlated_by_either,require_disjunction # this transformation requires the coordination is at the head
+#V_ADJUNCT -> EITHER V_ADJUNCT:require_not_correlated,add_correlated_by_either,require_disjunction # this transformation requires the coordination is a descendant of the head
 # V_ADJUNCT {A1 & A2} -> BOTH V_ADJUNCT {A1 & A2}
-#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_both,add_correlated_by_both # this transformation requires the coordination is at the head
-#V_ADJUNCT -> BOTH:require_not_correlated V_ADJUNCT:add_correlated_by_both # this transformation requires the coordination is a descendant of the head
+#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_both,add_correlated_by_both,require_binary_conjunction # this transformation requires the coordination is at the head
+#V_ADJUNCT -> BOTH V_ADJUNCT:require_not_correlated,add_correlated_by_both,require_binary_conjunction # this transformation requires the coordination is a descendant of the head
 # V_ADJUNCT {~A1 | ... | ~An} -> NEITHER V_ADJUNCT {A1 | ... | An}
-#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_neither,add_correlated_by_neither # this transformation requires the coordination is at the head
-#V_ADJUNCT -> NEITHER:require_not_correlated V_ADJUNCT:add_correlated_by_neither,add_negative # this transformation requires the coordination is a descendant of the head
+#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_neither,add_correlated_by_neither,negated_disjunction_into_disjunction # this transformation requires the coordination is at the head
+#V_ADJUNCT -> NEITHER V_ADJUNCT:require_not_correlated,add_correlated_by_neither,add_negative,negated_disjunction_into_disjunction # this transformation requires the coordination is a descendant of the head
 
 # NOTE: In the below rules, we require that none of the Ai are themselves
 # coordinations with the coordinator (unless Ai is negated).
 # V_ADJUNCT {(~)A1 & ... & (~)An} -> V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-#V_ADJUNCT -> V_ADJUNCT V_ADJUNCT_COORDINATION:try_remove_correlator,add_and
-#V_ADJUNCT -> V_ADJUNCT V_ADJUNCT_COORDINATION:try_remove_correlator,add_and,add_comma
+#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_and
+#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_and,add_comma
 # V_ADJUNCT {(~)A1 | ... | (~)An} -> V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT -> V_ADJUNCT V_ADJUNCT_COORDINATION:try_remove_correlator,add_or
-#V_ADJUNCT -> V_ADJUNCT V_ADJUNCT_COORDINATION:try_remove_correlator,add_or,add_comma
+#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_or
+#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_or,add_comma
 # V_ADJUNCT {(~)A1 | ... | (~)An} -> V_ADJUNCT {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT -> V_ADJUNCT VP_COORDINATION:try_remove_correlator,add_nor,require_negative
-#V_ADJUNCT -> V_ADJUNCT VP_COORDINATION:try_remove_correlator,add_nor,require_negative,add_comma
+#V_ADJUNCT -> V_ADJUNCT:select_left_operand VP_COORDINATION:remove_left_operand,try_remove_correlator,add_nor,require_negative
+#V_ADJUNCT -> V_ADJUNCT:select_left_operand VP_COORDINATION:remove_left_operand,try_remove_correlator,add_nor,require_negative,add_comma
 
 # V_ADJUNCT {but((~)A1,(~)A2)} -> V_ADJUNCT {(~)A1} (COMMA) BUT V_ADJUNCT {(~)A2}
-#V_ADJUNCT -> V_ADJUNCT BUT V_ADJUNCT:try_remove_correlator
-#V_ADJUNCT -> V_ADJUNCT COMMA BUT V_ADJUNCT:try_remove_correlator
+#V_ADJUNCT -> V_ADJUNCT:select_left_in_but BUT V_ADJUNCT:select_right_in_but,try_remove_correlator
+#V_ADJUNCT -> V_ADJUNCT:select_left_in_but COMMA BUT V_ADJUNCT:select_right_in_but,try_remove_correlator
 
 # V_ADJUNCT {instead_of((~)A1,(~)A2)} -> V_ADJUNCT {(~)A1} (COMMA) NOT V_ADJUNCT {(~)A2}
-#V_ADJUNCT -> V_ADJUNCT NOT V_ADJUNCT:try_remove_correlator,add_negative
-#V_ADJUNCT -> V_ADJUNCT COMMA NOT V_ADJUNCT:try_remove_correlator,add_negative
+#V_ADJUNCT -> V_ADJUNCT:select_left_in_instead_of NOT V_ADJUNCT:select_right_in_instead_of,try_remove_correlator,add_negative
+#V_ADJUNCT -> V_ADJUNCT:select_left_in_instead_of COMMA NOT V_ADJUNCT:select_right_in_instead_of,try_remove_correlator,add_negative
 
 
 V_ADJUNCT_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
 # V_ADJUNCT_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma V_ADJUNCT:remove_coordinator,remove_comma V_ADJUNCT_COORDINATION
+#V_ADJUNCT_COORDINATION -> COMMA:require_comma V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) V_ADJUNCT {(~)A1}
 #V_ADJUNCT_COORDINATION -> COMMA:require_comma V_ADJUNCT:remove_coordinator,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-#V_ADJUNCT_COORDINATION -> AND:require_and V_ADJUNCT:remove_coordinator,remove_comma V_ADJUNCT_COORDINATION
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma AND:require_and V_ADJUNCT:remove_coordinator,remove_comma V_ADJUNCT_COORDINATION
+#V_ADJUNCT_COORDINATION -> AND:require_and V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+#V_ADJUNCT_COORDINATION -> COMMA:require_comma AND:require_and V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) AND V_ADJUNCT {(~)A1}
 #V_ADJUNCT_COORDINATION -> AND:require_and V_ADJUNCT:remove_coordinator,remove_comma
 #V_ADJUNCT_COORDINATION -> COMMA:require_comma AND:require_and V_ADJUNCT:remove_coordinator,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-#V_ADJUNCT_COORDINATION -> OR:require_or V_ADJUNCT:remove_coordinator,remove_comma V_ADJUNCT_COORDINATION
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma OR:require_or V_ADJUNCT:remove_coordinator,remove_comma V_ADJUNCT_COORDINATION
+#V_ADJUNCT_COORDINATION -> OR:require_or V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+#V_ADJUNCT_COORDINATION -> COMMA:require_comma OR:require_or V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) OR V_ADJUNCT {(~)A1}
 #V_ADJUNCT_COORDINATION -> OR:require_or V_ADJUNCT:remove_coordinator,remove_comma
 #V_ADJUNCT_COORDINATION -> COMMA:require_comma OR:require_or V_ADJUNCT:remove_coordinator,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) NOR V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT_COORDINATION -> NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative V_ADJUNCT_COORDINATION
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative V_ADJUNCT_COORDINATION
+#V_ADJUNCT_COORDINATION -> NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+#V_ADJUNCT_COORDINATION -> COMMA:require_comma NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) NOR V_ADJUNCT {(~)A1}
 #V_ADJUNCT_COORDINATION -> NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative
 #V_ADJUNCT_COORDINATION -> COMMA:require_comma NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative
@@ -1297,8 +1313,10 @@ VP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-#VP_L -> ADVP_L:try_remove_correlator VP_L:require_no_req_aux,try_remove_correlated
-#VP_L -> COMMA PP:require_no_req_aux,require_no_correlator COMMA VP_L:try_remove_correlated
+#VP_L -> ADVP_L:try_remove_correlator,select_left_arg1_of_without_head VP_L:require_no_req_aux,try_remove_correlated,remove_left_conjunct
+#VP_L -> COMMA PP:require_no_req_aux,require_no_correlator,select_left_arg1_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
+#VP_L -> ADVP_L:try_remove_correlator,select_left_arg2_of_without_head VP_L:require_no_req_aux,try_remove_correlated,remove_left_conjunct
+#VP_L -> COMMA PP:require_no_req_aux,require_no_correlator,select_left_arg2_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
 
 VP_L -> WILL VP_R:try_remove_correlated,remove_future,add_infinitive,add_aux,remove_req_aux,require_no_subjunctive # future "tense"
 VP_L -> HAVE:keep_only_person_and_number VP_R:try_remove_correlated,require_no_future,remove_perfect,add_past_participle,add_aux,remove_req_aux,require_no_subjunctive # perfect aspect
@@ -1315,15 +1333,16 @@ VP_L -> TO VP_R:try_remove_correlated,add_infinitive,remove_to_infinitive,requir
 # that without the subjunctive mood, this rule fails. This is to avoid spurious
 # ambiguity where the verb can be interpreted as either being in the
 # subjunctive mood or not (e.g. "it's vital that we keep them informed.").
-VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,select_predicate
+VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate
 
 # VP_L {?[x]:T} -> BE
-# This is the semantically empty "be"/"is"/"was"/"were" as in "the cat is blue" and "the cat is in the tree".
+# This is the semantically empty "be"/"is"/"was"/"were" as in "the cat is blue"
+# and "the cat is in the tree".
 # NOTE: If subjunctive, and the resulting inflected verb has the same form as
 # that without the subjunctive mood, this rule fails. This is to avoid spurious
 # ambiguity where the verb can be interpreted as either being in the
 # subjunctive mood or not (e.g. "it's vital that we keep them informed.").
-#VP_L -> BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator
+#VP_L -> BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,require_empty_head
 
 # for gapping and stripping
 #VP_L -> WILL:remove_future,remove_req_aux,require_only_empty_ref,require_no_subjunctive,require_no_correlator # future "tense"
@@ -1339,23 +1358,23 @@ VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no
 #     VP_L {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
 # where `f` contains the `arg1` term.
 # e.g. "it is not a cat nor will it be a cat", "what did they do?"
-#VP_L -> V_ADJUNCT:try_remove_correlator VP_L:require_no_req_aux,try_remove_correlated # for subject-auxiliary inversion
+#VP_L -> V_ADJUNCT:try_remove_correlator,select_left_conjunct VP_L:require_no_req_aux,try_remove_correlated,remove_left_conjunct # for subject-auxiliary inversion
 
 # VP_L {^[x]:(... & ?[y1]:(?[l]:(location(l) & arg1(l)=y1 & arg2(l)=x) & ...) & ... & ?[yn]:(?[l]:(location(l) & arg1(l)=y1 & arg2(l)=x) & ...))}
 #  -> WHERE VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#VP_L -> WHERE VP_L:try_remove_correlated
+#VP_L -> WHERE VP_L:try_remove_correlated,require_left_conjunct_location_lambda,remove_left_conjunct
 
 # VP_L {^[x]:(... & ?[y1]:(?[t]:(time(t) & arg1(t)=y1 & arg2(t)=x) & ...) & ... & ?[yn]:(?[t]:(time(t) & arg1(t)=y1 & arg2(t)=x) & ...))}
 #  -> WHEN VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#VP_L -> WHEN VP_L:try_remove_correlated
+#VP_L -> WHEN VP_L:try_remove_correlated,require_left_conjunct_time_lambda,remove_left_conjunct
 
 # VP_L {^[x]:(... & ?[y1]:(?[m]:(manner(m) & arg1(m)=y1 & arg2(m)=x) & ...) & ... & ?[yn]:(?[m]:(manner(m) & arg1(m)=y1 & arg2(m)=x) & ...))}
 #  -> HOW VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#VP_L -> HOW VP_L:try_remove_correlated
+#VP_L -> HOW VP_L:try_remove_correlated,require_left_conjunct_manner_lambda,remove_left_conjunct
 
 # VP_L {^[x]:(... & ?[y1]:(?[r]:(reason(r) & arg1(r)=y1 & arg2(r)=x) & ...) & ... & ?[yn]:(?[r]:(reason(r) & arg1(r)=y1 & arg2(r)=x) & ...))}
 #  -> WHY VP_L {... & ?[y1]:(...) & ... & ?[yn]:(...)}
-#VP_L -> WHY VP_L:try_remove_correlated
+#VP_L -> WHY VP_L:try_remove_correlated,require_left_conjunct_reason_lambda,remove_left_conjunct
 
 VP_L -> EITHER VP_L:remove_either
 VP_L -> BOTH VP_L:remove_both
@@ -1376,14 +1395,15 @@ NP -> A NP':remove_adv,require_no_correlator
 # NP {^[P]:(... & ?[X]:(f(X=^[x]:~f(x)) & ?[x]:(X(x) & P(x))))} -> NOT NP {^[P]:?[X]:(f(X=^[x]:f(x)) & ?[x]:(X(x) & P(x)))}
 # NP {^[P]:(... & ?[X]:(f(X) & ~?[x]:(X(x) & P(x))))} -> NEITHER NP {^[P]:?[X]:(f(X) & ?[x]:(X(x) & P(x)))}
 # this depends on whether the head quantifier is negated
-#NP -> NO NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,add_negative
-#NP -> NOT NP:remove_adv,try_remove_correlated,add_negative
-#NP -> NEITHER NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,add_negative
+#NP -> NO NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not
+#NP -> NOT NP:remove_adv,try_remove_correlated,add_negative,remove_predicative_not
+#NP -> NOT NP:remove_adv,try_remove_correlated,add_negative,remove_predicative_set_complement
+#NP -> NEITHER NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> EACH NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-NP -> EACH NOMINAL_R:require_no_adv,try_remove_correlated,require_no_correlator
+NP -> EACH NOMINAL_R:require_no_adv,try_remove_correlated,require_no_correlator,require_predicative_universal
 
 # NP {A} -> A NOMINAL_R {A}
 #   e.g. "A group of students walks down the street."
@@ -1392,7 +1412,7 @@ NP -> A NOMINAL_R:concord_singular,remove_adv,try_remove_correlated,require_no_c
 # NP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> SOME NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ?[x]:(X(x) & P(x))))} -> SOME NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
 # this depends on whether the set is defined using `subset` rather than with functions like `half` or as S=^[x]:f(x);
-#NP -> SOME NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator
+#NP -> SOME NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_subset_with_equality
 
 # NP {A} -> DEF_NP {A}
 NP -> DEF_NP:remove_adv,require_no_correlator
@@ -1400,28 +1420,29 @@ NP -> DEF_NP:remove_adv,require_no_correlator
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> ALL DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-NP -> ALL DEF_NP:remove_adv,try_remove_correlated,require_no_correlator
-NP -> ALL NP':remove_adv,try_remove_correlated,require_no_correlator
+NP -> ALL DEF_NP:remove_adv,try_remove_correlated,require_no_correlator,require_predicative_universal
+NP -> ALL NP':remove_adv,try_remove_correlated,require_no_correlator,require_predicative_universal
 
 # NP {^[P]:(... & ?[X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> HALF DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> HALF A NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined using `half` rather than with functions like `subset` or as S=^[x]:f(x);
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-#NP -> HALF DEF_NP:remove_adv,try_remove_correlated,require_no_correlator
-#NP -> HALF A NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator
+#NP -> HALF DEF_NP:remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_half_with_equality
+#NP -> HALF A NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_half_with_equality
 
 # NP {^[P]:(... & ?[X]:(F(p(X,A)) & (~)![x]:(X(x) => P(x))))} -> ADV {p} NP {^[P]:(... & ?[X]:(F(X=A) & (~)![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(p(X,A)) & (~)?[x]:(X(x) & P(x))))} -> ADV {p} NP {^[P]:(... & ?[X]:(F(X=A) & (~)?[x]:(X(x) & P(x))))}
 # NOTE: If A is an existentially-quantified variable, we replace all
 # occurrences of A with X (such as in the construction "almost half the cats").
 # this depends on whether `p` is `half`, `subset`, or `almost`
-#NP -> ADV NP:add_adv,try_remove_correlated
+#NP -> ADV:predicative_set_predicate NP:add_adv,try_remove_correlated,replace_predicative_predicate_with_equality
 
 # NP {^[P,x]:(... & ?[X]:(X=^[x]:f(x) & ... & X(x) & P(x)))}
 #  -> WHICH/WHAT NOMINAL_R {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ?[x]:(X(x) & P(x))))}
-#NP -> WHICH NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator
-#NP -> WHAT NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator
+#NP -> WHICH NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential
+#NP -> WHAT NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential
 
+# TODO: wait what? what happened to NOMINAL_R lol?
 # NP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ?[x]:(X(x) & P(x))))} -> WHATEVER/WHICHEVER
 # NP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ![x]:(X(x) => P(x))))} -> WHATEVER/WHICHEVER
 #NP -> WHICHEVER NOMINAL_R:remove_adv,try_remove_correlated,require_no_correlator
@@ -1981,8 +2002,8 @@ N_ADJUNCT -> PP
 #  -> COMP {p}
 #     V_ADJUNCT {h'}
 # where h(r) = r=a and h' = ?[gn]:(arg2(gn)=a)
-#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)))
-#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) & h' = ?[x]:(...)
+#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...))) (TODO: what is this? where is it even used?)
+#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`. The terms
 # `p_comp(size(X),size(R))` and `?[gi]:(...)` are optional (but there must be
 # at least one). The term `p_comp(size(X),size(R))` handles comparative
@@ -2224,7 +2245,7 @@ NOMINAL_L -> V:require_no_correlator,select_predicate_in_set,add_tion
 # TODO: what about "California Senator"
 #NOMINAL_L -> NOMINAL_L:try_remove_genitive NOMINAL_L:try_remove_correlated # for `consists_of` (or maybe `contains`?)
 #NOMINAL_L -> NOMINAL_L:try_remove_genitive NOMINAL_L:try_remove_correlated # for `purpose`
-#NOMINAL_L -> NOMINAL_L:try_remove_genitive NOMINAL_L:try_remove_correlated # for `located`
+#NOMINAL_L -> NOMINAL_L:try_remove_genitive NOMINAL_L:try_remove_correlated # for `location`
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[m1]:(g1(m1) & arg1/arg2(m1)=x) & ... & ?[mn]:(gn(mn) & arg1/arg2(mn)=x) & ...)) & ...))}
 #  -> VP_L {?[m1]:g1(m1) & ... & ?[mn]:gn(mn)}
@@ -2485,8 +2506,8 @@ ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #     COMP {p}
 #     V_ADJUNCT {h'}
 # where h(r) = r=a and h' = ?[gn]:(arg2(gn)=a)
-#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)))
-#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) & h' = ?[x]:(...)
+#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...))) (TODO: what is this? where is it even used?)
+#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
 # e.g. "more powerful than my car", "brighter than Vega"
 #ADJP_R -> ADJP_R:try_remove_is_adjunct COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
@@ -2636,8 +2657,8 @@ ADVP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #     COMP {p} (or `f`, whichever comes last)
 #     V_ADJUNCT {h'}
 # where h(r) = r=a and h' = ?[gn]:(arg2(gn)=a)
-#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...)))
-#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) & h' = ?[x]:(...)
+#    or h(r) = U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[gn]:(?[r]:(U(i,r) & p(r) & ?[x]:(arg1/arg2(x)=r & ...))) (TODO: what is this? where is it even used?)
+#    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
 # e.g. "more persuasively than me"
 #ADVP_R -> ADVP_R:try_remove_is_adjunct COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct

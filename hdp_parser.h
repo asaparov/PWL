@@ -282,6 +282,8 @@ struct flagged_logical_form
 		IDENTITY,
 		SELECT_ARG1_KEEP_HEAD,
 		REMOVE_ARG1,
+		SELECT_RIGHT_CONJUNCT,
+		REMOVE_RIGHT_CONJUNCT,
 
 		/* functions that modify grammatical features */
 		ADD_SINGULAR,
@@ -435,6 +437,8 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::IDENTITY, "identity"},
 	{function_type::SELECT_ARG1_KEEP_HEAD, "select_arg1_keep_head"},
 	{function_type::REMOVE_ARG1, "remove_arg1"},
+	{function_type::SELECT_RIGHT_CONJUNCT, "select_right_conjunct"},
+	{function_type::REMOVE_RIGHT_CONJUNCT, "remove_right_conjunct"},
 	{function_type::ADD_SINGULAR, "add_singular"},
 	{function_type::ADD_PLURAL, "add_plural"},
 	{function_type::ADD_THAT, "add_that"},
@@ -1114,7 +1118,8 @@ inline bool apply_arg(
 
 	/* we didn't find the head, so keep looking */
 	/* NOTE: this function should mirror the semantics of `find_head` and
-	   `apply<head_substituter>` in `higher_order_logic.h` */
+	   `apply<head_substituter>` in `higher_order_logic.h`, and `apply_arg` and
+	   `select_arg_inverter` in `hdp_parser.h` */
 	hol_term* new_formula;
 	switch (src->type) {
 	case hol_term_type::VARIABLE:
@@ -1560,12 +1565,52 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	return false;
 }
 
+inline bool blocks(hol_term_type first, hol_term_type second) {
+	switch (first) {
+	case hol_term_type::CONSTANT:
+	case hol_term_type::VARIABLE:
+	case hol_term_type::PARAMETER:
+	case hol_term_type::INTEGER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+	case hol_term_type::ANY:
+	case hol_term_type::HEAD:
+		return true;
+	case hol_term_type::AND:
+		return (second != hol_term_type::AND && second != hol_term_type::EXISTS && second != hol_term_type::FOR_ALL);
+	case hol_term_type::OR:
+		return (second != hol_term_type::OR && second != hol_term_type::EXISTS && second != hol_term_type::FOR_ALL && second != hol_term_type::IF_THEN);
+	case hol_term_type::IFF:
+		return (second != hol_term_type::IFF && second != hol_term_type::NOT && second != hol_term_type::EQUALS);
+	case hol_term_type::IF_THEN:
+		return (second != hol_term_type::OR && second != hol_term_type::IF_THEN && second != hol_term_type::EXISTS && second != hol_term_type::FOR_ALL);
+	case hol_term_type::FOR_ALL:
+		return (second != hol_term_type::AND && second != hol_term_type::OR && second != hol_term_type::IF_THEN && second != hol_term_type::FOR_ALL);
+	case hol_term_type::EXISTS:
+		return (second != hol_term_type::AND && second != hol_term_type::OR && second != hol_term_type::IF_THEN && second != hol_term_type::EXISTS);
+	case hol_term_type::LAMBDA:
+		return true;
+	case hol_term_type::NOT:
+		return (second != hol_term_type::IFF && second != hol_term_type::NOT && second != hol_term_type::EQUALS);
+	case hol_term_type::UNARY_APPLICATION:
+		return true;
+	case hol_term_type::EQUALS:
+		return true;
+	case hol_term_type::BINARY_APPLICATION:
+		return true;
+	}
+	fprintf(stderr, "blocks ERROR: Unrecognized hol_term_type.\n");
+	return true;
+}
+
 bool merge_outer_formulas(array<hol_term*>& new_terms,
 		hol_term** first_outer, unsigned int first_outer_count,
 		hol_term** second_outer, unsigned int second_outer_count,
 		hol_term* head)
 {
-	if (second_outer_count == 0){
+	if (second_outer_count == 0) {
 		/* emit a logical form containing only `first_outer` and `head` at the end */
 		hol_term* new_term = substitute_head(first_outer[0], first_outer[first_outer_count], head);
 		if (new_term == nullptr) return false;
@@ -1598,17 +1643,182 @@ bool merge_outer_formulas(array<hol_term*>& new_terms,
 	return true;
 }
 
+struct select_arg_inverter {
+	array<hol_term*> outer;
+	bool has_declared_variables;
+	unsigned int max_variable;
+
+	select_arg_inverter() : outer(8), has_declared_variables(false), max_variable(0) { }
+
+	inline void operator() (hol_term* node) {
+		/* NOTE: this function should mirror the semantics of `find_head` and
+		   `apply<head_substituter>` in `higher_order_logic.h`, and `apply_arg` and
+		   `select_arg_inverter` in `hdp_parser.h` */
+		if (node->type == hol_term_type::IF_THEN) {
+			has_declared_variables |= max_declared_variable(*node->binary.left, max_variable);
+		} else if (node->type == hol_term_type::AND || node->type == hol_term_type::OR) {
+			for (unsigned int i = 0; i + 1 < node->array.length; i++)
+				has_declared_variables |= max_declared_variable(*node->array.operands[i], max_variable);
+		}
+		outer.add(node);
+	}
+};
+
+inline bool remap_to_invert_apply_arg(
+		hol_term* first, hol_term* second,
+		hol_term*& remapped_first,
+		hol_term*& remapped_second,
+		unsigned int& new_variable)
+{
+	select_arg_inverter first_inverter;
+	select_arg_inverter second_inverter;
+	hol_term* first_head = find_head<built_in_predicates>(first, first_inverter);
+	hol_term* second_head = find_head<built_in_predicates>(second, second_inverter);
+	if (first_head == nullptr || second_head == nullptr)
+		return false;
+
+	unsigned int max_variable = second_inverter.max_variable;
+	bool has_declared_variables = second_inverter.has_declared_variables;
+	has_declared_variables |= max_declared_variable(*first_head, max_variable);
+	has_declared_variables |= max_declared_variable(*second_head, max_variable);
+
+	array_map<unsigned int, unsigned int> first_variable_map(8);
+	for (unsigned int i = first_inverter.outer.length - 1; i > 0; i--) {
+		const hol_term* node = first_inverter.outer[i];
+		if (node->type != hol_term_type::FOR_ALL && node->type != hol_term_type::EXISTS && node->type != hol_term_type::LAMBDA)
+			continue;
+		if (has_declared_variables && node->quantifier.variable <= max_variable) {
+			if (!first_variable_map.put(node->quantifier.variable, max_variable + 1))
+				return false;
+			max_variable++;
+		} else {
+			has_declared_variables = true;
+		}
+	}
+
+	has_declared_variables |= first_inverter.has_declared_variables;
+	max_variable = max(max_variable, first_inverter.max_variable);
+	array_map<unsigned int, unsigned int> second_variable_map(8);
+	for (unsigned int i = second_inverter.outer.length - 1; i > 0; i--) {
+		const hol_term* node = second_inverter.outer[i];
+		if (node->type != hol_term_type::FOR_ALL && node->type != hol_term_type::EXISTS && node->type != hol_term_type::LAMBDA)
+			continue;
+		if (has_declared_variables && node->quantifier.variable <= max_variable) {
+			if (!second_variable_map.put(node->quantifier.variable, max_variable + 1))
+				return false;
+			max_variable++;
+		} else {
+			has_declared_variables = true;
+		}
+	}
+
+	remapped_first = map_variables(remapped_first, first_variable_map);
+	remapped_second = map_variables(remapped_second, second_variable_map);
+	if (remapped_first == nullptr || remapped_second) {
+		if (remapped_first != nullptr) {
+			free(*remapped_first);
+			if (remapped_first->reference_count == 0)
+				free(remapped_first);
+		}
+		return false;
+	}
+
+	new_variable = max_variable;
+	if (has_declared_variables)
+		new_variable++;
+	return true;
+}
+
+template<typename InvertSecondFunction>
 inline bool invert_apply_arg(
 		flagged_logical_form<hol_term>*& inverse,
 		const grammatical_flags& flags,
-		const array<hol_term*>& first_outer,
-		const array<hol_term*>& second_outer,
-		hol_term* new_head)
+		hol_term* first, hol_term* second,
+		InvertSecondFunction invert_second_head)
 {
+	hol_term* remapped_first;
+	hol_term* remapped_second;
+	unsigned int new_variable;
+	if (!remap_to_invert_apply_arg(first, second, remapped_first, remapped_second, new_variable))
+		return false;
+
+	select_arg_inverter first_inverter;
+	select_arg_inverter second_inverter;
+	hol_term* first_head = find_head<built_in_predicates>(remapped_first, first_inverter);
+	hol_term* second_head = find_head<built_in_predicates>(remapped_second, second_inverter);
+	if (first_head == nullptr || second_head == nullptr) {
+		free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+		free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
+		return false;
+	}
+
+	hol_term* arg;
+	hol_term* new_second_head = invert_second_head(second_head, new_variable, arg);
+	if (new_second_head == nullptr) {
+		free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+		free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
+		if (arg != nullptr) { free(*arg); if (arg->reference_count == 0) free(arg); }
+		return false;
+	}
+
+	if (second_inverter.outer.length > 1) {
+		hol_term* parent = second_inverter.outer[second_inverter.outer.length - 2];
+		if (parent->type == hol_term_type::AND || parent->type == hol_term_type::OR) {
+			/* check if the conjunction/disjunction is part of the head */
+			hol_term** new_heads = (hol_term**) malloc(sizeof(hol_term*) * parent->array.length);
+			for (unsigned int i = 0; i + 1 < parent->array.length; i++) {
+				new_heads[i] = invert_second_head(parent->array.operands[i], new_variable, arg);
+				if (new_heads[i] == nullptr) {
+					for (unsigned int j = 0; j < i; j++) {
+						free(*new_heads[j]);
+						if (new_heads[j]->reference_count == 0)
+							free(new_heads[j]);
+					}
+					free(new_heads);
+					new_heads = nullptr;
+					break;
+				}
+			}
+
+			if (new_heads != nullptr) {
+				new_heads[parent->array.length - 1] = new_second_head;
+				new_second_head = hol_term::new_and(make_array_view(new_heads, parent->array.length));
+				if (new_second_head == nullptr) {
+					for (unsigned int j = 0; j < parent->array.length; j++) {
+						free(*new_heads[j]);
+						if (new_heads[j]->reference_count == 0)
+							free(new_heads[j]);
+					}
+					free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+					free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
+					if (arg != nullptr) { free(*arg); if (arg->reference_count == 0) free(arg); }
+					free(new_heads); return false;
+				}
+
+				second_inverter.outer.length--;
+				second_inverter.outer[second_inverter.outer.length] = new_second_head;
+				if (first_head->type != hol_term_type::ANY && first_inverter.outer.length > 1 && first_inverter.outer[first_inverter.outer.length - 2]->type == parent->type) {
+					first_inverter.outer.length--;
+					first_head = first_inverter.outer.last();
+				}
+			}
+		}
+	}
+	if (arg != nullptr) { free(*arg); if (arg->reference_count == 0) free(arg); }
+
+	hol_term* new_head;
+	if (!intersect<built_in_predicates>(new_head, first_head, new_second_head)) {
+		free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+		free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
+		free(*new_second_head); if (new_second_head->reference_count == 0) free(new_second_head);
+		return false;
+	}
+	free(*new_second_head); if (new_second_head->reference_count == 0) free(new_second_head);
+
 	array<hol_term*> inverses(8);
 	if (!merge_outer_formulas(inverses,
-		first_outer.data, first_outer.length - 1,
-		second_outer.data, second_outer.length - 1, new_head)
+		first_inverter.outer.data, first_inverter.outer.length - 1,
+		second_inverter.outer.data, second_inverter.outer.length - 1, new_head)
 	 || inverses.length == 0)
 	{
 		for (hol_term* term : inverses) {
@@ -1616,8 +1826,16 @@ inline bool invert_apply_arg(
 			if (term->reference_count == 0)
 				free(term);
 		}
+		free(*new_head);
+		if (new_head->reference_count == 0)
+			free(new_head);
+		free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+		free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
 		return false;
 	}
+	free(*new_head);
+	if (new_head->reference_count == 0)
+		free(new_head);
 
 	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>) * inverses.length);
 	if (inverse == nullptr) {
@@ -1626,6 +1844,8 @@ inline bool invert_apply_arg(
 			if (term->reference_count == 0)
 				free(term);
 		}
+		free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+		free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
 		return false;
 	}
 
@@ -1633,6 +1853,8 @@ inline bool invert_apply_arg(
 		inverse[i].flags = flags;
 		inverse[i].root = inverses[i];
 	}
+	free(*remapped_first); if (remapped_first->reference_count == 0) free(remapped_first);
+	free(*remapped_second); if (remapped_second->reference_count == 0) free(remapped_second);
 	return true;
 }
 
@@ -1640,191 +1862,174 @@ template<uint_fast8_t ArgIndex>
 inline bool invert_select_arg_keep_head(
 		flagged_logical_form<hol_term>*& inverse,
 		const grammatical_flags& flags,
-		hol_term* first,
-		hol_term* second)
+		hol_term* first, hol_term* second)
 {
-	array<hol_term*> first_outer(8);
-	array<hol_term*> second_outer(8);
-	hol_term* first_head = find_head<built_in_predicates>(
-		first, [&](hol_term* node) {
-			first_outer.add(node);
-		});
-	hol_term* second_head = find_head<built_in_predicates>(
-		second, [&](hol_term* node) {
-			second_outer.add(node);
-		});
-	if (first_head == nullptr || second_head == nullptr)
-		return false;
+	return invert_apply_arg(inverse, flags, first, second,
+		[](hol_term* second_head, unsigned int new_variable, hol_term*& arg) {
+			unsigned int new_head_variable;
+			hol_term* predicate; hol_term* arg_term;
+			if (second_head->type == hol_term_type::ANY) {
+				new_head_variable = new_variable;
+				predicate = &HOL_ANY;
+				arg_term = &HOL_ANY;
+				if (arg == nullptr) {
+					arg = &HOL_ANY;
+					HOL_ANY.reference_count++;
+				}
+			} else if (second_head->type == hol_term_type::HEAD) {
+				if (second_head->head.predicate == nullptr || second_head->head.args[ArgIndex] == nullptr)
+					return (hol_term*) nullptr;
+				new_head_variable = second_head->head.variable;
+				predicate = second_head->head.predicate;
+				arg_term = second_head->head.args[ArgIndex];
+				hol_term* new_arg = get_arg<(unsigned int) built_in_predicates::ARG1 + ArgIndex>(*arg_term, new_head_variable);
+				if (new_arg == nullptr)
+					return (hol_term*) nullptr;
+				if (arg == nullptr) {
+					arg = new_arg;
+					arg->reference_count++;
+				} else {
+					hol_term* arg_intersection;
+					if (!intersect<built_in_predicates>(arg_intersection, arg, new_arg))
+						return (hol_term*) nullptr;
+					free(*arg); if (arg->reference_count == 0) free(arg);
+					arg = arg_intersection;
+				}
+			} else if (second_head->type != hol_term_type::EXISTS) {
+				new_head_variable = second_head->quantifier.variable;
+				if (second_head->quantifier.operand->type != hol_term_type::AND
+				 || second_head->quantifier.operand->array.length != 2) return (hol_term*) nullptr;
 
-	/* invert the head of `second` */
-	hol_term* predicate; hol_term* arg_term;
-	if (second_head->type == hol_term_type::ANY) {
-		predicate = &HOL_ANY;
-		arg_term = &HOL_ANY;
-	} else if (second_head->type == hol_term_type::HEAD) {
-		if (second_head->head.predicate == nullptr || second_head->head.args[ArgIndex] == nullptr)
-			return false;
-		predicate = second_head->head.predicate;
-		arg_term = second_head->head.args[ArgIndex];
-	} else {
-#if !defined(NDEBUG)
-		if (second_head->type != hol_term_type::EXISTS)
-			fprintf(stderr, "invert_select_arg_keep_head WARNING: Unexpected hol_term_type returned from `find_head`.\n");
-#endif
-		unsigned int head_variable = second_head->quantifier.variable;
-		if (second_head->quantifier.operand->type != hol_term_type::AND
-		 || second_head->quantifier.operand->array.length != 2)
-			return false;
+				/* find the predicate */
+				hol_term* conjunction = second_head->quantifier.operand;
+				for (unsigned int i = 0; i < conjunction->array.length; i++) {
+					predicate = get_predicate_of_literal<built_in_predicates>(conjunction->array.operands[i], new_head_variable);
+					if (predicate != nullptr) break;
+				}
+				if (predicate == nullptr)
+					return (hol_term*) nullptr;
 
-		/* find the predicate */
-		hol_term* conjunction = second_head->quantifier.operand;
-		for (unsigned int i = 0; i < conjunction->array.length; i++) {
-			predicate = get_predicate_of_literal<built_in_predicates>(conjunction->array.operands[i], head_variable);
-			if (predicate != nullptr) break;
-		}
-		if (predicate == nullptr) return false;
-
-		/* find the arg */
-		arg_term = nullptr;
-		for (unsigned int i = 0; i < conjunction->array.length; i++ ) {
-			hol_term* arg = get_arg<built_in_predicates>(*conjunction->array.operands[i], head_variable, ArgIndex);
-			if (arg != nullptr) {
-				arg_term = conjunction->array.operands[i];
-				break;
+				/* find the arg */
+				arg_term = nullptr;
+				hol_term* new_arg = nullptr;
+				for (unsigned int i = 0; i < conjunction->array.length; i++ ) {
+					new_arg = get_arg<built_in_predicates>(*conjunction->array.operands[i], new_head_variable, ArgIndex);
+					if (new_arg != nullptr) {
+						arg_term = conjunction->array.operands[i];
+						break;
+					}
+				}
+				if (arg_term == nullptr)
+					return (hol_term*) nullptr;
+				if (arg == nullptr) {
+					arg = new_arg;
+					arg->reference_count++;
+				} else {
+					hol_term* arg_intersection;
+					if (!intersect<built_in_predicates>(arg_intersection, arg, new_arg))
+						return (hol_term*) nullptr;
+					free(*arg); if (arg->reference_count == 0) free(arg);
+					arg = arg_intersection;
+				}
+			} else {
+				return (hol_term*) nullptr;
 			}
-		}
-		if (arg_term == nullptr || arg_term == predicate) return false;
-	}
 
-	hol_term* new_second_head;
-	if (!new_hol_term(new_second_head)) return false;
-	new_second_head->type = hol_term_type::HEAD;
-	new_second_head->reference_count = 1;
-	new_second_head->head.predicate = predicate;
-	predicate->reference_count++;
-	new_second_head->head.args[ArgIndex] = arg_term;
-	arg_term->reference_count++;
-	for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
-		if (i == ArgIndex) continue;
-		new_second_head->head.args[i] = &HOL_ANY;
-		HOL_ANY.reference_count++;
-	}
-
-	hol_term* new_head;
-	if (!intersect<built_in_predicates>(new_head, first_head, new_second_head)) {
-		free(*new_second_head);
-		if (new_second_head->reference_count == 0)
-			free(new_second_head);
-		return false;
-	}
-	free(*new_second_head);
-	if (new_second_head->reference_count == 0)
-		free(new_second_head);
-
-	bool result = invert_apply_arg(inverse, flags, first_outer, second_outer, new_head);
-	free(*new_head);
-	if (new_head->reference_count == 0)
-		free(new_head);
-	return result;
+			hol_term* new_second_head;
+			if (!new_hol_term(new_second_head))
+				return (hol_term*) nullptr;
+			new_second_head->type = hol_term_type::HEAD;
+			new_second_head->reference_count = 1;
+			new_second_head->head.variable = new_head_variable;
+			new_second_head->head.predicate = predicate;
+			predicate->reference_count++;
+			new_second_head->head.args[ArgIndex] = arg_term;
+			arg_term->reference_count++;
+			for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+				if (i == ArgIndex) continue;
+				new_second_head->head.args[i] = &HOL_ANY;
+				HOL_ANY.reference_count++;
+			}
+			return new_second_head;
+		});
 }
 
 template<uint_fast8_t ArgIndex>
 inline bool invert_remove_arg(
 		flagged_logical_form<hol_term>*& inverse,
 		const grammatical_flags& flags,
-		const hol_term* first,
-		const hol_term* second)
+		hol_term* first,
+		hol_term* second)
 {
-	array<hol_term*> first_outer(8);
-	array<hol_term*> second_outer(8);
-	hol_term* first_head = find_head<built_in_predicates>(
-		first, [&](hol_term* node) {
-			first_outer.add(node);
-		});
-	hol_term* second_head = find_head<built_in_predicates>(
-		second, [&](hol_term* node) {
-			second_outer.add(node);
-		});
-	if (first_head == nullptr || second_head == nullptr)
-		return false;
-
-	/* invert the head of `second` */
-	hol_term* predicate; hol_term* arg_terms[ARG_COUNT];
-	if (second_head->type == hol_term_type::ANY) {
-		predicate = &HOL_ANY;
-		for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
-			arg_terms[i] = &HOL_ANY;
-		arg_terms[ArgIndex] = nullptr;
-	} else if (second_head->type == hol_term_type::HEAD) {
-		if (second_head->head.predicate == nullptr || second_head->head.args[ArgIndex] != nullptr)
-			return false;
-		predicate = second_head->head.predicate;
-		for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
-			arg_terms[i] = second_head->head.args[i];
-	} else {
-#if !defined(NDEBUG)
-		if (second_head->type != hol_term_type::EXISTS)
-			fprintf(stderr, "invert_select_arg_keep_head WARNING: Unexpected hol_term_type returned from `find_head`.\n");
-#endif
-		unsigned int head_variable = second_head->quantifier.variable;
-		if (second_head->quantifier.operand->type == hol_term_type::AND) {
-			/* find the predicate */
-			hol_term* conjunction = second_head->quantifier.operand;
-			for (unsigned int i = 0; i < conjunction->array.length; i++) {
-				predicate = get_predicate_of_literal<built_in_predicates>(conjunction->array.operands[i], head_variable);
-				if (predicate != nullptr) break;
-			}
-			if (predicate == nullptr) return false;
-
-			/* find the args */
-			for (uint_fast8_t k = 0; k < ARG_COUNT; k++) {
-				arg_terms[k] = nullptr;
-				if (k == ArgIndex) continue;
-				for (unsigned int i = 0; i < conjunction->array.length; i++ ) {
-					hol_term* arg = get_arg<built_in_predicates>(*conjunction->array.operands[i], head_variable, k);
-					if (arg != nullptr) {
-						arg_terms[k] = conjunction->array.operands[i];
-						break;
+	return invert_apply_arg(inverse, flags, first, second,
+		[](hol_term* second_head, unsigned int new_variable, hol_term*& arg) {
+			unsigned int new_head_variable;
+			hol_term* predicate; hol_term* arg_terms[ARG_COUNT];
+			if (second_head->type == hol_term_type::ANY) {
+				new_head_variable = new_variable;
+				predicate = &HOL_ANY;
+				for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
+					arg_terms[i] = &HOL_ANY;
+				arg_terms[ArgIndex] = nullptr;
+			} else if (second_head->type == hol_term_type::HEAD) {
+				if (second_head->head.predicate == nullptr || second_head->head.args[ArgIndex] != nullptr)
+					return (hol_term*) nullptr;
+				new_head_variable = second_head->head.variable;
+				predicate = second_head->head.predicate;
+				for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
+					arg_terms[i] = second_head->head.args[i];
+			} else if (second_head->type == hol_term_type::EXISTS) {
+				new_head_variable = second_head->quantifier.variable;
+				if (second_head->quantifier.operand->type == hol_term_type::AND) {
+					/* find the predicate */
+					hol_term* conjunction = second_head->quantifier.operand;
+					for (unsigned int i = 0; i < conjunction->array.length; i++) {
+						predicate = get_predicate_of_literal<built_in_predicates>(conjunction->array.operands[i], new_head_variable);
+						if (predicate != nullptr) break;
 					}
+					if (predicate == nullptr)
+						return (hol_term*) nullptr;
+
+					/* find the args */
+					for (uint_fast8_t k = 0; k < ARG_COUNT; k++) {
+						arg_terms[k] = nullptr;
+						if (k == ArgIndex) continue;
+						for (unsigned int i = 0; i < conjunction->array.length; i++ ) {
+							hol_term* arg = get_arg<built_in_predicates>(*conjunction->array.operands[i], new_head_variable, k);
+							if (arg != nullptr) {
+								arg_terms[k] = conjunction->array.operands[i];
+								break;
+							}
+						}
+						if (arg_terms[k] == predicate)
+							return (hol_term*) nullptr;
+					}
+				} else {
+					/* the head is not a conjunction, so it must contain only the predicate */
+					predicate = get_predicate_of_literal<built_in_predicates>(second_head->quantifier.operand, new_head_variable);
+					if (predicate != nullptr)
+						return (hol_term*) nullptr;
+					for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
+						arg_terms[i] = nullptr;
 				}
-				if (arg_terms[k] == predicate) return false;
+			} else {
+				return (hol_term*) nullptr;
 			}
-		} else {
-			/* the head is not a conjunction, so it must contain only the predicate */
-			predicate = get_predicate_of_literal<built_in_predicates>(second_head->quantifier.operand, head_variable);
-			if (predicate != nullptr) return false;
-			for (uint_fast8_t i = 0; i < ARG_COUNT; i++)
-				arg_terms[i] = nullptr;
-		}
-	}
 
-	hol_term* new_second_head;
-	if (!new_hol_term(new_second_head)) return false;
-	new_second_head->type = hol_term_type::HEAD;
-	new_second_head->reference_count = 1;
-	new_second_head->head.predicate = predicate;
-	predicate->reference_count++;
-	for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
-		new_second_head->head.args[i] = arg_terms[i];
-		arg_terms[i]->reference_count++;
-	}
-
-	hol_term* new_head;
-	if (!intersect<built_in_predicates>(new_head, first_head, new_second_head)) {
-		free(*new_second_head);
-		if (new_second_head->reference_count == 0)
-			free(new_second_head);
-		return false;
-	}
-	free(*new_second_head);
-	if (new_second_head->reference_count == 0)
-		free(new_second_head);
-
-	bool result = invert_apply_arg(inverse, flags, first_outer, second_outer, new_head);
-	free(*new_head);
-	if (new_head->reference_count == 0)
-		free(new_head);
-	return result;
+			hol_term* new_second_head;
+			if (!new_hol_term(new_second_head))
+				return (hol_term*) nullptr;
+			new_second_head->type = hol_term_type::HEAD;
+			new_second_head->reference_count = 1;
+			new_second_head->head.variable = new_head_variable;
+			new_second_head->head.predicate = predicate;
+			predicate->reference_count++;
+			for (uint_fast8_t i = 0; i < ARG_COUNT; i++) {
+				new_second_head->head.args[i] = arg_terms[i];
+				arg_terms[i]->reference_count++;
+			}
+			return new_second_head;
+		});
 }
 
 template<typename Formula>
