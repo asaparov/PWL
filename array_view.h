@@ -72,11 +72,11 @@ inline unsigned int size(const indexed_array_view<T>& view) {
 }
 
 template<typename T, template<typename> class Array>
-struct composed_array_view {
+struct prepended_array_view {
 	T& first;
 	Array<T>& second;
 
-	composed_array_view(T& first, Array<T>& second) : first(first), second(second) { }
+	prepended_array_view(T& first, Array<T>& second) : first(first), second(second) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == 0) return first;
@@ -90,12 +90,12 @@ struct composed_array_view {
 };
 
 template<typename T, template<typename> class Array>
-composed_array_view<T, Array> make_composed_array_view(T& first, Array<T>& second) {
-	return composed_array_view<T, Array>(first, second);
+prepended_array_view<T, Array> make_prepended_array_view(T& first, Array<T>& second) {
+	return prepended_array_view<T, Array>(first, second);
 }
 
 template<typename T, template<typename> class Array>
-inline unsigned int size(const composed_array_view<T, Array>& view) {
+inline unsigned int size(const prepended_array_view<T, Array>& view) {
 	return 1 + size(view.second);
 }
 

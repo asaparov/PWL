@@ -815,7 +815,7 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 #S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_of_lambda # requires do-support unless subordinate
 #S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_of_lambda,add_to_infinitive # requires do-support unless subordinate
 #S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated,remove_right_of_lambda # requires do-support unless subordinate
-#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator,select_right_of_lambda #VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated,remove_right_of_lambda,add_to_infinitive # requires do-support unless subordinate
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,add_preposition,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,add_preposition,try_remove_correlated,remove_right_of_lambda,add_to_infinitive # requires do-support unless subordinate
 # for predicative subjects
 # S'' {^[x]:(... ?[r]:(g(x,r) & U(i,r) & p(r) & f(r)))}
 #  -> V_ADJUNCT {^[x]:?[r]:(g(x,r) & U(i,r) & p(r))}
@@ -828,13 +828,14 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 
 # open interrogative clauses with movement
 # S'' {^[x]:(... ?[r]:(g(r) & U(i,r) & p(r) & f(r)))}
-#  -> V_ADJUNCT {^[x]:?[r]:(g(r) & U(i,r) & p(r))}
+#  -> ADJP {^[x]:?[r]:(g(r) & U(i,r) & p(r))}
 #     VP_R {^[x]:(... ?[r]:f(r))}
 # NOTE: `r` does not have to be the head of the logical form.
 # This rule removes the predicate `p` from the event corresponding to the verb
 # (and so the verb is semantically empty).
-#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,remove_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda # requires do-support unless subordinate
-#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,remove_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda,add_to_infinitive # requires do-support unless subordinate
+# TODO: is this not subsumed by the above rules?
+#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda # requires do-support unless subordinate
+#S'' -> ADJP:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda VP_R:try_remove_nullable_subject,try_add_req_aux,try_remove_subordinate,try_remove_correlated,remove_right_and_predicate_of_lambda,add_to_infinitive # requires do-support unless subordinate
 
 # subject-less infinitival closed interrogative clauses
 # S'' {^[x]:x=A} -> VP_R {A}
@@ -937,7 +938,7 @@ VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjun
 #VP_R -> VP_R:remove_antecedent COMMA S':select_antecedent,try_remove_correlated,add_req_no_aux,try_remove_correlator,add_if,add_subjunctive COMMA
 
 # We need this rule for constructions like "she brought down the bed" and "she brought the bed down".
-VP_R -> VP_R:add_particle PARTICLE_PLACEHOLDER
+#VP_R -> VP_R:add_particle PARTICLE_PLACEHOLDER
 
 # postposed NP complements/adjuncts
 # VP_R {... & ?[x]:(... ?[y1]:(... & arg1/arg2/arg3(y1)=x & ...) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=x & ...) & ... & f(x))}
@@ -1335,7 +1336,7 @@ VP_L -> TO VP_R:try_remove_correlated,add_infinitive,remove_to_infinitive,requir
 # subjunctive mood or not (e.g. "it's vital that we keep them informed.").
 VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate
 
-# VP_L {?[x]:T} -> BE
+# VP_L {?[x]:()} -> BE
 # This is the semantically empty "be"/"is"/"was"/"were" as in "the cat is blue"
 # and "the cat is in the tree".
 # NOTE: If subjunctive, and the resulting inflected verb has the same form as

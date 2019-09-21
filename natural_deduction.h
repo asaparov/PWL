@@ -1327,7 +1327,7 @@ struct natural_deduction
 
 	template<template<typename> class Array>
 	static inline Proof* new_disjunction_elim(Proof* disjunction, Array<Proof*> operands) {
-		return new_array_step<nd_step_type::DISJUNCTION_ELIMINATION, 3>(make_composed_array_view(disjunction, operands));
+		return new_array_step<nd_step_type::DISJUNCTION_ELIMINATION, 3>(make_prepended_array_view(disjunction, operands));
 	}
 
 	static inline Proof* new_implication_intro(Proof* proof, Proof* assumption) {

@@ -575,7 +575,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::ANY:
-	case hol_term_type::HEAD:
+	case hol_term_type::ANY_ARRAY:
 		return -std::numeric_limits<double>::infinity();
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized hol_term_type.\n");
