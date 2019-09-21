@@ -17,7 +17,7 @@ enum class built_in_predicates : unsigned int {
 	ARG3,
 	SIZE,
 	INVERSE,
-	CAPABLE_OF,
+	OWN,
 	COUNT
 };
 
@@ -28,7 +28,6 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("arg2",		(unsigned int) built_in_predicates::ARG2)
 		&& names.put("arg3",		(unsigned int) built_in_predicates::ARG3)
 		&& names.put("inverse",		(unsigned int) built_in_predicates::INVERSE)
-		&& names.put("capable_of",	(unsigned int) built_in_predicates::CAPABLE_OF)
 		&& names.put("size",		(unsigned int) built_in_predicates::SIZE);
 }
 
