@@ -957,8 +957,7 @@ bool check_proof(proof_state<Formula>& out,
 		 || second_operand->type != nd_step_type::TERM_PARAMETER)
 			return false;
 		variable = Formula::new_variable(operand_states[0]->formula->quantifier.variable);
-		max_variable = max_bound_variable(*operand_states[0]->formula->quantifier.operand);
-		if (max_variable == 0) {
+		if (!max_bound_variable(*operand_states[0]->formula->quantifier.operand, max_variable)) {
 			formula = second_operand->term;
 			formula->reference_count++;
 		} else {
@@ -1006,8 +1005,7 @@ bool check_proof(proof_state<Formula>& out,
 	case nd_step_type::EQUALITY_ELIMINATION:
 		if (operand_count != 3 || operand_states[0]->formula->type != FormulaType::EQUALS) return false;
 		if (proof.operands[2]->type == nd_step_type::ARRAY_PARAMETER) {
-			max_variable = max_bound_variable(*operand_states[1]->formula);
-			if (max_variable == 0) {
+			if (!max_bound_variable(*operand_states[1]->formula, max_variable)) {
 				formula = operand_states[0]->formula->binary.left;
 				formula->reference_count++;
 			} else {

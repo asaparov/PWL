@@ -1148,7 +1148,7 @@ inline bool new_hol_term(hol_term*& new_term) {
 template<hol_term_type Type>
 constexpr bool visit(const hol_term& term) { return true; }
 
-template<typename... Visitor>
+template<hol_term_type Type, typename... Visitor>
 constexpr bool end_visit(const hol_term& term, Visitor&&... visitor) { return true; }
 
 template<typename Term, typename... Visitor,
@@ -1241,23 +1241,6 @@ bool visit(Term&& term, Visitor&&... visitor)
 	return false;
 }
 
-struct bound_variable_maximizer {
-	unsigned int variable;
-};
-
-template<hol_term_type Type>
-inline bool visit(const hol_term& term, bound_variable_maximizer& visitor) {
-	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA)
-		visitor.variable = max(visitor.variable, term.quantifier.variable);
-	return true;
-}
-
-inline unsigned int max_bound_variable(const hol_term& src) {
-	bound_variable_maximizer visitor = {0};
-	visit(src, visitor);
-	return visitor.variable;
-}
-
 struct parameter_comparator {
 	unsigned int parameter;
 };
@@ -1316,7 +1299,7 @@ struct free_variable_collector {
 };
 
 template<hol_term_type Type>
-inline bool visit(const hol_term& term, const free_variable_collector& visitor) {
+inline bool visit(const hol_term& term, free_variable_collector& visitor) {
 	if (Type == hol_term_type::VARIABLE) {
 		if (!visitor.bound_variables.contains(term.variable) && !visitor.variables.contains(term.variable))
 			return visitor.variables.add(term.variable);
@@ -1327,7 +1310,7 @@ inline bool visit(const hol_term& term, const free_variable_collector& visitor) 
 }
 
 template<hol_term_type Type>
-inline bool end_visit(const hol_term& term, const free_variable_collector& visitor) {
+inline bool end_visit(const hol_term& term, free_variable_collector& visitor) {
 	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA)
 		visitor.bound_variables.remove(visitor.bound_variables.index_of(term.quantifier.variable));
 	return true;
@@ -10368,7 +10351,7 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 	}
 }
 
-template<typename BuiltInPredicates, bool ComputeIntersection = true>
+template<typename BuiltInPredicates, bool ComputeIntersection>
 bool intersect(array<hol_term*>& dst, hol_term* first, hol_term* second)
 {
 	if (first == second) {
