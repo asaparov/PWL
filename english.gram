@@ -19,7 +19,7 @@
 # to inspect all `n` terms to capture the correct distribution.
 #
 #  "cats are mammals."
-#  ![x]:(U(0,x) & cat(x) => ?[s]:(arg1(s)=x & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & arg2(s)=m)))
+#  ![x]:(U(0,x) & cat(x) => ?[m]:(U(2,m) & mammal(m) & ?[s]:(arg1(s)=x & U(1,s) & same(s) & present(s) & arg2(s)=m)))
 # where `present` is relative to the deictic origo, so it could be defined as
 # something like ![x]:(present(x) = time(x)(T)) where time(x) returns the set
 # of times at which the event x is true, and T is the current time in the
@@ -60,7 +60,7 @@
 #  "there is a cat."
 #  ?[x]:(U(0,x) & cat(x))
 #    [OR]
-#  ?[c]:(U(0,x) & cat(x) & ?[l]:(arg1(l)=x & U(1,l) & location(l) & present(l) & arg2(l)=L))
+#  ?[x]:(U(0,x) & cat(x) & ?[l]:(arg1(l)=x & U(1,l) & location(l) & present(l) & arg2(l)=L))
 # where L is the current discourse location (location of deictic origo).
 #
 #  "3 teachers grade 6 exams."

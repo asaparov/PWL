@@ -243,6 +243,8 @@ struct hol_term
 	static hol_term* new_any(hol_term* included,
 			hol_term** excluded_subtrees, unsigned int excluded_subtree_count,
 			hol_term** excluded_trees, unsigned int excluded_tree_count);
+	static hol_term* new_any_array(hol_term_type oper,
+			hol_term* all, hol_term* any, hol_term* left, hol_term* right);
 
 	static inline unsigned int hash(const hol_term& key);
 	static inline bool is_empty(const hol_term& key);
@@ -1146,6 +1148,9 @@ inline bool new_hol_term(hol_term*& new_term) {
 template<hol_term_type Type>
 constexpr bool visit(const hol_term& term) { return true; }
 
+template<typename... Visitor>
+constexpr bool end_visit(const hol_term& term, Visitor&&... visitor) { return true; }
+
 template<typename Term, typename... Visitor,
 	typename std::enable_if<std::is_same<typename std::remove_cv<typename std::remove_reference<Term>::type>::type, hol_term>::value>::type* = nullptr>
 bool visit(Term&& term, Visitor&&... visitor)
@@ -1165,48 +1170,56 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return visit<hol_term_type::UINT_LIST>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::NOT:
 		return visit<hol_term_type::NOT>(term, std::forward<Visitor>(visitor)...)
-			&& visit(*term.unary.operand, std::forward<Visitor>(visitor)...);
+			&& visit(*term.unary.operand, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::NOT>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::AND:
 		if (!visit<hol_term_type::AND>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
-		return true;
+		return end_visit<hol_term_type::AND>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::OR:
 		if (!visit<hol_term_type::OR>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
-		return true;
+		return end_visit<hol_term_type::OR>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::IFF:
 		if (!visit<hol_term_type::IFF>(term, std::forward<Visitor>(visitor)...)) return false;
 		for (unsigned int i = 0; i < term.array.length; i++)
 			if (!visit(*term.array.operands[i], std::forward<Visitor>(visitor)...)) return false;
-		return true;
+		return end_visit<hol_term_type::IFF>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::IF_THEN:
 		return visit<hol_term_type::IF_THEN>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.left, std::forward<Visitor>(visitor)...)
-			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...);
+			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::IF_THEN>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::EQUALS:
 		return visit<hol_term_type::EQUALS>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.left, std::forward<Visitor>(visitor)...)
-			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...);
+			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::EQUALS>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::UNARY_APPLICATION:
 		return visit<hol_term_type::UNARY_APPLICATION>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.binary.left, std::forward<Visitor>(visitor)...)
-			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...);
+			&& visit(*term.binary.right, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::UNARY_APPLICATION>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::BINARY_APPLICATION:
 		return visit<hol_term_type::BINARY_APPLICATION>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.ternary.first, std::forward<Visitor>(visitor)...)
 			&& visit(*term.ternary.second, std::forward<Visitor>(visitor)...)
-			&& visit(*term.ternary.third, std::forward<Visitor>(visitor)...);
+			&& visit(*term.ternary.third, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::BINARY_APPLICATION>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::FOR_ALL:
 		return visit<hol_term_type::FOR_ALL>(term, std::forward<Visitor>(visitor)...)
-			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...);
+			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::FOR_ALL>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::EXISTS:
 		return visit<hol_term_type::EXISTS>(term, std::forward<Visitor>(visitor)...)
-			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...);
+			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::EXISTS>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::LAMBDA:
 		return visit<hol_term_type::LAMBDA>(term, std::forward<Visitor>(visitor)...)
-			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...);
+			&& visit(*term.quantifier.operand, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::LAMBDA>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::TRUE:
 		return visit<hol_term_type::TRUE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::FALSE:
@@ -1215,13 +1228,14 @@ bool visit(Term&& term, Visitor&&... visitor)
 		/* NOTE: by default, `visit` does not traverse excluded subtrees in `hol_any` */
 		return visit<hol_term_type::ANY>(term, std::forward<Visitor>(visitor)...)
 			&& (term.any.included == nullptr || visit(*term.any.included, std::forward<Visitor>(visitor)...));
-		return true;
+		return end_visit<hol_term_type::ANY>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::ANY_ARRAY:
 		return visit<hol_term_type::ANY_ARRAY>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.any_array.all, std::forward<Visitor>(visitor)...)
 			&& (term.any_array.any == nullptr || visit(*term.any_array.any, std::forward<Visitor>(visitor)...))
 			&& visit(*term.any_array.left, std::forward<Visitor>(visitor)...)
-			&& visit(*term.any_array.right, std::forward<Visitor>(visitor)...);
+			&& visit(*term.any_array.right, std::forward<Visitor>(visitor)...)
+			&& end_visit<hol_term_type::ANY_ARRAY>(term, std::forward<Visitor>(visitor)...);
 	}
 	fprintf(stderr, "visit ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -1294,13 +1308,43 @@ inline bool get_variables(const hol_term& src, array<unsigned int>& variables) {
 	return !visit(src, visitor);
 }
 
-struct max_declared_variable_collector {
+struct free_variable_collector {
+	array<unsigned int>& variables;
+	array<unsigned int> bound_variables;
+
+	free_variable_collector(array<unsigned int>& variables) : variables(variables), bound_variables(8) { }
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, const free_variable_collector& visitor) {
+	if (Type == hol_term_type::VARIABLE) {
+		if (!visitor.bound_variables.contains(term.variable) && !visitor.variables.contains(term.variable))
+			return visitor.variables.add(term.variable);
+	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		return visitor.bound_variables.add(term.quantifier.variable);
+	}
+	return true;
+}
+
+template<hol_term_type Type>
+inline bool end_visit(const hol_term& term, const free_variable_collector& visitor) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA)
+		visitor.bound_variables.remove(visitor.bound_variables.index_of(term.quantifier.variable));
+	return true;
+}
+
+inline bool get_free_variables(const hol_term& src, array<unsigned int>& variables) {
+	free_variable_collector visitor(variables);
+	return !visit(src, visitor);
+}
+
+struct max_bound_variable_collector {
 	bool has_variable;
 	unsigned int variable;
 };
 
 template<hol_term_type Type>
-inline bool visit(const hol_term& term, max_declared_variable_collector& visitor) {
+inline bool visit(const hol_term& term, max_bound_variable_collector& visitor) {
 	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
 		visitor.variable = max(visitor.variable, term.quantifier.variable);
 		visitor.has_variable = true;
@@ -1308,8 +1352,8 @@ inline bool visit(const hol_term& term, max_declared_variable_collector& visitor
 	return true;
 }
 
-inline bool max_declared_variable(const hol_term& src, unsigned int& max_variable) {
-	max_declared_variable_collector visitor = {false, 0};
+inline bool max_bound_variable(const hol_term& src, unsigned int& max_variable) {
+	max_bound_variable_collector visitor = {false, 0};
 	visit(src, visitor);
 	if (!visitor.has_variable)
 		return false;
@@ -2751,7 +2795,7 @@ hol_term* hol_term::new_any(hol_term* included,
 		hol_term** excluded_trees, unsigned int excluded_tree_count)
 {
 	hol_term* term;
-	if (!new_hol_term(term)) return NULL;
+	if (!new_hol_term(term)) return nullptr;
 	term->reference_count = 1;
 	term->type = hol_term_type::ANY;
 	term->any.excluded_subtree_count = excluded_subtree_count;
@@ -2774,6 +2818,23 @@ hol_term* hol_term::new_any(hol_term* included,
 			core::free(term); return nullptr;
 		}
 	}
+	return term;
+}
+
+hol_term* hol_term::new_any_array(hol_term_type oper,
+		hol_term* all, hol_term* any, hol_term* left, hol_term* right)
+{
+	if (all == nullptr || left == nullptr || right == nullptr)
+		return nullptr;
+	hol_term* term;
+	if (!new_hol_term(term)) return nullptr;
+	term->reference_count = 1;
+	term->type = hol_term_type::ANY_ARRAY;
+	term->any_array.oper = oper;
+	term->any_array.all = all;
+	term->any_array.any = any;
+	term->any_array.left = left;
+	term->any_array.right = right;
 	return term;
 }
 
