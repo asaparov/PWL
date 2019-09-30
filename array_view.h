@@ -32,16 +32,15 @@ struct array_view {
 	inline const T* end() const {
 		return array + length;
 	}
+
+	inline unsigned int size() const {
+		return length;
+	}
 };
 
 template<typename T>
 array_view<T> make_array_view(T* array, unsigned int length) {
 	return array_view<T>(array, length);
-}
-
-template<typename T>
-inline unsigned int size(const array_view<T>& view) {
-	return view.length;
 }
 
 template<typename T>
@@ -59,6 +58,10 @@ struct indexed_array_view {
 	inline const T& operator[] (size_t index) const {
 		return array[indices[index]];
 	}
+
+	inline unsigned int size() const {
+		return length;
+	}
 };
 
 template<typename T>
@@ -66,17 +69,12 @@ indexed_array_view<T> make_indexed_array_view(T* array, unsigned int* indices, u
 	return indexed_array_view<T>(array, indices, length);
 }
 
-template<typename T>
-inline unsigned int size(const indexed_array_view<T>& view) {
-	return view.length;
-}
-
 template<typename T, template<typename> class Array>
 struct prepended_array_view {
 	T& first;
-	Array<T>& second;
+	const Array<T>& second;
 
-	prepended_array_view(T& first, Array<T>& second) : first(first), second(second) { }
+	prepended_array_view(T& first, const Array<T>& second) : first(first), second(second) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == 0) return first;
@@ -87,16 +85,42 @@ struct prepended_array_view {
 		if (index == 0) return first;
 		else return second[index - 1];
 	}
+
+	inline unsigned int size() const {
+		return 1 + second.size();
+	}
 };
 
 template<typename T, template<typename> class Array>
-prepended_array_view<T, Array> make_prepended_array_view(T& first, Array<T>& second) {
+prepended_array_view<T, Array> make_prepended_array_view(T& first, const Array<T>& second) {
 	return prepended_array_view<T, Array>(first, second);
 }
 
 template<typename T, template<typename> class Array>
-inline unsigned int size(const prepended_array_view<T, Array>& view) {
-	return 1 + size(view.second);
+struct appended_array_view {
+	const Array<T>& first;
+	T& second;
+
+	appended_array_view(const Array<T>& first, T& second) : first(first), second(second) { }
+
+	inline T& operator[] (size_t index) {
+		if (index == first.size()) return second;
+		else return first[index];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		if (index == first.size()) return second;
+		else return first[index];
+	}
+
+	inline unsigned int size() const {
+		return first.size() + 1;
+	}
+};
+
+template<typename T, template<typename> class Array>
+appended_array_view<T, Array> make_appended_array_view(const Array<T>& first, T& second) {
+	return appended_array_view<T, Array>(first, second);
 }
 
 template<typename T>
@@ -118,6 +142,10 @@ struct excluded_array_view {
 		if (index < excluded_index)
 			return elements[index];
 		else return elements[index + 1];
+	}
+
+	inline unsigned int size() const {
+		return length;
 	}
 };
 

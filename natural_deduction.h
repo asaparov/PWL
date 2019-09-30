@@ -499,6 +499,10 @@ struct proof_state_formulas {
 	inline FormulaPtr operator[] (size_t index) const {
 		return states[index]->formula;
 	}
+
+	inline unsigned int size() const {
+		return length;
+	}
 };
 
 template<typename Formula>
@@ -1527,7 +1531,7 @@ private:
 
 	template<nd_step_type Type, unsigned int MinOperandCount, typename Array>
 	static inline Proof* new_array_step(const Array& operands) {
-		if (size(operands) < MinOperandCount) {
+		if (operands.size() < MinOperandCount) {
 			fprintf(stderr, "natural_deduction.new_array_step ERROR: "
 					"This proof step requires at least two operands.\n");
 			return NULL;
@@ -1536,10 +1540,10 @@ private:
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) return NULL;
 		step->reference_count = 0;
-		if (!array_init(step->operand_array, size(operands))) {
+		if (!array_init(step->operand_array, operands.size())) {
 			free(step); return NULL;
 		}
-		for (unsigned int i = 0; i < size(operands); i++) {
+		for (unsigned int i = 0; i < operands.size(); i++) {
 			step->operand_array[i] = operands[i];
 			operands[i]->reference_count++;
 			if (!operands[i]->children.add(step)) {
@@ -1551,7 +1555,7 @@ private:
 				return NULL;
 			}
 		}
-		step->operand_array.length = size(operands);
+		step->operand_array.length = operands.size();
 		return step;
 	}
 };

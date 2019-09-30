@@ -2830,3 +2830,6 @@ FOR -> "for"
 
 EITHER preterminal {} {1.0} {1.0} {} 10 1.0 {}
 EITHER -> "either"
+
+WILL preterminal {} {1.0} {1.0} {} 10 1.0 {}
+WILL -> "either"

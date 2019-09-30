@@ -764,7 +764,6 @@ struct set_reasoning
 		return true;
 	}
 
-	template<typename T>
 	struct subgraph_formula_view {
 		set_info<BuiltInConstants, Formula, ProofCalculus>* sets;
 		unsigned int* indices;
@@ -782,8 +781,12 @@ struct set_reasoning
 
 		~subgraph_formula_view() { free(indices); }
 
-		T operator[] (unsigned int index) const {
+		Formula* operator[] (unsigned int index) const {
 			return sets[indices[index]].set_formula();
+		}
+
+		inline unsigned int size() const {
+			return length;
 		}
 	};
 
@@ -853,7 +856,7 @@ struct set_reasoning
 			unsigned int set, unsigned int& contracted_set,
 			const hash_set<unsigned int>& connected_component)
 	{
-		Formula* conjunction = Formula::new_and(subgraph_formula_view<Formula*>(sets, connected_component));
+		Formula* conjunction = Formula::new_and(subgraph_formula_view(sets, connected_component));
 		if (conjunction == NULL) return false;
 		for (unsigned int member : connected_component)
 			sets[member].set_formula()->reference_count++;

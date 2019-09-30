@@ -18,17 +18,41 @@ enum class built_in_predicates : unsigned int {
 	SIZE,
 	INVERSE,
 	OWN,
+	PRESENT,
+	PRESENT_PROGRESSIVE,
+	PRESENT_PERFECT,
+	PRESENT_PERFECT_PROGRESSIVE,
+	PAST,
+	PAST_PROGRESSIVE,
+	PAST_PERFECT,
+	PAST_PERFECT_PROGRESSIVE,
+	FUTURE,
+	FUTURE_PROGRESSIVE,
+	FUTURE_PERFECT,
+	FUTURE_PERFECT_PROGRESSIVE,
 	COUNT
 };
 
 inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 {
-	return names.put("unknown",		(unsigned int) built_in_predicates::UNKNOWN)
-		&& names.put("arg1",		(unsigned int) built_in_predicates::ARG1)
-		&& names.put("arg2",		(unsigned int) built_in_predicates::ARG2)
-		&& names.put("arg3",		(unsigned int) built_in_predicates::ARG3)
-		&& names.put("inverse",		(unsigned int) built_in_predicates::INVERSE)
-		&& names.put("size",		(unsigned int) built_in_predicates::SIZE);
+	return names.put("unknown", (unsigned int) built_in_predicates::UNKNOWN)
+		&& names.put("arg1", (unsigned int) built_in_predicates::ARG1)
+		&& names.put("arg2", (unsigned int) built_in_predicates::ARG2)
+		&& names.put("arg3", (unsigned int) built_in_predicates::ARG3)
+		&& names.put("inverse", (unsigned int) built_in_predicates::INVERSE)
+		&& names.put("size", (unsigned int) built_in_predicates::SIZE)
+		&& names.put("present", (unsigned int) built_in_predicates::PRESENT)
+		&& names.put("present_progressive", (unsigned int) built_in_predicates::PRESENT_PROGRESSIVE)
+		&& names.put("present_perfect", (unsigned int) built_in_predicates::PRESENT_PERFECT)
+		&& names.put("present_perfect_progressive", (unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE)
+		&& names.put("past", (unsigned int) built_in_predicates::PAST)
+		&& names.put("past_progressive", (unsigned int) built_in_predicates::PAST_PROGRESSIVE)
+		&& names.put("past_perfect", (unsigned int) built_in_predicates::PAST_PERFECT)
+		&& names.put("past_perfect_progressive", (unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE)
+		&& names.put("future", (unsigned int) built_in_predicates::FUTURE)
+		&& names.put("future_progressive", (unsigned int) built_in_predicates::FUTURE_PROGRESSIVE)
+		&& names.put("future_perfect", (unsigned int) built_in_predicates::FUTURE_PERFECT)
+		&& names.put("future_perfect_progressive", (unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE);
 }
 
 template<typename Proof>
@@ -1399,7 +1423,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 						other_disjunction = other_disjuncts[0];
 						other_disjuncts[0]->reference_count++;
 					} else {
-						other_disjunction = Formula::new_or(other_disjuncts);
+						other_disjunction = Formula::new_or(make_array_view(other_disjuncts.data, other_disjuncts.length));
 						if (other_disjunction == NULL) {
 							/* undo changes made by the recursive call to `make_proof` */
 							free_proof(operand); return NULL;
@@ -2109,7 +2133,7 @@ private:
 			new_set_formula = NULL;
 		else if (difference.length == 1)
 			new_set_formula = difference[0];
-		else new_set_formula = Formula::new_and(difference);
+		else new_set_formula = Formula::new_and(make_array_view(difference.data, difference.length));
 		if (difference.length != 0 && new_set_formula == NULL) {
 			return false;
 		}

@@ -576,6 +576,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_ARRAY:
+	case hol_term_type::ANY_CONSTANT:
 		return -std::numeric_limits<double>::infinity();
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized hol_term_type.\n");
@@ -623,11 +624,11 @@ double log_probability(
 		const pair<Collection<const T>, Collection<const T>>& observation,
 		const uniform_subset_distribution<T>& prior)
 {
-	if (size(observation.key) < 2)
+	if (observation.key.size() < 2)
 		return -std::numeric_limits<double>::infinity();
-	log_cache<double>::instance().ensure_size(size(observation.value) + 1);
-	return -log_cache<double>::instance().get(size(observation.value)) * size(observation.key)
-		 + (size(observation.key) - 2) * prior.log_continue_probability + prior.log_stop_probability;
+	log_cache<double>::instance().ensure_size(observation.value.size() + 1);
+	return -log_cache<double>::instance().get(observation.value.size()) * observation.key.size()
+		 + (observation.key.size() - 2) * prior.log_continue_probability + prior.log_stop_probability;
 }
 
 template<template<typename> class ObservationCollection,
@@ -720,7 +721,7 @@ double log_probability(
 		const Collection<typename JumpDistribution::ObservationType>& observation,
 		const levy_process<JumpDistribution, LengthDistribution>& prior)
 {
-	double value = log_probability(size(observation) - 1, prior.length_distribution);
+	double value = log_probability(observation.size() - 1, prior.length_distribution);
 	typename JumpDistribution::ObservationType prev = 0;
 	for (const auto& entry : observation) {
 		value += log_probability(entry - prev, prior.jump_distribution);

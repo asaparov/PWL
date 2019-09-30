@@ -536,6 +536,7 @@ bool intensional_element_of(
 	case FormulaType::UINT_LIST:
 	case FormulaType::ANY:
 	case FormulaType::ANY_ARRAY:
+	case FormulaType::ANY_CONSTANT:
 		break;
 	}
 	fprintf(stderr, "intensional_element_of ERROR: Unrecognized formula type.\n");
@@ -725,7 +726,7 @@ bool propose_universal_intro(
 		}
 
 		Formula* axiom = Formula::new_for_all(1, Formula::new_if_then(
-				Formula::new_and(conjuncts), new_lifted_atom<Formula>(a)));
+				Formula::new_and(make_array_view(conjuncts.data, conjuncts.length)), new_lifted_atom<Formula>(a)));
 		if (axiom == NULL) {
 			free_formulas(conjuncts);
 			free(proposed_proofs); return false;
