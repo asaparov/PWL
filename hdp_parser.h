@@ -4476,14 +4476,15 @@ inline bool mark_wide_scope(hol_term* src, hol_term*& dst)
 	array<hol_term*> intersection(2);
 	intersect<built_in_predicates>(intersection, dst, unique_wide_scope);
 	free(*dst); if (dst->reference_count == 0) free(dst);
-	free(*unique_wide_scope); free(unique_wide_scope);
+	free(*unique_wide_scope); if (unique_wide_scope->reference_count == 0) free(unique_wide_scope);
 	if (intersection.length == 0) {
 		return false;
 	} else if (intersection.length > 1) {
 		fprintf(stderr, "mark_wide_scope ERROR: Intersection is not unique.\n");
 		return false;
 	}
-	return intersection[0];
+	dst = intersection[0];
+	return true;
 }
 
 template<bool WideScope>
