@@ -1,5 +1,45 @@
+: # Cats are mammals.
+{(S
+	(S':mark_wide_scope
+		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative_and_factor
+					(NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_universal
+						(NOMINAL_R:identity
+							(NOMINAL_L:identity
+								(N:require_no_correlator,select_predicate_in_set "Cats")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_only "are")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_plural
+					(NP:require_no_preposition,require_no_inverse,select_right_arg2_without_head_predicative_and_factor
+						(NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_wide_scope
+							(NOMINAL_R:identity
+								(NOMINAL_L:identity
+									(N:require_no_correlator,select_predicate_in_set "mammals")
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+#	{![x]:((U(0,x) & cat(x)) => ?[s]:((arg1(s)=x) & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & (arg2(s)=m))))};
+	{![x]:(cat(x) => ?[s]:((arg1(s)=x) & same(s) & present(s) & ?[m]:(mammal(m) & (arg2(s)=m))))};
+
 : Cats are mammals.
-	{![x]:((U(0,x) & cat(x)) => ?[s]:((arg1(s)=x) & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & (arg2(s)=m))))};
+	{![x]:(cat(x) => ?[s]:((arg1(s)=x) & same(s) & present(s) & ?[m]:(mammal(m) & (arg2(s)=m))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

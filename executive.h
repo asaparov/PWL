@@ -16,10 +16,10 @@ inline void free_logical_forms(Formula** logical_forms, unsigned int count)
 	}
 }
 
-template<typename ArticleSource, typename Parser, typename Formula,
-	typename Canonicalizer, typename TheoryPrior, typename Printer>
+template<typename ArticleSource, typename Parser, typename Sentence,
+	typename Formula, typename Canonicalizer, typename TheoryPrior, typename Printer>
 bool read_sentence(
-		const ArticleSource& articles, Parser& parser, const sentence& s,
+		const ArticleSource& articles, Parser& parser, const Sentence& s,
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int article_name, TheoryPrior& theory_prior, Printer& printer)
 {
@@ -104,7 +104,7 @@ bool read_article(
 		TheoryPrior& theory_prior, Printer& printer)
 {
 	bool article_exists;
-	const article& doc = articles.get(article_name, article_exists);
+	const auto& doc = articles.get(article_name, article_exists);
 	if (!article_exists) {
 		print("read_article ERROR: No such article '", stderr); print(article_name, stderr, printer); print("'.\n", stderr);
 		return false;

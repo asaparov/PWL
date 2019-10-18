@@ -577,6 +577,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_QUANTIFIER:
 		return -std::numeric_limits<double>::infinity();
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized hol_term_type.\n");
@@ -840,72 +841,97 @@ int main(int argc, const char** argv)
 		return EXIT_FAILURE;
 	}
 
+	/* construct the parser */
+	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
+			(unsigned int) built_in_predicates::UNKNOWN,
+			names, "infl.txt", "uncountable.txt", "english.gram");
+
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
+		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
 	}
 
 	array<article_token> tokens = array<article_token>(256);
 	if (!article_lex(tokens, in)) {
 		fprintf(stderr, "ERROR: Lexical analysis of training data failed.\n");
+		for (auto entry : names) free(entry.key);
 		fclose(in); free_tokens(tokens); return EXIT_FAILURE;
 	}
 	fclose(in);
 
 	unsigned int index = 0;
-	array<array_map<sentence, hol_term>> seed_training_set(64);
+	typedef sentence<syntax_node<flagged_logical_form<hol_term>>> sentence_type;
+	array<array_map<sentence_type, hol_term>> seed_training_set(64);
 	while (index < tokens.length) {
 		if (!seed_training_set.ensure_capacity(seed_training_set.length + 1)
 		 || !array_map_init(seed_training_set[seed_training_set.length], 4))
 		{
-			for (array_map<sentence, hol_term>& paragraph : seed_training_set) {
+			for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
 				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 				free(paragraph);
 			}
 			free_tokens(tokens);
+			for (auto entry : names) free(entry.key);
 			return EXIT_FAILURE;
 		}
 		seed_training_set.length++;
-		if (!article_interpret(tokens, index, seed_training_set.last(), names)) {
+		if (!article_interpret(tokens, index, seed_training_set.last(), names, parser.G.nonterminal_names)) {
 			fprintf(stderr, "ERROR: Failed to parse training data.\n");
-			for (array_map<sentence, hol_term>& paragraph : seed_training_set) {
+			for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
 				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 				free(paragraph);
 			}
 			free_tokens(tokens);
+			for (auto entry : names) free(entry.key);
 			return EXIT_FAILURE;
 		}
 	}
 	free_tokens(tokens); tokens.clear();
 
-	/* construct and train the parser */
-	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
-			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "infl.txt", "uncountable.txt", "english.gram");
-	if (!parser.train(seed_training_set, names, 10))
+	/* train the parser */
+	if (!parser.train(seed_training_set, names, 10)) {
+		for (auto entry : names) free(entry.key);
+		for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
+			for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+			free(paragraph);
+		}
 		return EXIT_FAILURE;
+	}
+	for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
+		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+		free(paragraph);
+	}
+
+fprintf(stderr, "Parser constructed and trained. Exiting...\n");
+for (auto entry : names) free(entry.key);
+return EXIT_SUCCESS;
 
 	/* read the articles */
 	in = fopen("simple_set_reasoning_articles.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
+		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
 	}
 
 	if (!article_lex(tokens, in)) {
 		fprintf(stderr, "ERROR: Lexical analysis of article failed.\n");
+		for (auto entry : names) free(entry.key);
 		fclose(in); free_tokens(tokens); return EXIT_FAILURE;
 	}
 	fclose(in);
 
 	index = 0;
-	in_memory_article_store corpus;
+	typedef article<syntax_node<flagged_logical_form<hol_term>>> article_type;
+	typedef in_memory_article_store<syntax_node<flagged_logical_form<hol_term>>> article_store_type;
+	article_store_type corpus;
 	while (index < tokens.length) {
 		unsigned int article_name = 0;
-		article& new_article = *((article*) alloca(sizeof(article)));
-		if (!corpus.articles.check_size() || !article_interpret(tokens, index, new_article, article_name, names)) {
+		article_type& new_article = *((article_type*) alloca(sizeof(article_type)));
+		if (!corpus.articles.check_size() || !article_interpret(tokens, index, new_article, article_name, names, parser.G.nonterminal_names)) {
 			const string* article_name_str = get_name(names, article_name);
 			if (article_name_str == NULL) {
 				fprintf(stderr, "ERROR: Unable to parse article %u.\n", corpus.articles.table.size + 1);
@@ -917,7 +943,7 @@ int main(int argc, const char** argv)
 		}
 
 		bool contains; unsigned int bucket;
-		article& value = corpus.articles.get(article_name, contains, bucket);
+		article_type& value = corpus.articles.get(article_name, contains, bucket);
 		if (contains) {
 			const string* article_name_str = get_name(names, article_name);
 			print("ERROR: Article with title '", stderr); print(*article_name_str, stderr); print("' already exists.\n", stderr);

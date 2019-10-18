@@ -35,49 +35,96 @@ inline bool print(const sentence_token& t, Stream& out, Printer&&... printer) {
 	return print(t.id, out, std::forward<Printer>(printer)...);
 }
 
+template<typename Derivation>
 struct sentence {
 	sentence_token* tokens;
 	unsigned int length;
+	Derivation* derivation;
 
 	static inline bool is_empty(const sentence& key) {
-		return key.tokens == NULL;
+		return key.tokens == nullptr;
 	}
 
 	static inline unsigned int hash(const sentence& key) {
+		if (key.derivation != nullptr)
+			return hasher<Derivation>::hash(*key.derivation);
 		return default_hash(key.tokens, key.length);
 	}
 
 	static inline void move(const sentence& src, sentence& dst) {
 		dst.tokens = src.tokens;
 		dst.length = src.length;
+		dst.derivation = src.derivation;
 	}
 
 	static inline void free(sentence& s) {
-		core::free(s.tokens);
+		if (s.tokens != nullptr)
+			core::free(s.tokens);
+		if (s.derivation != nullptr) {
+			core::free(*s.derivation);
+			if (s.derivation->reference_count == 0)
+				core::free(s.derivation);
+		}
 	}
 };
 
-inline bool init(sentence& dst, const sentence& src) {
-	dst.tokens = (sentence_token*) malloc(max((size_t) 1, sizeof(sentence_token) * src.length));
-	if (dst.tokens == NULL) {
-		fprintf(stderr, "init ERROR: Insufficient memory for sentence.tokens.\n");
-		return false;
+template<typename Derivation>
+inline bool init(sentence<Derivation>& dst, const sentence<Derivation>& src) {
+	if (src.tokens == nullptr) {
+		dst.tokens = nullptr;
+	} else {
+		dst.tokens = (sentence_token*) malloc(max((size_t) 1, sizeof(sentence_token) * src.length));
+		if (dst.tokens == NULL) {
+			fprintf(stderr, "init ERROR: Insufficient memory for sentence.tokens.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.length; i++)
+			dst.tokens[i] = src.tokens[i];
+		dst.length = src.length;
 	}
-	for (unsigned int i = 0; i < src.length; i++)
-		dst.tokens[i] = src.tokens[i];
-	dst.length = src.length;
+
+	dst.derivation = src.derivation;
+	if (dst.derivation != nullptr)
+		dst.derivation->reference_count++;
 	return true;
 }
 
-inline bool operator == (const sentence& first, const sentence& second) {
-	if (first.length != second.length) return false;
-	for (unsigned int i = 0; i < first.length; i++)
-		if (first.tokens[i] != second.tokens[i]) return false;
-	return true;
+template<typename Derivation>
+inline bool operator == (const sentence<Derivation>& first, const sentence<Derivation>& second) {
+	if (first.tokens == nullptr) {
+		if (second.tokens != nullptr) return false;
+	} else {
+		if (second.tokens == nullptr) {
+			return false;
+		} else {
+			if (first.length != second.length) return false;
+			for (unsigned int i = 0; i < first.length; i++)
+				if (first.tokens[i] != second.tokens[i]) return false;
+		}
+	}
+
+	if (first.derivation == nullptr) {
+		if (second.derivation == nullptr) {
+			return true;
+		} else {
+			return false;
+		}
+	} else {
+		if (second.derivation == nullptr) {
+			return false;
+		} else {
+			return *first.derivation == *second.derivation;
+		}
+	}
 }
 
-template<typename Stream, typename... Printer>
-bool print(const sentence& s, Stream& out, Printer&&... printer) {
+template<typename Derivation, typename Stream, typename... Printer>
+bool print(const sentence<Derivation>& s, Stream& out, Printer&&... printer) {
+	if (s.derivation != nullptr) {
+		return print("<derivation tree printing not implemented>", out);
+		//return print(*s.derivation, out, std::forward<Printer>(printer)...);
+	}
+
 	if (s.length == 0) return true;
 	if (!print(s.tokens[0], out, std::forward<Printer>(printer)...)) return false;
 	for (unsigned int i = 1; i < s.length; i++) {
@@ -86,8 +133,9 @@ bool print(const sentence& s, Stream& out, Printer&&... printer) {
 	return true;
 }
 
+template<typename Derivation>
 struct article {
-	sentence* sentences;
+	sentence<Derivation>* sentences;
 	unsigned int sentence_count;
 
 	~article() { free(); }
@@ -107,8 +155,9 @@ private:
 	}
 };
 
+template<typename Derivation>
 struct in_memory_article_store {
-	hash_map<unsigned int, article> articles;
+	hash_map<unsigned int, article<Derivation>> articles;
 
 	in_memory_article_store() : articles(64) { }
 
@@ -117,7 +166,7 @@ struct in_memory_article_store {
 			free(entry.value);
 	}
 
-	const article& get(unsigned int article_id, bool& contains) const {
+	const article<Derivation>& get(unsigned int article_id, bool& contains) const {
 		return articles.get(article_id, contains);
 	}
 };
@@ -295,21 +344,81 @@ inline bool concatenate(lexical_token<TokenType>* tokens, unsigned int token_cou
 	return true;
 }
 
+inline bool article_interpret_sentence_token(
+		const array<article_token>& tokens,
+		unsigned int& index,
+		array<sentence_token>& sentence_tokens,
+		hash_map<string, unsigned int>& names,
+		unsigned int& token_id)
+{
+	if (index >= tokens.length) {
+		read_error("Unexpected end of input. Expected a sentence token", tokens.last().end);
+		return false;
+	} else if (tokens[index].type == article_token_type::TOKEN) {
+		if (!get_token(tokens[index].text, token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
+	} else if (tokens[index].type == article_token_type::PERIOD) {
+		if (!get_token(".", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
+	} else {
+		read_error("Expected a sentence token", tokens[index].start);
+		return false;
+	}
+	index++;
+	return true;
+}
+
+template<typename Derivation>
+inline bool interpret_derivation_tree(
+		const array<article_token>& tokens,
+		unsigned int& index, sentence<Derivation>& out,
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
+{
+	memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
+	in.buffer = tokens[index].text.data;
+	in.length = tokens[index].text.length;
+	in.position = 0; in.shift = {0};
+	unsigned int root_nonterminal;
+	Derivation* derivation;
+	if (!parse(in, derivation, root_nonterminal, names, nonterminal_names, tokens[index].start + 1))
+		return false;
+	index++;
+
+	bool contains;
+	unsigned int expected_root_nonterminal = nonterminal_names.get("S", contains);
+	if (!contains) {
+		fprintf(stderr, "article_interpret_sentence WARNING: There is no nonterminal with name `S`.\n");
+	} else if (root_nonterminal != expected_root_nonterminal) {
+		fprintf(stderr, "WARNING at %d:%d: Root nonterminal is not `S`.\n", tokens[index].start.line, tokens[index].start.column);
+	}
+
+	out.derivation = derivation;
+	out.tokens = nullptr;
+	out.length = 0;
+	return true;
+}
+
+template<typename Derivation>
 bool article_interpret_sentence(
 		const array<article_token>& tokens,
-		unsigned int& index, sentence& out,
-		hash_map<string, unsigned int>& names)
+		unsigned int& index, sentence<Derivation>& out,
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
 {
+	if (index < tokens.length && tokens[index].type == article_token_type::FORMULA) {
+		/* this is a derivation tree, so we parse it */
+		return interpret_derivation_tree(tokens, index, out, names, nonterminal_names);
+	}
+
 	array<sentence_token>& sentence_tokens = *((array<sentence_token>*) alloca(sizeof(array<sentence_token>)));
 	if (!array_init(sentence_tokens, 16)) return false;
 	while (true) {
 		unsigned int token_id;
-		if (!expect_token(tokens, index, article_token_type::TOKEN, "sentence token")
-		 || !get_token(tokens[index].text, token_id, names) || !sentence_tokens.add({token_id}))
-		{
-			free(sentence_tokens); return false;
+		if (!article_interpret_sentence_token(tokens, index, sentence_tokens, names, token_id)) {
+			free(sentence_tokens);
+			return false;
 		}
-		index++;
 
 		if (index < tokens.length && tokens[index].type == article_token_type::COLON) {
 			index++;
@@ -320,38 +429,37 @@ bool article_interpret_sentence(
 			index++;
 		}
 
-		if (index >= tokens.length) {
-			read_error("Expected a token or period at end of sentence", tokens[index].start);
-			free(sentence_tokens); return false;
-		} else if (tokens[index].type == article_token_type::PERIOD) {
-			index++; break;
-		} else if (tokens[index].type != article_token_type::TOKEN) {
-			read_error("Expected a token or period at end of sentence", tokens[index].start);
-			free(sentence_tokens); return false;
-		}
+		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD))
+			break;
 	}
 
 	move(sentence_tokens.data, out.tokens);
 	out.length = sentence_tokens.length;
+	out.derivation = nullptr;
 	return true;
 }
 
+template<typename Derivation>
 bool article_interpret_sentence(
 		const array<article_token>& tokens,
-		unsigned int& index, sentence& out,
+		unsigned int& index, sentence<Derivation>& out,
 		array_map<unsigned int, unsigned int>& labels,
-		hash_map<string, unsigned int>& names)
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
 {
+	if (index < tokens.length && tokens[index].type == article_token_type::FORMULA) {
+		/* this is a derivation tree, so we parse it */
+		return interpret_derivation_tree(tokens, index, out, names, nonterminal_names);
+	}
+
 	array<sentence_token>& sentence_tokens = *((array<sentence_token>*) alloca(sizeof(array<sentence_token>)));
 	if (!array_init(sentence_tokens, 16)) return false;
 	while (true) {
 		unsigned int token_id;
-		if (!expect_token(tokens, index, article_token_type::TOKEN, "sentence token")
-		 || !get_token(tokens[index].text, token_id, names) || !sentence_tokens.add({token_id}))
-		{
-			free(sentence_tokens); return false;
+		if (!article_interpret_sentence_token(tokens, index, sentence_tokens, names, token_id)) {
+			free(sentence_tokens);
+			return false;
 		}
-		index++;
 
 		if (index < tokens.length && tokens[index].type == article_token_type::COLON) {
 			index++;
@@ -364,19 +472,13 @@ bool article_interpret_sentence(
 			index++;
 		}
 
-		if (index >= tokens.length) {
-			read_error("Expected a token or period at end of sentence", tokens[index].start);
-			free(sentence_tokens); return false;
-		} else if (tokens[index].type == article_token_type::PERIOD) {
-			index++; break;
-		} else if (tokens[index].type != article_token_type::TOKEN) {
-			read_error("Expected a token or period at end of sentence", tokens[index].start);
-			free(sentence_tokens); return false;
-		}
+		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD))
+			break;
 	}
 
 	move(sentence_tokens.data, out.tokens);
 	out.length = sentence_tokens.length;
+	out.derivation = nullptr;
 	return true;
 }
 
@@ -429,11 +531,13 @@ inline bool operator != (const sentence_label<Formula>& first, const sentence_la
 }
 
 /* NOTE: we assume that `index < tokens.length` */
+template<typename Derivation>
 bool article_interpret(
 		const array<article_token>& tokens,
-		unsigned int& index,
-		article& out, unsigned int& article_name,
-		hash_map<string, unsigned int>& names)
+		unsigned int& index, article<Derivation>& out,
+		unsigned int& article_name,
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
 {
 	unsigned int start = index;
 	while (tokens[index].type != article_token_type::COLON) {
@@ -473,14 +577,14 @@ bool article_interpret(
 	}
 	index++;
 
-	array<sentence>& sentences = *((array<sentence>*) alloca(sizeof(array<sentence>)));
+	array<sentence<Derivation>>& sentences = *((array<sentence<Derivation>>*) alloca(sizeof(array<sentence<Derivation>>)));
 	if (!array_init(sentences, 8))
 		return false;
 	while (true) {
 		if (!sentences.ensure_capacity(sentences.length + 1)
-		 || !article_interpret_sentence(tokens, index, sentences[sentences.length], names))
+		 || !article_interpret_sentence(tokens, index, sentences[sentences.length], names, nonterminal_names))
 		{
-			for (sentence& s : sentences) free(s);
+			for (sentence<Derivation>& s : sentences) free(s);
 			free(sentences); return false;
 		}
 		sentences.length++;
@@ -503,13 +607,14 @@ bool article_interpret(
 }
 
 /* NOTE: we assume that `index < tokens.length` */
-template<typename Formula>
+template<typename Derivation, typename Formula>
 bool article_interpret(
 		const array<article_token>& tokens,
-		unsigned int& index,
-		article& out, unsigned int& article_name,
-		hash_map<sentence, sentence_label<Formula>>& logical_forms,
-		hash_map<string, unsigned int>& names)
+		unsigned int& index, article<Derivation>& out,
+		unsigned int& article_name,
+		hash_map<sentence<Derivation>, sentence_label<Formula>>& logical_forms,
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
 {
 	unsigned int start = index;
 	while (tokens[index].type != article_token_type::COLON) {
@@ -549,18 +654,18 @@ bool article_interpret(
 	}
 	index++;
 
-	array<sentence>& sentences = *((array<sentence>*) alloca(sizeof(array<sentence>)));
+	array<sentence<Derivation>>& sentences = *((array<sentence<Derivation>>*) alloca(sizeof(array<sentence<Derivation>>)));
 	if (!array_init(sentences, 8))
 		return false;
 	while (true) {
 		sentence_label<Formula>& new_label = *((sentence_label<Formula>*) alloca(sizeof(sentence_label<Formula>)));
 		if (!init(new_label)) {
-			for (sentence& s : sentences) free(s);
+			for (sentence<Derivation>& s : sentences) free(s);
 			free(sentences); return false;
 		} else if (!sentences.ensure_capacity(sentences.length + 1)
-				|| !article_interpret_sentence(tokens, index, sentences[sentences.length], new_label.labels, names))
+				|| !article_interpret_sentence(tokens, index, sentences[sentences.length], new_label.labels, names, nonterminal_names))
 		{
-			for (sentence& s : sentences) free(s);
+			for (sentence<Derivation>& s : sentences) free(s);
 			free(sentences); free(new_label); return false;
 		}
 		sentences.length++;
@@ -573,7 +678,7 @@ bool article_interpret(
 			in.position = 0; in.shift = {0};
 			if (!logical_forms.check_size()
 			 || !parse(in, *new_label.logical_form, names, tokens[index].start + 1)) {
-				for (sentence& s : sentences) free(s);
+				for (sentence<Derivation>& s : sentences) free(s);
 				free(sentences); free(new_label);
 				return false;
 			}
@@ -582,7 +687,7 @@ bool article_interpret(
 			sentence_label<Formula>& value = logical_forms.get(sentences.last(), contains, bucket);
 			if (!contains) {
 				if (!init(logical_forms.table.keys[bucket], sentences.last())) {
-					for (sentence& s : sentences) free(s);
+					for (sentence<Derivation>& s : sentences) free(s);
 					free(sentences); free(new_label);
 					return false;
 				}
@@ -590,7 +695,7 @@ bool article_interpret(
 				logical_forms.table.size++;
 			} else if (value != new_label) {
 				read_error("A different logical form was previously mapped to this sentence", tokens[index].start);
-				for (sentence& s : sentences) free(s);
+				for (sentence<Derivation>& s : sentences) free(s);
 				free(sentences); free(new_label);
 				return false;
 			}
@@ -610,12 +715,13 @@ bool article_interpret(
 }
 
 /* NOTE: we assume that `index < tokens.length` */
-template<typename Formula>
+template<typename Derivation, typename Formula>
 bool article_interpret(
 		const array<article_token>& tokens,
 		unsigned int& index,
-		array_map<sentence, Formula>& logical_forms,
-		hash_map<string, unsigned int>& names)
+		array_map<sentence<Derivation>, Formula>& logical_forms,
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
 {
 	unsigned int start = index;
 	while (tokens[index].type != article_token_type::COLON) {
@@ -624,6 +730,7 @@ bool article_interpret(
 		index++;
 	}
 
+	unsigned int article_name;
 	if (start == index) {
 		/* the name is empty so generate a unique name */
 		if (!names.check_size()) return false;
@@ -636,11 +743,12 @@ bool article_interpret(
 			new_name.length = length;
 
 			bool contains; unsigned int bucket;
-			index = names.get(new_name, contains, bucket);
+			article_name = names.get(new_name, contains, bucket);
 			if (!contains) {
 				names.table.keys[bucket] = new_name;
 				names.table.size++;
 				names.values[bucket] = names.table.size;
+				article_name = names.table.size;
 				break;
 			}
 		}
@@ -649,7 +757,7 @@ bool article_interpret(
 		if (!concatenate(tokens.data + start, index - start, name)) {
 			fprintf(stderr, "article_interpret ERROR: Unable to construct string for article name.\n");
 			return false;
-		} else if (!get_token(name, index, names)) {
+		} else if (!get_token(name, article_name, names)) {
 			return false;
 		}
 	}
@@ -658,7 +766,7 @@ bool article_interpret(
 	while (true) {
 		array_map<unsigned int, unsigned int> dummy_labels(1);
 		if (!logical_forms.ensure_capacity(logical_forms.size + 1)
-		 || !article_interpret_sentence(tokens, index, logical_forms.keys[logical_forms.size], dummy_labels, names))
+		 || !article_interpret_sentence(tokens, index, logical_forms.keys[logical_forms.size], dummy_labels, names, nonterminal_names))
 		{
 			return false;
 		}
@@ -690,12 +798,13 @@ bool article_interpret(
 	return true;
 }
 
-template<typename Formula>
+template<typename Derivation, typename Formula>
 bool articles_interpret(
 		const array<article_token>& tokens,
-		in_memory_article_store& articles,
-		hash_map<sentence, sentence_label<Formula>>& logical_forms,
-		hash_map<string, unsigned int>& names)
+		in_memory_article_store<Derivation>& articles,
+		hash_map<sentence<Derivation>, sentence_label<Formula>>& logical_forms,
+		hash_map<string, unsigned int>& names,
+		const hash_map<string, unsigned int>& nonterminal_names)
 {
 	unsigned int index = 0;
 	while (index < tokens.length) {
@@ -705,12 +814,12 @@ bool articles_interpret(
 		position article_pos = tokens[index].start;
 
 		unsigned int article_name = articles.articles.table.size + 1;
-		article& new_article = *((article*) alloca(sizeof(article)));
-		if (!article_interpret(tokens, index, new_article, article_name, logical_forms, names))
+		article<Derivation>& new_article = *((article<Derivation>*) alloca(sizeof(article<Derivation>)));
+		if (!article_interpret(tokens, index, new_article, article_name, logical_forms, names, nonterminal_names))
 			return false;
 
 		bool contains; unsigned int bucket;
-		article& value = articles.articles.get(article_name, contains, bucket);
+		article<Derivation>& value = articles.articles.get(article_name, contains, bucket);
 		if (!contains) {
 			move(new_article, value);
 			articles.articles.table.keys[bucket] = article_name;

@@ -1,6 +1,14 @@
 #ifndef ARRAY_VIEW_H_
 #define ARRAY_VIEW_H_
 
+namespace detail {
+	template<typename A, typename C> static auto test_index_operator(int32_t) ->
+			decltype(C(std::declval<A>()[0]), std::true_type{});
+	template<typename A, typename C> static auto test_index_operator(int64_t) -> std::false_type;
+}
+
+template<typename T, typename ReturnType> struct has_index_operator : decltype(::detail::test_index_operator<T, ReturnType>(0))::type {};
+
 template<bool Unique, typename T>
 inline void add_sorted(array<T>& list, const T& element) {
 	unsigned int index = linear_search(list.data, element, 0, list.length);
@@ -46,10 +54,10 @@ array_view<T> make_array_view(T* array, unsigned int length) {
 template<typename T>
 struct indexed_array_view {
 	T* array;
-	unsigned int* indices;
+	const unsigned int* indices;
 	unsigned int length;
 
-	indexed_array_view(T* array, unsigned int* indices, unsigned int length) : array(array), indices(indices), length(length) { }
+	indexed_array_view(T* array, const unsigned int* indices, unsigned int length) : array(array), indices(indices), length(length) { }
 
 	inline T& operator[] (size_t index) {
 		return array[indices[index]];
@@ -68,6 +76,29 @@ template<typename T>
 indexed_array_view<T> make_indexed_array_view(T* array, unsigned int* indices, unsigned int length) {
 	return indexed_array_view<T>(array, indices, length);
 }
+
+template<typename Array, typename T>
+struct lookup_table_array_view {
+	static_assert(has_index_operator<Array, T>::value, "`Array` does not have an index operator that returns type `T`");
+
+	Array* arrays;
+	const unsigned int* indices;
+	unsigned int length;
+
+	lookup_table_array_view(Array* arrays, const unsigned int* indices, unsigned int length) : arrays(arrays), indices(indices), length(length) { }
+
+	inline T& operator[] (size_t index) {
+		return arrays[index][indices[index]];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		return arrays[index][indices[index]];
+	}
+
+	inline unsigned int size() const {
+		return length;
+	}
+};
 
 template<typename T, template<typename> class Array>
 struct prepended_array_view {
@@ -152,6 +183,32 @@ struct excluded_array_view {
 template<typename T>
 inline excluded_array_view<T> make_excluded_array_view(T* elements, unsigned int original_length, unsigned int excluded_index) {
 	return excluded_array_view<T>(elements, original_length, excluded_index);
+}
+
+template<typename T>
+struct repeated_array_view {
+	T& repeated_element;
+	unsigned int length;
+
+	repeated_array_view(T& repeated_element, unsigned int length) :
+			repeated_element(repeated_element), length(length) { }
+
+	inline T& operator[] (size_t index) {
+		return repeated_element;
+	}
+
+	inline const T& operator[] (size_t index) const {
+		return repeated_element;
+	}
+
+	inline unsigned int size() const {
+		return length;
+	}
+};
+
+template<typename T>
+inline repeated_array_view<T> make_repeated_array_view(T& repeated_element, unsigned int length) {
+	return repeated_array_view<T>(repeated_element, length);
 }
 
 #endif /* ARRAY_VIEW_H_ */

@@ -30,7 +30,59 @@ enum class built_in_predicates : unsigned int {
 	FUTURE_PROGRESSIVE,
 	FUTURE_PERFECT,
 	FUTURE_PERFECT_PROGRESSIVE,
+	EMPTY_REF,
+	WIDE_SCOPE,
 	COUNT
+};
+
+unsigned int PRESENT_PREDICATES[] = {
+	(unsigned int) built_in_predicates::PRESENT,
+	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE
+};
+
+unsigned int FUTURE_PREDICATES[] = {
+	(unsigned int) built_in_predicates::FUTURE,
+	(unsigned int) built_in_predicates::FUTURE_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
+};
+
+unsigned int PERFECT_PREDICATES[] = {
+	(unsigned int) built_in_predicates::PAST_PERFECT,
+	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
+};
+
+unsigned int NON_PERFECT_PREDICATES[] = {
+	(unsigned int) built_in_predicates::PAST,
+	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PRESENT,
+	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE,
+	(unsigned int) built_in_predicates::FUTURE_PROGRESSIVE
+};
+
+unsigned int PROGRESSIVE_PREDICATES[] = {
+	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
+};
+
+unsigned int NON_PROGRESSIVE_PREDICATES[] = {
+	(unsigned int) built_in_predicates::PAST,
+	(unsigned int) built_in_predicates::PAST_PERFECT,
+	(unsigned int) built_in_predicates::PRESENT,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT,
+	(unsigned int) built_in_predicates::FUTURE,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT
 };
 
 inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
@@ -52,7 +104,9 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("future", (unsigned int) built_in_predicates::FUTURE)
 		&& names.put("future_progressive", (unsigned int) built_in_predicates::FUTURE_PROGRESSIVE)
 		&& names.put("future_perfect", (unsigned int) built_in_predicates::FUTURE_PERFECT)
-		&& names.put("future_perfect_progressive", (unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE);
+		&& names.put("future_perfect_progressive", (unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE)
+		&& names.put("empty_ref", (unsigned int) built_in_predicates::EMPTY_REF)
+		&& names.put("W", (unsigned int) built_in_predicates::WIDE_SCOPE);
 }
 
 template<typename Proof>
