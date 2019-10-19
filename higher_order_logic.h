@@ -7701,7 +7701,7 @@ inline bool reduce_union(
 		/* consider all possible reductions between the trees `first[i]` and `expanded_set` */
 		/* first check to see that `first[i]` and `expanded_set` differ in all but one node */
 		unsigned int prefix_index = 0;
-		hol_term* node; hol_term* expanded_node;
+		hol_term* node = nullptr; hol_term* expanded_node = nullptr;
 		if (!is_reduceable(first[i], expanded_set, node, expanded_node, prefix_index)) {
 			continue;
 		} else if (node == nullptr) {
@@ -7755,7 +7755,7 @@ inline bool reduce_union(
 		/* consider all possible reductions between the trees `second[i]` and `expanded_set` */
 		/* first check to see that `second[i]` and `expanded_set` differ in all but one node */
 		unsigned int prefix_index = 0;
-		hol_term* node; hol_term* expanded_node;
+		hol_term* node = nullptr; hol_term* expanded_node = nullptr;
 		if (!is_reduceable(second[i], expanded_set, node, expanded_node, prefix_index)) {
 			continue;
 		} else if (node == nullptr) {
@@ -7816,7 +7816,7 @@ bool reduce_union(
 			/* consider all possible reductions between the trees `second[i]` and `first[j]` */
 			/* first check to see that `second[i]` and `first[j]` differ in all but one node */
 			unsigned int prefix_index = 0;
-			hol_term* first_node; hol_term* second_node;
+			hol_term* first_node = nullptr; hol_term* second_node = nullptr;
 			if (!is_reduceable(second[i], first[j], second_node, first_node, prefix_index)) {
 				continue;
 			} else if (first_node == nullptr) {
@@ -7920,7 +7920,7 @@ bool reduce_union(
 			/* consider all possible reductions between the trees `sets[i]` and `sets[j]` */
 			/* first check to see that `sets[i]` and `sets[j]` differ in all but one node */
 			unsigned int prefix_index = 0;
-			hol_term* first_node; hol_term* second_node;
+			hol_term* first_node = nullptr; hol_term* second_node = nullptr;
 			if (!is_reduceable(sets[i], sets[j], first_node, second_node, prefix_index)) {
 				continue;
 			} else if (first_node == nullptr) {
@@ -9713,11 +9713,59 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		return (dst.length > 0);
 	case hol_term_type::INTEGER:
+		if (first->integer == second->integer) {
+			return false;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
 	case hol_term_type::STRING:
+		if (first->str == second->str) {
+			return false;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
 	case hol_term_type::UINT_LIST:
+		if (first->uint_list == second->uint_list) {
+			return false;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
 	case hol_term_type::CONSTANT:
+		if (first->constant == second->constant) {
+			return false;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
 	case hol_term_type::VARIABLE:
+		if (first->variable == second->variable) {
+			return false;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
 	case hol_term_type::PARAMETER:
+		if (first->parameter == second->parameter) {
+			return false;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		return false;
