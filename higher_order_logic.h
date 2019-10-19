@@ -9464,18 +9464,37 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::IF_THEN:
 	case hol_term_type::EQUALS:
 		subtract<BuiltInPredicates>(first_differences, first->binary.left, second->binary.left);
-		subtract<BuiltInPredicates>(second_differences, first->binary.right, second->binary.right);
-		difference_count = first_differences.length * second_differences.length;
-		if (difference_count == 0 || !dst.ensure_capacity(dst.length + difference_count)) {
+		if (!dst.ensure_capacity(dst.length + first_differences.length)) {
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
 			return false;
-		} else if (difference_count == 1 && first_differences[0] == first->binary.left && second_differences[0] == first->binary.right) {
+		} else if (first_differences.length == 1 && first_differences[0] == first->binary.left) {
 			dst[dst.length++] = first;
 			first->reference_count++;
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
 			return true;
+		}
+		for (hol_term* first_child : first_differences) {
+			if (!new_hol_term(dst[dst.length])) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				return false;
+			}
+			dst[dst.length]->type = first->type;
+			dst[dst.length]->reference_count = 1;
+			dst[dst.length]->binary.left = first_child;
+			dst[dst.length]->binary.right = first->binary.right;
+			dst[dst.length]->binary.left->reference_count++;
+			dst[dst.length]->binary.right->reference_count++;
+			dst.length++;
+		}
+		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+
+		intersect<BuiltInPredicates, true>(first_differences, first->binary.left, second->binary.left);
+		subtract<BuiltInPredicates>(second_differences, first->binary.right, second->binary.right);
+		difference_count = first_differences.length * second_differences.length;
+		if (!dst.ensure_capacity(dst.length + difference_count)) {
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
 		}
 		for (hol_term* first_child : first_differences) {
 			for (hol_term* second_child : second_differences) {
@@ -9488,31 +9507,83 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 				dst[dst.length]->reference_count = 1;
 				dst[dst.length]->binary.left = first_child;
 				dst[dst.length]->binary.right = second_child;
-				first_child->reference_count++;
-				second_child->reference_count++;
+				dst[dst.length]->binary.left->reference_count++;
+				dst[dst.length]->binary.right->reference_count++;
 				dst.length++;
 			}
 		}
 		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-		return true;
+		return (dst.length > 0);
 	case hol_term_type::BINARY_APPLICATION:
 		subtract<BuiltInPredicates>(first_differences, first->ternary.first, second->ternary.first);
-		subtract<BuiltInPredicates>(second_differences, first->ternary.second, second->ternary.second);
-		subtract<BuiltInPredicates>(third_differences, first->ternary.third, second->ternary.third);
-		difference_count = first_differences.length * second_differences.length * third_differences.length;
-		if (difference_count == 0 || !dst.ensure_capacity(dst.length + difference_count)) {
+		if (!dst.ensure_capacity(dst.length + first_differences.length)) {
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
 			return false;
-		} else if (difference_count == 1 && first_differences[0] == first->ternary.first && second_differences[0] == first->ternary.second && third_differences[0] == first->ternary.third) {
+		} else if (first_differences.length == 1 && first_differences[0] == first->ternary.first) {
 			dst[dst.length++] = first;
 			first->reference_count++;
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
 			return true;
+		}
+		for (hol_term* first_child : first_differences) {
+			if (!new_hol_term(dst[dst.length])) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				return false;
+			}
+			dst[dst.length]->type = first->type;
+			dst[dst.length]->reference_count = 1;
+			dst[dst.length]->ternary.first = first_child;
+			dst[dst.length]->ternary.second = first->ternary.second;
+			dst[dst.length]->ternary.third = first->ternary.third;
+			dst[dst.length]->ternary.first->reference_count++;
+			dst[dst.length]->ternary.second->reference_count++;
+			dst[dst.length]->ternary.third->reference_count++;
+			dst.length++;
+		}
+		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+
+		intersect<BuiltInPredicates, true>(first_differences, first->ternary.first, second->ternary.first);
+		if (first_differences.length == 0)
+			return (dst.length > 0);
+		subtract<BuiltInPredicates>(second_differences, first->ternary.second, second->ternary.second);
+		difference_count = first_differences.length * second_differences.length;
+		if (!dst.ensure_capacity(dst.length + difference_count)) {
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		for (hol_term* first_child : first_differences) {
+			for (hol_term* second_child : second_differences) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					return false;
+				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->ternary.first = first_child;
+				dst[dst.length]->ternary.second = second_child;
+				dst[dst.length]->ternary.third = first->ternary.third;
+				dst[dst.length]->ternary.first->reference_count++;
+				dst[dst.length]->ternary.second->reference_count++;
+				dst[dst.length]->ternary.third->reference_count++;
+				dst.length++;
+			}
+		}
+		for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+
+		intersect<BuiltInPredicates, true>(second_differences, first->ternary.second, second->ternary.second);
+		if (second_differences.length == 0) {
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return (dst.length > 0);
+		}
+		subtract<BuiltInPredicates>(third_differences, first->ternary.third, second->ternary.third);
+		difference_count = first_differences.length * second_differences.length;
+		if (!dst.ensure_capacity(dst.length + difference_count)) {
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
 		}
 		for (hol_term* first_child : first_differences) {
 			for (hol_term* second_child : second_differences) {
@@ -9528,9 +9599,9 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 					dst[dst.length]->ternary.first = first_child;
 					dst[dst.length]->ternary.second = second_child;
 					dst[dst.length]->ternary.third = third_child;
-					first_child->reference_count++;
-					second_child->reference_count++;
-					third_child->reference_count++;
+					dst[dst.length]->ternary.first->reference_count++;
+					dst[dst.length]->ternary.second->reference_count++;
+					dst[dst.length]->ternary.third->reference_count++;
 					dst.length++;
 				}
 			}
@@ -9538,7 +9609,7 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
-		return true;
+		return (dst.length > 0);
 	case hol_term_type::IFF:
 	case hol_term_type::AND:
 	case hol_term_type::OR:
@@ -9549,10 +9620,8 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 			return true;
 		}
 		difference_array = (array<hol_term*>*) malloc(sizeof(array<hol_term*>) * first->array.length);
-		index_array = (unsigned int*) calloc(first->array.length, sizeof(unsigned int));
-		if (difference_array == nullptr || index_array == nullptr) {
+		if (difference_array == nullptr) {
 			fprintf(stderr, "subtract ERROR: Out of memory.\n");
-			if (difference_array != nullptr) free(difference_array);
 			return false;
 		}
 		for (unsigned int i = 0; i < first->array.length; i++) {
@@ -9561,88 +9630,55 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 					for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
 					free(difference_array[j]);
 				}
-				free(difference_array); free(index_array);
+				free(difference_array);
 				return false;
+			}
+		}
+		difference_count = 1;
+		for (unsigned int i = 0; i < first->array.length; i++) {
+			if (i > 0) {
+				intersect<BuiltInPredicates, true>(difference_array[i - 1], first->array.operands[i - 1], second->array.operands[i - 1]);
+				if (difference_array[i - 1].length == 0) {
+					for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+					return (dst.length > 0);
+				}
+				difference_count *= difference_array[i - 1].length;
 			}
 			subtract<BuiltInPredicates>(difference_array[i], first->array.operands[i], second->array.operands[i]);
-		}
-		difference_count = difference_array[0].length;
-		for (unsigned int i = 1; i < first->array.length; i++)
-			difference_count *= difference_array[i].length;
-		if (difference_count == 0 || !dst.ensure_capacity(dst.length + difference_count)) {
-			for (unsigned int j = 0; j < first->array.length; j++) {
-				for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
-				free(difference_array[j]);
-			}
-			free(difference_array); free(index_array);
-			return false;
-		} else if (difference_count == 1) {
-			bool same_as_first = true;
-			for (unsigned int i = 0; i < first->array.length; i++) {
-				if (difference_array[i][0] != first->array.operands[i]) {
-					same_as_first = false;
-					break;
-				}
-			}
-
-			if (same_as_first) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (unsigned int j = 0; j < first->array.length; j++) {
-					for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
-					free(difference_array[j]);
-				}
-				free(difference_array); free(index_array);
-				return true;
-			}
-		}
-		while (true) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (unsigned int j = 0; j < first->array.length; j++) {
-					for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
-					free(difference_array[j]);
-				}
-				free(difference_array); free(index_array);
+			unsigned int count = difference_count * difference_array[i].length;
+			if (!dst.ensure_capacity(dst.length + count)) {
+				for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
 				return false;
 			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->array.length = first->array.length;
-			dst[dst.length]->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
-			if (dst[dst.length]->array.operands == nullptr) {
-				fprintf(stderr, "subtract ERROR: Out of memory.\n");
-				for (unsigned int j = 0; j < first->array.length; j++) {
-					for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
-					free(difference_array[j]);
+			bool result = apply_to_cartesian_product(difference_array, i + 1, [&dst,first,difference_array](const unsigned int* indices) {
+				if (!new_hol_term(dst[dst.length]))
+					return false;
+				dst[dst.length] = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->array.length = first->array.length;
+				dst[dst.length]->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
+				if (dst[dst.length]->array.operands == nullptr) {
+					fprintf(stderr, "subtract ERROR: Out of memory.\n");
+					free(dst[dst.length]); return false;
 				}
-				free(difference_array); free(index_array);
-				free(dst[dst.length]); return false;
-			}
-			for (unsigned int i = 0; i < first->array.length; i++) {
-				dst[dst.length]->array.operands[i] = difference_array[i][index_array[i]];
-				dst[dst.length]->array.operands[i]->reference_count++;
-			}
-			dst.length++;
-
-			/* increment `index_array` */
-			bool remaining = false;
-			for (unsigned int j = first->array.length; j > 0; j--) {
-				index_array[j - 1]++;
-				if (index_array[j - 1] == difference_array[j - 1].length) {
-					index_array[j - 1] = 0;
-				} else {
-					remaining = true;
-					break;
+				for (unsigned int j = 0; j <= i; j++) {
+					dst[dst.length]->array.operands[j] = difference_array[j][indices[j]];
+					dst[dst.length]->array.operands[j]->reference_count++;
+				} for (unsigned int j = i + 1; j < first->array.length; j++) {
+					dst[dst.length]->array.operands[j] = first->array.operands[j];
+					dst[dst.length]->array.operands[j]->reference_count++;
 				}
+				dst.length++;
+			});
+			if (!result) {
+				for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+				return false;
 			}
-			if (!remaining) break;
+			for (hol_term* term : difference_array[i]) { free(*term); if (term->reference_count == 0) free(term); }
+			difference_array[i].clear();
 		}
-		for (unsigned int j = 0; j < first->array.length; j++) {
-			for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
-			free(difference_array[j]);
-		}
-		free(difference_array); free(index_array);
-		return true;
+		for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+		return (dst.length > 0);
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
