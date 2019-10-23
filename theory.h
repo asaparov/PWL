@@ -11,7 +11,8 @@ using namespace core;
 
 
 enum class built_in_predicates : unsigned int {
-	UNKNOWN = 1,
+	ZERO = 0,
+	UNKNOWN,
 	ARG1,
 	ARG2,
 	ARG3,
@@ -87,7 +88,8 @@ unsigned int NON_PROGRESSIVE_PREDICATES[] = {
 
 inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 {
-	return names.put("unknown", (unsigned int) built_in_predicates::UNKNOWN)
+	return names.put("<ZERO>", (unsigned int) built_in_predicates::ZERO)
+		&& names.put("unknown", (unsigned int) built_in_predicates::UNKNOWN)
 		&& names.put("arg1", (unsigned int) built_in_predicates::ARG1)
 		&& names.put("arg2", (unsigned int) built_in_predicates::ARG2)
 		&& names.put("arg3", (unsigned int) built_in_predicates::ARG3)

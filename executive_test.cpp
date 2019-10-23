@@ -530,8 +530,7 @@ double log_probability_helper(const hol_term* term,
 	double value;
 	const hol_term* antecedent;
 	const hol_term* consequent;
-	switch (term->type)
-	{
+	switch (term->type) {
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
 	case hol_term_type::NOT:
@@ -575,6 +574,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::ANY:
+	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_QUANTIFIER:
