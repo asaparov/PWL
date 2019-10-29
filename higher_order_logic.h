@@ -1545,7 +1545,7 @@ struct unambiguity_visitor { };
 
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, unambiguity_visitor& visitor) {
-	if (Type == hol_term_type::ANY || Type != hol_term_type::ANY_RIGHT || Type == hol_term_type::ANY_ARRAY
+	if (Type == hol_term_type::ANY || Type == hol_term_type::ANY_RIGHT || Type == hol_term_type::ANY_ARRAY
 	 || Type == hol_term_type::ANY_CONSTANT || Type == hol_term_type::ANY_QUANTIFIER)
 		return false;
 	return true;
@@ -1889,7 +1889,7 @@ hol_term* default_apply_any_array(hol_term* src, Function&&... function)
 		return nullptr;
 	}
 
-	hol_term** right = default_apply_array(src->any_array.left, changed, std::forward<Function>(function)...);
+	hol_term** right = default_apply_array(src->any_array.right, changed, std::forward<Function>(function)...);
 	if (right == nullptr) {
 		if (all != src->any_array.all) { free(*all); if (all->reference_count == 0) free(all); }
 		for (unsigned int j = 0; j < src->any_array.any.length; j++) {
@@ -2156,7 +2156,8 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 		new_term->any.included = first;
 		new_term->any.excluded_trees = other_terms;
 		new_term->any.excluded_tree_count = src->any.excluded_tree_count;
-		if (first == src->any.included) first->reference_count++;
+		if (first != nullptr && first == src->any.included)
+			first->reference_count++;
 		if (other_terms != nullptr)
 			for (unsigned int i = 0; i < src->any.excluded_tree_count; i++)
 				if (other_terms[i] == src->any.excluded_trees[i]) other_terms[i]->reference_count++;
@@ -2320,6 +2321,27 @@ inline hol_term* apply(hol_term* src, const variable_mapper& mapper) {
 			return src;
 		} else {
 			return hol_term::new_variable(new_variable);
+		}
+	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		unsigned int new_variable; bool contains;
+		new_variable = mapper.variable_map.get(src->quantifier.variable, contains);
+		if (!contains) {
+			return default_apply<Type>(src, mapper);
+		} else {
+			hol_term* new_operand = apply(src->quantifier.operand, mapper);
+			if (new_operand == nullptr)
+				return nullptr;
+
+			hol_term* new_quantifier;
+			if (!new_hol_term(new_quantifier)) {
+				free(*new_operand); if (new_operand->reference_count == 0) free(new_operand);
+				return nullptr;
+			}
+			new_quantifier->type = Type;
+			new_quantifier->reference_count = 1;
+			new_quantifier->quantifier.variable = new_variable;
+			new_quantifier->quantifier.operand = new_operand;
+			return new_quantifier;
 		}
 	} else {
 		return default_apply<Type>(src, mapper);
@@ -3019,6 +3041,10 @@ hol_term* hol_term::new_any_constant(unsigned int constant, Args&&... args) {
 		core::free(term); return nullptr;
 	}
 	new_any_constant_helper<0>(term->any_constant.constants, constant, std::forward<Args>(args)...);
+#if !defined(NDEBUG)
+	if (!std::is_sorted(term->any_constant.constants, term->any_constant.constants + term->any_constant.length))
+		fprintf(stderr, "hol_term.new_any_constant WARNING: The given constant array is not sorted.\n");
+#endif
 	return term;
 }
 
@@ -3036,6 +3062,10 @@ hol_term* hol_term::new_any_constant(const Array& constants) {
 	}
 	for (unsigned int i = 0; i < term->any_constant.length; i++)
 		term->any_constant.constants[i] = constants[i];
+#if !defined(NDEBUG)
+	if (!std::is_sorted(term->any_constant.constants, term->any_constant.constants + term->any_constant.length))
+		fprintf(stderr, "hol_term.new_any_constant WARNING: The given constant array is not sorted.\n");
+#endif
 	return term;
 }
 
@@ -7533,7 +7563,7 @@ inline bool any_is_subset(hol_term* first_subtree, hol_term* second)
 			free(*any); if (any->reference_count == 0) free(any);
 			if (non_empty_intersection) return false;
 		}
-		return is_subset(first_subtree, second);
+		return is_subset<BuiltInPredicates>(first_subtree, second);
 	} else if (second->type == hol_term_type::ANY_RIGHT) {
 		if (second->any.included != nullptr)
 			return false;
@@ -7755,8 +7785,6 @@ bool reduce_union(
 	return true;
 }
 
-unsigned int debug = 0; /* TODO: for debugging; delete this */
-
 template<typename BuiltInPredicates>
 bool reduce_union(
 		hol_term** sets, unsigned int& length)
@@ -7930,16 +7958,8 @@ bool is_subset(hol_term* first, hol_term* second)
 			return false;
 		}
 	} else if (second->type == hol_term_type::ANY) {
-		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
-			hol_term excluded_any;
-			excluded_any.any.included = second->any.excluded_trees[i];
-			excluded_any.any.included->reference_count++;
-			excluded_any.any.excluded_trees = nullptr;
-			excluded_any.any.excluded_tree_count = 0;
-			if (has_intersection<BuiltInPredicates>(first, &excluded_any)) return false;
-		} for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
+		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++)
 			if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) return false;
-		}
 		if (second->any.included == nullptr || is_subset<BuiltInPredicates>(first, second->any.included)) return true;
 
 		hol_term included_any;
@@ -7995,29 +8015,37 @@ bool is_subset(hol_term* first, hol_term* second)
 		fprintf(stderr, "is_subset ERROR: Unrecognized hol_term_type.\n");
 		return false;
 	} else if (second->type == hol_term_type::ANY_RIGHT) {
+		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++)
+			if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) return false;
+		if (second->any.included == nullptr || is_subset<BuiltInPredicates>(first, second->any.included)) return true;
+
+		hol_term included_any;
+		included_any.type = hol_term_type::ANY_RIGHT;
+		included_any.any.included = second->any.included;
+		included_any.any.included->reference_count++;
 		switch (first->type) {
 		case hol_term_type::NOT:
-			return is_subset<BuiltInPredicates>(first->unary.operand, second);
+			return is_subset<BuiltInPredicates>(first->unary.operand, &included_any);
 		case hol_term_type::UNARY_APPLICATION:
 		case hol_term_type::IF_THEN:
 		case hol_term_type::EQUALS:
-			return is_subset<BuiltInPredicates>(first->binary.right, second);
+			return is_subset<BuiltInPredicates>(first->binary.right, &included_any);
 		case hol_term_type::BINARY_APPLICATION:
-			return is_subset<BuiltInPredicates>(first->ternary.third, second);
+			return is_subset<BuiltInPredicates>(first->ternary.third, &included_any);
 		case hol_term_type::IFF:
 		case hol_term_type::AND:
 		case hol_term_type::OR:
-			return is_subset<BuiltInPredicates>(first->array.operands[first->array.length - 1], second);
+			return is_subset<BuiltInPredicates>(first->array.operands[first->array.length - 1], &included_any);
 		case hol_term_type::ANY_ARRAY:
 			if (first->any_array.right.length == 0)
-				return is_subset<BuiltInPredicates>(first->any_array.all, second);
-			else return is_subset<BuiltInPredicates>(first->any_array.right.operands[first->any_array.right.length - 1], second);
+				return is_subset<BuiltInPredicates>(first->any_array.all, &included_any);
+			else return is_subset<BuiltInPredicates>(first->any_array.right.operands[first->any_array.right.length - 1], &included_any);
 		case hol_term_type::FOR_ALL:
 		case hol_term_type::EXISTS:
 		case hol_term_type::LAMBDA:
-			return is_subset<BuiltInPredicates>(first->quantifier.operand, second);
+			return is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
 		case hol_term_type::ANY_QUANTIFIER:
-			return is_subset<BuiltInPredicates>(first->any_quantifier.operand, second);
+			return is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
 		case hol_term_type::INTEGER:
 		case hol_term_type::STRING:
 		case hol_term_type::UINT_LIST:
@@ -8071,9 +8099,9 @@ bool is_subset(hol_term* first, hol_term* second)
 	} else if (second->type == hol_term_type::ANY_ARRAY) {
 		if (first->type == hol_term_type::AND || first->type == hol_term_type::OR || first->type == hol_term_type::IFF) {
 			if ((second->any_array.oper != hol_term_type::ANY_ARRAY && second->any_array.oper != first->type)
-			 || first->array.length > second->any_array.left.length
-			 || first->array.length > second->any_array.right.length
-			 || first->array.length > second->any_array.any.length)
+			 || first->array.length < second->any_array.left.length
+			 || first->array.length < second->any_array.right.length
+			 || first->array.length < second->any_array.any.length)
 				return false;
 
 			for (unsigned int i = 0; i < first->array.length; i++)
@@ -8081,7 +8109,7 @@ bool is_subset(hol_term* first, hol_term* second)
 			for (unsigned int i = 0; i < second->any_array.left.length; i++)
 				if (!is_subset<BuiltInPredicates>(first->array.operands[i], second->any_array.left.operands[i])) return false;
 			for (unsigned int i = 0; i < second->any_array.right.length; i++)
-				if (!is_subset<BuiltInPredicates>(first->array.operands[first->array.length - i - 1], second->any_array.left.operands[second->any_array.left.length - i - 1])) return false;
+				if (!is_subset<BuiltInPredicates>(first->array.operands[first->array.length - i - 1], second->any_array.right.operands[second->any_array.right.length - i - 1])) return false;
 
 			bool found_any = false;
 			for (unsigned int i = 0; i < first->array.length - second->any_array.any.length; i++) {
@@ -8212,45 +8240,37 @@ bool is_subset(hol_term* first, hol_term** second_trees, unsigned int second_tre
 		}
 		if (!reduce_union<BuiltInPredicates>(first_tree_union, first_tree_union_length, second_tree_union, second_tree_union_length)) {
 			fprintf(stderr, "is_subset ERROR: `reduce_union` failed.\n");
-			for (unsigned int i = 0; i < second_tree_union_length; i++) {
-				free(*second_tree_union[i]);
-				if (second_tree_union[i]->reference_count == 0)
-					free(second_tree_union[i]);
+			for (unsigned int i = 0; i < first_tree_union_length; i++) {
+				free(*first_tree_union[i]); if (first_tree_union[i]->reference_count == 0) free(first_tree_union[i]);
+			} for (unsigned int i = 0; i < second_tree_union_length; i++) {
+				free(*second_tree_union[i]); if (second_tree_union[i]->reference_count == 0) free(second_tree_union[i]);
 			}
-			free(second_tree_union);
+			free(first_tree_union); free(second_tree_union);
 			return false;
 		}
 
 		for (unsigned int i = 0; i < second_tree_union_length; i++) {
 			if (is_subset<BuiltInPredicates>(first, second_tree_union[i])) {
-				for (unsigned int i = 0; i < second_tree_union_length; i++) {
-					free(*second_tree_union[i]);
-					if (second_tree_union[i]->reference_count == 0)
-						free(second_tree_union[i]);
+				for (unsigned int i = 0; i < first_tree_union_length; i++) {
+					free(*first_tree_union[i]); if (first_tree_union[i]->reference_count == 0) free(first_tree_union[i]);
+				} for (unsigned int i = 0; i < second_tree_union_length; i++) {
+					free(*second_tree_union[i]); if (second_tree_union[i]->reference_count == 0) free(second_tree_union[i]);
 				}
-				free(second_tree_union);
+				free(first_tree_union); free(second_tree_union);
 				return true;	
 			}
 		}
 
-		for (unsigned int i = 0; i < second_tree_union_length; i++) {
-			free(*second_tree_union[i]);
-			if (second_tree_union[i]->reference_count == 0)
-				free(second_tree_union[i]);
+		for (unsigned int i = 0; i < first_tree_union_length; i++) {
+			free(*first_tree_union[i]); if (first_tree_union[i]->reference_count == 0) free(first_tree_union[i]);
+		} for (unsigned int i = 0; i < second_tree_union_length; i++) {
+			free(*second_tree_union[i]); if (second_tree_union[i]->reference_count == 0) free(second_tree_union[i]);
 		}
-		free(second_tree_union);
+		free(first_tree_union); free(second_tree_union);
 		return false;
 
 	} else {
 		/* NOTE: we assume `second_trees` is already in reduced form */
-		for (unsigned int i = 0; i < second_tree_count; i++) {
-			hol_term any;
-			any.any.included = second_trees[i];
-			any.any.included->reference_count++;
-			any.any.excluded_trees = nullptr;
-			any.any.excluded_tree_count = 0;
-			if (is_subset<BuiltInPredicates>(first, &any)) return false;
-		}
 		for (unsigned int i = 0; i < second_tree_count; i++)
 			if (is_subset<BuiltInPredicates>(first, second_trees[i])) return true;
 		return false;
@@ -8443,7 +8463,7 @@ inline bool subtract_any_with_any(array<hol_term*>& dst, hol_term* first, hol_te
 	}
 
 	if (!dst.ensure_capacity(dst.length + 1)
-		|| !new_hol_term(dst[dst.length]))
+	 || !new_hol_term(dst[dst.length]))
 	{
 		for (unsigned int i = 0; i < excluded_tree_count; i++) {
 			free(*excluded_trees[i]);
@@ -8847,7 +8867,10 @@ bool subtract_any(array<hol_term*>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY_CONSTANT:
-		if (!dst.append(differences.data, differences.length)) return false;
+		if (!dst.append(differences.data, differences.length)) {
+			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY_QUANTIFIER:
 		subtract_any<BuiltInPredicates>(first_differences, first->any_quantifier.operand, second);
@@ -8981,6 +9004,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 			} else if (first_differences.length == 1 && first_differences[0] == root->unary.operand) {
 				dst[dst.length++] = root;
 				root->reference_count++;
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 				continue;
 			}
 			for (hol_term* first_child : first_differences) {
@@ -9012,6 +9036,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 			} else if (first_differences.length == 1 && first_differences[0] == root->binary.right) {
 				dst[dst.length++] = root;
 				root->reference_count++;
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 				continue;
 			}
 			for (hol_term* first_child : first_differences) {
@@ -9043,6 +9068,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 			} else if (first_differences.length == 1 && first_differences[0] == root->ternary.third) {
 				dst[dst.length++] = root;
 				root->reference_count++;
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 				continue;
 			}
 			for (hol_term* first_child : first_differences) {
@@ -9078,6 +9104,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 			} else if (first_differences.length == 1 && first_differences[0] == root->array.operands[root->array.length - 1]) {
 				dst[dst.length++] = root;
 				root->reference_count++;
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 				continue;
 			}
 			for (hol_term* first_child : first_differences) {
@@ -9120,6 +9147,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 			} else if (first_differences.length == 1 && first_differences[0] == root->quantifier.operand) {
 				dst[dst.length++] = root;
 				root->reference_count++;
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 				continue;
 			}
 			for (hol_term* first_child : first_differences) {
@@ -9160,6 +9188,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 			} else if (first_differences.length == 1 && first_differences[0] == root->any_quantifier.operand) {
 				dst[dst.length++] = root;
 				root->reference_count++;
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 				continue;
 			}
 			for (hol_term* first_child : first_differences) {
@@ -9191,7 +9220,11 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 template<typename BuiltInPredicates>
 bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 {
-	if (second->type == hol_term_type::ANY) {
+	if (first == second) {
+		return false;
+
+	} else if (second->type == hol_term_type::ANY) {
+		size_t old_dst_length = dst.length;
 		if (second->any.included != nullptr) {
 			if (second->any.excluded_tree_count == 0) {
 				subtract_any<BuiltInPredicates>(dst, first, second);
@@ -9204,7 +9237,6 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 			}
 		}
 
-		size_t old_dst_length = dst.length;
 		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
 			array<hol_term*> intersections(8);
 			if (!intersect<BuiltInPredicates, true>(intersections, first, second->any.excluded_trees[i]))
@@ -9311,8 +9343,8 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 
 	} else if (second->type == hol_term_type::ANY_RIGHT) {
 		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(dst, first, second);
-		return false;
+			return subtract_any_right<BuiltInPredicates>(dst, first, second);
+		else return false;
 
 	} else if (first->type == hol_term_type::ANY_RIGHT) {
 		if (!has_intersection<BuiltInPredicates>(second, first)) {
@@ -9356,6 +9388,8 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 				dst[dst.length] = first;
 				dst[dst.length++]->reference_count++;
 				return true;
+			} else if (is_subset<BuiltInPredicates>(first, second)) {
+				return false;
 			}
 			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
 			return false;
@@ -9723,7 +9757,11 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 			if (i > 0) {
 				intersect<BuiltInPredicates, true>(difference_array[i - 1], first->array.operands[i - 1], second->array.operands[i - 1]);
 				if (difference_array[i - 1].length == 0) {
-					for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+					for (unsigned int j = 0; j < first->array.length; j++) {
+						for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+						free(difference_array[j]);
+					}
+					free(difference_array);
 					return (dst.length > old_dst_length);
 				}
 				difference_count *= difference_array[i - 1].length;
@@ -9731,10 +9769,14 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 			subtract<BuiltInPredicates>(difference_array[i], first->array.operands[i], second->array.operands[i]);
 			unsigned int count = difference_count * difference_array[i].length;
 			if (!dst.ensure_capacity(dst.length + count)) {
-				for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+				for (unsigned int j = 0; j < first->array.length; j++) {
+					for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+					free(difference_array[j]);
+				}
+				free(difference_array);
 				return false;
 			}
-			bool result = apply_to_cartesian_product(difference_array, i + 1, [&dst,i,first,difference_array](const unsigned int* indices) {
+			bool result = (count == 0) || apply_to_cartesian_product(difference_array, i + 1, [&dst,i,first,difference_array](const unsigned int* indices) {
 				if (!new_hol_term(dst[dst.length]))
 					return false;
 				dst[dst.length]->type = first->type;
@@ -9756,13 +9798,21 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 				return true;
 			});
 			if (!result) {
-				for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+				for (unsigned int j = 0; j < first->array.length; j++) {
+					for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+					free(difference_array[j]);
+				}
+				free(difference_array);
 				return false;
 			}
 			for (hol_term* term : difference_array[i]) { free(*term); if (term->reference_count == 0) free(term); }
 			difference_array[i].clear();
 		}
-		for (unsigned int j = 0; j < first->array.length; j++) for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+		for (unsigned int j = 0; j < first->array.length; j++) {
+			for (hol_term* term : difference_array[j]) { free(*term); if (term->reference_count == 0) free(term); }
+			free(difference_array[j]);
+		}
+		free(difference_array);
 		return (dst.length > old_dst_length);
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
@@ -9949,12 +9999,14 @@ inline bool any_is_excluded(
 }
 
 template<typename BuiltInPredicates, bool ComputeIntersection>
-inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_term* second, hol_term* (&included)[2])
+inline bool intersect_any_with_any(array<hol_term*>& dst,
+		hol_term* first, hol_term* second, hol_term* (&included)[2],
+		hol_term** additional_excluded, size_t additional_excluded_count)
 {
 	unsigned int excluded_tree_count = 0;
 	bool same_trees_as_first = true;
 	bool same_trees_as_second = true;
-	hol_term** excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * (first->any.excluded_tree_count + second->any.excluded_tree_count));
+	hol_term** excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * (first->any.excluded_tree_count + second->any.excluded_tree_count + additional_excluded_count));
 	for (unsigned int i = 0; i < first->any.excluded_tree_count; i++) {
 		bool irreducible = true;
 		for (unsigned int j = 0; j < second->any.excluded_tree_count; j++) {
@@ -9983,6 +10035,21 @@ inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_t
 			excluded_trees[excluded_tree_count++] = second->any.excluded_trees[i];
 			same_trees_as_first = false;
 		} else {
+			same_trees_as_second = false;
+		}
+	}
+	old_excluded_tree_count = excluded_tree_count;
+	for (unsigned int i = 0; i < additional_excluded_count; i++) {
+		bool irreducible = true;
+		for (unsigned int j = 0; j < old_excluded_tree_count; j++) {
+			if (is_subset<BuiltInPredicates>(additional_excluded[i], excluded_trees[j])) {
+				irreducible = false;
+				break;
+			}
+		}
+		if (irreducible) {
+			excluded_trees[excluded_tree_count++] = additional_excluded[i];
+			same_trees_as_first = false;
 			same_trees_as_second = false;
 		}
 	}
@@ -10103,6 +10170,7 @@ inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_t
 	/* first intersect the `included` subset */
 	hol_term* included[2];
 	array<hol_term*> intersection(2);
+	size_t first_intersection_count;
 	if (first->any.included == nullptr) {
 		if (second->any.included == nullptr) {
 			included[0] = nullptr;
@@ -10124,6 +10192,8 @@ inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_t
 			intersect<BuiltInPredicates, true>(intersection, first->any.included, term);
 			free(*term); if (term->reference_count == 0) free(term);
 		}
+		first_intersection_count = intersection.length;
+
 		if (first->any.excluded_tree_count == 0) {
 			intersect<BuiltInPredicates, true>(intersection, second->any.included, first);
 		} else {
@@ -10133,7 +10203,6 @@ inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_t
 			intersect<BuiltInPredicates, true>(intersection, second->any.included, term);
 			free(*term); if (term->reference_count == 0) free(term);
 		}
-		/* TODO: we need to exclude the first intersections from the second intersections */
 		if (intersection.length == 0)
 			return false;
 	} else if (!(first->type == hol_term_type::ANY && second->type == hol_term_type::ANY_RIGHT) && is_subset<BuiltInPredicates>(first->any.included, second)) {
@@ -10148,20 +10217,42 @@ inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_t
 	}
 
 	if (intersection.length != 0) {
+		array<hol_term*> additional_excluded(max((size_t) 1, first_intersection_count));
+		for (size_t i = 0; i < first_intersection_count; i++) {
+			if (intersection[i] == first->any.included) {
+				additional_excluded[additional_excluded.length++] = first;
+				first->reference_count++;
+			} else {
+				hol_term* term = hol_term::new_any_right(intersection[i]);
+				if (term == nullptr) {
+					for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : additional_excluded) { free(*term); if (term->reference_count == 0) free(term); }
+					return false;
+				}
+				intersection[i]->reference_count++;
+				additional_excluded[additional_excluded.length++] = term;
+			}
+		}
+
 		included[1] = nullptr;
 		size_t old_dst_length = dst.length;
-		for (hol_term* term : intersection) {
-			included[0] = term;
-			bool intersection_not_empty = intersect_any_with_any<BuiltInPredicates, ComputeIntersection>(dst, first, second, included);
+		for (size_t i = 0; i < intersection.length; i++) {
+			included[0] = intersection[i];
+			bool intersection_not_empty;
+			if (i < first_intersection_count)
+				intersection_not_empty = intersect_any_with_any<BuiltInPredicates, ComputeIntersection>(dst, first, second, included, nullptr, 0);
+			else intersection_not_empty = intersect_any_with_any<BuiltInPredicates, ComputeIntersection>(dst, first, second, included, additional_excluded.data, additional_excluded.length);
 			if (!ComputeIntersection && intersection_not_empty) {
 				for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : additional_excluded) { free(*term); if (term->reference_count == 0) free(term); }
 				return true;
 			}
 		}
 		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : additional_excluded) { free(*term); if (term->reference_count == 0) free(term); }
 		return (dst.length > old_dst_length);
 	} else {
-		return intersect_any_with_any<BuiltInPredicates, ComputeIntersection>(dst, first, second, included);
+		return intersect_any_with_any<BuiltInPredicates, ComputeIntersection>(dst, first, second, included, nullptr, 0);
 	}
 }
 
@@ -10173,7 +10264,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 		fprintf(stderr, "intersect_with_any WARNING: Expected the type of `second` to be `ANY`.\n");
 #endif
 
-	if (first == second) {
+	if (first == second || (second->any.included == nullptr && second->any.excluded_tree_count == 0)) {
 		if (ComputeIntersection) {
 			if (!dst.add(first)) return false;
 			first->reference_count++;
@@ -10199,8 +10290,14 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 
 	hol_term* second_any;
 	if (second->any.included == nullptr) {
-		second_any = &HOL_ANY;
-		HOL_ANY.reference_count++;
+		if (!ComputeIntersection) {
+			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return true;
+		} else if (!dst.append(differences.data, differences.length)) {
+			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		return true;
 	} else if (second->any.excluded_tree_count == 0) {
 		second_any = second;
 		second->reference_count++;
@@ -10210,7 +10307,8 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 			return false;
 		}
-		second->any.included->reference_count++;
+		if (second->any.included != nullptr)
+			second->any.included->reference_count++;
 	}
 
 	size_t old_dst_length = dst.length;
@@ -10254,8 +10352,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
 			array<hol_term*> first_differences(8);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(first_differences, root->unary.operand, second_any);
+			subtract_any<BuiltInPredicates>(first_differences, root->unary.operand, second_any);
 			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10263,54 +10360,29 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 				return false;
 			}
 			for (hol_term* first_difference : first_differences) {
-				if (second->any.included == nullptr) {
-					if (!ComputeIntersection) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
-					}
-					if (first_difference == root->unary.operand) {
-						dst[dst.length] = root;
-						root->reference_count++;
-					} else {
-						if (!new_hol_term(dst[dst.length])) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return false;
-						}
-						dst[dst.length]->type = first->type;
-						dst[dst.length]->reference_count = 1;
-						dst[dst.length]->unary.operand = first_difference;
-						first_difference->reference_count++;
-					}
-					dst.length++;
+				hol_term* term;
+				if (first_difference == root->unary.operand) {
+					term = root;
+					root->reference_count++;
 				} else {
-					hol_term* term;
-					if (first_difference == root->unary.operand) {
-						term = root;
-						root->reference_count++;
-					} else {
-						if (!new_hol_term(term)) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return false;
-						}
-						term->type = first->type;
-						term->reference_count = 1;
-						term->unary.operand = first_difference;
-						first_difference->reference_count++;
-					}
-					intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-					free(*term); if (term->reference_count == 0) free(term);
-					if (!ComputeIntersection && intersection_not_empty) {
+					if (!new_hol_term(term)) {
 						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
+						return false;
 					}
+					term->type = first->type;
+					term->reference_count = 1;
+					term->unary.operand = first_difference;
+					first_difference->reference_count++;
+				}
+				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
+				free(*term); if (term->reference_count == 0) free(term);
+				if (!ComputeIntersection && intersection_not_empty) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return true;
 				}
 			}
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10363,8 +10435,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			array<hol_term*> second_intersection(8);
 			array<hol_term*> first_differences(8);
 			intersection_not_empty = intersect_with_any<BuiltInPredicates, ComputeIntersection>(second_intersection, root->binary.right, second_any);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(first_differences, root->binary.left, second_any);
+			subtract_any<BuiltInPredicates>(first_differences, root->binary.left, second_any);
 			if (!ComputeIntersection && intersection_not_empty && first_differences.length > 0) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10404,8 +10475,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* term : second_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
 			array<hol_term*> second_differences(8);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(second_differences, root->binary.right, second_any);
+			subtract_any<BuiltInPredicates>(second_differences, root->binary.right, second_any);
 			if (ComputeIntersection && !dst.ensure_capacity(dst.length + (first_differences.length * second_differences.length))) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10415,62 +10485,33 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			}
 			for (hol_term* first_difference : first_differences) {
 				for (hol_term* second_difference : second_differences) {
-					if (second->any.included == nullptr) {
-						if (!ComputeIntersection) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return true;
-						}
-						if (first_difference == root->binary.left && second_difference == root->binary.right) {
-							dst[dst.length] = root;
-							root->reference_count++;
-						} else {
-							if (!new_hol_term(dst[dst.length])) {
-								for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								free(*second_any); if (second_any->reference_count == 0) free(second_any);
-								return false;
-							}
-							dst[dst.length]->type = first->type;
-							dst[dst.length]->reference_count = 1;
-							dst[dst.length]->binary.left = first_difference;
-							dst[dst.length]->binary.right = second_difference;
-							first_difference->reference_count++;
-							second_difference->reference_count++;
-						}
-						dst.length++;
+					hol_term* term;
+					if (first_difference == root->binary.left && second_difference == root->binary.right) {
+						term = root;
+						root->reference_count++;
 					} else {
-						hol_term* term;
-						if (first_difference == root->binary.left && second_difference == root->binary.right) {
-							term = root;
-							root->reference_count++;
-						} else {
-							if (!new_hol_term(term)) {
-								for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								free(*second_any); if (second_any->reference_count == 0) free(second_any);
-								return false;
-							}
-							term->type = first->type;
-							term->reference_count = 1;
-							term->binary.left = first_difference;
-							term->binary.right = second_difference;
-							first_difference->reference_count++;
-							second_difference->reference_count++;
-						}
-						intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-						free(*term); if (term->reference_count == 0) free(term);
-						if (!ComputeIntersection && intersection_not_empty) {
+						if (!new_hol_term(term)) {
 							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 							for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
 							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return true;
+							return false;
 						}
+						term->type = first->type;
+						term->reference_count = 1;
+						term->binary.left = first_difference;
+						term->binary.right = second_difference;
+						first_difference->reference_count++;
+						second_difference->reference_count++;
+					}
+					intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
+					free(*term); if (term->reference_count == 0) free(term);
+					if (!ComputeIntersection && intersection_not_empty) {
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
+						return true;
 					}
 				}
 			}
@@ -10525,8 +10566,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			array<hol_term*> second_intersection(8);
 			array<hol_term*> first_differences(8);
 			intersection_not_empty = intersect_with_any<BuiltInPredicates, ComputeIntersection>(second_intersection, root->ternary.second, second_any);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(first_differences, root->ternary.first, second_any);
+			subtract_any<BuiltInPredicates>(first_differences, root->ternary.first, second_any);
 			if (!ComputeIntersection && intersection_not_empty && first_differences.length > 0) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10569,8 +10609,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			array<hol_term*> third_intersection(8);
 			array<hol_term*> second_differences(8);
 			intersection_not_empty = intersect_with_any<BuiltInPredicates, ComputeIntersection>(third_intersection, root->ternary.third, second_any);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(second_differences, root->ternary.second, second_any);
+			subtract_any<BuiltInPredicates>(second_differences, root->ternary.second, second_any);
 			if (!ComputeIntersection && intersection_not_empty && second_differences.length > 0) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10616,8 +10655,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* term : third_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
 			array<hol_term*> third_differences(8);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(third_differences, root->ternary.third, second_any);
+			subtract_any<BuiltInPredicates>(third_differences, root->ternary.third, second_any);
 			if (ComputeIntersection && !dst.ensure_capacity(dst.length + (first_differences.length * second_differences.length * third_differences.length))) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10629,70 +10667,37 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* first_difference : first_differences) {
 				for (hol_term* second_difference : third_differences) {
 					for (hol_term* third_difference : third_differences) {
-						if (second->any.included == nullptr) {
-							if (!ComputeIntersection) {
-								for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
-								free(*second_any); if (second_any->reference_count == 0) free(second_any);
-								return true;
-							}
-							if (first_difference == root->ternary.first && second_difference == root->ternary.second && third_difference == root->ternary.third) {
-								dst[dst.length] = root;
-								root->reference_count++;
-							} else {
-								if (!new_hol_term(dst[dst.length])) {
-									for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-									for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-									for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-									for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
-									free(*second_any); if (second_any->reference_count == 0) free(second_any);
-									return false;
-								}
-								dst[dst.length]->type = first->type;
-								dst[dst.length]->reference_count = 1;
-								dst[dst.length]->ternary.first = first_difference;
-								dst[dst.length]->ternary.second = second_difference;
-								dst[dst.length]->ternary.third = third_difference;
-								first_difference->reference_count++;
-								second_difference->reference_count++;
-								third_difference->reference_count++;
-							}
-							dst.length++;
+						hol_term* term;
+						if (first_difference == root->ternary.first && second_difference == root->ternary.second && third_difference == root->ternary.third) {
+							term = root;
+							root->reference_count++;
 						} else {
-							hol_term* term;
-							if (first_difference == root->ternary.first && second_difference == root->ternary.second && third_difference == root->ternary.third) {
-								term = root;
-								root->reference_count++;
-							} else {
-								if (!new_hol_term(term)) {
-									for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-									for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-									for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
-									for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
-									free(*second_any); if (second_any->reference_count == 0) free(second_any);
-									return false;
-								}
-								term->type = first->type;
-								term->reference_count = 1;
-								term->ternary.first = first_difference;
-								term->ternary.second = second_difference;
-								term->ternary.third = third_difference;
-								first_difference->reference_count++;
-								second_difference->reference_count++;
-								third_difference->reference_count++;
-							}
-							intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-							free(*term); if (term->reference_count == 0) free(term);
-							if (!ComputeIntersection && intersection_not_empty) {
+							if (!new_hol_term(term)) {
 								for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 								for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 								for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
 								for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
 								free(*second_any); if (second_any->reference_count == 0) free(second_any);
-								return true;
+								return false;
 							}
+							term->type = first->type;
+							term->reference_count = 1;
+							term->ternary.first = first_difference;
+							term->ternary.second = second_difference;
+							term->ternary.third = third_difference;
+							first_difference->reference_count++;
+							second_difference->reference_count++;
+							third_difference->reference_count++;
+						}
+						intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
+						free(*term); if (term->reference_count == 0) free(term);
+						if (!ComputeIntersection && intersection_not_empty) {
+							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+							for (hol_term* term : second_differences) { free(*term); if (term->reference_count == 0) free(term); }
+							for (hol_term* term : third_differences) { free(*term); if (term->reference_count == 0) free(term); }
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return true;
 						}
 					}
 				}
@@ -10729,7 +10734,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (unsigned int i = 0; i < root->array.length && child_difference_count > 0; i++) {
 				array<hol_term*> child_intersection(8);
 				bool intersection_not_empty = intersect_with_any<BuiltInPredicates, ComputeIntersection>(child_intersection, root->array.operands[i], second_any);
-				if (i > 0 && second->any.included != nullptr)
+				if (i > 0)
 					subtract_any<BuiltInPredicates>(child_differences[i - 1], root->array.operands[i - 1], second_any);
 				if (i > 0 && !ComputeIntersection && intersection_not_empty && child_differences[i - 1].length > 0) {
 					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10842,8 +10847,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 				continue;
 			}
 
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(child_differences[first->array.length - 1], root->array.operands[first->array.length - 1], second_any);
+			subtract_any<BuiltInPredicates>(child_differences[first->array.length - 1], root->array.operands[first->array.length - 1], second_any);
 			unsigned int intersection_count = child_difference_count * child_differences[first->array.length - 1].length;
 			if (intersection_count == 0) {
 				for (unsigned int j = 0; j < root->array.length; j++) {
@@ -10866,31 +10870,16 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 				for (unsigned int i = 0; i < first->array.length; i++)
 					if (child_differences[i][0] != root->array.operands[i]) same = false;
 				if (same) {
-					if (second->any.included == nullptr) {
-						if (!ComputeIntersection) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (unsigned int j = 0; j < root->array.length; j++) {
-								for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-								free(child_differences[j]);
-							}
-							free(child_differences);
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return true;
+					bool intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, root);
+					if (!ComputeIntersection && intersection_not_empty) {
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (unsigned int j = 0; j < root->array.length; j++) {
+							for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
+							free(child_differences[j]);
 						}
-						dst[dst.length] = root;
-						dst[dst.length++]->reference_count++;
-					} else {
-						bool intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, root);
-						if (!ComputeIntersection && intersection_not_empty) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (unsigned int j = 0; j < root->array.length; j++) {
-								for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-								free(child_differences[j]);
-							}
-							free(child_differences);
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return true;
-						}
+						free(child_differences);
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
+						return true;
 					}
 					for (unsigned int j = 0; j < root->array.length; j++) {
 						for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
@@ -10912,78 +10901,46 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 				return false;
 			}
 			while (true) {
-				if (second->any.included == nullptr) {
-					if (!ComputeIntersection) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (unsigned int j = 0; j < root->array.length; j++) {
-							for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-							free(child_differences[j]);
-						}
-						free(child_differences); free(index_array);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
+				hol_term* term;
+				if (!new_hol_term(term)) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (unsigned int j = 0; j < root->array.length; j++) {
+						for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
+						free(child_differences[j]);
 					}
-					dst[dst.length]->type = first->type;
-					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->array.length = first->array.length;
-					dst[dst.length]->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
-					if (dst[dst.length]->array.operands == nullptr) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (unsigned int j = 0; j < root->array.length; j++) {
-							for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-							free(child_differences[j]);
-						}
-						free(child_differences); free(index_array);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						free(dst[dst.length]); return false;
+					free(child_differences); free(index_array);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				term->type = first->type;
+				term->reference_count = 1;
+				term->array.length = first->array.length;
+				term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
+				if (term->array.operands == nullptr) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (unsigned int j = 0; j < root->array.length; j++) {
+						for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
+						free(child_differences[j]);
 					}
-					for (unsigned int j = 0; j < first->array.length; j++) {
-						dst[dst.length]->array.operands[j] = child_differences[j][index_array[j]];
-						dst[dst.length]->array.operands[j]->reference_count++;
+					free(child_differences); free(index_array); free(term);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				for (unsigned int j = 0; j < first->array.length; j++) {
+					term->array.operands[j] = child_differences[j][index_array[j]];
+					term->array.operands[j]->reference_count++;
+				}
+				bool intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
+				free(*term); if (term->reference_count == 0) free(term);
+				if (!ComputeIntersection && intersection_not_empty) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (unsigned int j = 0; j < root->array.length; j++) {
+						for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
+						free(child_differences[j]);
 					}
-					dst.length++;
-				} else {
-					hol_term* term;
-					if (!new_hol_term(term)) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (unsigned int j = 0; j < root->array.length; j++) {
-							for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-							free(child_differences[j]);
-						}
-						free(child_differences); free(index_array);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return false;
-					}
-					term->type = first->type;
-					term->reference_count = 1;
-					term->array.length = first->array.length;
-					term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
-					if (term->array.operands == nullptr) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (unsigned int j = 0; j < root->array.length; j++) {
-							for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-							free(child_differences[j]);
-						}
-						free(child_differences); free(index_array); free(term);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return false;
-					}
-					for (unsigned int j = 0; j < first->array.length; j++) {
-						term->array.operands[j] = child_differences[j][index_array[j]];
-						term->array.operands[j]->reference_count++;
-					}
-					bool intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-					free(*term); if (term->reference_count == 0) free(term);
-					if (!ComputeIntersection && intersection_not_empty) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (unsigned int j = 0; j < root->array.length; j++) {
-							for (hol_term* term : child_differences[j]) { free(*term); if (term->reference_count == 0) free(term); }
-							free(child_differences[j]);
-						}
-						free(child_differences); free(index_array);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
-					}
+					free(child_differences); free(index_array);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return true;
 				}
 
 				/* increment `index_array` */
@@ -11050,8 +11007,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
 			array<hol_term*> first_differences(8);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(first_differences, root->quantifier.operand, second_any);
+			subtract_any<BuiltInPredicates>(first_differences, root->quantifier.operand, second_any);
 			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -11059,56 +11015,30 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 				return false;
 			}
 			for (hol_term* first_difference : first_differences) {
-				if (second->any.included == nullptr) {
-					if (!ComputeIntersection) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
-					}
-					if (first_difference == root->quantifier.operand) {
-						dst[dst.length] = root;
-						root->reference_count++;
-					} else {
-						if (!new_hol_term(dst[dst.length])) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return false;
-						}
-						dst[dst.length]->type = first->type;
-						dst[dst.length]->reference_count = 1;
-						dst[dst.length]->quantifier.variable = root->quantifier.variable;
-						dst[dst.length]->quantifier.operand = first_difference;
-						first_difference->reference_count++;
-					}
-					dst.length++;
+				hol_term* term;
+				if (first_difference == root->quantifier.operand) {
+					term = root;
+					root->reference_count++;
 				} else {
-					hol_term* term;
-					if (first_difference == root->quantifier.operand) {
-						term = root;
-						root->reference_count++;
-					} else {
-						if (!new_hol_term(term)) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return false;
-						}
-						term->type = first->type;
-						term->reference_count = 1;
-						term->quantifier.variable = root->quantifier.variable;
-						term->quantifier.operand = first_difference;
-						first_difference->reference_count++;
-					}
-					intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-					free(*term); if (term->reference_count == 0) free(term);
-					if (!ComputeIntersection && intersection_not_empty) {
+					if (!new_hol_term(term)) {
 						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
+						return false;
 					}
+					term->type = first->type;
+					term->reference_count = 1;
+					term->quantifier.variable = root->quantifier.variable;
+					term->quantifier.operand = first_difference;
+					first_difference->reference_count++;
+				}
+				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
+				free(*term); if (term->reference_count == 0) free(term);
+				if (!ComputeIntersection && intersection_not_empty) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return true;
 				}
 			}
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -11126,31 +11056,123 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		for (hol_term* root : differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
-				}
-				dst[dst.length++] = root;
-				root->reference_count++;
-			} else {
-				bool intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, root, second->any.included);
-				if (!ComputeIntersection && intersection_not_empty) {
-					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
-				}
+			bool intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, root, second->any.included);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return true;
 			}
 		}
 		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY_ARRAY:
-		fprintf(stderr, "intersect_with_any ERROR: Unclosed intersection.\n");
+		for (hol_term* root : differences) {
+			array<hol_term*> first_intersection(8);
+			bool intersection_not_empty = intersect_with_any<BuiltInPredicates, ComputeIntersection>(first_intersection, root->any_array.all, second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return true;
+			}
+
+			if (ComputeIntersection && root->any_array.any.length != 0 && first_intersection.length != 0) {
+				fprintf(stderr, "intersect_with_any ERROR: Unclosed intersection.\n");
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->any_array.all) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					continue;
+				}
+			}
+			for (hol_term* first_child : first_intersection) {
+				dst[dst.length] = hol_term::new_any_array(root->any_array.oper, root->any_array.all, make_array_view(&first_child, 1),
+						make_array_view(root->any_array.left.operands, root->any_array.left.length),
+						make_array_view(root->any_array.right.operands, root->any_array.right.length));
+				if (dst[dst.length] == 0) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				dst[dst.length]->any_array.all->reference_count++;
+				for (unsigned int i = 0; i < dst[dst.length]->any_array.any.length; i++)
+					dst[dst.length]->any_array.any.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < dst[dst.length]->any_array.left.length; i++)
+					dst[dst.length]->any_array.left.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < dst[dst.length]->any_array.right.length; i++)
+					dst[dst.length]->any_array.right.operands[i]->reference_count++;
+				dst.length++;
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			array<hol_term*> first_differences(8);
+			subtract_any<BuiltInPredicates>(first_differences, root->any_array.all, second_any);
+			for (hol_term* all : first_differences) {
+				bool intersection_not_empty = false;
+				bool result = subtract_any_with_array<BuiltInPredicates>(root->any_array.left, all, second_any, [&intersection_not_empty,root,first,all,second_any,&dst](array<hol_term*>* left_array, const unsigned int* left_index_array) {
+					return subtract_any_with_array<BuiltInPredicates>(root->any_array.any, all, second_any, [&intersection_not_empty,root,first,all,second_any,left_array,left_index_array,&dst](array<hol_term*>* any_array, const unsigned int* any_index_array) {
+						return subtract_any_with_array<BuiltInPredicates>(root->any_array.right, all, second_any, [&intersection_not_empty,root,first,all,second_any,left_array,left_index_array,any_array,any_index_array,&dst](array<hol_term*>* right_array, const unsigned int* right_index_array) {
+							hol_term* term;
+							bool same_as_root = (all == root->any_array.all);
+							for (unsigned int i = 0; same_as_root && i < root->any_array.left.length; i++)
+								if (root->any_array.left.operands[i] != left_array[i][left_index_array[i]]) same_as_root = false;
+							for (unsigned int i = 0; same_as_root && i < root->any_array.right.length; i++)
+								if (root->any_array.right.operands[i] != right_array[i][right_index_array[i]]) same_as_root = false;
+							for (unsigned int i = 0; same_as_root && i < root->any_array.any.length; i++)
+								if (root->any_array.any.operands[i] != any_array[i][any_index_array[i]]) same_as_root = false;
+							if (same_as_root) {
+								term = root;
+								root->reference_count++;
+							} else {
+								term = hol_term::new_any_array(root->any_array.oper, all,
+										lookup_table_array_view<array<hol_term*>, hol_term*>(any_array, any_index_array, root->any_array.any.length),
+										lookup_table_array_view<array<hol_term*>, hol_term*>(left_array, left_index_array, root->any_array.left.length),
+										lookup_table_array_view<array<hol_term*>, hol_term*>(right_array, right_index_array, root->any_array.right.length));
+								if (term == nullptr) return false;
+								term->any_array.all->reference_count++;
+								for (unsigned int i = 0; i < term->any_array.any.length; i++)
+									term->any_array.any.operands[i]->reference_count++;
+								for (unsigned int i = 0; i < term->any_array.left.length; i++)
+									term->any_array.left.operands[i]->reference_count++;
+								for (unsigned int i = 0; i < term->any_array.right.length; i++)
+									term->any_array.right.operands[i]->reference_count++;
+							}
+
+							intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second_any->any.included, term);
+							free(*term); if (term->reference_count == 0) free(term);
+							if (!ComputeIntersection && intersection_not_empty)
+								return false;
+							return true;
+						});
+					});
+				});
+				if (!result) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					if (!ComputeIntersection && intersection_not_empty)
+						return true;
+					else return false;
+				}
+			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		}
 		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
-		return false;
+		return (dst.length > old_dst_length);
 	case hol_term_type::ANY_QUANTIFIER:
 		for (hol_term* root : differences) {
 			array<hol_term*> first_intersection(8);
@@ -11191,8 +11213,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
 			array<hol_term*> first_differences(8);
-			if (second->any.included != nullptr)
-				subtract_any<BuiltInPredicates>(first_differences, root->any_quantifier.operand, second_any);
+			subtract_any<BuiltInPredicates>(first_differences, root->any_quantifier.operand, second_any);
 			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
 				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -11200,56 +11221,30 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 				return false;
 			}
 			for (hol_term* first_difference : first_differences) {
-				if (second->any.included == nullptr) {
-					if (!ComputeIntersection) {
-						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
-					}
-					if (first_difference == root->any_quantifier.operand) {
-						dst[dst.length] = root;
-						root->reference_count++;
-					} else {
-						if (!new_hol_term(dst[dst.length])) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return false;
-						}
-						dst[dst.length]->type = first->type;
-						dst[dst.length]->reference_count = 1;
-						dst[dst.length]->any_quantifier.quantifier = root->any_quantifier.quantifier;
-						dst[dst.length]->any_quantifier.operand = first_difference;
-						first_difference->reference_count++;
-					}
-					dst.length++;
+				hol_term* term;
+				if (first_difference == root->any_quantifier.operand) {
+					term = root;
+					root->reference_count++;
 				} else {
-					hol_term* term;
-					if (first_difference == root->any_quantifier.operand) {
-						term = root;
-						root->reference_count++;
-					} else {
-						if (!new_hol_term(term)) {
-							for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
-							for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-							free(*second_any); if (second_any->reference_count == 0) free(second_any);
-							return false;
-						}
-						term->type = first->type;
-						term->reference_count = 1;
-						term->any_quantifier.quantifier = root->any_quantifier.quantifier;
-						term->any_quantifier.operand = first_difference;
-						first_difference->reference_count++;
-					}
-					intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-					free(*term); if (term->reference_count == 0) free(term);
-					if (!ComputeIntersection && intersection_not_empty) {
+					if (!new_hol_term(term)) {
 						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return true;
+						return false;
 					}
+					term->type = first->type;
+					term->reference_count = 1;
+					term->any_quantifier.quantifier = root->any_quantifier.quantifier;
+					term->any_quantifier.operand = first_difference;
+					first_difference->reference_count++;
+				}
+				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
+				free(*term); if (term->reference_count == 0) free(term);
+				if (!ComputeIntersection && intersection_not_empty) {
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return true;
 				}
 			}
 			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
@@ -11274,8 +11269,6 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 #if !defined(NDEBUG)
 	if (second->type != hol_term_type::ANY_RIGHT)
 		fprintf(stderr, "intersect_with_any_right WARNING: Expected the type of `second` to be `ANY_RIGHT`.\n");
-	if (first->type == hol_term_type::ANY)
-		fprintf(stderr, "intersect_with_any_right WARNING: Expected the type of `first` not to be `ANY`.\n");
 #endif
 
 	if (first == second) {
@@ -11284,8 +11277,45 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 			first->reference_count++;
 		}
 		return true;
-	} else if (first->type == hol_term_type::ANY_RIGHT) {
+	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT) {
 		return intersect_any_with_any<BuiltInPredicates, ComputeIntersection>(dst, first, second);
+	}
+
+	/* first subtract `second->any.excluded[i]` from `first` */
+	array<hol_term*> differences(8);
+	differences[0] = first;
+	differences[0]->reference_count++;
+	differences.length++;
+	for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
+		array<hol_term*> new_differences(8);
+		for (hol_term* prev : differences)
+			subtract<BuiltInPredicates>(new_differences, prev, second->any.excluded_trees[i]);
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		swap(new_differences, differences);
+		if (differences.length == 0) return false;
+	}
+
+	hol_term* second_any;
+	if (second->any.included == nullptr) {
+		if (!ComputeIntersection) {
+			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return true;
+		} else if (!dst.append(differences.data, differences.length)) {
+			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		return true;
+	} else if (second->any.excluded_tree_count == 0) {
+		second_any = second;
+		second->reference_count++;
+	} else {
+		second_any = hol_term::new_any_right(second->any.included);
+		if (second_any == nullptr) {
+			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		if (second->any.included != nullptr)
+			second->any.included->reference_count++;
 	}
 
 	bool intersection_not_empty;
@@ -11294,71 +11324,64 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 	size_t old_dst_length = dst.length;
 	switch (first->type) {
 	case hol_term_type::NOT:
-		intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->unary.operand, second);
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if (first_intersection[0] == first->unary.operand) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->unary.operand, second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->unary.operand = first_child;
-			first_child->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(first_differences, first->unary.operand, second);
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->unary.operand) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if (first_difference == first->unary.operand) {
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
-					if (!new_hol_term(dst[dst.length])) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					dst[dst.length]->type = first->type;
-					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->unary.operand = first_difference;
-					first_difference->reference_count++;
+			}
+			for (hol_term* first_child : first_intersection) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
 				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->unary.operand = first_child;
+				first_child->reference_count++;
 				dst.length++;
-			} else {
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			subtract_any_right<BuiltInPredicates>(first_differences, root->unary.operand, second_any);
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+			for (hol_term* first_difference : first_differences) {
 				hol_term* term;
-				if (first_difference == first->unary.operand) {
-					term = first;
-					first->reference_count++;
+				if (first_difference == root->unary.operand) {
+					term = root;
+					root->reference_count++;
 				} else {
 					if (!new_hol_term(term)) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					term->type = first->type;
+					term->type = root->type;
 					term->reference_count = 1;
 					term->unary.operand = first_difference;
 					first_difference->reference_count++;
@@ -11367,177 +11390,172 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
 					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::IF_THEN:
 	case hol_term_type::EQUALS:
-		intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->binary.right, second);
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if (first_intersection[0] == first->binary.right) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->binary.right, second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->binary.left = first->binary.left;
-			dst[dst.length]->binary.right = first_child;
-			dst[dst.length]->binary.left->reference_count++;
-			dst[dst.length]->binary.right->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(first_differences, first->binary.right, second);
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->binary.right) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if (first_difference == first->binary.right) {
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
+			}
+			for (hol_term* first_child : first_intersection) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->binary.left = root->binary.left;
+				dst[dst.length]->binary.right = first_child;
+				dst[dst.length]->binary.left->reference_count++;
+				dst[dst.length]->binary.right->reference_count++;
+				dst.length++;
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			array<hol_term*> intersections(4);
+			intersect<BuiltInPredicates, true>(intersections, second->any.included, root);
+			for (hol_term* intersection : intersections) {
+				subtract_any_right<BuiltInPredicates>(first_differences, intersection->binary.right, second_any);
+				if (!ComputeIntersection && first_differences.length > 0) {
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : intersections) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return true;
+				} else if (!dst.ensure_capacity(dst.length + first_differences.length)) {
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : intersections) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				} else if (first_differences.length == 1 && first_differences[0] == intersection->binary.right) {
+					dst[dst.length] = intersection;
+					dst[dst.length++]->reference_count++;
+					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					first_differences.clear();
+					continue;
+				}
+				for (hol_term* first_difference : first_differences) {
 					if (!new_hol_term(dst[dst.length])) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : intersections) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
 					dst[dst.length]->type = first->type;
 					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->binary.left = first->binary.left;
+					dst[dst.length]->binary.left = intersection->binary.left;
 					dst[dst.length]->binary.right = first_difference;
 					dst[dst.length]->binary.left->reference_count++;
 					dst[dst.length]->binary.right->reference_count++;
+					dst.length++;
 				}
-				dst.length++;
-			} else {
-				hol_term* term;
-				if (first_difference == first->binary.right) {
-					term = first;
-					first->reference_count++;
-				} else {
-					if (!new_hol_term(term)) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					term->type = first->type;
-					term->reference_count = 1;
-					term->binary.left = first->binary.left;
-					term->binary.right = first_difference;
-					term->binary.left->reference_count++;
-					term->binary.right->reference_count++;
-				}
-				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
-				free(*term); if (term->reference_count == 0) free(term);
-				if (!ComputeIntersection && intersection_not_empty) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-					return true;
-				}
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				first_differences.clear();
 			}
+			for (hol_term* term : intersections) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::BINARY_APPLICATION:
-		intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->ternary.third, second);
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if (first_intersection[0] == first->ternary.third) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->ternary.third, second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->ternary.first = first->ternary.first;
-			dst[dst.length]->ternary.second = first->ternary.second;
-			dst[dst.length]->ternary.third = first_child;
-			dst[dst.length]->ternary.first->reference_count++;
-			dst[dst.length]->ternary.second->reference_count++;
-			dst[dst.length]->ternary.third->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(first_differences, first->ternary.third, second);
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->ternary.third) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if (first_difference == first->ternary.third) {
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
-					if (!new_hol_term(dst[dst.length])) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					dst[dst.length]->type = first->type;
-					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->ternary.first = first->ternary.first;
-					dst[dst.length]->ternary.second = first->ternary.second;
-					dst[dst.length]->ternary.third = first_difference;
-					dst[dst.length]->ternary.first->reference_count++;
-					dst[dst.length]->ternary.second->reference_count++;
-					dst[dst.length]->ternary.third->reference_count++;
+			}
+			for (hol_term* first_child : first_intersection) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
 				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->ternary.first = root->ternary.first;
+				dst[dst.length]->ternary.second = root->ternary.second;
+				dst[dst.length]->ternary.third = first_child;
+				dst[dst.length]->ternary.first->reference_count++;
+				dst[dst.length]->ternary.second->reference_count++;
+				dst[dst.length]->ternary.third->reference_count++;
 				dst.length++;
-			} else {
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			subtract_any_right<BuiltInPredicates>(first_differences, root->ternary.third, second_any);
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+			for (hol_term* first_difference : first_differences) {
 				hol_term* term;
-				if (first_difference == first->ternary.third) {
-					term = first;
-					first->reference_count++;
+				if (first_difference == root->ternary.third) {
+					term = root;
+					root->reference_count++;
 				} else {
 					if (!new_hol_term(term)) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					term->type = first->type;
+					term->type = root->type;
 					term->reference_count = 1;
-					term->ternary.first = first->ternary.first;
-					term->ternary.second = first->ternary.second;
+					term->ternary.first = root->ternary.first;
+					term->ternary.second = root->ternary.second;
 					term->ternary.third = first_difference;
 					term->ternary.first->reference_count++;
 					term->ternary.second->reference_count++;
@@ -11547,196 +11565,183 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
 					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::IFF:
 	case hol_term_type::AND:
 	case hol_term_type::OR:
-		intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->array.operands[first->array.length - 1], second);
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if (first_intersection[0] == first->array.operands[first->array.length - 1]) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->array.operands[root->array.length - 1], second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->array.length = first->array.length;
-			dst[dst.length]->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
-			if (dst[dst.length]->array.operands == nullptr) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				free(dst[dst.length]); return false;
-			}
-			for (unsigned int i = 0; i + 1 < first->array.length; i++) {
-				dst[dst.length]->array.operands[i] = first->array.operands[i];
-				dst[dst.length]->array.operands[i]->reference_count++;
-			}
-			dst[dst.length]->array.operands[first->array.length - 1] = first_child;
-			dst[dst.length]->array.operands[first->array.length - 1]->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(first_differences, first->array.operands[first->array.length - 1], second);
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->array.operands[root->array.length - 1]) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if (first_difference == first->array.operands[first->array.length - 1]) {
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
-					if (!new_hol_term(dst[dst.length])) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					dst[dst.length]->type = first->type;
-					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->array.length = first->array.length;
-					dst[dst.length]->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
-					if (dst[dst.length]->array.operands == nullptr) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						free(dst[dst.length]); return false;
-					}
-					for (unsigned int i = 0; i + 1 < first->array.length; i++) {
-						dst[dst.length]->array.operands[i] = first->array.operands[i];
-						dst[dst.length]->array.operands[i]->reference_count++;
-					}
-					dst[dst.length]->array.operands[first->array.length - 1] = first_difference;
-					dst[dst.length]->array.operands[first->array.length - 1]->reference_count++;
+			}
+			for (hol_term* first_child : first_intersection) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
 				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->array.length = root->array.length;
+				dst[dst.length]->array.operands = (hol_term**) malloc(sizeof(hol_term*) * root->array.length);
+				if (dst[dst.length]->array.operands == nullptr) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					free(dst[dst.length]); return false;
+				}
+				for (unsigned int i = 0; i + 1 < root->array.length; i++) {
+					dst[dst.length]->array.operands[i] = root->array.operands[i];
+					dst[dst.length]->array.operands[i]->reference_count++;
+				}
+				dst[dst.length]->array.operands[root->array.length - 1] = first_child;
+				dst[dst.length]->array.operands[root->array.length - 1]->reference_count++;
 				dst.length++;
-			} else {
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			subtract_any_right<BuiltInPredicates>(first_differences, root->array.operands[root->array.length - 1], second_any);
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+			for (hol_term* first_difference : first_differences) {
 				hol_term* term;
-				if (first_difference == first->array.operands[first->array.length - 1]) {
-					term = first;
-					first->reference_count++;
+				if (first_difference == root->array.operands[root->array.length - 1]) {
+					term = root;
+					root->reference_count++;
 				} else {
 					if (!new_hol_term(term)) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
 					term->type = first->type;
 					term->reference_count = 1;
-					term->array.length = first->array.length;
-					term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
+					term->array.length = root->array.length;
+					term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * root->array.length);
 					if (term->array.operands == nullptr) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						free(term); return false;
 					}
-					for (unsigned int i = 0; i + 1 < first->array.length; i++) {
-						term->array.operands[i] = first->array.operands[i];
+					for (unsigned int i = 0; i + 1 < root->array.length; i++) {
+						term->array.operands[i] = root->array.operands[i];
 						term->array.operands[i]->reference_count++;
 					}
-					term->array.operands[first->array.length - 1] = first_difference;
-					term->array.operands[first->array.length - 1]->reference_count++;
+					term->array.operands[root->array.length - 1] = first_difference;
+					term->array.operands[root->array.length - 1]->reference_count++;
 				}
 				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, second->any.included, term);
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
 					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->quantifier.operand, second);
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if (first_intersection[0] == first->quantifier.operand) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->quantifier.operand, second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->quantifier.variable = first->quantifier.variable;
-			dst[dst.length]->quantifier.operand = first_child;
-			dst[dst.length]->quantifier.operand->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(first_differences, first->quantifier.operand, second);
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->quantifier.operand) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if (first_difference == first->quantifier.operand) {
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
-					if (!new_hol_term(dst[dst.length])) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					dst[dst.length]->type = first->type;
-					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->quantifier.variable = first->quantifier.variable;
-					dst[dst.length]->quantifier.operand = first_difference;
-					dst[dst.length]->quantifier.operand->reference_count++;
+			}
+			for (hol_term* first_child : first_intersection) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
 				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->quantifier.variable = root->quantifier.variable;
+				dst[dst.length]->quantifier.operand = first_child;
+				dst[dst.length]->quantifier.operand->reference_count++;
 				dst.length++;
-			} else {
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			subtract_any_right<BuiltInPredicates>(first_differences, root->quantifier.operand, second_any);
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+			for (hol_term* first_difference : first_differences) {
 				hol_term* term;
-				if (first_difference == first->quantifier.operand) {
-					term = first;
-					first->reference_count++;
+				if (first_difference == root->quantifier.operand) {
+					term = root;
+					root->reference_count++;
 				} else {
 					if (!new_hol_term(term)) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
 					term->type = first->type;
 					term->reference_count = 1;
-					term->quantifier.variable = first->quantifier.variable;
+					term->quantifier.variable = root->quantifier.variable;
 					term->quantifier.operand = first_difference;
 					term->quantifier.operand->reference_count++;
 				}
@@ -11744,11 +11749,15 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
 					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::INTEGER:
 	case hol_term_type::STRING:
@@ -11759,113 +11768,96 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
-		if (second->any.included == nullptr) {
-			if (!ComputeIntersection)
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, root, second->any.included);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
-			dst[dst.length++] = first;
-			first->reference_count++;
-		} else {
-			intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection>(dst, first, second->any.included);
-			if (!ComputeIntersection && intersection_not_empty) 
-				return true;
+			}
 		}
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY_ARRAY:
-		if (first->any_array.right.length != 0) {
-			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->any_array.right.operands[first->any_array.right.length - 1], second);
-		} else {
-			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->any_array.all, second);
-		}
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if ((first->any_array.right.length != 0 && first_intersection[0] == first->any_array.right.operands[first->any_array.right.length - 1])
-			 || (first->any_array.right.length == 0 && first_intersection[0] == first->any_array.all))
-			{
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			if (root->any_array.right.length != 0) {
+				intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->any_array.right.operands[root->any_array.right.length - 1], second_any);
+			} else {
+				intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->any_array.all, second_any);
+			}
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			dst[dst.length] = hol_term::new_any_array(first->any_array.oper, first->any_array.all,
-					make_array_view(first->any_array.any.operands, first->any_array.any.length),
-					make_array_view(first->any_array.left.operands, first->any_array.left.length),
-					make_appended_array_view(make_array_view(first->any_array.right.operands, max(1u, first->any_array.right.length) - 1), first_child));
-			if (dst[dst.length] == nullptr) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->any_array.all->reference_count++;
-			for (unsigned int i = 0; i < dst[dst.length]->any_array.any.length; i++)
-				dst[dst.length]->any_array.any.operands[i]->reference_count++;
-			for (unsigned int i = 0; i < dst[dst.length]->any_array.left.length; i++)
-				dst[dst.length]->any_array.left.operands[i]->reference_count++;
-			for (unsigned int i = 0; i < dst[dst.length]->any_array.right.length; i++)
-				dst[dst.length]->any_array.right.operands[i]->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr) {
-			if (first->any_array.right.length != 0) {
-				subtract_any_right<BuiltInPredicates>(first_differences, first->any_array.right.operands[first->any_array.right.length - 1], second);
-			} else {
-				subtract_any_right<BuiltInPredicates>(first_differences, first->any_array.all, second);
-			}
-		}
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if ((root->any_array.right.length != 0 && first_intersection[0] == root->any_array.right.operands[root->any_array.right.length - 1])
+				 || (root->any_array.right.length == 0 && first_intersection[0] == root->any_array.all))
+				{
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if ((first->any_array.right.length != 0 && first_difference == first->any_array.right.operands[first->any_array.right.length - 1])
-				 || (first->any_array.right.length == 0 && first_difference == first->any_array.all))
-				{
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
-					dst[dst.length] = hol_term::new_any_array(first->any_array.oper, first->any_array.all,
-							make_array_view(first->any_array.any.operands, first->any_array.any.length),
-							make_array_view(first->any_array.left.operands, first->any_array.left.length),
-							make_appended_array_view(make_array_view(first->any_array.right.operands, max(1u, first->any_array.right.length) - 1), first_difference));
-					if (dst[dst.length] == nullptr) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					dst[dst.length]->any_array.all->reference_count++;
-					for (unsigned int i = 0; i < dst[dst.length]->any_array.any.length; i++)
-						dst[dst.length]->any_array.any.operands[i]->reference_count++;
-					for (unsigned int i = 0; i < dst[dst.length]->any_array.left.length; i++)
-						dst[dst.length]->any_array.left.operands[i]->reference_count++;
-					for (unsigned int i = 0; i < dst[dst.length]->any_array.right.length; i++)
-						dst[dst.length]->any_array.right.operands[i]->reference_count++;
+			}
+			for (hol_term* first_child : first_intersection) {
+				dst[dst.length] = hol_term::new_any_array(root->any_array.oper, root->any_array.all,
+						make_array_view(root->any_array.any.operands, root->any_array.any.length),
+						make_array_view(root->any_array.left.operands, root->any_array.left.length),
+						make_appended_array_view(make_array_view(root->any_array.right.operands, max(1u, root->any_array.right.length) - 1), first_child));
+				if (dst[dst.length] == nullptr) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
 				}
+				dst[dst.length]->any_array.all->reference_count++;
+				for (unsigned int i = 0; i < dst[dst.length]->any_array.any.length; i++)
+					dst[dst.length]->any_array.any.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < dst[dst.length]->any_array.left.length; i++)
+					dst[dst.length]->any_array.left.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < dst[dst.length]->any_array.right.length; i++)
+					dst[dst.length]->any_array.right.operands[i]->reference_count++;
 				dst.length++;
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			if (root->any_array.right.length != 0) {
+				subtract_any_right<BuiltInPredicates>(first_differences, root->any_array.right.operands[root->any_array.right.length - 1], second_any);
 			} else {
+				subtract_any_right<BuiltInPredicates>(first_differences, root->any_array.all, second_any);
+			}
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+			for (hol_term* first_difference : first_differences) {
 				hol_term* term;
-				if ((first->any_array.right.length != 0 && first_difference == first->any_array.right.operands[first->any_array.right.length - 1])
-				 || (first->any_array.right.length == 0 && first_difference == first->any_array.all))
+				if ((root->any_array.right.length != 0 && first_difference == root->any_array.right.operands[root->any_array.right.length - 1])
+				 || (root->any_array.right.length == 0 && first_difference == root->any_array.all))
 				{
-					term = first;
-					first->reference_count++;
+					term = root;
+					root->reference_count++;
 				} else {
-					term = hol_term::new_any_array(first->any_array.oper, first->any_array.all,
-							make_array_view(first->any_array.any.operands, first->any_array.any.length),
-							make_array_view(first->any_array.left.operands, first->any_array.left.length),
-							make_appended_array_view(make_array_view(first->any_array.right.operands, max(1u, first->any_array.right.length) - 1), first_difference));
+					term = hol_term::new_any_array(root->any_array.oper, root->any_array.all,
+							make_array_view(root->any_array.any.operands, root->any_array.any.length),
+							make_array_view(root->any_array.left.operands, root->any_array.left.length),
+							make_appended_array_view(make_array_view(root->any_array.right.operands, max(1u, root->any_array.right.length) - 1), first_difference));
 					if (term == nullptr) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
 					term->any_array.all->reference_count++;
@@ -11880,82 +11872,78 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
 					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY_QUANTIFIER:
-		intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, first->any_quantifier.operand, second);
-		if (!ComputeIntersection && intersection_not_empty)
-			return true;
-
-		if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
-			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		} else if (first_intersection.length == 1) {
-			if (first_intersection[0] == first->any_quantifier.operand) {
-				dst[dst.length++] = first;
-				first->reference_count++;
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* root : differences) {
+			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection>(first_intersection, root->any_quantifier.operand, second_any);
+			if (!ComputeIntersection && intersection_not_empty) {
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return true;
 			}
-		}
-		for (hol_term* first_child : first_intersection) {
-			if (!new_hol_term(dst[dst.length])) {
-				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
-				return false;
-			}
-			dst[dst.length]->type = first->type;
-			dst[dst.length]->reference_count = 1;
-			dst[dst.length]->any_quantifier.quantifier = first->any_quantifier.quantifier;
-			dst[dst.length]->any_quantifier.operand = first_child;
-			dst[dst.length]->any_quantifier.operand->reference_count++;
-			dst.length++;
-		}
-		for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
 
-		if (second->any.included != nullptr)
-			subtract_any_right<BuiltInPredicates>(first_differences, first->any_quantifier.operand, second);
-		if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* first_difference : first_differences) {
-			if (second->any.included == nullptr) {
-				if (!ComputeIntersection) {
-					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+			if (!dst.ensure_capacity(dst.length + first_intersection.length)) {
+				for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			} else if (first_intersection.length == 1) {
+				if (first_intersection[0] == root->any_quantifier.operand) {
+					dst[dst.length++] = root;
+					root->reference_count++;
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
-				if (first_difference == first->any_quantifier.operand) {
-					dst[dst.length] = first;
-					first->reference_count++;
-				} else {
-					if (!new_hol_term(dst[dst.length])) {
-						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
-						return false;
-					}
-					dst[dst.length]->type = first->type;
-					dst[dst.length]->reference_count = 1;
-					dst[dst.length]->any_quantifier.quantifier = first->any_quantifier.quantifier;
-					dst[dst.length]->any_quantifier.operand = first_difference;
-					dst[dst.length]->any_quantifier.operand->reference_count++;
+			}
+			for (hol_term* first_child : first_intersection) {
+				if (!new_hol_term(dst[dst.length])) {
+					for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
 				}
+				dst[dst.length]->type = first->type;
+				dst[dst.length]->reference_count = 1;
+				dst[dst.length]->any_quantifier.quantifier = root->any_quantifier.quantifier;
+				dst[dst.length]->any_quantifier.operand = first_child;
+				dst[dst.length]->any_quantifier.operand->reference_count++;
 				dst.length++;
-			} else {
+			}
+			for (hol_term* term : first_intersection) { free(*term); if (term->reference_count == 0) free(term); }
+
+			subtract_any_right<BuiltInPredicates>(first_differences, root->any_quantifier.operand, second_any);
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+				for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+				for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return false;
+			}
+			for (hol_term* first_difference : first_differences) {
 				hol_term* term;
-				if (first_difference == first->any_quantifier.operand) {
-					term = first;
-					first->reference_count++;
+				if (first_difference == root->any_quantifier.operand) {
+					term = root;
+					root->reference_count++;
 				} else {
 					if (!new_hol_term(term)) {
 						for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+						for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					term->type = first->type;
+					term->type = root->type;
 					term->reference_count = 1;
-					term->any_quantifier.quantifier = first->any_quantifier.quantifier;
+					term->any_quantifier.quantifier = root->any_quantifier.quantifier;
 					term->any_quantifier.operand = first_difference;
 					term->any_quantifier.operand->reference_count++;
 				}
@@ -11963,11 +11951,15 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
 					for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+					for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 			}
+			for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
 		}
-		for (hol_term* term : first_differences) { free(*term); if (term->reference_count == 0) free(term); }
+		for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
@@ -11975,6 +11967,8 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 		break;
 	}
 	fprintf(stderr, "intersect_with_any_right ERROR: Unrecognized hol_term_type.\n");
+	for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
+	free(*second_any); if (second_any->reference_count == 0) free(second_any);
 	return false;
 }
 
@@ -12181,7 +12175,7 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 			for (unsigned int i = 0; i < any_length; i++) {
 				intersect<BuiltInPredicates, ComputeIntersection>(any_intersections[i], any[i], all);
 				if (any_intersections[i].length == 0) {
-					for (unsigned int j = 0; j < i; j++) {
+					for (unsigned int j = 0; j < any_length; j++) {
 						for (hol_term* term : any_intersections[j]) { free(*term); if (term->reference_count == 0) free(term); }
 						free(any_intersections[j]);
 					}
@@ -12372,10 +12366,13 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 				});
 			});
 
+			for (unsigned int j = 0; j < any_length; j++) {
+				for (hol_term* term : any_intersections[j]) { free(*term); if (term->reference_count == 0) free(term); }
+				free(any_intersections[j]);
+			}
 			for (unsigned int j = 0; j < new_left_length; j++) free(new_left_intersections[j]);
 			for (unsigned int j = 0; j < new_right_length; j++) free(new_right_intersections[j]);
-			free(new_left_intersections); free(new_right_intersections);
-			free(any_intersections);
+			free(any_intersections); free(new_left_intersections); free(new_right_intersections);
 			if (!result) {
 				success = false;
 				break;
@@ -12498,7 +12495,7 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 				array<hol_term*>* child_intersections = (array<hol_term*>*) malloc(sizeof(array<hol_term*>) * second->any_array.any.length);
 				if (child_intersections == nullptr) return false;
 
-				for (unsigned int k = 0; k + 1 < second->any_array.any.length; k++) {
+				for (unsigned int k = 0; k < second->any_array.any.length; k++) {
 					if (!array_init(child_intersections[k], 4)) {
 						for (unsigned int j = 0; j < k; j++) free(child_intersections[j]);
 						free(child_intersections);
@@ -12570,7 +12567,10 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 					return true;
 				});
 
-				for (unsigned int j = 0; j + 1 < second->any_array.any.length; j++) free(child_intersections[j]);
+				for (unsigned int j = 0; j < second->any_array.any.length; j++) {
+					for (hol_term* term : child_intersections[j]) { free(*term); if (term->reference_count == 0) free(term); }
+					free(child_intersections[j]);
+				}
 				free(child_intersections);
 				if (!result) return false;
 			}

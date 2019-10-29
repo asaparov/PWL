@@ -36,6 +36,13 @@ enum class built_in_predicates : unsigned int {
 	COUNT
 };
 
+/* WARNING: The below should preserve the order of the entries in the enum. */
+
+unsigned int PAST_OR_PRESENT[] = {
+	(unsigned int) built_in_predicates::PRESENT,
+	(unsigned int) built_in_predicates::PAST
+};
+
 unsigned int PRESENT_PREDICATES[] = {
 	(unsigned int) built_in_predicates::PRESENT,
 	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
@@ -51,37 +58,37 @@ unsigned int FUTURE_PREDICATES[] = {
 };
 
 unsigned int PERFECT_PREDICATES[] = {
-	(unsigned int) built_in_predicates::PAST_PERFECT,
-	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
 	(unsigned int) built_in_predicates::PRESENT_PERFECT,
 	(unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST_PERFECT,
+	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
 	(unsigned int) built_in_predicates::FUTURE_PERFECT,
 	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
 };
 
 unsigned int NON_PERFECT_PREDICATES[] = {
-	(unsigned int) built_in_predicates::PAST,
-	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
 	(unsigned int) built_in_predicates::PRESENT,
 	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST,
+	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
 	(unsigned int) built_in_predicates::FUTURE,
 	(unsigned int) built_in_predicates::FUTURE_PROGRESSIVE
 };
 
 unsigned int PROGRESSIVE_PREDICATES[] = {
-	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
-	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
 	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
 	(unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
 	(unsigned int) built_in_predicates::FUTURE_PROGRESSIVE,
 	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
 };
 
 unsigned int NON_PROGRESSIVE_PREDICATES[] = {
-	(unsigned int) built_in_predicates::PAST,
-	(unsigned int) built_in_predicates::PAST_PERFECT,
 	(unsigned int) built_in_predicates::PRESENT,
 	(unsigned int) built_in_predicates::PRESENT_PERFECT,
+	(unsigned int) built_in_predicates::PAST,
+	(unsigned int) built_in_predicates::PAST_PERFECT,
 	(unsigned int) built_in_predicates::FUTURE,
 	(unsigned int) built_in_predicates::FUTURE_PERFECT
 };

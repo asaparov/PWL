@@ -16,7 +16,7 @@
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
 				(VP_R:remove_right_conjunct
 					(VP_L:identity
-						(V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_only "are")
+						(V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_and_tense "are")
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_plural

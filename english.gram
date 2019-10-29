@@ -1338,7 +1338,7 @@ VP_L -> TO VP_R:try_remove_correlated,remove_to_infinitive,add_infinitive,requir
 # that without the subjunctive mood, this rule fails. This is to avoid spurious
 # ambiguity where the verb can be interpreted as either being in the
 # subjunctive mood or not (e.g. "it's vital that we keep them informed.").
-VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_only
+VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_and_tense
 
 # VP_L {?[x]:()} -> BE
 # This is the semantically empty "be"/"is"/"was"/"were" as in "the cat is blue"
@@ -2749,10 +2749,10 @@ ADVP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 ADVP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # ADVP_L {?[g]:(U(0,g) & p(g))} -> ADV {p}
-ADVP_L -> ADV:require_no_correlator,predicate
+ADVP_L -> ADV:require_no_correlator,predicate_only
 
 # ADVP_L {?[g]:(U(0,g) & p(g))} -> ADJ {p}
-ADVP_L -> ADJ:require_no_correlator,predicate,add_ly
+ADVP_L -> ADJ:require_no_correlator,predicate_only,add_ly
 
 # ADVP_L {?[g]:(U(0,g) & greatest/least(p)(g))} -> ADV {p}
 # e.g. "soonest", "most seriously"
