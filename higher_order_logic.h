@@ -2790,6 +2790,10 @@ inline hol_term* new_hol_array(hol_term* arg, Args&&... args)
 		free(term); return NULL;
 	}
 	new_hol_array_helper<Operator, 0>(term->array.operands, arg, std::forward<Args>(args)...);
+#if !defined(NDEBUG)
+	if (term->array.length < 2)
+		fprintf(stderr, "new_hol_array WARNING: Array length is not at least 2.\n");
+#endif
 	return term;
 }
 
@@ -2824,6 +2828,10 @@ inline hol_term* new_hol_array(const Array& operands)
 		free(term);
 		return nullptr;
 	}
+#if !defined(NDEBUG)
+	if (term->array.length < 2)
+		fprintf(stderr, "new_hol_array WARNING: Array length is not at least 2.\n");
+#endif
 	return term;
 }
 
@@ -8396,10 +8404,8 @@ inline bool subtract_any_with_any(array<hol_term*>& dst, hol_term* first, hol_te
 	hol_term** excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * (first->any.excluded_tree_count + 1));
 	for (unsigned int i = 0; i < first->any.excluded_tree_count; i++) {
 		bool irreducible = true;
-		if (is_subset<BuiltInPredicates>(first->any.excluded_trees[i], second)) {
+		if (is_subset<BuiltInPredicates>(first->any.excluded_trees[i], second))
 			irreducible = false;
-			break;
-		}
 		if (irreducible) {
 			excluded_trees[excluded_tree_count++] = first->any.excluded_trees[i];
 			same_as_second = false;
@@ -12458,10 +12464,16 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 			for (hol_term* term : second_terms) { free(*term); if (term->reference_count == 0) free(term); }
 		}
 
-		bool result = apply_to_cartesian_product(terms, first->array.length, [first,second,&terms,&dst](const unsigned int* index_array) {
+		bool non_empty_intersection = false;
+		bool result = apply_to_cartesian_product(terms, first->array.length, [first,second,&terms,&dst,&non_empty_intersection](const unsigned int* index_array) {
 			/* handle the case where `second->any_array.any.length` is 0 */
 			if (second->any_array.any.length == 0) {
-				if (!dst.ensure_capacity(dst.length + 1)) return false;
+				if (!ComputeIntersection) {
+					non_empty_intersection = true;
+					return true;
+				} else if (!dst.ensure_capacity(dst.length + 1)) {
+					return false;
+				}
 
 				/* check if the new term is the same as `first` */
 				bool same_as_first = true;
@@ -12503,7 +12515,7 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 					}
 				}
 
-				bool non_empty_intersection = true;
+				non_empty_intersection = true;
 				for (unsigned int k = 0; k < second->any_array.any.length; k++)
 					non_empty_intersection &= intersect<BuiltInPredicates, ComputeIntersection>(child_intersections[k], terms[i + k][index_array[i + k]], second->any_array.any.operands[k]);
 
@@ -12581,6 +12593,8 @@ bool intersect_with_any_array(array<hol_term*>& dst, hol_term* first, hol_term* 
 			free(terms[j]);
 		}
 		free(terms);
+		if (!ComputeIntersection && non_empty_intersection)
+			return true;
 		return result && (dst.length > 0);
 
 	} else {
@@ -13184,7 +13198,14 @@ bool intersect(array<hol_term*>& dst, hol_term* first, hol_term* second)
 template<typename BuiltInPredicates>
 inline bool has_intersection(hol_term* first, hol_term* second) {
 	array<hol_term*> dummy(1);
+#if !defined(NDEBUG)
+	bool result = intersect<BuiltInPredicates, false>(dummy, first, second);
+	if (dummy.length != 0)
+		fprintf(stderr, "has_intersection WARNING: `intersect` returned non-empty array.\n");
+	return result;
+#else
 	return intersect<BuiltInPredicates, false>(dummy, first, second);
+#endif
 }
 
 
