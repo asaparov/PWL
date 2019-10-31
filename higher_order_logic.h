@@ -2358,6 +2358,87 @@ inline hol_term* map_variables(hol_term* src,
 	return dst;
 }
 
+struct variable_relabeler {
+	array_map<unsigned int, unsigned int> variable_map;
+
+	variable_relabeler() : variable_map(8) { }
+};
+
+inline bool new_variable(unsigned int src, unsigned int& dst,
+		array_map<unsigned int, unsigned int>& variable_map)
+{
+	if (!variable_map.ensure_capacity(variable_map.size + 1))
+		return false;
+	unsigned int index = variable_map.index_of(src);
+	if (index < variable_map.size) {
+		fprintf(stderr, "new_variable ERROR: Multiple declaration of variable %u.\n", src);
+		return false;
+	}
+	variable_map.keys[index] = src;
+	dst = variable_map.size + 1;
+	variable_map.values[index] = dst;
+	variable_map.size++;
+	return true;
+}
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, variable_relabeler& relabeler) {
+	if (Type == hol_term_type::VARIABLE) {
+		unsigned int index = relabeler.variable_map.index_of(src->variable);
+		unsigned int variable;
+		if (index < relabeler.variable_map.size) {
+			variable = relabeler.variable_map.values[index];
+		} else if (!new_variable(src->variable, variable, relabeler.variable_map)) {
+			return nullptr;
+		}
+
+		if (variable == src->variable) {
+			return src;
+		} else {
+			return hol_term::new_variable(variable);
+		}
+	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		unsigned int index = relabeler.variable_map.index_of(src->variable);
+		unsigned int variable;
+		if (index < relabeler.variable_map.size) {
+			variable = relabeler.variable_map.values[index];
+		} else if (!new_variable(src->quantifier.variable, variable, relabeler.variable_map)) {
+			return nullptr;
+		}
+
+		hol_term* new_operand = apply(src->quantifier.operand, relabeler);
+		relabeler.variable_map.size--;
+
+		if (new_operand == nullptr)
+			return nullptr;
+		if (variable == src->quantifier.variable && new_operand == src->quantifier.operand)
+			return src;
+
+		hol_term* new_quantifier;
+		if (Type == hol_term_type::FOR_ALL) {
+			new_quantifier = hol_term::new_for_all(variable, new_operand);
+		} else if (Type == hol_term_type::EXISTS) {
+			new_quantifier = hol_term::new_exists(variable, new_operand);
+		} else if (Type == hol_term_type::LAMBDA) {
+			new_quantifier = hol_term::new_lambda(variable, new_operand);
+		}
+		if (new_operand == src->quantifier.operand)
+			new_operand->reference_count++;
+		return new_quantifier;
+	} else {
+		return default_apply<Type>(src, relabeler);
+	}
+}
+
+inline hol_term* relabel_variables(hol_term* src)
+{
+	variable_relabeler relabeler;
+	hol_term* dst = apply(src, relabeler);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
 template<hol_term_type SrcTermType, int VariableShift>
 struct static_term_substituter {
 	const hol_term* src;
@@ -4401,125 +4482,6 @@ inline bool operator < (
 		const hol_term& second)
 {
 	return compare(first, second) < 0;
-}
-
-
-/* forward declarations */
-bool relabel_variables(hol_term&, array_map<unsigned int, unsigned int>&);
-
-
-inline bool new_variable(unsigned int src, unsigned int& dst,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	if (!variable_map.ensure_capacity(variable_map.size + 1))
-		return false;
-	unsigned int index = variable_map.index_of(src);
-	if (index < variable_map.size) {
-		fprintf(stderr, "new_variable ERROR: Multiple declaration of variable %u.\n", src);
-		return false;
-	}
-	variable_map.keys[index] = src;
-	dst = variable_map.size + 1;
-	variable_map.values[index] = dst;
-	variable_map.size++;
-	return true;
-}
-
-inline bool relabel_variables(hol_array_term& array,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	for (unsigned int i = 0; i < array.length; i++)
-		if (!relabel_variables(*array.operands[i], variable_map)) return false;
-	return true;
-}
-
-inline bool relabel_variables(hol_quantifier& quantifier,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	if (!new_variable(quantifier.variable, quantifier.variable, variable_map)
-	 || !relabel_variables(*quantifier.operand, variable_map))
-		return false;
-
-	variable_map.size--;
-	return true;
-}
-
-inline bool relabel_variables(hol_any& any,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	if (any.included != nullptr && !relabel_variables(*any.included, variable_map))
-		return false;
-	for (unsigned int i = 0; i < any.excluded_tree_count; i++)
-		if (!relabel_variables(*any.excluded_trees[i], variable_map)) return false;
-	return true;
-}
-
-inline bool relabel_variables(hol_any_array& any_array,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	return relabel_variables(*any_array.all, variable_map)
-		&& relabel_variables(any_array.any, variable_map)
-		&& relabel_variables(any_array.left, variable_map)
-		&& relabel_variables(any_array.right, variable_map);
-}
-
-bool relabel_variables(hol_term& term,
-		array_map<unsigned int, unsigned int>& variable_map)
-{
-	unsigned int index;
-	switch (term.type) {
-	case hol_term_type::CONSTANT:
-	case hol_term_type::PARAMETER:
-	case hol_term_type::INTEGER:
-	case hol_term_type::STRING:
-	case hol_term_type::UINT_LIST:
-		return true;
-	case hol_term_type::VARIABLE:
-		index = variable_map.index_of(term.variable);
-		if (index < variable_map.size) {
-			term.variable = variable_map.values[index];
-			return true;
-		} else if (!new_variable(term.variable, term.variable, variable_map)) {
-			return false;
-		}
-	case hol_term_type::IF_THEN:
-	case hol_term_type::EQUALS:
-	case hol_term_type::UNARY_APPLICATION:
-		return relabel_variables(*term.binary.left, variable_map)
-			&& relabel_variables(*term.binary.right, variable_map);
-	case hol_term_type::BINARY_APPLICATION:
-		return relabel_variables(*term.ternary.first, variable_map)
-			&& relabel_variables(*term.ternary.second, variable_map)
-			&& relabel_variables(*term.ternary.third, variable_map);
-	case hol_term_type::AND:
-	case hol_term_type::OR:
-	case hol_term_type::IFF:
-		return relabel_variables(term.array, variable_map);
-	case hol_term_type::NOT:
-		return relabel_variables(*term.unary.operand, variable_map);
-	case hol_term_type::FOR_ALL:
-	case hol_term_type::EXISTS:
-	case hol_term_type::LAMBDA:
-		return relabel_variables(term.quantifier, variable_map);
-	case hol_term_type::ANY:
-	case hol_term_type::ANY_RIGHT:
-		return relabel_variables(term.any, variable_map);
-	case hol_term_type::ANY_ARRAY:
-		return relabel_variables(term.any_array, variable_map);
-	case hol_term_type::ANY_QUANTIFIER:
-		return relabel_variables(*term.any_quantifier.operand, variable_map);
-	case hol_term_type::ANY_CONSTANT:
-	case hol_term_type::TRUE:
-	case hol_term_type::FALSE:
-		return true;
-	}
-	fprintf(stderr, "relabel_variables ERROR: Unrecognized hol_term_type.\n");
-	return false;
-}
-
-inline bool relabel_variables(hol_term& term) {
-	array_map<unsigned int, unsigned int> variable_map(16);
-	return relabel_variables(term, variable_map);
 }
 
 
@@ -7153,8 +7115,8 @@ inline hol_term* intersect(hol_term* first, hol_term* second)
 
 bool is_reduceable(hol_term*, hol_term*, hol_term*&, hol_term*&, unsigned int&);
 
-template<typename BuiltInPredicates>
-bool is_subset(hol_term*, hol_term*);
+template<typename BuiltInPredicates, typename VariableComparator>
+bool is_subset(hol_term*, hol_term*, VariableComparator&);
 
 template<typename BuiltInPredicates>
 bool subtract(array<hol_term*>&, hol_term*, hol_term*);
