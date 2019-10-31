@@ -1150,7 +1150,6 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		if (!print_quantifier<Syntax>(hol_quantifier_type::FOR_ALL, term.quantifier.variable, out)) return false;
 		if (term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::EQUALS
-		 || term.quantifier.operand->type == hol_term_type::IF_THEN
 		 || term.quantifier.operand->type == hol_term_type::IFF
 		 || term.quantifier.operand->type == hol_term_type::OR)
 		{
@@ -1163,7 +1162,6 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		if (!print_quantifier<Syntax>(hol_quantifier_type::EXISTS, term.quantifier.variable, out)) return false;
 		if (term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::EQUALS
-		 || term.quantifier.operand->type == hol_term_type::IF_THEN
 		 || term.quantifier.operand->type == hol_term_type::IFF
 		 || term.quantifier.operand->type == hol_term_type::OR)
 		{
@@ -1176,7 +1174,6 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		if (!print_quantifier<Syntax>(hol_quantifier_type::LAMBDA, term.quantifier.variable, out)) return false;
 		if (term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::EQUALS
-		 || term.quantifier.operand->type == hol_term_type::IF_THEN
 		 || term.quantifier.operand->type == hol_term_type::IFF
 		 || term.quantifier.operand->type == hol_term_type::OR)
 		{
@@ -1234,7 +1231,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		return true;
 
 	case hol_term_type::ANY_CONSTANT:
-		return print("* in ", stderr) && print<unsigned int, left_curly_brace, right_curly_brace, comma>(term.any_constant.constants, term.any_constant.length, out, std::forward<Printer>(printer)...);
+		return print("(* in ", out)
+			&& print<unsigned int, left_curly_brace, right_curly_brace, comma>(term.any_constant.constants, term.any_constant.length, out, std::forward<Printer>(printer)...)
+			&& print(')', out);
 
 	case hol_term_type::ANY_QUANTIFIER:
 		if (!print_quantifier<Syntax>(term.any_quantifier.quantifier, ANY_VARIABLE, out)) return false;

@@ -6327,35 +6327,24 @@ print("second: ", stderr); print(*second, stderr, *debug_terminal_printer); prin
 print("first_head:  ", stderr); print(*first_head, stderr, *debug_terminal_printer); print('\n', stderr);
 print("second_head: ", stderr); print(*second_head, stderr, *debug_terminal_printer); print('\n', stderr);
 	max_variable = first_inverter.max_variable;
-	bool has_bound_variables = second_inverter.has_bound_variables;
-	has_bound_variables |= max_bound_variable(*first_head, max_variable);
-	has_bound_variables |= max_bound_variable(*second_head, max_variable);
+	max_bound_variable(*first_head, max_variable);
 
 	array_map<unsigned int, unsigned int> second_variable_map(8);
 	for (unsigned int i = first_inverter.outer.length - 1; i > 0; i--) {
 		const hol_term* node = first_inverter.outer[i - 1];
 		if (node->type != hol_term_type::FOR_ALL && node->type != hol_term_type::EXISTS && node->type != hol_term_type::LAMBDA)
 			continue;
-		if (has_bound_variables && node->quantifier.variable <= max_variable) {
-			if (!second_variable_map.put(node->quantifier.variable, max_variable + 1))
-				return nullptr;
-			max_variable++;
-		} else {
-			has_bound_variables = true;
-		}
+		if (!second_variable_map.put(node->quantifier.variable, ++max_variable))
+			return nullptr;
 	}
 
-	has_bound_variables |= first_inverter.has_bound_variables;
 	for (unsigned int i = second_inverter.outer.length - 1; i > 0; i--) {
 		const hol_term* node = second_inverter.outer[i - 1];
 		if (node->type != hol_term_type::FOR_ALL && node->type != hol_term_type::EXISTS && node->type != hol_term_type::LAMBDA)
 			continue;
-		if (has_bound_variables && node->quantifier.variable <= max_variable) {
-			if (!second_variable_map.put(node->quantifier.variable, max_variable + 1))
+		if (node->quantifier.variable <= max_variable) {
+			if (!second_variable_map.put(node->quantifier.variable, ++max_variable))
 				return nullptr;
-			max_variable++;
-		} else {
-			has_bound_variables = true;
 		}
 	}
 
@@ -9115,6 +9104,12 @@ static void is_separable(
 		separable[i] = false;
 }
 
+bool get_constant(const hol_term* src, unsigned int& value,
+		unsigned int*& excluded, unsigned int& excluded_count)
+{
+	
+}
+
 template<typename Formula>
 bool get_feature(
 		typename flagged_logical_form<Formula>::feature feature,
@@ -9123,7 +9118,8 @@ bool get_feature(
 {
 	typedef typename flagged_logical_form<Formula>::feature feature_type;
 	switch (feature) {
-	case feature_type::CONSTANT: /* TODO: implement this */
+	case feature_type::CONSTANT:
+		return get_constant(src.root, value, excluded, excluded_count);
 	case feature_type::EMPTY: break;
 	}
 	fprintf(stderr, "get_feature ERROR: Unrecognized semantic feature.\n");
