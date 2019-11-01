@@ -538,6 +538,7 @@ bool intensional_element_of(
 	case FormulaType::ANY_RIGHT:
 	case FormulaType::ANY_ARRAY:
 	case FormulaType::ANY_CONSTANT:
+	case FormulaType::ANY_CONSTANT_EXCEPT:
 	case FormulaType::ANY_QUANTIFIER:
 		break;
 	}

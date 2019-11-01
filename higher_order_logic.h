@@ -50,7 +50,8 @@ enum class hol_term_type {
 	ANY, /* represents a set of all logical forms that contain a subtree within a specified set, and do not contain trees in other specified sets */
 	ANY_RIGHT, /* represents a set of all logical forms that contain a subtree within a specified set that is on the right-leaning branch from the root */
 	ANY_ARRAY, /* represents the set of all logical forms with an "array" type (e.g. `AND`, `OR`, `IFF`)  */
-	ANY_CONSTANT, /* represents a set of logical forms of type `CONSTANT` */
+	ANY_CONSTANT, /* represents a set of logical forms of type `CONSTANT` where the constant belongs to a specified set of constants */
+	ANY_CONSTANT_EXCEPT, /* represents a set of logical forms of type `CONSTANT` where the constant does not belong to a specified set of constants */
 	ANY_QUANTIFIER, /* represents a node that is either `FOR_ALL`, `EXISTS`, or `LAMBDA` with any variable */
 
 	TRUE,
@@ -290,6 +291,9 @@ struct hol_term
 	static hol_term* new_any_array(hol_term_type oper, hol_term* all, const AnyArray& any, const LeftArray& left, const RightArray& right);
 	template<typename... Args> static hol_term* new_any_constant(unsigned int constant, Args&&... args);
 	template<typename Array, typename std::enable_if<has_index_operator<Array, unsigned int>::value>::type** = nullptr> static hol_term* new_any_constant(const Array& args);
+	template<typename... Args> static hol_term* new_any_constant_except();
+	template<typename... Args> static hol_term* new_any_constant_except(unsigned int constant, Args&&... args);
+	template<typename Array, typename std::enable_if<has_index_operator<Array, unsigned int>::value>::type** = nullptr> static hol_term* new_any_constant_except(const Array& args);
 	static hol_term* new_any_quantifier(hol_quantifier_type quantifier_type, hol_term* operand);
 
 	static inline unsigned int hash(const hol_term& key);
@@ -385,6 +389,7 @@ private:
 			any_array.all->reference_count++;
 			return true;
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 			any_constant.length = src.any_constant.length;
 			any_constant.constants = (unsigned int*) malloc(sizeof(unsigned int) * src.any_constant.length);
 			if (any_constant.constants == nullptr) {
@@ -552,6 +557,7 @@ bool operator == (const hol_term& first, const hol_term& second)
 	case hol_term_type::ANY_ARRAY:
 		return first.any_array == second.any_array;
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return first.any_constant == second.any_constant;
 	case hol_term_type::ANY_QUANTIFIER:
 		return first.any_quantifier == second.any_quantifier;
@@ -661,6 +667,7 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 	case hol_term_type::ANY_ARRAY:
 		return type_hash ^ hol_any_array::hash(key.any_array);
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return type_hash ^ hol_any_constant::hash(key.any_constant);
 	case hol_term_type::ANY_QUANTIFIER:
 		return type_hash ^ hol_any_quantifier::hash(key.any_quantifier);
@@ -710,6 +717,7 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 	case hol_term_type::ANY_ARRAY:
 		core::move(src.any_array, dst.any_array); return;
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		core::move(src.any_constant, dst.any_constant); return;
 	case hol_term_type::ANY_QUANTIFIER:
 		core::move(src.any_quantifier, dst.any_quantifier); return;
@@ -806,6 +814,7 @@ inline void hol_term::free_helper() {
 		case hol_term_type::ANY_ARRAY:
 			core::free(any_array); return;
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 			core::free(any_constant); return;
 		case hol_term_type::ANY_QUANTIFIER:
 			core::free(any_quantifier); return;
@@ -1231,7 +1240,12 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		return true;
 
 	case hol_term_type::ANY_CONSTANT:
-		return print("(* in ", out)
+		return print("(* ∈ ", out)
+			&& print<unsigned int, left_curly_brace, right_curly_brace, comma>(term.any_constant.constants, term.any_constant.length, out, std::forward<Printer>(printer)...)
+			&& print(')', out);
+
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+		return print("(* ∉ ", out)
 			&& print<unsigned int, left_curly_brace, right_curly_brace, comma>(term.any_constant.constants, term.any_constant.length, out, std::forward<Printer>(printer)...)
 			&& print(')', out);
 
@@ -1370,6 +1384,8 @@ bool visit(Term&& term, Visitor&&... visitor)
 			&& end_visit<hol_term_type::ANY_ARRAY>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::ANY_CONSTANT:
 		return visit<hol_term_type::ANY_CONSTANT>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+		return visit<hol_term_type::ANY_CONSTANT_EXCEPT>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::ANY_QUANTIFIER:
 		return visit<hol_term_type::ANY_QUANTIFIER>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.any_quantifier.operand, std::forward<Visitor>(visitor)...)
@@ -1545,7 +1561,7 @@ struct unambiguity_visitor { };
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, unambiguity_visitor& visitor) {
 	if (Type == hol_term_type::ANY || Type == hol_term_type::ANY_RIGHT || Type == hol_term_type::ANY_ARRAY
-	 || Type == hol_term_type::ANY_CONSTANT || Type == hol_term_type::ANY_QUANTIFIER)
+	 || Type == hol_term_type::ANY_CONSTANT || Type == hol_term_type::ANY_CONSTANT_EXCEPT || Type == hol_term_type::ANY_QUANTIFIER)
 		return false;
 	return true;
 }
@@ -1745,6 +1761,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		}
 		return true;
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		dst.any_constant.length = src.any_constant.length;
 		dst.any_constant.constants = (unsigned int*) malloc(sizeof(unsigned int) * src.any_constant.length);
 		if (dst.any_constant.constants == nullptr) return false;
@@ -2186,6 +2203,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 		}
 
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		return src;
@@ -2250,6 +2268,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::ANY_ARRAY>(src, std::forward<Function>(function)...);
 	case hol_term_type::ANY_CONSTANT:
 		return apply<hol_term_type::ANY_CONSTANT>(src, std::forward<Function>(function)...);
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+		return apply<hol_term_type::ANY_CONSTANT_EXCEPT>(src, std::forward<Function>(function)...);
 	case hol_term_type::ANY_QUANTIFIER:
 		return apply<hol_term_type::ANY_QUANTIFIER>(src, std::forward<Function>(function)...);
 	}
@@ -2741,8 +2761,9 @@ bool unify(
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "unify ERROR: hol_term_types `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_QUANTIFIER` unsupported.\n");
+		fprintf(stderr, "unify ERROR: hol_term_types `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER` unsupported.\n");
 		return false;
 	}
 	fprintf(stderr, "unify ERROR: Unrecognized hol_term_type.\n");
@@ -3105,10 +3126,8 @@ hol_term* hol_term::new_any_array(hol_term_type oper, hol_term* all,
 }
 
 template<unsigned int Index>
-inline void new_any_constant_helper(unsigned int* constants, unsigned int constant)
-{
-	constants[Index] = constant;
-}
+inline void new_any_constant_helper(unsigned int* constants)
+{ }
 
 template<unsigned int Index, typename... Args>
 inline void new_any_constant_helper(unsigned int* constants, unsigned int constant, Args&&... args)
@@ -3117,34 +3136,38 @@ inline void new_any_constant_helper(unsigned int* constants, unsigned int consta
 	new_any_constant_helper<Index + 1>(constants, std::forward<Args>(args)...);
 }
 
-template<typename... Args>
-hol_term* hol_term::new_any_constant(unsigned int constant, Args&&... args) {
+template<hol_term_type Type, typename... Args>
+inline hol_term* new_hol_any_constant(Args&&... args)
+{
 	hol_term* term;
 	if (!new_hol_term(term)) return NULL;
 	term->reference_count = 1;
-	term->type = hol_term_type::ANY_CONSTANT;
-	term->any_constant.length = 1 + sizeof...(Args);
-	term->any_constant.constants = (unsigned int*) malloc(sizeof(unsigned int) * (1 + sizeof...(Args)));
+	term->type = Type;
+	term->any_constant.length = sizeof...(Args);
+	term->any_constant.constants = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * sizeof...(Args)));
 	if (term->any_constant.constants == nullptr) {
 		core::free(term); return nullptr;
 	}
-	new_any_constant_helper<0>(term->any_constant.constants, constant, std::forward<Args>(args)...);
+	new_any_constant_helper<0>(term->any_constant.constants, std::forward<Args>(args)...);
 #if !defined(NDEBUG)
 	if (!std::is_sorted(term->any_constant.constants, term->any_constant.constants + term->any_constant.length))
-		fprintf(stderr, "hol_term.new_any_constant WARNING: The given constant array is not sorted.\n");
+		fprintf(stderr, "new_hol_any_constant WARNING: The given constant array is not sorted.\n");
+	if (Type == hol_term_type::ANY_CONSTANT && term->any_constant.length < 2)
+		fprintf(stderr, "new_hol_any_constant WARNING: Constructing `CONSTANT` expression with less than two constants.\n");
 #endif
 	return term;
 }
 
-template<typename Array,
-	typename std::enable_if<has_index_operator<Array, unsigned int>::value>::type**>
-hol_term* hol_term::new_any_constant(const Array& constants) {
+template<hol_term_type Type, typename Array,
+	typename std::enable_if<has_index_operator<Array, unsigned int>::value>::type** = nullptr>
+inline hol_term* new_hol_any_constant(const Array& constants)
+{
 	hol_term* term;
 	if (!new_hol_term(term)) return NULL;
 	term->reference_count = 1;
-	term->type = hol_term_type::ANY_CONSTANT;
+	term->type = Type;
 	term->any_constant.length = constants.size();
-	term->any_constant.constants = (unsigned int*) malloc(sizeof(unsigned int) * constants.size());
+	term->any_constant.constants = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * constants.size()));
 	if (term->any_constant.constants == nullptr) {
 		core::free(term); return nullptr;
 	}
@@ -3152,9 +3175,38 @@ hol_term* hol_term::new_any_constant(const Array& constants) {
 		term->any_constant.constants[i] = constants[i];
 #if !defined(NDEBUG)
 	if (!std::is_sorted(term->any_constant.constants, term->any_constant.constants + term->any_constant.length))
-		fprintf(stderr, "hol_term.new_any_constant WARNING: The given constant array is not sorted.\n");
+		fprintf(stderr, "new_hol_any_constant WARNING: The given constant array is not sorted.\n");
+	if (Type == hol_term_type::ANY_CONSTANT && term->any_constant.length < 2)
+		fprintf(stderr, "new_hol_any_constant WARNING: Constructing `CONSTANT` expression with less than two constants.\n");
 #endif
 	return term;
+}
+
+template<typename... Args>
+hol_term* hol_term::new_any_constant(unsigned int constant, Args&&... args) {
+	return new_hol_any_constant<hol_term_type::ANY_CONSTANT>(constant, std::forward<Args>(args)...);
+}
+
+template<typename Array,
+	typename std::enable_if<has_index_operator<Array, unsigned int>::value>::type**>
+hol_term* hol_term::new_any_constant(const Array& constants) {
+	return new_hol_any_constant<hol_term_type::ANY_CONSTANT>(constants);
+}
+
+template<typename... Args>
+hol_term* hol_term::new_any_constant_except(unsigned int constant, Args&&... args) {
+	return new_hol_any_constant<hol_term_type::ANY_CONSTANT_EXCEPT>(constant, std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+hol_term* hol_term::new_any_constant_except() {
+	return new_hol_any_constant<hol_term_type::ANY_CONSTANT_EXCEPT>();
+}
+
+template<typename Array,
+	typename std::enable_if<has_index_operator<Array, unsigned int>::value>::type**>
+hol_term* hol_term::new_any_constant_except(const Array& constants) {
+	return new_hol_any_constant<hol_term_type::ANY_CONSTANT_EXCEPT>(constants);
 }
 
 hol_term* hol_term::new_any_quantifier(hol_quantifier_type quantifier_type, hol_term* operand)
@@ -4033,8 +4085,9 @@ bool compute_type(const hol_term& term,
 			&& compute_array_type<PolymorphicEquality>(term.any_array.right, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
 			&& types.template add<hol_term_type::ANY_ARRAY>(term, HOL_BOOLEAN_TYPE);
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "compute_type ERROR: hol_term_types `ANY_CONSTANT`, `ANY_QUANTIFIER` unsupported.\n");
+		fprintf(stderr, "compute_type ERROR: hol_term_types `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, and `ANY_QUANTIFIER` unsupported.\n");
 		return false;
 	}
 	fprintf(stderr, "compute_type ERROR: Unrecognized hol_term_type.\n");
@@ -4458,6 +4511,7 @@ int_fast8_t compare(
 	case hol_term_type::ANY_ARRAY:
 		return compare(first.any_array, second.any_array);
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return compare(first.any_constant, second.any_constant);
 	case hol_term_type::ANY_QUANTIFIER:
 		return compare(first.any_quantifier, second.any_quantifier);
@@ -4633,9 +4687,10 @@ struct hol_scope {
 		case hol_term_type::ANY_RIGHT:
 		case hol_term_type::ANY_ARRAY:
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
-			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 		}
 		fprintf(stderr, "hol_scope.move ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -4686,9 +4741,10 @@ private:
 		case hol_term_type::ANY_RIGHT:
 		case hol_term_type::ANY_ARRAY:
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
-			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 		}
 		fprintf(stderr, "hol_scope.init_helper ERROR: Unrecognized hol_term_type.\n");
 		return false;
@@ -4735,9 +4791,10 @@ private:
 		case hol_term_type::ANY_RIGHT:
 		case hol_term_type::ANY_ARRAY:
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
-			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 		}
 		fprintf(stderr, "hol_scope.free_helper ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -4854,9 +4911,10 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -4983,9 +5041,10 @@ int_fast8_t compare(
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -5067,9 +5126,10 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT` or `ANY_QUANTIFIER` */
 	}
 	fprintf(stderr, "shift_variables ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
@@ -5410,9 +5470,10 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT,` `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT,` `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT,` `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT,` `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 	}
 	fprintf(stderr, "scope_to_term ERROR: Unrecognized hol_term_type.\n");
 	return nullptr;
@@ -6877,9 +6938,10 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, or `ANY_QUANTIFIER` */
+		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -7086,6 +7148,7 @@ bool is_subset(const hol_term* first, const hol_term* second)
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 		/* this should be unreachable */
 		break;
@@ -7447,6 +7510,7 @@ bool is_reduceable(
 			&& is_reduceable(first_src->any_array.any, second_src->any_array.any, first_node, second_node, prefix_index)
 			&& is_reduceable(first_src->any_array.right, second_src->any_array.right, first_node, second_node, prefix_index);
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return first_src->any_constant == second_src->any_constant;
 	case hol_term_type::ANY_QUANTIFIER:
 		return has_intersection(first_src->any_quantifier.quantifier, second_src->any_quantifier.quantifier)
@@ -7973,6 +8037,7 @@ bool is_subset(hol_term* first, hol_term* second)
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 			return false;
@@ -8022,6 +8087,7 @@ bool is_subset(hol_term* first, hol_term* second)
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::ANY_CONSTANT:
+		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 			return false;
@@ -8108,13 +8174,31 @@ bool is_subset(hol_term* first, hol_term* second)
 			return false;
 		return is_subset<BuiltInPredicates>(first, second->any_array.all);
 	} else if (first->type == hol_term_type::ANY_CONSTANT) {
-		if (second->type != hol_term_type::ANY_CONSTANT)
+		if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+			return has_intersection(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+		} else if (second->type == hol_term_type::ANY_CONSTANT) {
+			return is_subset(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+		} else {
 			return false;
-		return is_subset(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+		}
 	} else if (second->type == hol_term_type::ANY_CONSTANT) {
-		if (first->type != hol_term_type::CONSTANT)
+		if (first->type == hol_term_type::CONSTANT) {
+			return index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length;
+		} else {
 			return false;
-		return index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length;
+		}
+	} else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+		if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+			return is_subset(second->any_constant.constants, second->any_constant.length, first->any_constant.constants, first->any_constant.length);
+		} else {
+			return false;
+		}
+	} else if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+		if (first->type == hol_term_type::CONSTANT) {
+			return index_of(first->constant, second->any_constant.constants, second->any_constant.length) == second->any_constant.length;
+		} else {
+			return false;
+		}
 	} else if (first->type == hol_term_type::ANY_QUANTIFIER) {
 		if (second->type == hol_term_type::ANY_QUANTIFIER) {
 			return is_subset(first->any_quantifier.quantifier, second->any_quantifier.quantifier)
@@ -8176,6 +8260,7 @@ bool is_subset(hol_term* first, hol_term* second)
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 		/* we already handle this before the switch statement */
 		break;
@@ -8834,6 +8919,7 @@ bool subtract_any(array<hol_term*>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		if (!dst.append(differences.data, differences.length)) {
 			for (hol_term* term : differences) { free(*term); if (term->reference_count == 0) free(term); }
 			return false;
@@ -9143,6 +9229,7 @@ bool subtract_any_right(array<hol_term*>& dst, hol_term* first, hol_term* second
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return dst.append(differences.data, differences.length) && dst.length > 0;
 	case hol_term_type::ANY_QUANTIFIER:
 		for (hol_term* root : differences) {
@@ -9366,7 +9453,7 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 		}
 
 	} else if (first->type == hol_term_type::ANY_CONSTANT) {
-		if (second->type == hol_term_type::ANY_CONSTANT || second->type == hol_term_type::CONSTANT) {
+		if (second->type == hol_term_type::ANY_CONSTANT || second->type == hol_term_type::ANY_CONSTANT_EXCEPT || second->type == hol_term_type::CONSTANT) {
 			if (!dst.ensure_capacity(dst.length + 1)) return false;
 			unsigned int* new_constants = (unsigned int*) malloc(sizeof(unsigned int) * first->any_constant.length);
 			if (new_constants == nullptr) {
@@ -9374,9 +9461,14 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 				return false;
 			}
 			unsigned int new_length = 0;
-			if (second->type == hol_term_type::ANY_CONSTANT)
+			if (second->type == hol_term_type::ANY_CONSTANT) {
 				set_subtract(new_constants, new_length, first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
-			else set_subtract(new_constants, new_length, first->any_constant.constants, first->any_constant.length, &second->constant, 1);
+			} else if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+				set_intersect(new_constants, new_length, first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+			} else {
+				set_subtract(new_constants, new_length, first->any_constant.constants, first->any_constant.length, &second->constant, 1);
+			}
+
 			if (new_length == first->any_constant.length) {
 				free(new_constants);
 				dst[dst.length] = first;
@@ -9413,8 +9505,110 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 	} else if (second->type == hol_term_type::ANY_CONSTANT) {
 		if (first->type == hol_term_type::CONSTANT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length) {
 			return false;
+		} else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			unsigned int* new_constants = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * (first->any_constant.length + second->any_constant.length)));
+			if (new_constants == nullptr) {
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `new_constants`.\n");
+				return false;
+			}
+			unsigned int new_length = 0;
+			set_union(new_constants, new_length, first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+
+			if (new_length == first->any_constant.length) {
+				free(new_constants);
+				dst[dst.length] = first;
+				dst[dst.length++]->reference_count++;
+				return true;
+			} else if (new_length == second->any_constant.length) {
+				free(new_constants);
+				dst[dst.length] = second;
+				dst[dst.length++]->reference_count++;
+				return true;
+			} else if (!new_hol_term(dst[dst.length])) {
+				free(new_constants);
+				return false;
+			}
+
+			dst[dst.length]->type = hol_term_type::ANY_CONSTANT_EXCEPT;
+			dst[dst.length]->reference_count = 1;
+			dst[dst.length]->any_constant.length = new_length;
+			dst[dst.length]->any_constant.constants = new_constants;
+			dst.length++;
+			return true;
 		} else {
 			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
+
+	} else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+		if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			if (second->any_constant.length == 0) return false;
+			unsigned int* new_constants = (unsigned int*) malloc(sizeof(unsigned int) * second->any_constant.length);
+			if (new_constants == nullptr) {
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `new_constants`.\n");
+				return false;
+			}
+			unsigned int new_length = 0;
+			set_subtract(new_constants, new_length, second->any_constant.constants, second->any_constant.length, first->any_constant.constants, first->any_constant.length);
+
+			if (new_length == 0) {
+				free(new_constants);
+				return false;
+			} else if (new_length == 1) {
+				dst[dst.length] = hol_term::new_constant(new_constants[0]);
+				free(new_constants);
+				if (dst[dst.length] == nullptr)
+					return false;
+				dst.length++;
+				return true;
+			} else if (!new_hol_term(dst[dst.length])) {
+				free(new_constants);
+				return false;
+			}
+
+			dst[dst.length]->type = hol_term_type::ANY_CONSTANT;
+			dst[dst.length]->reference_count = 1;
+			dst[dst.length]->any_constant.length = new_length;
+			dst[dst.length]->any_constant.constants = new_constants;
+			dst.length++;
+			return true;
+		} else if (second->type == hol_term_type::CONSTANT && index_of(second->constant, first->any_constant.constants, first->any_constant.length) == first->any_constant.length) {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			if (!new_hol_term(dst[dst.length]))
+				return false;
+			dst[dst.length]->type = hol_term_type::ANY_CONSTANT_EXCEPT;
+			dst[dst.length]->reference_count = 1;
+			dst[dst.length]->any_constant.constants = (unsigned int*) malloc(sizeof(unsigned int) * (first->any_constant.length + 1));
+			if (dst[dst.length]->any_constant.constants == nullptr) {
+				free(dst[dst.length]);
+				return false;
+			}
+			dst[dst.length]->any_constant.length = first->any_constant.length + 1;
+
+			unsigned int index;
+			for (index = 0; index < first->any_constant.length && first->any_constant.constants[index] < second->constant; index++)
+				dst[dst.length]->any_constant.constants[index] = first->any_constant.constants[index];
+			dst[dst.length]->any_constant.constants[index++] = second->constant;
+			for (; index - 1 < first->any_constant.length; index++)
+				dst[dst.length]->any_constant.constants[index] = first->any_constant.constants[index - 1];
+			dst.length++;
+			return true;
+		} else {
+			if (!dst.ensure_capacity(dst.length + 1)) return false;
+			dst[dst.length] = first;
+			dst[dst.length++]->reference_count++;
+			return true;
+		}
+
+	} else if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+		if (!dst.ensure_capacity(dst.length + 1)) return false;
+		if (first->type == hol_term_type::CONSTANT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length) {
+			return false;
+		} else {
 			dst[dst.length] = first;
 			dst[dst.length++]->reference_count++;
 			return true;
@@ -9875,6 +10069,7 @@ bool subtract(array<hol_term*>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 		break; /* we already handle this case before the switch statement */
 	}
@@ -11020,6 +11215,7 @@ inline bool intersect_with_any(array<hol_term*>& dst, hol_term* first, hol_term*
 	case hol_term_type::VARIABLE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		for (hol_term* root : differences) {
@@ -11733,6 +11929,7 @@ inline bool intersect_with_any_right(array<hol_term*>& dst, hol_term* first, hol
 	case hol_term_type::VARIABLE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		for (hol_term* root : differences) {
@@ -12638,12 +12835,14 @@ inline bool intersect_any_quantifier(array<hol_term*>& dst, hol_term* first, hol
 		return false;
 	} else if (intersection.length == 1) {
 		if (first->any_quantifier.quantifier == quantifier && second_variable == ANY_VARIABLE && first->any_quantifier.operand == intersection[0]) {
-			dst[dst.length] = first;
-			dst[dst.length++]->reference_count++;
+			dst[dst.length++] = first;
+			first->reference_count++;
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
 			return true;
 		} if (second_quantifier == quantifier && second_operand == intersection[0]) {
-			dst[dst.length] = second;
-			dst[dst.length++]->reference_count++;
+			dst[dst.length++] = second;
+			second->reference_count++;
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
 			return true;
 		}
 	}
@@ -12666,6 +12865,7 @@ inline bool intersect_any_quantifier(array<hol_term*>& dst, hol_term* first, hol
 		dst[dst.length]->reference_count = 1;
 		dst.length++;
 	}
+	for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
 	return true;
 }
 
@@ -12690,61 +12890,93 @@ bool intersect(array<hol_term*>& dst, hol_term* first, hol_term* second)
 		return intersect_with_any_array<BuiltInPredicates, ComputeIntersection>(dst, second, first);
 	} else if (second->type == hol_term_type::ANY_ARRAY) {
 		return intersect_with_any_array<BuiltInPredicates, ComputeIntersection>(dst, first, second);
-	} else if (first->type == hol_term_type::ANY_CONSTANT) {
-		if (second->type == hol_term_type::ANY_CONSTANT || second->type == hol_term_type::CONSTANT) {
-			unsigned int* second_constants; unsigned int second_constant_count;
-			if (second->type == hol_term_type::CONSTANT) {
-				second_constants = &second->constant;
-				second_constant_count = 1;
-			} else {
-				second_constants = second->any_constant.constants;
-				second_constant_count = second->any_constant.length;
+	} else if (first->type == hol_term_type::ANY_CONSTANT || first->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+		if (second->type == hol_term_type::ANY_CONSTANT || second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+			if (!ComputeIntersection) {
+				if (first->type == hol_term_type::ANY_CONSTANT && second->type == hol_term_type::ANY_CONSTANT)
+					return has_intersection(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+				else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)
+					return true;
 			}
-
-			if (!ComputeIntersection)
-				return has_intersection(first->any_constant.constants, first->any_constant.length, second_constants, second_constant_count);
-			if (!dst.ensure_capacity(dst.length + 1))
+			if (ComputeIntersection && !dst.ensure_capacity(dst.length + 1))
 				return false;
 
-			unsigned int* intersection = (unsigned int*) malloc(sizeof(unsigned int) * min(first->any_constant.length, second_constant_count));
+			unsigned int* intersection = nullptr;
+			if (first->type == hol_term_type::ANY_CONSTANT && second->type == hol_term_type::ANY_CONSTANT)
+				intersection = (unsigned int*) malloc(sizeof(unsigned int) * min(first->any_constant.length, second->any_constant.length));
+			else if (first->type == hol_term_type::ANY_CONSTANT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)
+				intersection = (unsigned int*) malloc(sizeof(unsigned int) * first->any_constant.length);
+			else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT)
+				intersection = (unsigned int*) malloc(sizeof(unsigned int) * second->any_constant.length);
+			else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)
+				intersection = (unsigned int*) malloc(sizeof(unsigned int) * (first->any_constant.length + second->any_constant.length));
 			if (intersection == nullptr) {
 				fprintf(stderr, "intersect ERROR: Insufficient memory for `intersection`.\n");
 				return false;
 			}
 			unsigned int intersection_size = 0;
-			set_intersect(intersection, intersection_size, first->any_constant.constants, first->any_constant.length, second_constants, second_constant_count);
-			if (intersection_size == first->any_constant.length) {
+			if (first->type == hol_term_type::ANY_CONSTANT && second->type == hol_term_type::ANY_CONSTANT)
+				set_intersect(intersection, intersection_size, first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+			else if (first->type == hol_term_type::ANY_CONSTANT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)
+				set_subtract(intersection, intersection_size, first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+			else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT)
+				set_subtract(intersection, intersection_size, second->any_constant.constants, second->any_constant.length, first->any_constant.constants, first->any_constant.length);
+			else if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)
+				set_union(intersection, intersection_size, first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+			if (!ComputeIntersection && intersection_size != 0) {
+				free(intersection);
+				return true;
+			} else if (intersection_size == first->any_constant.length && !(first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT)) {
 				free(intersection);
 				dst[dst.length] = first;
 				dst[dst.length++]->reference_count++;
 				return true;
-			} else if (intersection_size == second_constant_count) {
+			} else if (intersection_size == second->any_constant.length && !(first->type == hol_term_type::ANY_CONSTANT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)) {
 				free(intersection);
 				dst[dst.length] = second;
 				dst[dst.length++]->reference_count++;
 				return true;
-			} else if (intersection_size == 1) {
+			} else if (intersection_size == 1 && !(first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)) {
 				dst[dst.length] = hol_term::new_constant(intersection[0]);
 				free(intersection);
 				if (dst[dst.length] == nullptr)
 					return false;
 				dst.length++;
 				return true;
+			} else if (intersection_size == 0 && !(first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)) {
+				free(intersection);
+				return false;
 			} else if (!new_hol_term(dst[dst.length])) {
 				free(intersection);
 				return false;
 			}
-			dst[dst.length]->type = hol_term_type::ANY_CONSTANT;
+
+			if (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT)
+				dst[dst.length]->type = hol_term_type::ANY_CONSTANT_EXCEPT;
+			else dst[dst.length]->type = hol_term_type::ANY_CONSTANT;
 			dst[dst.length]->reference_count = 1;
 			dst[dst.length]->any_constant.constants = intersection;
 			dst[dst.length]->any_constant.length = intersection_size;
 			dst.length++;
 			return true;
+		} else if (second->type == hol_term_type::CONSTANT) {
+			bool second_is_in_first = index_of(second->constant, first->any_constant.constants, first->any_constant.length) < first->any_constant.length;
+			if ((first->type == hol_term_type::ANY_CONSTANT && second_is_in_first) || (first->type == hol_term_type::ANY_CONSTANT_EXCEPT && !second_is_in_first)) {
+				if (!ComputeIntersection) return true;
+				if (!dst.ensure_capacity(dst.length + 1))
+					return false;
+				dst[dst.length++] = second;
+				second->reference_count++;
+				return true;
+			} else {
+				return false;
+			}
 		} else {
 			return false;
 		}
-	} else if (second->type == hol_term_type::ANY_CONSTANT) {
-		if (first->type == hol_term_type::CONSTANT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length) {
+	} else if (second->type == hol_term_type::ANY_CONSTANT || second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
+		if ((first->type == hol_term_type::CONSTANT && second->type == hol_term_type::ANY_CONSTANT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length)
+		 || (first->type == hol_term_type::CONSTANT && second->type == hol_term_type::ANY_CONSTANT_EXCEPT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) == second->any_constant.length)) {
 			if (!ComputeIntersection) return true;
 			if (!dst.ensure_capacity(dst.length + 1)) return false;
 			dst[dst.length] = first;
@@ -13148,6 +13380,7 @@ bool intersect(array<hol_term*>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 		/* we already handle this before the switch statement */
 		break;

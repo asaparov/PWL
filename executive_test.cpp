@@ -577,6 +577,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 		return -std::numeric_limits<double>::infinity();
 	}

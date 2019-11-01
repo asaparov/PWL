@@ -554,7 +554,8 @@ struct flagged_logical_form
 
 	enum class feature {
 		EMPTY = 0,
-		CONSTANT
+		CONSTANT,
+		PREDICATE
 	};
 
 	enum class function_type {
@@ -747,6 +748,7 @@ struct flagged_logical_form
 	{
 		switch (f) {
 		case feature::CONSTANT:
+		case feature::PREDICATE:
 			return true;
 		case feature::EMPTY: break;
 		}
@@ -769,7 +771,8 @@ private:
 template<typename Formula>
 const static_pair<typename flagged_logical_form<Formula>::feature, const char*> flagged_logical_form<Formula>::FEATURE_NAMES[] = {
 	{feature::EMPTY, "empty"},
-	{feature::CONSTANT, "constant"}
+	{feature::CONSTANT, "constant"},
+	{feature::PREDICATE, "predicate"}
 };
 
 template<typename Formula>
@@ -1956,6 +1959,7 @@ inline bool apply_head(
 	case hol_term_type::BINARY_APPLICATION:
 	case hol_term_type::IFF:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		dst = nullptr;
 		removed_quantifier = false;
 		return true;
@@ -5918,6 +5922,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition>& substit
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return default_apply<Type>(src, substituter);
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type when substituting head.\n");
@@ -6199,6 +6204,7 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return default_apply<Type>(src, remover);
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized hol_term_type when substituting head.\n");
@@ -6271,6 +6277,7 @@ hol_term* find_head(hol_term* term, head_index& predicate_index, TryFindHeadFunc
 	case hol_term_type::BINARY_APPLICATION:
 	case hol_term_type::IFF:
 	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return nullptr;
 
 	case hol_term_type::NOT:
@@ -9104,10 +9111,107 @@ static void is_separable(
 		separable[i] = false;
 }
 
-bool get_constant(const hol_term* src, unsigned int& value,
+inline bool copy_array(
+		const unsigned int* src, unsigned int src_length,
+		unsigned int*& dst, unsigned int& dst_length)
+{
+#if !defined(NDEBUG)
+	if (src_length == 0)
+		fprintf(stderr, "copy_array WARNING: `src_length` is zero.\n");
+#endif
+	dst = (unsigned int*) malloc(sizeof(unsigned int) * src_length);
+	if (dst == nullptr) {
+		fprintf(stderr, "copy_array ERROR: Out of memory.\n");
+		return false;
+	}
+	memcpy(dst, src, sizeof(unsigned int) * src_length);
+	dst_length = src_length;
+	return true;
+}
+
+bool get_constant(hol_term* src, unsigned int& value,
 		unsigned int*& excluded, unsigned int& excluded_count)
 {
-	
+	hol_term* term = hol_term::new_any_constant_except();
+	if (term == nullptr) return false;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "get_constant ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+
+	if (intersection[0]->type == hol_term_type::CONSTANT) {
+		value = intersection[0]->constant;
+		excluded_count = 0;
+	} else if (intersection[0]->type == hol_term_type::ANY_CONSTANT) {
+		value = UNION_NODE;
+		if (!copy_array(intersection[0]->any_constant.constants, intersection[0]->any_constant.length, excluded, excluded_count)) {
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+	} else {
+#if !defined(NDEBUG)
+		if (intersection[0]->type != hol_term_type::ANY_CONSTANT_EXCEPT)
+			fprintf(stderr, "get_constant WARNING: Unexpected formula type in interseciton.\n");
+#endif
+		value = IMPLICIT_NODE;
+		if (intersection[0]->any_constant.length > 0 && !copy_array(intersection[0]->any_constant.constants, intersection[0]->any_constant.length, excluded, excluded_count)) {
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		excluded_count = intersection[0]->any_constant.length;
+	}
+	for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+	return true;
+}
+
+bool get_predicate(hol_term* src, unsigned int& value,
+		unsigned int*& excluded, unsigned int& excluded_count)
+{
+	hol_term* term = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_and(hol_term::new_apply(hol_term::new_any_constant_except(), &HOL_ANY), &HOL_ANY));
+	if (term == nullptr) return false;
+	HOL_ANY.reference_count += 2;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "get_predicate ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+
+	hol_term* predicate = intersection[0]->any_quantifier.operand->array.operands[0]->binary.left;
+	if (predicate->type == hol_term_type::CONSTANT) {
+		value = predicate->constant;
+		excluded_count = 0;
+	} else if (predicate->type == hol_term_type::ANY_CONSTANT) {
+		value = UNION_NODE;
+		if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+	} else {
+#if !defined(NDEBUG)
+		if (predicate->type != hol_term_type::ANY_CONSTANT_EXCEPT)
+			fprintf(stderr, "get_constant WARNING: Unexpected formula type in interseciton.\n");
+#endif
+		value = IMPLICIT_NODE;
+		if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+	}
+	for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+	return true;
 }
 
 template<typename Formula>
@@ -9120,10 +9224,51 @@ bool get_feature(
 	switch (feature) {
 	case feature_type::CONSTANT:
 		return get_constant(src.root, value, excluded, excluded_count);
+	case feature_type::PREDICATE:
+		return get_predicate(src.root, value, excluded, excluded_count);
 	case feature_type::EMPTY: break;
 	}
 	fprintf(stderr, "get_feature ERROR: Unrecognized semantic feature.\n");
 	return false;
+}
+
+bool set_constant(hol_term* src, hol_term*& dst, unsigned int value)
+{
+	hol_term* term = hol_term::new_constant(value);
+	if (term == nullptr) return false;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "set_constant ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+	dst = intersection[0];
+	return true;
+}
+
+bool set_predicate(hol_term* src, hol_term*& dst, unsigned int value)
+{
+	hol_term* term = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_and(hol_term::new_apply(hol_term::new_constant(value), &HOL_ANY), &HOL_ANY));
+	if (term == nullptr) return false;
+	HOL_ANY.reference_count += 2;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "set_predicate ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+	dst = intersection[0];
+	return true;
 }
 
 template<typename Formula>
@@ -9132,12 +9277,65 @@ bool set_feature(
 		flagged_logical_form<Formula>& exp, unsigned int value)
 {
 	typedef typename flagged_logical_form<Formula>::feature feature_type;
+	hol_term* new_logical_form;
 	switch (feature) {
-	case feature_type::CONSTANT: /* TODO: implement this */
+	case feature_type::CONSTANT:
+		if (!set_constant(exp.root, new_logical_form, value))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
+	case feature_type::PREDICATE:
+		if (!set_predicate(exp.root, new_logical_form, value))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
 	case feature_type::EMPTY: break;
 	}
 	fprintf(stderr, "set_feature ERROR: Unrecognized semantic feature.\n");
 	exit(EXIT_FAILURE);
+}
+
+bool exclude_constants(hol_term* src, hol_term*& dst,
+		const unsigned int* values, unsigned int count)
+{
+	hol_term* term = hol_term::new_any_constant_except(make_array_view(values, count));
+	if (term == nullptr) return false;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "exclude_constants ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+	dst = intersection[0];
+	return true;
+}
+
+bool exclude_predicates(hol_term* src, hol_term*& dst,
+		const unsigned int* values, unsigned int count)
+{
+	hol_term* term = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_and(hol_term::new_apply(hol_term::new_any_constant_except(make_array_view(values, count)), &HOL_ANY), &HOL_ANY));
+	if (term == nullptr) return false;
+	HOL_ANY.reference_count += 2;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "exclude_predicates ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+	dst = intersection[0];
+	return true;
 }
 
 template<typename Formula>
@@ -9145,8 +9343,20 @@ bool exclude_features(typename flagged_logical_form<Formula>::feature feature,
 		flagged_logical_form<Formula>& exp, const unsigned int* values, unsigned int count)
 {
 	typedef typename flagged_logical_form<Formula>::feature feature_type;
+	hol_term* new_logical_form;
 	switch (feature) {
-	case feature_type::CONSTANT: /* TODO: implement this */
+	case feature_type::CONSTANT:
+		if (!exclude_constants(exp.root, new_logical_form, values, count))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
+	case feature_type::PREDICATE:
+		if (!exclude_predicates(exp.root, new_logical_form, values, count))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
 	case feature_type::EMPTY: break;
 	}
 	fprintf(stderr, "exclude_features ERROR: Unrecognized semantic feature.\n");
@@ -9214,6 +9424,18 @@ bool morphology_parse(
 	if (First) {
 		/* try to decapitalize the word */
 		/* TODO: implement this */
+	}
+
+	if (pos == POS_VERB) {
+		const fixed_array<token>& result = morphology_parser.parse(words[head_index]);
+		flagged_logical_form<Formula> marked_logical_form = logical_form;
+		for (unsigned int i = 0; i < result.length; i++) {
+			if (result[i].get_part_of_speech() != pos) continue;
+
+			if (result[i].inf == INFLECTION_PAST_PARTICIPLE) {
+				
+			}
+		}
 	}
 	return emit_root(words, logical_form);
 }
