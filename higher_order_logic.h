@@ -10332,7 +10332,7 @@ inline bool intersect_any_with_any(array<hol_term*>& dst, hol_term* first, hol_t
 	/* first intersect the `included` subset */
 	hol_term* included[2];
 	array<hol_term*> intersection(2);
-	size_t first_intersection_count;
+	size_t first_intersection_count = 0;
 	if (first->any.included == nullptr) {
 		if (second->any.included == nullptr) {
 			included[0] = nullptr;

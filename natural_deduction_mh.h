@@ -1870,7 +1870,7 @@ bool is_eliminable_extensional_edge(
 	if (!contains)
 		fprintf(stderr, "set_reasoning.is_eliminable_extensional_edge WARNING: The given set formula is not in `set_ids`.\n");
 #else
-	unsigned int set_id = set_ids.get(*right);
+	unsigned int set_id = T.sets.set_ids.get(*right);
 #endif
 
 	for (auto entry : T.sets.extensional_graph.vertices[set_id].children) {

@@ -848,7 +848,7 @@ int main(int argc, const char** argv)
 			names, "infl.txt", "uncountable.txt", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
-	FILE* in = fopen("seed_training_set.txt", "r");
+	FILE* in = fopen("seed_training_set.txt", "rb");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
 		for (auto entry : names) free(entry.key);

@@ -9271,6 +9271,26 @@ bool set_predicate(hol_term* src, hol_term*& dst, unsigned int value)
 	return true;
 }
 
+bool set_tense(hol_term* src, hol_term*& dst, unsigned int value)
+{
+	hol_term* term = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_and(&HOL_ANY, hol_term::new_apply(hol_term::new_constant(value), &HOL_ANY)));
+	if (term == nullptr) return false;
+	HOL_ANY.reference_count += 2;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "set_predicate ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+	dst = intersection[0];
+	return true;
+}
+
 template<typename Formula>
 bool set_feature(
 		typename flagged_logical_form<Formula>::feature feature,
@@ -9418,7 +9438,7 @@ constexpr bool morphology_is_valid(const morphology& morph,
 
 template<bool First, typename Formula, typename PartOfSpeechType, typename EmitRootFunction>
 bool morphology_parse(
-		const morphology& morph, const sequence& words, PartOfSpeechType pos,
+		const morphology& morphology_parser, const sequence& words, PartOfSpeechType pos,
 		const flagged_logical_form<Formula>& logical_form, EmitRootFunction emit_root)
 {
 	if (First) {
@@ -9427,17 +9447,45 @@ bool morphology_parse(
 	}
 
 	if (pos == POS_VERB) {
-		const fixed_array<token>& result = morphology_parser.parse(words[head_index]);
+		if (words.length != 1)
+			return false;
+
+		sequence root(NULL, 0); root = words;
+		const fixed_array<token>& result = morphology_parser.parse(words[0]);
 		flagged_logical_form<Formula> marked_logical_form = logical_form;
 		for (unsigned int i = 0; i < result.length; i++) {
 			if (result[i].get_part_of_speech() != pos) continue;
 
-			if (result[i].inf == INFLECTION_PAST_PARTICIPLE) {
-				
+			if (result[i].inf == INFLECTION_OTHER_VERB && result[i].number == NUMBER_ANY) {
+				hol_term* new_logical_form;
+				if (!set_tense(marked_logical_form.root, new_logical_form, (unsigned int) built_in_predicates::PAST)) {
+					free(root);
+					return false;
+				}
+				marked_logical_form.root = new_logical_form;
+			} else if (result[i].inf == INFLECTION_OTHER_VERB && result[i].number == NUMBER_SINGULAR) {
+				hol_term* new_logical_form;
+				if (!set_tense(marked_logical_form.root, new_logical_form, (unsigned int) built_in_predicates::PRESENT)) {
+					free(root);
+					return false;
+				}
+				marked_logical_form.root = new_logical_form;
+			} else {
+				continue;
 			}
+
+			root[0] = result[i].id;
+			if (!emit_root(root, marked_logical_form)) {
+				free(marked_logical_form);
+				free(root); return false;
+			}
+			free(*marked_logical_form.root); if (marked_logical_form.root->reference_count == 0) free(marked_logical_form.root);
+			marked_logical_form.root = logical_form.root;
 		}
+		free(root);
+	} else {
+		return emit_root(words, logical_form);
 	}
-	return emit_root(words, logical_form);
 }
 
 #endif /* HDP_PARSER_H_ */

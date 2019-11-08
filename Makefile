@@ -10,6 +10,9 @@
 EXECUTIVE_TEST_CPP_SRCS=executive_test.cpp
 EXECUTIVE_TEST_DBG_OBJS=$(EXECUTIVE_TEST_CPP_SRCS:.cpp=.debug.o)
 EXECUTIVE_TEST_OBJS=$(EXECUTIVE_TEST_CPP_SRCS:.cpp=.release.o)
+EXTRACT_WIKT_MORPHOLOGY_EN_CPP_SRCS=extract_wikt_morphology_en.cpp
+EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS=$(EXTRACT_WIKT_MORPHOLOGY_EN_CPP_SRCS:.cpp=.debug.o)
+EXTRACT_WIKT_MORPHOLOGY_EN_OBJS=$(EXTRACT_WIKT_MORPHOLOGY_EN_CPP_SRCS:.cpp=.release.o)
 
 
 #
@@ -39,6 +42,8 @@ override LDFLAGS += $(LIB_PATHS) -fwhole-program
 
 -include $(EXECUTIVE_TEST_OBJS:.release.o=.release.d)
 -include $(EXECUTIVE_TEST_DBG_OBJS:.debug.o=.debug.d)
+-include $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS:.release.o=.release.d)
+-include $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS:.debug.o=.debug.d)
 
 define make_dependencies
 	$(1) $(2) -c $(3).$(4) -o $(3).$(5).o
@@ -70,9 +75,9 @@ endef
 # Make targets
 #
 
-all: executive_test
+all: executive_test extract_wikt_morphology_en
 
-debug: executive_test_dbg
+debug: executive_test_dbg extract_wikt_morphology_en_dbg
 
 executive_test: $(LIBS) $(EXECUTIVE_TEST_OBJS)
 		$(CPP) -o executive_test $(CPPFLAGS) $(LDFLAGS) $(EXECUTIVE_TEST_OBJS)
@@ -80,8 +85,14 @@ executive_test: $(LIBS) $(EXECUTIVE_TEST_OBJS)
 executive_test_dbg: $(LIBS) $(EXECUTIVE_TEST_DBG_OBJS)
 		$(CPP) -o executive_test_dbg $(CPPFLAGS_DBG) $(LDFLAGS_DBG) $(EXECUTIVE_TEST_DBG_OBJS)
 
+extract_wikt_morphology_en: $(LIBS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS)
+		$(CPP) -o extract_wikt_morphology_en $(CPPFLAGS) $(LDFLAGS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS)
+
+extract_wikt_morphology_en_dbg: $(LIBS) $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS)
+		$(CPP) -o extract_wikt_morphology_en_dbg $(CPPFLAGS_DBG) $(LDFLAGS_DBG) $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS)
+
 clean:
-	    ${RM} -f *.o */*.o */*/*.o *.d */*.d */*/*.d executive_test executive_test.exe executive_test_dbg executive_test_dbg.exe $(LIBS)
+	    ${RM} -f *.o */*.o */*/*.o *.d */*.d */*/*.d executive_test executive_test.exe executive_test_dbg executive_test_dbg.exe extract_wikt_morphology_en extract_wikt_morphology_en_dbg extract_wikt_morphology_en.exe extract_wikt_morphology_en_dbg.exe $(LIBS)
 
 distclean:  clean
 	    ${RM} -f *~
