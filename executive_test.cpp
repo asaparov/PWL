@@ -835,6 +835,7 @@ bool print_special_string(unsigned int key, Stream& out) {
 
 int main(int argc, const char** argv)
 {
+	setlocale(LC_ALL, "en_US.UTF-8");
 	log_cache<double>::instance().ensure_size(1024);
 
 	hash_map<string, unsigned int> names(256);
@@ -845,7 +846,7 @@ int main(int argc, const char** argv)
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "infl.txt", "uncountable.txt", "english.gram");
+			names, "english.morph", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");

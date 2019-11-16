@@ -3,6 +3,14 @@
 
 #include <core/map.h>
 
+enum part_of_speech : uint_fast8_t {
+	POS_NOUN = 1,
+	POS_VERB = 2,
+	POS_ADJECTIVE = 3,
+	POS_ADVERB = 4,
+	POS_OTHER = 5
+};
+
 template<typename T>
 inline bool merge_arrays(
 		T*& dst, unsigned int& dst_length,
@@ -308,11 +316,131 @@ inline bool init(verb_root& root,
 	return true;
 }
 
+enum class grammatical_person : uint_fast8_t {
+	FIRST,
+	SECOND,
+	THIRD,
+
+	ANY,
+	FIRST_OR_SECOND,
+	FIRST_OR_THIRD
+};
+
+enum class grammatical_num : uint_fast8_t {
+	NONE = 0,
+	SINGULAR,
+	PLURAL,
+
+	ANY
+};
+
+enum class grammatical_mood : uint_fast8_t {
+	INDICATIVE = 0,
+	PRESENT_PARTICIPLE,
+	PAST_PARTICIPLE,
+	BARE_INFINITIVE,
+	TO_INFINITIVE,
+	SUBJUNCTIVE,
+
+	ANY,
+	NOT_TO_INFINITIVE,
+	NOT_SUBJUNCTIVE,
+	NOT_TO_INF_OR_SUBJ
+};
+
+enum class grammatical_comparison : uint_fast8_t {
+	NONE,
+	COMPARATIVE,
+	SUPERLATIVE
+};
+
+enum class grammatical_tense : uint_fast8_t {
+	PRESENT,
+	PAST,
+	ANY
+};
+
+inline bool intersect(grammatical_person& out, grammatical_person first, grammatical_person second) {
+	if (first == grammatical_person::ANY) {
+		out = second;
+		return true;
+	} else if (second == grammatical_person::ANY) {
+		out = first;
+		return true;
+	} else if (first == grammatical_person::FIRST_OR_SECOND) {
+		if (second == grammatical_person::THIRD) {
+			return false;
+		} else if (second == grammatical_person::FIRST_OR_THIRD) {
+			out = grammatical_person::FIRST;
+		} else {
+			out = second;
+		}
+		return true;
+	} else if (second == grammatical_person::FIRST_OR_SECOND) {
+		if (first == grammatical_person::THIRD) {
+			return false;
+		} else if (first == grammatical_person::FIRST_OR_THIRD) {
+			out = grammatical_person::FIRST;
+		} else {
+			out = first;
+		}
+		return true;
+	} else if (first == grammatical_person::FIRST_OR_THIRD) {
+		if (second == grammatical_person::SECOND) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == grammatical_person::FIRST_OR_THIRD) {
+		if (first == grammatical_person::SECOND) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == second) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+inline bool has_intersection(grammatical_person first, grammatical_person second) {
+	grammatical_person dummy;
+	return intersect(dummy, first, second);
+}
+
+struct inflected_noun {
+	unsigned int root;
+	grammatical_num number;
+};
+
+struct inflected_adjective {
+	unsigned int root;
+	grammatical_comparison comp;
+};
+
+typedef inflected_adjective inflected_adverb;
+
+struct inflected_verb {
+	unsigned int root;
+	grammatical_person person;
+	grammatical_num number;
+	grammatical_mood mood;
+	grammatical_tense tense;
+};
+
 struct morphology_en {
 	hash_map<unsigned int, noun_root> nouns;
 	hash_map<unsigned int, adjective_root> adjectives;
 	hash_map<unsigned int, adverb_root> adverbs;
 	hash_map<unsigned int, verb_root> verbs;
+
+	hash_map<unsigned int, array<inflected_noun>> inflected_nouns;
+	hash_map<unsigned int, array<inflected_adjective>> inflected_adjectives;
+	hash_map<unsigned int, array<inflected_adverb>> inflected_adverbs;
+	hash_map<unsigned int, array<inflected_verb>> inflected_verbs;
 
 	unsigned int MORE_COMPARATIVE_ID;
 	unsigned int MOST_SUPERLATIVE_ID;
@@ -324,7 +452,9 @@ struct morphology_en {
 	static string FURTHER_COMPARATIVE_STRING;
 	static string FURTHEST_SUPERLATIVE_STRING;
 
-	morphology_en() : nouns(1024), adjectives(1024), adverbs(1024), verbs(1024) { }
+	morphology_en() : nouns(1024), adjectives(1024), adverbs(1024), verbs(1024),
+		inflected_nouns(2048), inflected_adjectives(2048), inflected_adverbs(2048), inflected_verbs(2048)
+	{ }
 
 	~morphology_en() {
 		for (auto entry : nouns)
@@ -335,26 +465,78 @@ struct morphology_en {
 			free(entry.value);
 		for (auto entry : verbs)
 			free(entry.value);
+		for (auto entry : inflected_nouns)
+			free(entry.value);
+		for (auto entry : inflected_adjectives)
+			free(entry.value);
+		for (auto entry : inflected_adverbs)
+			free(entry.value);
+		for (auto entry : inflected_verbs)
+			free(entry.value);
+	}
+
+	inline bool initialize(hash_map<string, unsigned int>& names) {
+		/* add highly irregular verbs */
+		unsigned int be, am, are, is, was, were, being, been;
+		if (!get_token("be", be, names)
+		 || !get_token("am", am, names)
+		 || !get_token("are", are, names)
+		 || !get_token("is", is, names)
+		 || !get_token("was", was, names)
+		 || !get_token("were", were, names)
+		 || !get_token("being", being, names)
+		 || !get_token("been", been, names))
+			return false;
+
+		/* add the infinitive form */
+		if (!add_inflected_form(inflected_verbs, be, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::BARE_INFINITIVE, grammatical_tense::ANY}))
+			return false;
+
+		/* add the subjunctive forms */
+		if (!add_inflected_form(inflected_verbs, be, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, were, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PAST}))
+			return false;
+
+		/* add the indicative verb forms */
+		if (!add_inflected_form(inflected_verbs, am, {be, grammatical_person::FIRST, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, are, {be, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, is, {be, grammatical_person::THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, was, {be, grammatical_person::FIRST_OR_THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
+		 || !add_inflected_form(inflected_verbs, were, {be, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
+		 || !add_inflected_form(inflected_verbs, are, {be, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, were, {be, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PAST}))
+			return false;
+
+		/* add the participle forms */
+		if (!add_inflected_form(inflected_verbs, being, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PRESENT_PARTICIPLE, grammatical_tense::ANY})
+		 || !add_inflected_form(inflected_verbs, been, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PAST_PARTICIPLE, grammatical_tense::ANY}))
+			return false;
+
+		return true;
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_noun_root(unsigned int root_id, noun_root& root) {
-		return add_root(nouns, root_id, root);
+		return add_inflected_forms(inflected_nouns, root_id, root)
+			&& add_root(nouns, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_adjective_root(unsigned int root_id, adjective_root& root) {
-		return add_root(adjectives, root_id, root);
+		return add_inflected_forms(inflected_adjectives, root_id, root)
+			&& add_root(adjectives, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_adverb_root(unsigned int root_id, adverb_root& root) {
-		return add_root(adverbs, root_id, root);
+		return add_inflected_forms(inflected_adverbs, root_id, root)
+			&& add_root(adverbs, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_verb_root(unsigned int root_id, verb_root& root) {
-		return add_root(verbs, root_id, root);
+		return add_inflected_forms(inflected_verbs, root_id, root)
+			&& add_root(verbs, root_id, root);
 	}
 
 private:
@@ -383,6 +565,110 @@ private:
 		}
 		return true;
 	}
+
+	template<typename T>
+	static inline bool add_inflected_form(
+			hash_map<unsigned int, array<T>>& inflected_form_map,
+			unsigned int new_inflected_form_id, T new_inflected_form)
+	{
+		bool contains; unsigned int bucket;
+		array<T>& inflected_forms = inflected_form_map.get(new_inflected_form_id, contains, bucket);
+		if (!contains) {
+			if (!array_init(inflected_forms, 1))
+				return false;
+			inflected_form_map.table.keys[bucket] = new_inflected_form_id;
+			inflected_form_map.table.size++;
+		}
+		return inflected_forms.add(new_inflected_form);
+	}
+
+	static inline bool add_inflected_forms(
+			hash_map<unsigned int, array<inflected_noun>>& inflected_form_map,
+			unsigned int root_id, const noun_root& root)
+	{
+		if (!inflected_form_map.check_size(inflected_form_map.table.size + root.plural_count + 1))
+			return false;
+
+		/* first add the singular form */
+		if (root.count != countability::PLURAL_ONLY) {
+			if (!add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_num::SINGULAR}))
+				return false;
+		}
+
+		/* add the plural forms */
+		for (unsigned int i = 0; i < root.plural_count; i++) {
+			if (!add_inflected_form(inflected_form_map, root.plural[i], {root_id, grammatical_num::SINGULAR}))
+				return false;
+		}
+		return true;
+	}
+
+	static inline bool add_inflected_forms(
+			hash_map<unsigned int, array<inflected_adjective>>& inflected_form_map,
+			unsigned int root_id, const adjective_root& root)
+	{
+		if (!inflected_form_map.check_size(inflected_form_map.table.size + root.inflected_form_count * 2 + 1))
+			return false;
+
+		/* first add the base form */
+		if (root.comp != comparability::COMPARABLE_ONLY) {
+			if (!add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_comparison::NONE}))
+				return false;
+		}
+
+		/* add the comparative and superlative forms */
+		for (unsigned int i = 0; i < root.inflected_form_count; i++) {
+			if (root.inflected_forms[i].key != 0) {
+				if (!add_inflected_form(inflected_form_map, root.inflected_forms[i].key, {root_id, grammatical_comparison::COMPARATIVE}))
+					return false;
+			}
+
+			if (root.inflected_forms[i].value != 0) {
+				if (!add_inflected_form(inflected_form_map, root.inflected_forms[i].value, {root_id, grammatical_comparison::SUPERLATIVE}))
+					return false;
+			}
+		}
+		return true;
+	}
+
+	static inline bool add_inflected_forms(
+			hash_map<unsigned int, array<inflected_verb>>& inflected_form_map,
+			unsigned int root_id, const verb_root& root)
+	{
+		if (!inflected_form_map.check_size(inflected_form_map.table.size + root.present_3sg_count + root.simple_past_count + root.present_participle_count + root.past_participle_count + 3))
+			return false;
+
+		/* add the infinitive form */
+		if (!add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::BARE_INFINITIVE, grammatical_tense::ANY}))
+			return false;
+
+		/* add the subjunctive form */
+		if (!add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::ANY}))
+			return false;
+
+		/* add the indicative verb forms */
+		for (unsigned int i = 0; i < root.present_3sg_count; i++) {
+			if (!add_inflected_form(inflected_form_map, root.present_3sg[i], {root_id, grammatical_person::THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT}))
+				return false;
+		}
+		if (!add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_person::FIRST_OR_SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT}))
+			return false;
+		for (unsigned int i = 0; i < root.simple_past_count; i++) {
+			if (!add_inflected_form(inflected_form_map, root.simple_past[i], {root_id, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::INDICATIVE, grammatical_tense::PAST}))
+				return false;
+		}
+
+		/* add the participle forms */
+		for (unsigned int i = 0; i < root.present_participle_count; i++) {
+			if (!add_inflected_form(inflected_form_map, root.present_participle[i], {root_id, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PRESENT_PARTICIPLE, grammatical_tense::ANY}))
+				return false;
+		} for (unsigned int i = 0; i < root.past_participle_count; i++) {
+			if (!add_inflected_form(inflected_form_map, root.past_participle[i], {root_id, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PAST_PARTICIPLE, grammatical_tense::ANY}))
+				return false;
+		}
+		return true;
+	}
 };
 
 string morphology_en::MORE_COMPARATIVE_STRING = "_more";
@@ -406,45 +692,106 @@ inline bool starts_with(const string& src, const char* pattern) {
 	return (pattern[src.length] == '\0');
 }
 
-inline bool qualified_plural(
-		const string& src, unsigned int& plural_index,
-		const char*& qualifier, unsigned int& qualifier_length)
+inline bool string_compare(
+		const char* str, unsigned int str_length,
+		const char* pattern, unsigned int pattern_length)
 {
-	if (src.length < 8) return false;
-	if (src[0] != 'p' || src[1] != 'l') return false;
-	unsigned int q_index = index_of('q', src.data + 2, src.length - 2) + 2;
-	if (src.length - q_index < 5) return false;
-	if (!parse_uint(string(src.data + 2, q_index - 2), plural_index))
-		return false;
-	if (src[q_index + 1] != 'u' || src[q_index + 2] != 'a' || src[q_index + 3] != 'l' || src[q_index + 4] != '=')
-		return false;
-	qualifier = src.data + q_index + 5;
-	qualifier_length = src.length - q_index - 5;
+	if (str_length < pattern_length) return false;
+	for (unsigned int i = 0; i < pattern_length; i++)
+		if (str[i] != pattern[i]) return false;
 	return true;
 }
 
-inline bool specified_superlative(
-		const string& src, unsigned int& comparative_index,
-		const char*& superlative, unsigned int& superlative_length)
+inline bool get_parameter(
+		const string& src, const string& left_qual_name, const string& right_qual_name,
+		unsigned int& index, const char*& qualifier, unsigned int& qualifier_length)
 {
-	if (src.length < 4) return false;
-	if (src[0] != 's' || src[1] != 'u' || src[2] != 'p') return false;
-	unsigned int eq_index = index_of('=', src.data + 3, src.length - 3) + 3;
-	if (eq_index == src.length) return false;
-	if (eq_index == 3) {
-		comparative_index = 1;
-	} else if (!parse_uint(string(src.data + 3, eq_index - 3), comparative_index)) {
+#if !defined(NDEBUG)
+	if (right_qual_name.length == 0)
+		fprintf(stderr, "get_parameter WARNING: `right_qual_name` is empty.\n");
+#endif
+
+	if (src.length < left_qual_name.length + right_qual_name.length)
+		return false;
+	if (!string_compare(src.data, src.length, left_qual_name.data, left_qual_name.length))
+		return false;
+	unsigned int right_index = index_of(right_qual_name[0], src.data + left_qual_name.length, src.length - left_qual_name.length) + left_qual_name.length;
+
+	if (src.length - right_index < right_qual_name.length) return false;
+	if (right_index == left_qual_name.length) {
+		index = 1;
+	} else if (!parse_uint(string(src.data + left_qual_name.length, right_index - left_qual_name.length), index)) {
 		return false;
 	}
-	comparative_index--;
+	index--;
 
-	superlative = src.data + eq_index + 1;
-	superlative_length = src.length - eq_index - 1;
+	if (!string_compare(src.data + right_index, src.length - right_index, right_qual_name.data, right_qual_name.length))
+		return false;
+	qualifier = src.data + right_index + right_qual_name.length;
+	qualifier_length = src.length - right_index - right_qual_name.length;
 	return true;
 }
 
 inline bool is_vowel(char c) {
 	return (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u');
+}
+
+inline bool inflect_verb(array<string>& dst, const string& first) {
+	if (dst.length == 0) {
+		if (!init(dst[0], first.data, first.length)) return false;
+		dst.length = 1;
+	} else if (dst[0].data != nullptr && dst[0].length == 0) {
+		string inflected(first.data, first.length);
+		swap(dst[0], inflected);
+	}
+	return true;
+}
+
+inline bool inflect_verb(array<string>& dst, const string& first, const char* second) {
+	if (dst.length == 0) {
+		if (!init(dst[0], first.data, first.length)) return false;
+		dst[0] += second;
+		dst.length = 1;
+	} else if (dst[0].data != nullptr && dst[0].length == 0) {
+		string inflected(first.data, first.length);
+		inflected += second;
+		swap(dst[0], inflected);
+	}
+	return true;
+}
+
+inline bool inflect_verb(array<string>& dst, const string& first, const string& second, const char* third) {
+	if (dst.length == 0) {
+		if (!init(dst[0], first.data, first.length)) return false;
+		dst[0] += second;
+		dst[0] += third;
+		dst.length = 1;
+	} else if (dst[0].data != nullptr && dst[0].length == 0) {
+		string inflected(first.data, first.length);
+		inflected += second;
+		inflected += third;
+		swap(dst[0], inflected);
+	}
+	return true;
+}
+
+inline bool inflect_verb(array<string>& dst, unsigned int index, const char* first, unsigned int first_length)
+{
+	if (index < dst.length) {
+		if (dst[index].data == nullptr)
+			return true;
+		string inflected(first, first_length);
+		swap(inflected, dst[index]);
+	} else {
+		if (!dst.ensure_capacity(index + 1)) return false;
+		while (dst.length < index) {
+			if (!init(dst[dst.length], "")) return false;
+			dst.length++;
+		}
+		if (!init(dst[index], first, first_length)) return false;
+		dst.length++;
+	}
+	return true;
 }
 
 inline bool emit_entry(morphology_en& m,
@@ -594,7 +941,7 @@ inline bool emit_entry(morphology_en& m,
 				} else {
 					unsigned int comparative_index;
 					const char* superlative; unsigned int superlative_length;
-					if (specified_superlative(entry[i], comparative_index, superlative, superlative_length)) {
+					if (get_parameter(entry[i], "sup", "=", comparative_index, superlative, superlative_length)) {
 						unsigned int index = superlative_forms.index_of(comparative_index);
 						if (index < superlative_forms.size)
 							free(superlative_forms.values[index]);
@@ -695,221 +1042,283 @@ inline bool emit_entry(morphology_en& m,
 			return m.add_verb_root(root_id, new_root);
 		}
 
+		static constexpr const char* obsolete_str = "obsolete";
+		static unsigned int obsolete_str_length = strlen(obsolete_str);
+
 		/* first process the flags */
 		array<string> args(entry.length - 1);
+		array<string> pres_3sg(5);
+		array<string> pres_ptc(5);
+		array<string> past(5);
+		array<string> past_ptc(5);
+		auto free_strings = [&]() {
+			for (string& str : pres_3sg) { if (str.data != nullptr) free(str); }
+			for (string& str : pres_ptc) { if (str.data != nullptr) free(str); }
+			for (string& str : past) { if (str.data != nullptr) free(str); }
+			for (string& str : past_ptc) { if (str.data != nullptr) free(str); }
+			for (string& str : args) { free(str); }
+		};
 		for (unsigned int i = 1; i < entry.length; i++) {
-			if (entry[i].index_of('[') < entry[i].length) {
-				for (string& str : args) free(str);
-				return true;
+			unsigned int qualifier_index; const char* qualifier; unsigned int qualifier_length;
+			if (entry[i].index_of('[') < entry[i].length) { free_strings(); return true; }
+			if (get_parameter(entry[i], "head", "=", qualifier_index, qualifier, qualifier_length)) { free_strings(); return true; }
+
+			if (get_parameter(entry[i], "pres_3sg", "=", qualifier_index, qualifier, qualifier_length)) {
+				if (!inflect_verb(pres_3sg, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
+				continue;
+			} else if (get_parameter(entry[i], "pres_ptc", "=", qualifier_index, qualifier, qualifier_length)) {
+				if (!inflect_verb(pres_ptc, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
+				continue;
+			} else if (get_parameter(entry[i], "past_ptc", "=", qualifier_index, qualifier, qualifier_length)) {
+				if (!inflect_verb(past_ptc, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
+				continue;
+			} else if (get_parameter(entry[i], "past", "=", qualifier_index, qualifier, qualifier_length)) {
+				if (!inflect_verb(past, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
+				continue;
+			} else if (get_parameter(entry[i], "pres_3sg", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
+					if (qualifier_index < pres_3sg.length) {
+						if (pres_3sg[qualifier_index].data != nullptr) {
+							free(pres_3sg[qualifier_index]); pres_3sg[qualifier_index].data = nullptr;
+						}
+					} else {
+						if (!pres_3sg.ensure_capacity(qualifier_index + 1)) { free_strings(); return false; }
+						while (pres_3sg.length < qualifier_index) {
+							if (!init(pres_3sg[pres_3sg.length], "")) { free_strings(); return false; }
+							pres_3sg.length++;
+						}
+						pres_3sg[qualifier_index].data = nullptr;
+						pres_3sg.length++;
+					}
+				}
+				continue;
+			} else if (get_parameter(entry[i], "pres_ptc", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
+					if (qualifier_index < pres_ptc.length) {
+						if (pres_ptc[qualifier_index].data != nullptr) {
+							free(pres_ptc[qualifier_index]); pres_ptc[qualifier_index].data = nullptr;
+						}
+					} else {
+						if (!pres_ptc.ensure_capacity(qualifier_index + 1)) { free_strings(); return false; }
+						while (pres_ptc.length < qualifier_index) {
+							if (!init(pres_ptc[pres_ptc.length], "")) { free_strings(); return false; }
+							pres_ptc.length++;
+						}
+						pres_ptc[qualifier_index].data = nullptr;
+						pres_ptc.length++;
+					}
+				}
+				continue;
+			} else if (get_parameter(entry[i], "past_ptc", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
+					if (qualifier_index < past_ptc.length) {
+						if (past_ptc[qualifier_index].data != nullptr) {
+							free(past_ptc[qualifier_index]); past_ptc[qualifier_index].data = nullptr;
+						}
+					} else {
+						if (!past_ptc.ensure_capacity(qualifier_index + 1)) { free_strings(); return false; }
+						while (past_ptc.length < qualifier_index) {
+							if (!init(past_ptc[past_ptc.length], "")) { free_strings(); return false; }
+							past_ptc.length++;
+						}
+						past_ptc[qualifier_index].data = nullptr;
+						past_ptc.length++;
+					}
+				}
+				continue;
+			} else if (get_parameter(entry[i], "past", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
+					if (qualifier_index < past.length) {
+						if (past[qualifier_index].data != nullptr) {
+							free(past[qualifier_index]); past[qualifier_index].data = nullptr;
+						}
+					} else {
+						if (!past.ensure_capacity(qualifier_index + 1)) { free_strings(); return false; }
+						while (past.length < qualifier_index) {
+							if (!init(past[past.length], "")) { free_strings(); return false; }
+							past.length++;
+						}
+						past[qualifier_index].data = nullptr;
+						past.length++;
+					}
+				}
+				continue;
 			}
 
+#if !defined(NDEBUG)
 			unsigned int eq_index = entry[i].index_of('=');
-			/* TODO: continue from here */
+			if (eq_index < entry[i].length) {
+				fprintf(stderr, "WARNING at %u:%u: Unrecognized parameter in entry '", current.line, current.column);
+				print(entry[i], stderr); print("'.\n", stderr);
+				continue;
+			}
+#endif
+
+			if (!init(args[args.length], entry[i])) {
+				free_strings(); return false;
+			}
+			args.length++;
 		}
 
-		if (entry.length == 2) {
-			if (entry[1] == "es") {
-				string present_3sg(root.data, root.length);
-				present_3sg += "es";
-				string present_participle(root.data, root.length);
-				present_participle += "ing";
-				string past(root.data, root.length);
-				past += "ed";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
-			} else if (entry[1] == "ies") {
+		bool first_empty = (args.length < 1 || args[0].length == 0);
+		bool second_empty = (args.length < 2 || args[1].length == 0);
+		bool third_empty = (args.length < 3 || args[2].length == 0);
+		if (!first_empty && second_empty && third_empty) {
+			if (args[0] == "es") {
+				if (!inflect_verb(pres_3sg, root, "es")
+				 || !inflect_verb(pres_ptc, root, "ing")
+				 || !inflect_verb(past, root, "ed"))
+				{ free_strings(); return false; }
+			} else if (args[0] == "ies") {
 				if (root.length == 0 || root[root.length - 1] != 'y') {
 					fprintf(stderr, "ERROR at %u:%u: Verb root '", current.line, current.column);
 					print(root, stderr); fprintf(stderr, "' does not end in 'y'.\n");
 					return false;
 				}
 
-				string present_3sg(root.data, root.length - 1);
-				present_3sg += "ies";
-				string present_participle(root.data, root.length - 1);
-				present_participle += "ying";
-				string past(root.data, root.length - 1);
-				past += "ied";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
-			} else if (entry[1] == "d") {
-				string present_3sg(root.data, root.length);
-				present_3sg += "s";
-				string present_participle(root.data, root.length);
-				present_participle += "ing";
-				string past(root.data, root.length);
-				past += "ed";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
+				string stem(root.data, root.length - 1);
+				if (!inflect_verb(pres_3sg, stem, "ies")
+				 || !inflect_verb(pres_ptc, stem, "ying")
+				 || !inflect_verb(past, stem, "ied"))
+				{ free_strings(); return false; }
+			} else if (args[0] == "d") {
+				if (!inflect_verb(pres_3sg, root, "s")
+				 || !inflect_verb(pres_ptc, root, "ing")
+				 || !inflect_verb(past, root, "d"))
+				{ free_strings(); return false; }
 			} else {
-				string present_3sg(root.data, root.length);
-				present_3sg += "s";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += "ing";
-				string past(entry[1].data, entry[1].length);
-				past += "ed";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
+				if (!inflect_verb(pres_3sg, root, "s")
+				 || !inflect_verb(pres_ptc, args[0], "ing")
+				 || !inflect_verb(past, args[0], "ed"))
+				{ free_strings(); return false; }
 			}
-		} else if (entry.length == 3) {
-			if (entry[2] == "es") {
-				string present_3sg(entry[1].data, entry[1].length);
-				present_3sg += "es";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += "ing";
-				string past(entry[1].data, entry[1].length);
-				past += "ed";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
-			} else if (entry[2] == "ies") {
-				string present_3sg(entry[1].data, entry[1].length);
-				present_3sg += "ies";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += "ying";
-				string past(entry[1].data, entry[1].length);
-				past += "ied";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
-			} else if (entry[2] == "ing" || entry[2] == "ed") {
-				string present_3sg(root.data, root.length);
-				present_3sg += "s";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += "ing";
-				string past(entry[1].data, entry[1].length);
-				past += "ed";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
-			} else if (entry[2] == "d") {
-				string present_3sg(root.data, root.length);
-				present_3sg += "s";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += "ing";
-				string past(entry[1].data, entry[1].length);
-				past += "d";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
+		} else if (third_empty) {
+			if (args.length > 1 && args[1] == "es") {
+				if (!inflect_verb(pres_3sg, args[0], "es")
+				 || !inflect_verb(pres_ptc, args[0], "ing")
+				 || !inflect_verb(past, args[0], "ed"))
+				{ free_strings(); return false; }
+			} else if (args.length > 1 && args[1] == "ies") {
+				if (!inflect_verb(pres_3sg, args[0], "ies")
+				 || !inflect_verb(pres_ptc, args[0], "ying")
+				 || !inflect_verb(past, args[0], "ied"))
+				{ free_strings(); return false; }
+			} else if (args.length > 1 && (args[1] == "ing" || args[1] == "ed")) {
+				if (!inflect_verb(pres_3sg, root, "s")
+				 || !inflect_verb(pres_ptc, args[0], "ing")
+				 || !inflect_verb(past, args[0], "ed"))
+				{ free_strings(); return false; }
+			} else if (args.length > 1 && args[1] == "d") {
+				if (!inflect_verb(pres_3sg, root, "s")
+				 || !inflect_verb(pres_ptc, args[0], "ing")
+				 || !inflect_verb(past, args[0], "d"))
+				{ free_strings(); return false; }
 			} else {
-				string past(root.data, root.length);
-				past += "ed";
-
-				verb_root new_root;
-				if (!init(new_root, entry.data + 1, 1, entry.data + 2, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
+				if (first_empty) {
+					if (!inflect_verb(pres_3sg, root, "s")) { free_strings(); return false; }
+				} else {
+					if (!inflect_verb(pres_3sg, args[0])) { free_strings(); return false; }
+				}
+				if (second_empty) {
+					if (!inflect_verb(pres_ptc, root, "ing")) { free_strings(); return false; }
+				} else {
+					if (!inflect_verb(pres_ptc, args[1])) { free_strings(); return false; }
+				}
+				if (!inflect_verb(past, root, "ed")) { free_strings(); return false; }
 			}
 		} else {
-			if (entry[3] == "es") {
-				string present_3sg(entry[1].data, entry[1].length);
-				present_3sg += entry[2];
-				present_3sg += "es";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += entry[2];
-				present_participle += "ing";
-				string past(entry[1].data, entry[1].length);
-				past += entry[2];
-				past += "ed";
+			if (args[2] == "es") {
+				if (!inflect_verb(pres_3sg, args[0], args[1], "es")
+				 || !inflect_verb(pres_ptc, args[0], args[1], "ing")
+				 || !inflect_verb(past, args[0], args[1], "ed"))
+				{ free_strings(); return false; }
+			} else if (args[2] == "ing") {
+				if (!inflect_verb(pres_3sg, root, "s")
+				 || !inflect_verb(pres_ptc, args[0], args[1], "ing"))
+				{ free_strings(); return false; }
 
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
-			} else if (entry[3] == "ing") {
-				string present_3sg(root.data, root.length);
-				present_3sg += "s";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += entry[2];
-				present_participle += "ing";
-				if (entry[2] == "y") {
-					string past(root.data, root.length);
-					past += "d";
-
-					verb_root new_root;
-					if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-						return false;
-					return m.add_verb_root(root_id, new_root);
+				if (args[1] == "y") {
+					if (!inflect_verb(past, root, "d")) { free_strings(); return false; }
 				} else {
-					string past(entry[1].data, entry[1].length);
-					past += entry[2];
-					past += "ed";
-
-					verb_root new_root;
-					if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-						return false;
-					return m.add_verb_root(root_id, new_root);
+					if (!inflect_verb(past, args[0], args[1], "ed")) { free_strings(); return false; }
 				}
-			} else if (entry[3] == "ed") {
-				string past(entry[1].data, entry[1].length);
-				past += entry[2];
-				past += "ed";
-
-				if (entry[2] == "i") {
-					string present_3sg(entry[1].data, entry[1].length);
-					present_3sg += entry[2];
-					present_3sg += "es";
-					string present_participle(root.data, root.length);
-					present_participle += "ing";
-
-					verb_root new_root;
-					if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-						return false;
-					return m.add_verb_root(root_id, new_root);
+			} else if (args[2] == "ed") {
+				if (args[1] == "i") {
+					if (!inflect_verb(pres_3sg, args[0], args[1], "es")
+					 || !inflect_verb(pres_ptc, root, "ing"))
+					{ free_strings(); return false; }
 				} else {
-					string present_3sg(root.data, root.length);
-					present_3sg += "s";
-					string present_participle(entry[1].data, entry[1].length);
-					present_participle += entry[2];
-					present_participle += "ing";
-
-					verb_root new_root;
-					if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-						return false;
-					return m.add_verb_root(root_id, new_root);
+					if (!inflect_verb(pres_3sg, root, "s")
+					 || !inflect_verb(pres_ptc, args[0], args[1], "ing"))
+					{ free_strings(); return false; }
 				}
-			} else if (entry[3] == "d") {
-				string present_3sg(root.data, root.length);
-				present_3sg += "s";
-				string present_participle(entry[1].data, entry[1].length);
-				present_participle += entry[2];
-				present_participle += "ing";
-				string past(entry[1].data, entry[1].length);
-				past += entry[2];
-				past += "d";
-
-				verb_root new_root;
-				if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
+				if (!inflect_verb(past, args[0], args[1], "ed")) { free_strings(); return false; }
+			} else if (args[2] == "d") {
+				if (!inflect_verb(pres_3sg, root, "s")
+				 || !inflect_verb(pres_ptc, args[0], args[1], "ing")
+				 || !inflect_verb(past, args[0], args[1], "d"))
+				{ free_strings(); return false; }
 			} else {
-				verb_root new_root;
-				if (!init(new_root, entry.data + 1, 1, entry.data + 2, 1, entry.data + 3, 1, entry.data + 3, 1, names))
-					return false;
-				return m.add_verb_root(root_id, new_root);
+				if (first_empty) {
+					if (!inflect_verb(pres_3sg, root, "s")) { free_strings(); return false; }
+				} else {
+					if (!inflect_verb(pres_3sg, args[0])) { free_strings(); return false; }
+				}
+				if (second_empty) {
+					if (!inflect_verb(pres_ptc, root, "ing")) { free_strings(); return false; }
+				} else {
+					if (!inflect_verb(pres_ptc, args[1])) { free_strings(); return false; }
+				}
+				if (!inflect_verb(past, args[2])) { free_strings(); return false; }
 			}
 		}
+
+		if (past_ptc.length == 0 || (past_ptc[0].data != nullptr && past_ptc[0].length == 0)) {
+			if (args.length > 3 && args[3].length != 0) {
+				if (past_ptc.length != 0) {
+					string inflected(args[3].data, args[3].length);
+					swap(past_ptc[0], inflected);
+				} else {
+					if (!init(past_ptc[0], args[3].data, args[3].length)) { free_strings(); return false; }
+					if (past_ptc.length == 0) past_ptc.length++;
+				}
+			} else if (past_ptc.length == 0) {
+				for (const string& str : past) {
+					if (str.data == nullptr) continue;
+					if (!init(past_ptc[past_ptc.length], str)) { free_strings(); return false; }
+					past_ptc.length++;
+				}
+			}
+		}
+
+		/* remove empty inflected forms */
+		for (unsigned int i = 0; i < pres_3sg.length; i++) {
+			if (pres_3sg[i].data == nullptr) { pres_3sg.remove(i--); continue; }
+			if (pres_3sg[i] == "-") { free(pres_3sg[i]); pres_3sg.remove(i--); continue; }
+		} for (unsigned int i = 0; i < pres_ptc.length; i++) {
+			if (pres_ptc[i].data == nullptr) { pres_ptc.remove(i--); continue; }
+			if (pres_ptc[i] == "-") { free(pres_ptc[i]); pres_ptc.remove(i--); continue; }
+			if (pres_ptc[i] == "-ing") { free_strings(); return true; }
+		} for (unsigned int i = 0; i < past.length; i++) {
+			if (past[i].data == nullptr) { past.remove(i--); continue; }
+			if (past[i] == "-") { free(past[i]); past.remove(i--); continue; }
+		} for (unsigned int i = 0; i < past_ptc.length; i++) {
+			if (past_ptc[i].data == nullptr) { past_ptc.remove(i--); continue; }
+			if (past_ptc[i] == "-") { free(past_ptc[i]); past_ptc.remove(i--); continue; }
+		}
+
+		if (pres_3sg.length == 0 || pres_ptc.length == 0 || past.length == 0 || past_ptc.length == 0) {
+			free_strings();
+			return true;
+		}
+
+		verb_root new_root;
+		if (!init(new_root, pres_3sg.data, pres_3sg.length, pres_ptc.data, pres_ptc.length, past.data, past.length, past_ptc.data, past_ptc.length, names)) {
+			free_strings();
+			return false;
+		}
+		free_strings();
+		return m.add_verb_root(root_id, new_root);
 	} else {
 		read_error("Unrecognized part of speech", current);
 		return false;
@@ -1002,7 +1411,7 @@ bool morphology_read(morphology_en& m,
 		next = fgetwc(input);
 	}
 
-	for (string& str : current_entry) { free(str); } return false;
+	for (string& str : current_entry) { free(str); }
 	if (!feof(input)) {
 		perror("Error occurred while reading morphology file");
 		return false;

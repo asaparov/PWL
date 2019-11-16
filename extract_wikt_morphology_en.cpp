@@ -219,6 +219,10 @@ inline bool test_morphology() {
 	morphology_en m;
 	bool result = morphology_read(m, names, "english.morph");
 	for (auto entry : names) free(entry.key);
+	fprintf(stderr, "Read %u noun roots.\n", m.nouns.table.size);
+	fprintf(stderr, "Read %u adjective roots.\n", m.adjectives.table.size);
+	fprintf(stderr, "Read %u adverb roots.\n", m.adverbs.table.size);
+	fprintf(stderr, "Read %u verb roots.\n", m.verbs.table.size);
 	return result;
 }
 
