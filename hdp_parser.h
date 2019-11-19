@@ -6668,119 +6668,15 @@ inline bool invert_select_conjunct(
 		const grammatical_flags& flags,
 		hol_term* first, hol_term* second)
 {
-
 	auto on_remap_variables = [](hol_term* first_head, hol_term* second_head, array_map<unsigned int, unsigned int>& second_variable_map, unsigned int max_variable) {
-		hol_term* expected_arg = hol_term::new_equals(hol_term::new_apply(hol_term::new_constant(ArgConstant), &HOL_ANY), &HOL_ANY);
-		if (expected_arg == nullptr)
-			return false;
-		HOL_ANY.reference_count += 2;
-
-		hol_term* expected_head;
-		hol_term* hol_any_ptr = &HOL_ANY;
-		if (ConjunctIndex >= 0) {
-			expected_head = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_any_array(hol_term_type::AND, &HOL_ANY,
-					make_array_view((hol_term**) nullptr, 0), make_appended_array_view(make_repeated_array_view(hol_any_ptr, ConjunctIndex), expected_arg), make_array_view((hol_term**) nullptr, 0)));
-			if (expected_head == nullptr) {
-				free(*expected_arg); free(expected_arg);
-				return false;
-			}
-			HOL_ANY.reference_count += 1 + ConjunctIndex;
-		} else {
-			unsigned int index = (unsigned int) (-ConjunctIndex) - 1;
-			expected_head = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_any_array(hol_term_type::AND, &HOL_ANY,
-					make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_prepended_array_view(expected_arg, make_repeated_array_view(hol_any_ptr, index))));
-			if (expected_head == nullptr) {
-				free(*expected_arg); free(expected_arg);
-				return false;
-			}
-			HOL_ANY.reference_count += 1 + index;
-		}
-
-		array<hol_term*> intersection(2);
-		intersect<built_in_predicates>(intersection, first_head, expected_head);
-		free(*expected_head); if (expected_head->reference_count == 0) free(expected_head);
-		if (intersection.length == 0)
-			return false;
-
-		hol_term* operand;
-		if (intersection[0]->type == hol_term_type::ANY_QUANTIFIER)
-			operand = intersection[0]->any_quantifier.operand;
-		else operand = intersection[0]->quantifier.operand;
-
-		hol_term* conjunct;
-		if (operand->type == hol_term_type::ANY_ARRAY) {
-			if (ConjunctIndex >= 0) {
-				conjunct = operand->any_array.left.operands[ConjunctIndex];
-			} else {
-				conjunct = operand->any_array.right.operands[operand->any_array.right.length + ConjunctIndex];
-			}
-		} else {
-			unsigned int index;
-			if (ConjunctIndex >= 0) {
-				index = ConjunctIndex;
-			} else {
-				index = operand->array.length + ConjunctIndex;
-			}
-			conjunct = operand->array.operands[index];
-		}
-
-		unsigned int first_element_variable;
-		if (conjunct->binary.right->type == hol_term_type::ANY) {
-			/* the "element variable" is not defined in `first_head` so we don't have to worry about variable agreement */
-			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return true;
-		} else if (conjunct->binary.right->type == hol_term_type::VARIABLE) {
-			first_element_variable = conjunct->binary.right->variable;
-		} else {
-			/* this should be a variable */
-			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
-		}
-		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-
-		unsigned int second_element_variable;
-		if (second_head->type == hol_term_type::EXISTS) {
-			unsigned int set_variable = second_head->quantifier.variable;
-			operand = second_head->quantifier.operand;
-
-			hol_term* right;
-			if (operand->type == hol_term_type::ANY_ARRAY && (operand->any_array.oper == hol_term_type::ANY_ARRAY || operand->any_array.oper == hol_term_type::AND)) {
-				right = (operand->any_array.right.length == 0 ? operand->any_array.all : operand->any_array.right.operands[operand->any_array.right.length - 1]);
-			} else if (operand->type == hol_term_type::AND) {
-				right = operand->array.operands[operand->array.length - 1];
-			} else {
-				return (operand->type == hol_term_type::ANY);
-			}
-
-			if (right->type == hol_term_type::UNARY_APPLICATION && right->binary.left->type == hol_term_type::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
-				right = right->binary.right;
-			if (right->type == hol_term_type::FOR_ALL) {
-				second_element_variable = right->quantifier.variable;
-			} else if (right->type == hol_term_type::EXISTS) {
-				second_element_variable = right->quantifier.variable;
-			} else if (right->type == hol_term_type::AND && right->array.operands[0]->type == hol_term_type::UNARY_APPLICATION
-					&& right->array.operands[0]->binary.left->type == hol_term_type::VARIABLE && right->array.operands[0]->binary.left->variable == set_variable
-					&& right->array.operands[0]->binary.right->type == hol_term_type::VARIABLE)
-			{
-				second_element_variable = right->array.operands[0]->binary.right->variable;
-			}
-		} else {
-			return (operand->type == hol_term_type::ANY || (operand->type == hol_term_type::ANY_QUANTIFIER && has_intersection(hol_quantifier_type::EXISTS, operand->any_quantifier.quantifier)));
-		}
-
-		for (unsigned int i = 0; i < second_variable_map.size; i++) {
-			if (second_variable_map.keys[i] == second_element_variable) {
-				second_variable_map.values[i] = first_element_variable;
-				if (first_element_variable == second_element_variable)
-					second_variable_map.remove_at(i);
-				break;
-			}
-		}
+		array<pair<hol_term*, array_map<unsigned int, variable_set>>> intersection(2);
+		intersect<built_in_predicates>(intersection, first_head, second_head);
+		free_all(intersection);
 		return true;
 	};
 
 	return invert_apply_head(inverse, inverse_count, flags, first, second,
-		find_head<built_in_predicates>, find_head<built_in_predicates>, no_op(),
+		find_head<built_in_predicates>, find_head<built_in_predicates>, on_remap_variables,
 		[](array<hol_term*>& dst, hol_term* first_head, hol_term* second_head, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable) {
 			if (second_head->type == hol_term_type::EXISTS && second_head->quantifier.operand->type == hol_term_type::AND) {
 				hol_term* second_head_operand = second_head->quantifier.operand;
