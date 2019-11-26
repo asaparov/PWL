@@ -24,7 +24,7 @@ struct hol_term;
 bool operator == (const hol_term&, const hol_term&);
 bool operator != (const hol_term&, const hol_term&);
 
-enum class hol_term_type {
+enum class hol_term_type : uint_fast8_t {
 	VARIABLE = 1,
 	CONSTANT,
 	PARAMETER,
@@ -46,6 +46,8 @@ enum class hol_term_type {
 	INTEGER,
 	STRING,
 	UINT_LIST,
+
+	VARIABLE_PREIMAGE, /* this is only used in intersection modulo variable relabeling */
 
 	ANY, /* represents a set of all logical forms that contain a subtree within a specified set, and do not contain trees in other specified sets */
 	ANY_RIGHT, /* represents a set of all logical forms that contain a subtree within a specified set that is on the right-leaning branch from the root */
@@ -146,6 +148,7 @@ private:
 };
 
 struct hol_quantifier {
+	hol_term_type variable_type;
 	unsigned int variable;
 	hol_term* operand;
 
@@ -280,6 +283,9 @@ struct hol_term
 	static inline hol_term* new_for_all(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_exists(unsigned int variable, hol_term* operand);
 	static inline hol_term* new_lambda(unsigned int variable, hol_term* operand);
+	static inline hol_term* new_for_all(hol_term_type variable_type, unsigned int variable, hol_term* operand);
+	static inline hol_term* new_exists(hol_term_type variable_type, unsigned int variable, hol_term* operand);
+	static inline hol_term* new_lambda(hol_term_type variable_type, unsigned int variable, hol_term* operand);
 	static hol_term* new_any(hol_term* included);
 	static hol_term* new_any(hol_term* included, hol_term** excluded_trees, unsigned int excluded_tree_count);
 	static hol_term* new_any_right(hol_term* included);
@@ -309,6 +315,7 @@ private:
 	inline bool init_helper(const hol_term& src) {
 		switch (src.type) {
 		case hol_term_type::VARIABLE:
+		case hol_term_type::VARIABLE_PREIMAGE:
 			variable = src.variable; return true;
 		case hol_term_type::CONSTANT:
 			constant = src.constant; return true;
@@ -347,6 +354,7 @@ private:
 		case hol_term_type::FOR_ALL:
 		case hol_term_type::EXISTS:
 		case hol_term_type::LAMBDA:
+			quantifier.variable_type = src.quantifier.variable_type;
 			quantifier.variable = src.quantifier.variable;
 			quantifier.operand = src.quantifier.operand;
 			quantifier.operand->reference_count++;
@@ -477,7 +485,8 @@ inline bool operator == (const hol_array_term& first, const hol_array_term& seco
 }
 
 inline bool operator == (const hol_quantifier& first, const hol_quantifier& second) {
-	return first.variable == second.variable
+	return first.variable_type == second.variable_type
+		&& first.variable == second.variable
 		&& (first.operand == second.operand || *first.operand == *second.operand);
 }
 
@@ -524,6 +533,7 @@ bool operator == (const hol_term& first, const hol_term& second)
 	if (first.type != second.type) return false;
 	switch (first.type) {
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return first.variable == second.variable;
 	case hol_term_type::CONSTANT:
 		return first.constant == second.constant;
@@ -601,7 +611,9 @@ inline unsigned int hol_array_term::hash(const hol_array_term& key) {
 }
 
 inline unsigned int hol_quantifier::hash(const hol_quantifier& key) {
-	return default_hash(key.variable) ^ hol_term::hash(*key.operand);
+	/* TODO: precompute this and store it in a table for faster access */
+	unsigned int variable_type_hash = default_hash<hol_term_type, 94582517>(key.variable_type);
+	return variable_type_hash ^ default_hash(key.variable) ^ hol_term::hash(*key.operand);
 }
 
 inline unsigned int hol_any::hash(const hol_any& key) {
@@ -634,6 +646,7 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 	unsigned int type_hash = default_hash<hol_term_type, 571290832>(key.type);
 	switch (key.type) {
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return type_hash ^ default_hash(key.variable);
 	case hol_term_type::CONSTANT:
 		return type_hash ^ default_hash(key.constant);
@@ -684,6 +697,7 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 	dst.reference_count = src.reference_count;
 	switch (src.type) {
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		dst.variable = src.variable; return;
 	case hol_term_type::CONSTANT:
 		dst.constant = src.constant; return;
@@ -756,6 +770,7 @@ inline void hol_array_term::move(const hol_array_term& src, hol_array_term& dst)
 }
 
 inline void hol_quantifier::move(const hol_quantifier& src, hol_quantifier& dst) {
+	dst.variable_type = src.variable_type;
 	dst.variable = src.variable;
 	dst.operand = src.operand;
 }
@@ -821,6 +836,7 @@ inline void hol_term::free_helper() {
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 		case hol_term_type::VARIABLE:
+		case hol_term_type::VARIABLE_PREIMAGE:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::INTEGER:
@@ -1084,13 +1100,30 @@ inline bool print_quantifier(hol_quantifier_type quantifier, Stream& out) {
 }
 
 template<hol_term_syntax Syntax, typename Stream>
-inline bool print_quantifier(hol_quantifier_type quantifier, unsigned int quantified_variable, Stream& out) {
+inline bool print_variable(hol_term_type variable_type, unsigned int variable, Stream& out) {
+	if (variable_type == hol_term_type::VARIABLE) {
+		return print_variable<Syntax>(variable, out);
+	} else {
+#if !defined(NDEBUG)
+		if (variable_type != hol_term_type::VARIABLE_PREIMAGE) {
+			fprintf(stderr, "print_quantifier_variable ERROR: Unexpected variable type.\n");
+			return false;
+		}
+#endif
+		return print("ℱ⁻¹(", out) && print_variable<Syntax>(variable, out) && print(')', out);
+	}
+}
+
+template<hol_term_syntax Syntax, typename Stream>
+inline bool print_quantifier(hol_quantifier_type quantifier,
+		hol_term_type variable_type, unsigned int quantified_variable, Stream& out)
+{
 	if (!print_quantifier<Syntax>(quantifier, out)) return false;
 	switch (Syntax) {
 	case hol_term_syntax::TPTP:
-		return print('[', out) && print_variable<Syntax>(quantified_variable, out) && print("]:", out);
+		return print('[', out) && print_variable<Syntax>(variable_type, quantified_variable, out) && print("]:", out);
 	case hol_term_syntax::CLASSIC:
-		return print_variable<Syntax>(quantified_variable, out);
+		return print_variable<Syntax>(variable_type, quantified_variable, out);
 	}
 	fprintf(stderr, "print_quantifier ERROR: Unrecognized hol_term_syntax.\n");
 	return false;
@@ -1102,7 +1135,8 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 	bool first;
 	switch (term.type) {
 	case hol_term_type::VARIABLE:
-		return print_variable<Syntax>(term.variable, out);
+	case hol_term_type::VARIABLE_PREIMAGE:
+		return print_variable<Syntax>(term.type, term.variable, out);
 
 	case hol_term_type::CONSTANT:
 		return print(term.constant, out, std::forward<Printer>(printer)...);
@@ -1156,7 +1190,7 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 			&& print(*term.ternary.third, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case hol_term_type::FOR_ALL:
-		if (!print_quantifier<Syntax>(hol_quantifier_type::FOR_ALL, term.quantifier.variable, out)) return false;
+		if (!print_quantifier<Syntax>(hol_quantifier_type::FOR_ALL, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
 		if (term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::EQUALS
 		 || term.quantifier.operand->type == hol_term_type::IFF
@@ -1168,7 +1202,7 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		}
 
 	case hol_term_type::EXISTS:
-		if (!print_quantifier<Syntax>(hol_quantifier_type::EXISTS, term.quantifier.variable, out)) return false;
+		if (!print_quantifier<Syntax>(hol_quantifier_type::EXISTS, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
 		if (term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::EQUALS
 		 || term.quantifier.operand->type == hol_term_type::IFF
@@ -1180,7 +1214,7 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		}
 
 	case hol_term_type::LAMBDA:
-		if (!print_quantifier<Syntax>(hol_quantifier_type::LAMBDA, term.quantifier.variable, out)) return false;
+		if (!print_quantifier<Syntax>(hol_quantifier_type::LAMBDA, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
 		if (term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::EQUALS
 		 || term.quantifier.operand->type == hol_term_type::IFF
@@ -1250,7 +1284,7 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 			&& print(')', out);
 
 	case hol_term_type::ANY_QUANTIFIER:
-		if (!print_quantifier<Syntax>(term.any_quantifier.quantifier, ANY_VARIABLE, out)) return false;
+		if (!print_quantifier<Syntax>(term.any_quantifier.quantifier, hol_term_type::VARIABLE, ANY_VARIABLE, out)) return false;
 		if (term.any_quantifier.operand->type == hol_term_type::AND
 		 || term.any_quantifier.operand->type == hol_term_type::EQUALS
 		 || term.any_quantifier.operand->type == hol_term_type::IF_THEN
@@ -1305,6 +1339,8 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return visit<hol_term_type::CONSTANT>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::VARIABLE:
 		return visit<hol_term_type::VARIABLE>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::VARIABLE_PREIMAGE:
+		return visit<hol_term_type::VARIABLE_PREIMAGE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::PARAMETER:
 		return visit<hol_term_type::PARAMETER>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::INTEGER:
@@ -1433,7 +1469,7 @@ struct variable_collector {
 
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, const variable_collector& visitor) {
-	if (Type == hol_term_type::VARIABLE) {
+	if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
 		if (!visitor.variables.contains(term.variable))
 			return visitor.variables.add(term.variable);
 	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
@@ -1457,7 +1493,7 @@ struct free_variable_collector {
 
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, free_variable_collector& visitor) {
-	if (Type == hol_term_type::VARIABLE) {
+	if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
 		if (!visitor.bound_variables.contains(term.variable) && !visitor.variables.contains(term.variable))
 			return visitor.variables.add(term.variable);
 	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
@@ -1637,6 +1673,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 	case hol_term_type::CONSTANT:
 		return clone_constant(src.constant, dst.constant, std::forward<Cloner>(cloner)...);
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return clone_variable(src.variable, dst.variable, std::forward<Cloner>(cloner)...);
 	case hol_term_type::PARAMETER:
 		return clone_parameter(src.parameter, dst.parameter, std::forward<Cloner>(cloner)...);
@@ -1694,6 +1731,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
+		dst.quantifier.variable_type = src.quantifier.variable_type;
 		if (!clone_variable(src.quantifier.variable, dst.quantifier.variable, std::forward<Cloner>(cloner)...)
 		 || !new_hol_term(dst.quantifier.operand))
 			return false;
@@ -1971,6 +2009,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 	switch (Type) {
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
 	case hol_term_type::STRING:
@@ -2107,6 +2146,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 				free(*first); if (first->reference_count == 0) free(first);
 				return NULL;
 			}
+			new_term->quantifier.variable_type = src->quantifier.variable_type;
 			new_term->quantifier.variable = src->quantifier.variable;
 			new_term->quantifier.operand = first;
 			new_term->type = Type;
@@ -2229,6 +2269,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::CONSTANT>(src, std::forward<Function>(function)...);
 	case hol_term_type::VARIABLE:
 		return apply<hol_term_type::VARIABLE>(src, std::forward<Function>(function)...);
+	case hol_term_type::VARIABLE_PREIMAGE:
+		return apply<hol_term_type::VARIABLE_PREIMAGE>(src, std::forward<Function>(function)...);
 	case hol_term_type::PARAMETER:
 		return apply<hol_term_type::PARAMETER>(src, std::forward<Function>(function)...);
 	case hol_term_type::INTEGER:
@@ -2287,9 +2329,8 @@ struct bound_variable_shifter {
 	bound_variable_shifter(int shift) : shift(shift), bound_variables(8) { }
 };
 
-template<hol_term_type Type, typename std::enable_if<
-	Type == hol_term_type::VARIABLE || Type == hol_term_type::FOR_ALL
- || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA>::type* = nullptr>
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE
+	|| Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA>::type* = nullptr>
 inline hol_term* apply(hol_term* src, bound_variable_shifter& shifter) {
 	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
 		if (!shifter.bound_variables.add(src->quantifier.variable)) return NULL;
@@ -2299,9 +2340,9 @@ inline hol_term* apply(hol_term* src, bound_variable_shifter& shifter) {
 
 		unsigned int new_variable = src->quantifier.variable + shifter.shift;
 		hol_term* dst;
-		if (Type == hol_term_type::LAMBDA) dst = hol_term::new_lambda(new_variable, operand);
-		else if (Type == hol_term_type::FOR_ALL) dst = hol_term::new_for_all(new_variable, operand);
-		else if (Type == hol_term_type::EXISTS) dst = hol_term::new_exists(new_variable, operand);
+		if (Type == hol_term_type::LAMBDA) dst = hol_term::new_lambda(src->quantifier.variable_type, new_variable, operand);
+		else if (Type == hol_term_type::FOR_ALL) dst = hol_term::new_for_all(src->quantifier.variable_type, new_variable, operand);
+		else if (Type == hol_term_type::EXISTS) dst = hol_term::new_exists(src->quantifier.variable_type, new_variable, operand);
 		if (dst == NULL) {
 			free(*operand); if (operand->reference_count == 0) free(operand);
 			return NULL;
@@ -2336,7 +2377,7 @@ struct variable_mapper {
 
 template<hol_term_type Type>
 inline hol_term* apply(hol_term* src, const variable_mapper& mapper) {
-	if (Type == hol_term_type::VARIABLE) {
+	if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
 		unsigned int new_variable; bool contains;
 		new_variable = mapper.variable_map.get(src->variable, contains);
 		if (!contains) {
@@ -2361,6 +2402,7 @@ inline hol_term* apply(hol_term* src, const variable_mapper& mapper) {
 			}
 			new_quantifier->type = Type;
 			new_quantifier->reference_count = 1;
+			new_quantifier->quantifier.variable_type = src->quantifier.variable_type;
 			new_quantifier->quantifier.variable = new_variable;
 			new_quantifier->quantifier.operand = new_operand;
 			return new_quantifier;
@@ -2405,7 +2447,7 @@ inline bool new_variable(unsigned int src, unsigned int& dst,
 
 template<hol_term_type Type>
 inline hol_term* apply(hol_term* src, variable_relabeler& relabeler) {
-	if (Type == hol_term_type::VARIABLE) {
+	if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
 		unsigned int index = relabeler.variable_map.index_of(src->variable);
 		unsigned int variable;
 		if (index < relabeler.variable_map.size) {
@@ -2414,13 +2456,17 @@ inline hol_term* apply(hol_term* src, variable_relabeler& relabeler) {
 			return nullptr;
 		}
 
-		if (variable == src->variable) {
+		if (variable == src->variable)
 			return src;
-		} else {
-			return hol_term::new_variable(variable);
-		}
+		hol_term* new_term;
+		if (!new_hol_term(new_term))
+			return nullptr;
+		new_term->type = Type;
+		new_term->reference_count = 1;
+		new_term->variable = variable;
+		return new_term;
 	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
-		unsigned int index = relabeler.variable_map.index_of(src->variable);
+		unsigned int index = relabeler.variable_map.index_of(src->quantifier.variable);
 		unsigned int variable;
 		if (index < relabeler.variable_map.size) {
 			variable = relabeler.variable_map.values[index];
@@ -2438,11 +2484,11 @@ inline hol_term* apply(hol_term* src, variable_relabeler& relabeler) {
 
 		hol_term* new_quantifier;
 		if (Type == hol_term_type::FOR_ALL) {
-			new_quantifier = hol_term::new_for_all(variable, new_operand);
+			new_quantifier = hol_term::new_for_all(src->quantifier.variable_type, variable, new_operand);
 		} else if (Type == hol_term_type::EXISTS) {
-			new_quantifier = hol_term::new_exists(variable, new_operand);
+			new_quantifier = hol_term::new_exists(src->quantifier.variable_type, variable, new_operand);
 		} else if (Type == hol_term_type::LAMBDA) {
-			new_quantifier = hol_term::new_lambda(variable, new_operand);
+			new_quantifier = hol_term::new_lambda(src->quantifier.variable_type, variable, new_operand);
 		}
 		if (new_operand == src->quantifier.operand)
 			new_operand->reference_count++;
@@ -2479,16 +2525,16 @@ inline hol_term* apply(hol_term* src, const static_term_substituter<SrcTermType,
 
 		unsigned int new_variable = src->quantifier.variable + VariableShift;
 		hol_term* dst;
-		if (Type == hol_term_type::LAMBDA) dst = hol_term::new_lambda(new_variable, operand);
-		else if (Type == hol_term_type::FOR_ALL) dst = hol_term::new_for_all(new_variable, operand);
-		else if (Type == hol_term_type::EXISTS) dst = hol_term::new_exists(new_variable, operand);
+		if (Type == hol_term_type::LAMBDA) dst = hol_term::new_lambda(src->quantifier.variable_type, new_variable, operand);
+		else if (Type == hol_term_type::FOR_ALL) dst = hol_term::new_for_all(src->quantifier.variable_type, new_variable, operand);
+		else if (Type == hol_term_type::EXISTS) dst = hol_term::new_exists(src->quantifier.variable_type, new_variable, operand);
 		if (dst == NULL) {
 			free(*operand); if (operand->reference_count == 0) free(operand);
 			return NULL;
 		}
 		return dst;
 		
-	} else if (Type == hol_term_type::VARIABLE) {
+	} else if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
 		hol_term* dst;
 		if (!new_hol_term(dst)) return NULL;
 		dst->type = Type;
@@ -2725,6 +2771,7 @@ bool unify(
 	case hol_term_type::CONSTANT:
 		return first.constant == second.constant;
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return first.variable == second.variable;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
@@ -2755,7 +2802,8 @@ bool unify(
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		if (first.quantifier.variable != second.quantifier.variable) return false;
+		if (first.quantifier.variable_type != second.quantifier.variable_type
+		 || first.quantifier.variable != second.quantifier.variable) return false;
 		return unify(*first.quantifier.operand, *second.quantifier.operand, src_term, dst_term);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -3033,7 +3081,7 @@ hol_term* hol_term::new_not(hol_term* operand)
 }
 
 template<hol_term_type QuantifierType>
-hol_term* new_hol_quantifier(unsigned int variable, hol_term* operand)
+hol_term* new_hol_quantifier(hol_term_type variable_type, unsigned int variable, hol_term* operand)
 {
 	if (operand == NULL) return NULL;
 
@@ -3041,21 +3089,34 @@ hol_term* new_hol_quantifier(unsigned int variable, hol_term* operand)
 	if (!new_hol_term(term)) return NULL;
 	term->reference_count = 1;
 	term->type = QuantifierType;
+	term->quantifier.variable_type = variable_type;
 	term->quantifier.variable = variable;
 	term->quantifier.operand = operand;
 	return term;
 }
 
 inline hol_term* hol_term::new_for_all(unsigned int variable, hol_term* operand) {
-	return new_hol_quantifier<hol_term_type::FOR_ALL>(variable, operand);
+	return new_hol_quantifier<hol_term_type::FOR_ALL>(hol_term_type::VARIABLE, variable, operand);
 }
 
 inline hol_term* hol_term::new_exists(unsigned int variable, hol_term* operand) {
-	return new_hol_quantifier<hol_term_type::EXISTS>(variable, operand);
+	return new_hol_quantifier<hol_term_type::EXISTS>(hol_term_type::VARIABLE, variable, operand);
 }
 
 inline hol_term* hol_term::new_lambda(unsigned int variable, hol_term* operand) {
-	return new_hol_quantifier<hol_term_type::LAMBDA>(variable, operand);
+	return new_hol_quantifier<hol_term_type::LAMBDA>(hol_term_type::VARIABLE, variable, operand);
+}
+
+inline hol_term* hol_term::new_for_all(hol_term_type variable_type, unsigned int variable, hol_term* operand) {
+	return new_hol_quantifier<hol_term_type::FOR_ALL>(variable_type, variable, operand);
+}
+
+inline hol_term* hol_term::new_exists(hol_term_type variable_type, unsigned int variable, hol_term* operand) {
+	return new_hol_quantifier<hol_term_type::EXISTS>(variable_type, variable, operand);
+}
+
+inline hol_term* hol_term::new_lambda(hol_term_type variable_type, unsigned int variable, hol_term* operand) {
+	return new_hol_quantifier<hol_term_type::LAMBDA>(variable_type, variable, operand);
 }
 
 template<hol_term_type Type>
@@ -3753,6 +3814,11 @@ inline bool compute_type(
 			   || Type == hol_term_type::EXISTS,
 			"Type must be either: FOR_ALL, EXISTS.");
 
+#if !defined(NDEBUG)
+	if (quantifier.variable_type != hol_term_type::VARIABLE)
+		fprintf(stderr, "compute_type WARNING: Expected quantifier variable type to be `VARIABLE`.\n");
+#endif
+
 	if (!types.template push<Type>(term)
 	 || !variable_types.ensure_capacity(variable_types.size + 1)
 	 || !type_variables.ensure_capacity(type_variables.length + 1)
@@ -4003,6 +4069,9 @@ bool compute_type(const hol_term& term,
 		return compute_type<hol_term_type::CONSTANT>(term.constant, term, types, expected_type, constant_types, type_variables);
 	case hol_term_type::VARIABLE:
 		return compute_type<hol_term_type::VARIABLE>(term.variable, term, types, expected_type, variable_types, type_variables);
+	case hol_term_type::VARIABLE_PREIMAGE:
+		return types.template push<hol_term_type::VARIABLE_PREIMAGE>(term)
+			&& types.template add<hol_term_type::VARIABLE_PREIMAGE>(term, expected_type);
 	case hol_term_type::PARAMETER:
 		return compute_type<hol_term_type::PARAMETER>(term.parameter, term, types, expected_type, parameter_types, type_variables);
 	case hol_term_type::INTEGER:
@@ -4366,7 +4435,9 @@ inline int_fast8_t compare(
 		const hol_quantifier& first,
 		const hol_quantifier& second)
 {
-	if (first.variable < second.variable) return -1;
+	if (first.variable_type < second.variable_type) return -1;
+	else if (first.variable_type > second.variable_type) return 1;
+	else if (first.variable < second.variable) return -1;
 	else if (first.variable > second.variable) return 1;
 	return compare(*first.operand, *second.operand);
 }
@@ -4473,6 +4544,7 @@ int_fast8_t compare(
 	else if (first.type > second.type) return false;
 	switch (first.type) {
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		if (first.variable < second.variable) return -1;
 		else if (first.variable > second.variable) return 1;
 		else return 0;
@@ -4692,8 +4764,9 @@ struct hol_scope {
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
-			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+		case hol_term_type::VARIABLE_PREIMAGE:
+			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 		}
 		fprintf(stderr, "hol_scope.move ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -4746,8 +4819,9 @@ private:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
-			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+		case hol_term_type::VARIABLE_PREIMAGE:
+			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 		}
 		fprintf(stderr, "hol_scope.init_helper ERROR: Unrecognized hol_term_type.\n");
 		return false;
@@ -4796,8 +4870,9 @@ private:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
-			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+		case hol_term_type::VARIABLE_PREIMAGE:
+			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 		}
 		fprintf(stderr, "hol_scope.free_helper ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -4916,8 +4991,9 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+	case hol_term_type::VARIABLE_PREIMAGE:
+		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -5046,8 +5122,9 @@ int_fast8_t compare(
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+	case hol_term_type::VARIABLE_PREIMAGE:
+		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -5131,8 +5208,9 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT` or `ANY_QUANTIFIER` */
+	case hol_term_type::VARIABLE_PREIMAGE:
+		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "shift_variables ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
@@ -5318,6 +5396,7 @@ inline hol_term* scope_to_term(const hol_quantifier_scope& scope)
 	if (!new_hol_term(new_term)) return NULL;
 	new_term->type = QuantifierType;
 	new_term->reference_count = 1;
+	new_term->quantifier.variable_type = hol_term_type::VARIABLE;
 	new_term->quantifier.variable = scope.variable;
 	new_term->quantifier.operand = operand;
 	return new_term;
@@ -5475,8 +5554,9 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT,` `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT,` `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+	case hol_term_type::VARIABLE_PREIMAGE:
+		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "scope_to_term ERROR: Unrecognized hol_term_type.\n");
 	return nullptr;
@@ -6574,6 +6654,11 @@ bool canonicalize_quantifier_scope(
 			   || QuantifierType == hol_term_type::LAMBDA,
 			"QuantifierType is not a quantifier.");
 
+#if !defined(NDEBUG)
+	if (src.variable_type != hol_term_type::VARIABLE)
+		fprintf(stderr, "canonicalize_quantifier_scope WARNING: Expected quantifier variable type to be `VARIABLE`.\n");
+#endif
+
 	unsigned int quantifier_variable;
 	hol_scope* operand = (hol_scope*) malloc(sizeof(hol_scope));
 	if (operand == NULL) {
@@ -6943,8 +7028,9 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, or `ANY_QUANTIFIER` */
+	case hol_term_type::VARIABLE_PREIMAGE:
+		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -7153,6 +7239,7 @@ bool is_subset(const hol_term* first, const hol_term* second)
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		/* this should be unreachable */
 		break;
 	}
@@ -8124,6 +8211,7 @@ bool is_reduceable(
 	case hol_term_type::CONSTANT:
 		return first_src->constant == second_src->constant;
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return first_src->variable == second_src->variable;
 	case hol_term_type::PARAMETER:
 		return first_src->parameter == second_src->parameter;
@@ -8151,7 +8239,8 @@ bool is_reduceable(
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:		
 	case hol_term_type::LAMBDA:
-		return (first_src->quantifier.variable != second_src->quantifier.variable)
+		return (first_src->quantifier.variable_type != second_src->quantifier.variable_type)
+			&& (first_src->quantifier.variable != second_src->quantifier.variable)
 			&& is_reduceable(first_src->quantifier.operand, second_src->quantifier.operand, first_node, second_node, prefix_index);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -8688,6 +8777,7 @@ bool is_subset(hol_term* first, hol_term* second)
 		case hol_term_type::UINT_LIST:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
+		case hol_term_type::VARIABLE_PREIMAGE:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -8738,6 +8828,7 @@ bool is_subset(hol_term* first, hol_term* second)
 		case hol_term_type::UINT_LIST:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
+		case hol_term_type::VARIABLE_PREIMAGE:
 		case hol_term_type::PARAMETER:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -8892,7 +8983,8 @@ bool is_subset(hol_term* first, hol_term* second)
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		return (first->quantifier.variable == second->quantifier.variable)
+		return (first->quantifier.variable_type == second->quantifier.variable_type)
+			&& (first->quantifier.variable == second->quantifier.variable)
 			&& is_subset<BuiltInPredicates>(first->quantifier.operand, second->quantifier.operand);
 	case hol_term_type::INTEGER:
 		return first->integer == second->integer;
@@ -8903,6 +8995,7 @@ bool is_subset(hol_term* first, hol_term* second)
 	case hol_term_type::CONSTANT:
 		return first->constant == second->constant;
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return first->variable == second->variable;
 	case hol_term_type::PARAMETER:
 		return first->parameter == second->parameter;
@@ -9617,6 +9710,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					}
 					new_term->type = first->type;
 					new_term->reference_count = 1;
+					new_term->quantifier.variable_type = first->quantifier.variable_type;
 					new_term->quantifier.variable = first->quantifier.variable;
 					new_term->quantifier.operand = get_term(term);
 					new_term->quantifier.operand->reference_count++;
@@ -9635,6 +9729,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -9970,6 +10065,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 				}
 				new_term->type = first->type;
 				new_term->reference_count = 1;
+				new_term->quantifier.variable_type = get_term(root)->quantifier.variable_type;
 				new_term->quantifier.variable = get_term(root)->quantifier.variable;
 				new_term->quantifier.operand = get_term(first_child);
 				new_term->quantifier.operand->reference_count++;
@@ -9987,6 +10083,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -10510,6 +10607,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				}
 				new_term->type = first->type;
 				new_term->reference_count = 1;
+				new_term->quantifier.variable_type = first->quantifier.variable_type;
 				new_term->quantifier.variable = first->quantifier.variable;
 				new_term->quantifier.operand = get_term(difference);
 				new_term->quantifier.operand->reference_count++;
@@ -10525,6 +10623,59 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			return add<false>(dst, first);
 		}
 
+	} else if (first->type == hol_term_type::VARIABLE_PREIMAGE) {
+		if (MapSecondVariablesToFirst) {
+			fprintf(stderr, "subtract ERROR: Detected preimage of preimage.\n");
+			return false;
+		} else if (second->type == hol_term_type::VARIABLE && first->variable != second->variable) {
+			return add<false>(dst, first);
+		} else if (second->type == hol_term_type::VARIABLE && first->variable == second->variable) {
+			return false;
+		} else if (second->type == hol_term_type::VARIABLE_PREIMAGE) {
+			if (!dst.ensure_capacity(dst.length + 1))
+				return false;
+			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+			new_pair.key = second->variable;
+			new_pair.value.type = variable_set_type::ANY_EXCEPT;
+			new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
+			if (new_pair.value.any.array == nullptr)
+				return false;
+			new_pair.value.any.array[0] = first->variable;
+			new_pair.value.any.length = 1;
+			if (!emplace(dst, first, new_pair)) {
+				free(new_pair);
+				return false;
+			}
+			free(new_pair);
+			return true;
+		} else {
+			return add<false>(dst, first);
+		}
+
+	} else if (second->type == hol_term_type::VARIABLE_PREIMAGE) {
+		if (!MapSecondVariablesToFirst) {
+			fprintf(stderr, "subtract ERROR: Detected preimage of preimage.\n");
+			return false;
+		} else if (first->type == hol_term_type::VARIABLE && first->variable != second->variable) {
+			if (!dst.ensure_capacity(dst.length + 1))
+				return false;
+			hol_term* new_term;
+			if (!new_hol_term(new_term))
+				return false;
+			new_term->type = hol_term_type::VARIABLE_PREIMAGE;
+			new_term->reference_count = 1;
+			new_term->variable = first->variable;
+			if (!emplace<true>(dst, new_term)) {
+				free(*new_term); free(new_term);
+				return false;
+			}
+			return true;
+		} else if (first->type == hol_term_type::VARIABLE && first->variable == second->variable) {
+			return false;
+		} else {
+			return add<false>(dst, first);
+		}
+
 	} else if (first->type != second->type) {
 		return add<false>(dst, first);
 	}
@@ -10535,6 +10686,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	array<LogicalFormSet>* difference_array;
 	unsigned int difference_count;
 	size_t old_dst_length = dst.length;
+	hol_term_type dst_variable_type; bool add_variable_pair;
 	switch (first->type) {
 	case hol_term_type::NOT:
 		subtract<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, first->unary.operand, second->unary.operand);
@@ -10820,13 +10972,90 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		if (std::is_same<LogicalFormSet, hol_term*>::value && first->quantifier.variable != second->quantifier.variable)
+		if (std::is_same<LogicalFormSet, hol_term*>::value
+		 && !(first->quantifier.variable_type == second->quantifier.variable_type && first->quantifier.variable == second->quantifier.variable))
 			return add<false>(dst, first);
+		/* first compute the subtraction of the quantified variable and then compute the
+		   intersection of the quantified variable and the subtraction of the quantified operand */
+		if (first->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
+			if (MapSecondVariablesToFirst) {
+				fprintf(stderr, "subtract ERROR: Detected preimage of preimage.\n");
+				return false;
+			} else if (second->quantifier.variable_type == hol_term_type::VARIABLE && first->quantifier.variable != second->quantifier.variable) {
+				return add<false>(dst, first);
+			} else if (second->quantifier.variable_type == hol_term_type::VARIABLE && first->quantifier.variable == second->quantifier.variable) {
+				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				add_variable_pair = false;
+			} else if (second->type == hol_term_type::VARIABLE_PREIMAGE) {
+				if (!dst.ensure_capacity(dst.length + 1))
+					return false;
+				pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+				new_pair.key = first->quantifier.variable;
+				new_pair.value.type = variable_set_type::ANY_EXCEPT;
+				new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
+				if (new_pair.value.any.array == nullptr)
+					return false;
+				new_pair.value.any.array[0] = second->quantifier.variable;
+				new_pair.value.any.length = 1;
+				if (!emplace(dst, first, new_pair)) {
+					free(new_pair);
+					return false;
+				}
+				free(new_pair);
+
+				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				add_variable_pair = true;
+			}
+		} else if (second->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
+			if (!MapSecondVariablesToFirst) {
+				fprintf(stderr, "subtract ERROR: Detected preimage of preimage.\n");
+				return false;
+			} else if (first->type == hol_term_type::VARIABLE && first->variable != second->variable) {
+				return add<false>(dst, first);
+			} else if (first->type == hol_term_type::VARIABLE && first->variable == second->variable) {
+				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				add_variable_pair = false;
+			}
+		} else {
+#if !defined(NDEBUG)
+			if (first->quantifier.variable_type != hol_term_type::VARIABLE || second->quantifier.variable_type != hol_term_type::VARIABLE)
+				fprintf(stderr, "subtract WARNING: Unexpected quantifier variable type.\n");
+#endif
+			hol_term* new_term;
+			if (!dst.ensure_capacity(dst.length + 1)
+				|| !new_hol_term(new_term))
+				return false;
+			new_term->type = first->type;
+			new_term->reference_count = 1;
+			new_term->quantifier.variable_type = (MapSecondVariablesToFirst ? hol_term_type::VARIABLE_PREIMAGE : hol_term_type::VARIABLE);
+			new_term->quantifier.variable = first->quantifier.variable;
+			new_term->quantifier.operand = first->quantifier.operand;
+			new_term->quantifier.operand->reference_count++;
+
+			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+			new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
+			new_pair.value.type = variable_set_type::ANY_EXCEPT;
+			new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
+			if (new_pair.value.any.array == nullptr) {
+				free(*new_term); free(new_term);
+				return false;
+			}
+			new_pair.value.any.array[0] = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
+			new_pair.value.any.length = 1;
+			if (!emplace<true>(dst, new_term, new_pair)) {
+				free(*new_term); free(new_term);
+				free(new_pair); return false;
+			}
+			free(new_pair);
+
+			dst_variable_type = hol_term_type::VARIABLE;
+			add_variable_pair = true;
+		}
 		subtract<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, first->quantifier.operand, second->quantifier.operand);
 		if (!dst.ensure_capacity(dst.length + first_differences.length)) {
 			free_all(first_differences);
 			return false;
-		} else if (first_differences.length == 1 && get_term(first_differences[0]) == first->quantifier.operand) {
+		} else if (first_differences.length == 1 && dst_variable_type == first->quantifier.variable_type && get_term(first_differences[0]) == first->quantifier.operand) {
 			if (!emplace(dst, first, get_variable_map(first_differences[0]))) {
 				free_all(first_differences);
 				return false;
@@ -10835,11 +11064,6 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			return true;
 		}
 		for (LogicalFormSet& first_child : first_differences) {
-			if (!std::is_same<LogicalFormSet, hol_term*>::value && !MapSecondVariablesToFirst) {
-				fprintf(stderr, "subtract ERROR: The case where `MapSecondVariablesToFirst == false` is not implemented.\n");
-				free_all(first_differences); return false;
-			}
-
 			hol_term* new_term;
 			if (!new_hol_term(new_term)) {
 				free_all(first_differences);
@@ -10847,28 +11071,28 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			}
 			new_term->type = first->type;
 			new_term->reference_count = 1;
-			new_term->quantifier.variable = first->quantifier.variable;
+			new_term->quantifier.variable_type = dst_variable_type;
+			new_term->quantifier.variable = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
 			new_term->quantifier.operand = get_term(first_child);
 			new_term->quantifier.operand->reference_count++;
 
-			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
-			new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
-			new_pair.value.type = variable_set_type::ANY_EXCEPT;
-			new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
-			if (new_pair.value.any.array == nullptr) {
-				free_all(first_differences);
-				free(*new_term); free(new_term);
-				return false;
-			}
-			new_pair.value.any.array[0] = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
-			new_pair.value.any.length = 1;
-			if (!emplace<true>(dst, new_term, get_variable_map(first_child), new_pair)) {
-				free_all(first_differences);
-				free(*new_term); free(new_term);
+			if (add_variable_pair) {
+				pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+				new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
+				new_pair.value.type = variable_set_type::SINGLETON;
+				new_pair.value.variable = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
+				if (!emplace<true>(dst, new_term, get_variable_map(first_child), new_pair)) {
+					free_all(first_differences);
+					free(*new_term); free(new_term);
+					free(new_pair.value);
+					return false;
+				}
 				free(new_pair.value);
+			} else if (!emplace<true>(dst, new_term, get_variable_map(first_child))) {
+				free_all(first_differences);
+				free(*new_term); free(new_term);
 				return false;
 			}
-			free(new_pair.value);
 		}
 		free_all(first_differences);
 		return (dst.length > old_dst_length);
@@ -10900,10 +11124,6 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		if (std::is_same<LogicalFormSet, hol_term*>::value && first->variable == second->variable) {
 			return false;
 		} else {
-			if (!std::is_same<LogicalFormSet, hol_term*>::value && !MapSecondVariablesToFirst) {
-				fprintf(stderr, "subtract ERROR: The case where `MapSecondVariablesToFirst == false` is not implemented.\n");
-				return false;
-			}
 			if (!dst.ensure_capacity(dst.length + 1)) return false;
 
 			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
@@ -10914,9 +11134,23 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				return false;
 			new_pair.value.any.array[0] = (MapSecondVariablesToFirst ? first->variable : second->variable);
 			new_pair.value.any.length = 1;
-			if (!emplace(dst, first, new_pair)) {
-				free(new_pair.value);
-				return false;
+			if (!std::is_same<LogicalFormSet, hol_term*>::value && MapSecondVariablesToFirst) {
+				hol_term* new_term;
+				if (!new_hol_term(new_term))
+					return false;
+				new_term->type = hol_term_type::VARIABLE_PREIMAGE;
+				new_term->reference_count = 1;
+				new_term->variable = first->variable;
+				if (!emplace<true>(dst, new_term, new_pair)) {
+					free(new_pair.value);
+					free(*new_term); free(new_term);
+					return false;
+				}
+			} else {
+				if (!emplace(dst, first, new_pair)) {
+					free(new_pair.value);
+					return false;
+				}
 			}
 			free(new_pair.value);
 			return true;
@@ -10936,6 +11170,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		break; /* we already handle this case before the switch statement */
 	}
 	fprintf(stderr, "subtract ERROR: Unrecognized hol_term_type.\n");
@@ -11225,12 +11460,12 @@ inline bool intersect_any_with_any(array<LogicalFormSet>& dst, hol_term* first, 
 		first_intersection_count = intersection.length;
 
 		if (first->any.excluded_tree_count == 0) {
-			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersection, second->any.included, first);
+			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersection, first, second->any.included);
 		} else {
 			hol_term* term = hol_term::new_any_right(first->any.included);
 			if (term == nullptr) return false;
 			first->any.included->reference_count++;
-			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersection, second->any.included, term);
+			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersection, term, second->any.included);
 			free(*term); if (term->reference_count == 0) free(term);
 		}
 		if (intersection.length == 0)
@@ -12096,6 +12331,7 @@ inline bool intersect_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_
 				}
 				new_term->type = first->type;
 				new_term->reference_count = 1;
+				new_term->quantifier.variable_type = get_term(root)->quantifier.variable_type;
 				new_term->quantifier.variable = get_term(root)->quantifier.variable;
 				new_term->quantifier.operand = get_term(first_child);
 				new_term->quantifier.operand->reference_count++;
@@ -12129,6 +12365,7 @@ inline bool intersect_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_
 					}
 					term->type = first->type;
 					term->reference_count = 1;
+					term->quantifier.variable_type = get_term(root)->quantifier.variable_type;
 					term->quantifier.variable = get_term(root)->quantifier.variable;
 					term->quantifier.operand = get_term(first_difference);
 					term->quantifier.operand->reference_count++;
@@ -12154,6 +12391,7 @@ inline bool intersect_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -12925,6 +13163,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 				}
 				new_term->type = first->type;
 				new_term->reference_count = 1;
+				new_term->quantifier.variable_type = get_term(root)->quantifier.variable_type;
 				new_term->quantifier.variable = get_term(root)->quantifier.variable;
 				new_term->quantifier.operand = get_term(first_child);
 				new_term->quantifier.operand->reference_count++;
@@ -12958,6 +13197,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					}
 					term->type = first->type;
 					term->reference_count = 1;
+					term->quantifier.variable_type = get_term(root)->quantifier.variable_type;
 					term->quantifier.variable = get_term(root)->quantifier.variable;
 					term->quantifier.operand = get_term(first_difference);
 					term->quantifier.operand->reference_count++;
@@ -12983,6 +13223,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -14059,14 +14300,17 @@ inline bool intersect_any_quantifier(array<LogicalFormSet>& dst, hol_term* first
 	hol_quantifier_type second_quantifier;
 	hol_term* second_operand;
 	unsigned int second_variable;
+	hol_term_type second_variable_type;
 	if (second->type == hol_term_type::ANY_QUANTIFIER) {
 		second_quantifier = second->any_quantifier.quantifier;
 		second_operand = second->any_quantifier.operand;
 		second_variable = ANY_VARIABLE;
+		second_variable_type = hol_term_type::VARIABLE;
 	} else if (second->type == hol_term_type::FOR_ALL || second->type == hol_term_type::EXISTS || second->type == hol_term_type::LAMBDA) {
 		second_quantifier = (hol_quantifier_type) second->type;
 		second_operand = second->quantifier.operand;
 		second_variable = second->quantifier.variable;
+		second_variable_type = second->quantifier.variable_type;
 	} else {
 		return false;
 	}
@@ -14113,6 +14357,7 @@ inline bool intersect_any_quantifier(array<LogicalFormSet>& dst, hol_term* first
 			new_term->any_quantifier.operand->reference_count++;
 		} else {
 			new_term->type = (hol_term_type) quantifier;
+			new_term->quantifier.variable_type = second_variable_type;
 			new_term->quantifier.variable = second_variable;
 			new_term->quantifier.operand = get_term(term);
 			new_term->quantifier.operand->reference_count++;
@@ -14250,6 +14495,37 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		return intersect_any_quantifier<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, first, second);
 	} else if (second->type == hol_term_type::ANY_QUANTIFIER) {
 		return intersect_any_quantifier<BuiltInPredicates, ComputeIntersection, !MapSecondVariablesToFirst>(dst, second, first);
+	} else if (first->type == hol_term_type::VARIABLE_PREIMAGE) {
+		if (MapSecondVariablesToFirst && second->type == hol_term_type::VARIABLE) {
+			fprintf(stderr, "intersect ERROR: Detected preimage of preimage.\n");
+			return false;
+		} else if (second->type == hol_term_type::VARIABLE && first->variable == second->variable) {
+			return add<false>(dst, first);
+		} else if (second->type == hol_term_type::VARIABLE_PREIMAGE) {
+			if (!dst.ensure_capacity(dst.length + 1))
+				return false;
+			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+			new_pair.key = (MapSecondVariablesToFirst ? second->variable : first->variable);
+			new_pair.value.type = variable_set_type::SINGLETON;
+			new_pair.value.variable = (MapSecondVariablesToFirst ? first->variable : second->variable);
+			if (!emplace(dst, MapSecondVariablesToFirst ? second : first, new_pair)) {
+				free(new_pair);
+				return false;
+			}
+			free(new_pair);
+			return true;
+		} else {
+			return false;
+		}
+	} else if (second->type == hol_term_type::VARIABLE_PREIMAGE) {
+		if (!MapSecondVariablesToFirst) {
+			fprintf(stderr, "intersect ERROR: Detected preimage of preimage.\n");
+			return false;
+		} else if (first->type == hol_term_type::VARIABLE && first->variable == second->variable) {
+			return add<false>(dst, first);
+		} else {
+			return false;
+		}
 	}
 
 	array<LogicalFormSet> first_intersection(8);
@@ -14258,6 +14534,7 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	array<LogicalFormSet>* terms;
 	unsigned int intersection_count;
 	unsigned int* index_array;
+	hol_term_type dst_variable_type; bool add_variable_pair;
 	switch (first->type) {
 	case hol_term_type::NOT:
 		if (second->type != hol_term_type::NOT
@@ -14582,8 +14859,40 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
-		if (second->type != first->type || (std::is_same<LogicalFormSet, hol_term*>::value && first->quantifier.variable != second->quantifier.variable)
-		 || !intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, first->quantifier.operand, second->quantifier.operand))
+		if (second->type != first->type || (std::is_same<LogicalFormSet, hol_term*>::value && !(first->quantifier.variable_type == second->quantifier.variable_type && first->quantifier.variable == second->quantifier.variable)))
+			return false;
+		if (first->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
+			if (MapSecondVariablesToFirst && second->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
+				fprintf(stderr, "intersect ERROR: Detected preimage of preimage.\n");
+				return false;
+			} else if (second->quantifier.variable_type == hol_term_type::VARIABLE && first->quantifier.variable == second->quantifier.variable) {
+				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				add_variable_pair = false;
+			} else if (second->type == hol_term_type::VARIABLE_PREIMAGE) {
+				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				add_variable_pair = true;
+			} else {
+				return false;
+			}
+		} else if (second->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
+			if (!MapSecondVariablesToFirst) {
+				fprintf(stderr, "intersect ERROR: Detected preimage of preimage.\n");
+				return false;
+			} else if (first->quantifier.variable_type == hol_term_type::VARIABLE && first->quantifier.variable == second->quantifier.variable) {
+				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				add_variable_pair = false;
+			} else {
+				return false;
+			}
+		} else {
+#if !defined(NDEBUG)
+			if (first->quantifier.variable_type != hol_term_type::VARIABLE || second->quantifier.variable_type != hol_term_type::VARIABLE)
+				fprintf(stderr, "intersect WARNING: Unexpected quantifier variable type.\n");
+#endif
+			dst_variable_type = hol_term_type::VARIABLE;
+			add_variable_pair = true;
+		}
+		if (!intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, first->quantifier.operand, second->quantifier.operand))
 			return false;
 		if (!ComputeIntersection) {
 			return true;
@@ -14591,14 +14900,14 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			free_all(first_intersection);
 			return false;
 		} else if (first_intersection.length == 1) {
-			if (get_term(first_intersection[0]) == first->quantifier.operand) {
+			if (dst_variable_type == first->quantifier.variable_type && get_term(first_intersection[0]) == first->quantifier.operand) {
 				if (!emplace(dst, first, get_variable_map(first_intersection[0]))) {
 					free_all(first_intersection);
 					return false;
 				}
 				free_all(first_intersection);
 				return true;
-			} else if (get_term(first_intersection[0]) == second->quantifier.operand) {
+			} else if (dst_variable_type == first->quantifier.variable_type && get_term(first_intersection[0]) == second->quantifier.operand) {
 				if (!emplace(dst, second, get_variable_map(first_intersection[0]))) {
 					free_all(first_intersection);
 					return false;
@@ -14615,16 +14924,25 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			}
 			new_term->type = first->type;
 			new_term->reference_count = 1;
-			new_term->quantifier.variable = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
+			new_term->quantifier.variable_type = dst_variable_type;
+			new_term->quantifier.variable = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
 			new_term->quantifier.operand = get_term(first_child);
 			new_term->quantifier.operand->reference_count++;
 
-			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
-			new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
-			new_pair.value.type = variable_set_type::SINGLETON;
-			new_pair.value.variable = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
-			if (!emplace<true>(dst, new_term, get_variable_map(first_child), new_pair)) {
+			if (add_variable_pair) {
+				pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+				new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
+				new_pair.value.type = variable_set_type::SINGLETON;
+				new_pair.value.variable = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
+				if (!emplace<true>(dst, new_term, get_variable_map(first_child), new_pair)) {
+					free_all(first_intersection);
+					free(*new_term); free(new_term);
+					free(new_pair); return false;
+				}
+				free(new_pair);
+			} else if (!emplace<true>(dst, new_term, get_variable_map(first_child))) {
 				free_all(first_intersection);
+				free(*new_term); free(new_term);
 				return false;
 			}
 		}
@@ -14669,13 +14987,13 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			new_pair.key = second->variable;
 			new_pair.value.type = variable_set_type::SINGLETON;
 			new_pair.value.variable = first->variable;
-			return emplace(dst, first, new_pair);
+			return emplace(dst, second, new_pair);
 		} else {
 			pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
 			new_pair.key = first->variable;
 			new_pair.value.type = variable_set_type::SINGLETON;
 			new_pair.value.variable = second->variable;
-			return emplace(dst, second, new_pair);
+			return emplace(dst, first, new_pair);
 		}
 	case hol_term_type::PARAMETER:
 		if (second->type != hol_term_type::PARAMETER
@@ -14694,6 +15012,7 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		/* we already handle this before the switch statement */
 		break;
 	}
@@ -15080,6 +15399,7 @@ bool tptp_interpret_quantifier(
 	}
 
 	term.quantifier.variable = variables.values[old_variable_count];
+	term.quantifier.variable_type = hol_term_type::VARIABLE;
 	term.quantifier.operand = inner;
 	term.type = QuantifierType;
 	term.reference_count = 1;

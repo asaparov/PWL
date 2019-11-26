@@ -7,7 +7,7 @@
 					(NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_universal
 						(NOMINAL_R:identity
 							(NOMINAL_L:identity
-								(N:require_no_correlator,select_predicate_in_set "Cats")
+								(N:require_no_correlator,select_predicate_in_set "Cat"/"Cats")
 							)
 						)
 					)
@@ -24,7 +24,7 @@
 						(NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_wide_scope
 							(NOMINAL_R:identity
 								(NOMINAL_L:identity
-									(N:require_no_correlator,select_predicate_in_set "mammals")
+									(N:require_no_correlator,select_predicate_in_set "mammal"/"mammals")
 								)
 							)
 						)

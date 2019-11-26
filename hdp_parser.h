@@ -1216,6 +1216,9 @@ debug_terminal_printer = &terminal_printer;
 			for (unsigned int i = 0; i < data.length; i++) {
 				unsigned int id = order[i];
 				for (unsigned int j = 0; j < data[id].size; j++) {
+					if (data[id].keys[j].derivation != nullptr)
+						/* do not resample training examples labeled with derivation trees */
+						continue;
 					logical_form_type logical_form = logical_form_type(data[id].values[j]);
 					sequence& seq = *((sequence*) alloca(sizeof(sequence)));
 					if (!init(seq, data[id].keys[j])) {
@@ -1324,8 +1327,13 @@ private:
 		if (syntax != NULL) {
 			for (unsigned int k = 0; k < data.length; k++) {
 				if (syntax[k] == NULL) continue;
-				for (unsigned int l = 0; l < data[k].size; l++)
-					if (syntax[k][l] != NULL) free(syntax[k][l]);
+				for (unsigned int l = 0; l < data[k].size; l++) {
+					if (syntax[k][l] != NULL) {
+						free(*syntax[k][l]);
+						if (syntax[k][l]->reference_count == 0)
+							free(syntax[k][l]);
+					}
+				}
 				free(syntax[k]);
 			}
 			free(syntax);
@@ -1961,6 +1969,7 @@ inline bool apply_head(
 	hol_term* new_formula;
 	switch (src->type) {
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
@@ -2092,11 +2101,11 @@ inline bool apply_head(
 					dst->reference_count++;
 				} else {
 					if (src->type == hol_term_type::FOR_ALL)
-						dst = hol_term::new_for_all(src->quantifier.variable, new_formula);
+						dst = hol_term::new_for_all(src->quantifier.variable_type, src->quantifier.variable, new_formula);
 					else if (src->type == hol_term_type::EXISTS)
-						dst = hol_term::new_exists(src->quantifier.variable, new_formula);
+						dst = hol_term::new_exists(src->quantifier.variable_type, src->quantifier.variable, new_formula);
 					else if (src->type == hol_term_type::LAMBDA)
-						dst = hol_term::new_lambda(src->quantifier.variable, new_formula);
+						dst = hol_term::new_lambda(src->quantifier.variable_type, src->quantifier.variable, new_formula);
 					if (dst == nullptr) {
 						free(*new_formula);
 						if (new_formula->reference_count == 0)
@@ -5807,11 +5816,11 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition>& substit
 			new_term = src;
 		} else {
 			if (src->type == hol_term_type::FOR_ALL)
-				new_term = hol_term::new_for_all(src->quantifier.variable, first);
+				new_term = hol_term::new_for_all(src->quantifier.variable_type, src->quantifier.variable, first);
 			else if (src->type == hol_term_type::EXISTS)
-				new_term = hol_term::new_exists(src->quantifier.variable, first);
+				new_term = hol_term::new_exists(src->quantifier.variable_type, src->quantifier.variable, first);
 			else if (src->type == hol_term_type::LAMBDA)
-				new_term = hol_term::new_lambda(src->quantifier.variable, first);
+				new_term = hol_term::new_lambda(src->quantifier.variable_type, src->quantifier.variable, first);
 			if (new_term == nullptr) {
 				free(*first); if (first->reference_count == 0) free(first);
 				return nullptr;
@@ -5928,6 +5937,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition>& substit
 
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
 	case hol_term_type::STRING:
@@ -6151,11 +6161,11 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 			new_term = src;
 		} else {
 			if (src->type == hol_term_type::FOR_ALL)
-				new_term = hol_term::new_for_all(src->quantifier.variable, first);
+				new_term = hol_term::new_for_all(src->quantifier.variable_type, src->quantifier.variable, first);
 			else if (src->type == hol_term_type::EXISTS)
-				new_term = hol_term::new_exists(src->quantifier.variable, first);
+				new_term = hol_term::new_exists(src->quantifier.variable_type, src->quantifier.variable, first);
 			else if (src->type == hol_term_type::LAMBDA)
-				new_term = hol_term::new_lambda(src->quantifier.variable, first);
+				new_term = hol_term::new_lambda(src->quantifier.variable_type, src->quantifier.variable, first);
 			if (new_term == nullptr) {
 				free(*first); if (first->reference_count == 0) free(first);
 				return nullptr;
@@ -6210,6 +6220,7 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 
 	case hol_term_type::CONSTANT:
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
 	case hol_term_type::STRING:
@@ -6280,6 +6291,7 @@ hol_term* find_head(hol_term* term, head_index& predicate_index, TryFindHeadFunc
 	   `apply_arg`, and `find_head` in `hdp_parser.h` */
 	switch (term->type) {
 	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
 	case hol_term_type::INTEGER:
@@ -6672,6 +6684,8 @@ inline bool invert_select_conjunct(
 		}
 
 		array<pair<hol_term*, array_map<unsigned int, variable_set>>> conjunct_intersection(2);
+print("second_conjunct: ", stderr); print(*second_conjunct, stderr, *debug_terminal_printer); print('\n', stderr);
+print("conjunct:        ", stderr); print(*conjunct, stderr, *debug_terminal_printer); print('\n', stderr);
 		intersect<built_in_predicates>(conjunct_intersection, second_conjunct, conjunct);
 		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
 		for (hol_term* term : second_intersection) { free(*term); if (term->reference_count == 0) free(term); }
@@ -9848,8 +9862,30 @@ bool morphology_parse(
 		free(root);
 		return true;
 	} else if (pos == POS_NOUN) {
-		/* TODO: implement this */
-		return emit_root(words, {nullptr, 0}, logical_form);
+		if (words.length != 1)
+			return false;
+
+		bool contains;
+		const array<inflected_noun>& forms = morphology_parser.inflected_nouns.get(words[0], contains);
+		if (!contains) return true;
+
+		sequence root(NULL, 0); root = words;
+		flagged_logical_form<Formula> marked_logical_form = logical_form;
+		for (const inflected_noun& form : forms) {
+			if (!intersect(marked_logical_form.flags.index_number, logical_form.flags.index_number, form.number))
+				continue;
+
+			root[0] = form.root;
+			if (!emit_root(root, words, marked_logical_form)) {
+				free(marked_logical_form);
+				free(root); return false;
+			}
+			free(*marked_logical_form.root); if (marked_logical_form.root->reference_count == 0) free(marked_logical_form.root);
+			marked_logical_form.root = logical_form.root;
+			logical_form.root->reference_count++;
+		}
+		free(root);
+		return true;
 	} else if (pos == POS_ADJECTIVE) {
 		/* TODO: implement this */
 		return emit_root(words, {nullptr, 0}, logical_form);

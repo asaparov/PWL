@@ -597,7 +597,7 @@ private:
 
 		/* add the plural forms */
 		for (unsigned int i = 0; i < root.plural_count; i++) {
-			if (!add_inflected_form(inflected_form_map, root.plural[i], {root_id, grammatical_num::SINGULAR}))
+			if (!add_inflected_form(inflected_form_map, root.plural[i], {root_id, grammatical_num::PLURAL}))
 				return false;
 		}
 		return true;
@@ -1355,7 +1355,7 @@ bool morphology_read(morphology_en& m,
 			if (next == '\t') {
 				string new_root(token.data, token.length);
 				swap(current_root, new_root);
-				if (!get_token(new_root, current_root_id, names)) {
+				if (!get_token(current_root, current_root_id, names)) {
 					for (string& str : current_entry) { free(str); } return false;
 				}
 				state = morphology_state::ENTRY;

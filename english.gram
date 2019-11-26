@@ -1420,7 +1420,8 @@ NP -> EACH NOMINAL_R:require_no_adv,try_remove_correlated,require_no_correlator,
 
 # NP {A} -> A NOMINAL_R {A}
 #   e.g. "A group of students walks down the street."
-NP -> A NOMINAL_R:add_concord_singular,try_remove_adv,try_remove_correlated,require_no_correlator
+#NP -> A NOMINAL_R:add_concord_singular,try_remove_adv,try_remove_correlated,require_no_correlator
+# TODO: in the above example, maybe we should model "students" as the head, rather than "group"
 
 # NP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> SOME NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ?[x]:(X(x) & P(x))))} -> SOME NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
@@ -1650,11 +1651,13 @@ DEF_NP -> THE NP':try_remove_correlated
 # NP {^[P]:(... & ?[S]:(this(S) & F(S) & ![x]:(S(x) => P(x))))} -> THIS NP' {^[P]:(... & ?[S]:(F(S) & ![x]:(S(x) => P(x))))}
 # NP {^[P]:(... & ?[S]:(this(S) & F(S) & ?[x]:(S(x) & P(x))))} -> THIS NP' {^[P]:(... & ?[S]:(F(S) & ?[x]:(S(x) & P(x))))}
 # this depends on whether the head predicate of the left conjunct is `this`
+# TODO: make `THIS` into a special nonterminal that can yield either "this" or "these", depending on grammatical number
 #DEF_NP -> THIS NP':try_remove_correlated
 
 # NP {^[P]:(... & ?[S]:(that(S) & F(S) & ![x]:(S(x) => P(x))))} -> THIS NP' {^[P]:(... & ?[S]:(F(S) & ![x]:(S(x) => P(x))))}
 # NP {^[P]:(... & ?[S]:(that(S) & F(S) & ?[x]:(S(x) & P(x))))} -> THIS NP' {^[P]:(... & ?[S]:(F(S) & ?[x]:(S(x) & P(x))))}
 # this depends on whether the head predicate of the left conjunct is `that`
+# TODO: make `THAT` into a special nonterminal that can yield either "that" or "those", depending on grammatical number
 #DEF_NP -> THAT NP':try_remove_correlated
 
 # DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(own(o) & arg2(o)=x & arg1(o)=a) & f(x))) & ![x]:(X(x) => P(x))))}
@@ -1707,6 +1710,7 @@ DEF_NP -> THE NP':try_remove_correlated
 # NOTE: This rule also works if X is existentially-quantified.
 # e.g. "Jason's is better"
 #DEF_NP -> NP:require_no_genitive,add_genitive,add_singular
+#DEF_NP -> NP:require_no_genitive,add_genitive,add_plural
 
 
 
@@ -2213,7 +2217,7 @@ NOMINAL_L -> V:require_no_correlator,select_predicate_in_set,add_tion
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(?[y]:(U(0,y) & p(y) & arg1(p)=x)) & ?[x]:(X(x) & P(x)))} -> V {p}
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(?[y]:(U(0,y) & p(y) & arg1(p)=x)) & ![x]:(X(x) => P(x)))} -> V {p}
-#NOMINAL_L -> V:require_no_correlator,add_er # this adds "ers" if the concord is plural, as well as any duplicated consonants if appropriate (i.e. "programmers")
+#NOMINAL_L -> V:require_no_correlator,add_er # this adds "ers" if the number is plural, as well as any duplicated consonants if appropriate (i.e. "programmers")
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(... & f(x))) & ... & ![x]:(X(x) => P(x))))}
 #  -> ADJP_R {... & f'}

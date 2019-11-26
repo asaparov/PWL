@@ -540,6 +540,7 @@ bool intensional_element_of(
 	case FormulaType::ANY_CONSTANT:
 	case FormulaType::ANY_CONSTANT_EXCEPT:
 	case FormulaType::ANY_QUANTIFIER:
+	case FormulaType::VARIABLE_PREIMAGE:
 		break;
 	}
 	fprintf(stderr, "intensional_element_of ERROR: Unrecognized formula type.\n");

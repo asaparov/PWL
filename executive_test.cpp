@@ -579,6 +579,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
+	case hol_term_type::VARIABLE_PREIMAGE:
 		return -std::numeric_limits<double>::infinity();
 	}
 	fprintf(stderr, "log_probability ERROR: Unrecognized hol_term_type.\n");
