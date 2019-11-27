@@ -1120,7 +1120,9 @@ struct hdp_parser
 		}
 	}
 
-	bool invert_name_map(const hash_map<string, unsigned int>& names) {
+	bool invert_name_map(hash_map<string, unsigned int>& names) {
+		if (!init_capitalization_map(morph, names))
+			return false;
 		if (reverse_name_map != NULL) free(reverse_name_map);
 		reverse_name_map = invert(names);
 		if (reverse_name_map == NULL) return false;
@@ -1132,6 +1134,8 @@ struct hdp_parser
 			hash_map<string, unsigned int>& names,
 			unsigned int iteration_count)
 	{
+		if (!init_capitalization_map(morph, names))
+			return false;
 		const string** reverse_name_map = invert(names);
 		const string** nonterminal_name_map = invert(G.nonterminal_names);
 		if (reverse_name_map == NULL || nonterminal_name_map == NULL) {
@@ -9813,7 +9817,14 @@ bool morphology_parse(
 {
 	if (First) {
 		/* try to decapitalize the word */
-		/* TODO: implement this */
+		unsigned int decapitalized_word;
+		if (morphology_parser.decapitalize(words[0], decapitalized_word)) {
+			sequence decapitalized_words(NULL, 0); decapitalized_words = words;
+			decapitalized_words[0] = decapitalized_word;
+			bool result = morphology_parse<false>(morphology_parser, decapitalized_words, pos, logical_form, emit_root);
+			free(decapitalized_words);
+			return result;
+		}
 	}
 
 	if (pos == POS_VERB) {

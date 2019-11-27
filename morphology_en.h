@@ -442,6 +442,8 @@ struct morphology_en {
 	hash_map<unsigned int, array<inflected_adverb>> inflected_adverbs;
 	hash_map<unsigned int, array<inflected_verb>> inflected_verbs;
 
+	hash_map<unsigned int, unsigned int> decapitalization_map;
+
 	unsigned int MORE_COMPARATIVE_ID;
 	unsigned int MOST_SUPERLATIVE_ID;
 	unsigned int FURTHER_COMPARATIVE_ID;
@@ -453,7 +455,8 @@ struct morphology_en {
 	static string FURTHEST_SUPERLATIVE_STRING;
 
 	morphology_en() : nouns(1024), adjectives(1024), adverbs(1024), verbs(1024),
-		inflected_nouns(2048), inflected_adjectives(2048), inflected_adverbs(2048), inflected_verbs(2048)
+		inflected_nouns(2048), inflected_adjectives(2048), inflected_adverbs(2048),
+		inflected_verbs(2048), decapitalization_map(2048)
 	{ }
 
 	~morphology_en() {
@@ -513,6 +516,16 @@ struct morphology_en {
 			return false;
 
 		return true;
+	}
+
+	inline bool add_capitalized_form(unsigned int decapitalized, unsigned int capitalized) {
+		return decapitalization_map.put(capitalized, decapitalized);
+	}
+
+	inline bool decapitalize(unsigned int word_id, unsigned int& decapitalized_word_id) const {
+		bool contains;
+		decapitalized_word_id = decapitalization_map.get(word_id, contains);
+		return contains;
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
@@ -1434,6 +1447,38 @@ inline bool morphology_read(morphology_en& m,
 		fclose(in); return false;
 	}
 	fclose(in);
+	return true;
+}
+
+inline bool init_capitalization_map(
+		morphology_en& m,
+		hash_map<string, unsigned int>& names)
+{
+	array<pair<string, unsigned int>> to_capitalize(1024);
+	for (const auto& entry : names) {
+		if (entry.key.length == 0 || !islower(entry.key[0]))
+			continue;
+		if (!to_capitalize.ensure_capacity(to_capitalize.length + 1)
+		 || !init(to_capitalize[to_capitalize.length].key, entry.key))
+		{
+			for (pair<string, unsigned int>& element : to_capitalize) free(element.key);
+			return false;
+		}
+		to_capitalize[to_capitalize.length++].value = entry.value;
+	}
+
+	for (pair<string, unsigned int>& element : to_capitalize) {
+		unsigned int capitalized_id;
+		element.key[0] = toupper(element.key[0]);
+		if (!get_token(element.key, capitalized_id, names)
+		 || !m.add_capitalized_form(element.value, capitalized_id))
+		{
+			for (pair<string, unsigned int>& element : to_capitalize) free(element.key);
+			return false;
+		}
+	}
+
+	for (pair<string, unsigned int>& element : to_capitalize) free(element.key);
 	return true;
 }
 

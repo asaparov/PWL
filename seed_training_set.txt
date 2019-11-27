@@ -7,7 +7,7 @@
 					(NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_universal
 						(NOMINAL_R:identity
 							(NOMINAL_L:identity
-								(N:require_no_correlator,select_predicate_in_set "Cat"/"Cats")
+								(N:require_no_correlator,select_predicate_in_set "cat"/"Cats")
 							)
 						)
 					)
