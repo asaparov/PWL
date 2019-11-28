@@ -1120,6 +1120,11 @@ struct hdp_parser
 		}
 	}
 
+	~hdp_parser() {
+		if (reverse_name_map != nullptr)
+			free(reverse_name_map);
+	}
+
 	bool invert_name_map(hash_map<string, unsigned int>& names) {
 		if (!init_capitalization_map(morph, names))
 			return false;
@@ -1264,7 +1269,7 @@ debug_terminal_printer = &terminal_printer;
 		}
 #endif
 
-		logical_form_type logical_form; /* TODO: initialize the features */
+		logical_form_type logical_form(HOL_ANY); /* TODO: initialize the features */
 		syntax_node<logical_form_type>* parsed_syntax =
 				(syntax_node<logical_form_type>*) alloca(K * sizeof(syntax_node<logical_form_type>));
 		logical_form_type* logical_form_output =
@@ -9488,10 +9493,10 @@ inline bool copy_array(
 		const unsigned int* src, unsigned int src_length,
 		unsigned int*& dst, unsigned int& dst_length)
 {
-#if !defined(NDEBUG)
-	if (src_length == 0)
-		fprintf(stderr, "copy_array WARNING: `src_length` is zero.\n");
-#endif
+	if (src_length == 0) {
+		dst_length = 0;
+		return true;
+	}
 	dst = (unsigned int*) malloc(sizeof(unsigned int) * src_length);
 	if (dst == nullptr) {
 		fprintf(stderr, "copy_array ERROR: Out of memory.\n");

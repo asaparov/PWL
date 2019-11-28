@@ -903,6 +903,26 @@ int main(int argc, const char** argv)
 		}
 		return EXIT_FAILURE;
 	}
+hol_term* logical_forms[5];
+double log_probabilities[5];
+unsigned int parse_count;
+array<sentence_token> unrecognized(4);
+if (parser.invert_name_map(names)) {
+	string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
+	debug_terminal_printer = &terminal_printer;
+	if (parser.parse<5>(seed_training_set[1].keys[0], logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
+		for (unsigned int i = 0; i < parse_count; i++) {
+			print(*logical_forms[i], stderr, terminal_printer); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
+			free(*logical_forms[i]);
+			if (logical_forms[i]->reference_count == 0)
+				free(logical_forms[i]);
+		}
+	} else {
+		fprintf(stderr, "ERROR: Parsing failed.\n");
+	}
+} else {
+	fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
+}
 	for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 		free(paragraph);
