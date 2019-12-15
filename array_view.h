@@ -186,6 +186,42 @@ inline excluded_array_view<T> make_excluded_array_view(T* elements, unsigned int
 }
 
 template<typename T>
+struct included_array_view {
+	T* elements;
+	unsigned int length;
+	T& included;
+	unsigned int included_index;
+
+	included_array_view(T* elements, unsigned int original_length, T& included, unsigned int included_index) :
+			elements(elements), length(original_length + 1), included(included), included_index(included_index) { }
+
+	inline T& operator[] (size_t index) {
+		if (index < included_index)
+			return elements[index];
+		else if (index == included_index)
+			return included;
+		else return elements[index - 1];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		if (index < included_index)
+			return elements[index];
+		else if (index == included_index)
+			return included;
+		else return elements[index - 1];
+	}
+
+	inline unsigned int size() const {
+		return length;
+	}
+};
+
+template<typename T>
+inline included_array_view<T> make_included_array_view(T* elements, unsigned int original_length, T& included, unsigned int included_index) {
+	return included_array_view<T>(elements, original_length, included, included_index);
+}
+
+template<typename T>
 struct repeated_array_view {
 	T& repeated_element;
 	unsigned int length;

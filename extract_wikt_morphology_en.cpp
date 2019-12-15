@@ -71,8 +71,7 @@ inline bool emit_text(const array<char>& text, const position& start, const posi
 		string new_word(text.data, text.length);
 		swap(new_word, reader.current_word);
 	} else if (reader.element == wikt_xml_element::TEXT) {
-		if (reader.current_word.index_of(' ') < reader.current_word.length
-		 || reader.current_word.index_of(':') < reader.current_word.length)
+		if (reader.current_word.index_of(':') < reader.current_word.length)
 			return true;
 
 		static string ENGLISH_HEADER = "==English==";
@@ -81,8 +80,8 @@ inline bool emit_text(const array<char>& text, const position& start, const posi
 			return true;
 
 		bool has_subsections = false;
-		static string SUBSECTION_PATTERNS[] = { "{{en-noun", "{{en-plural noun", "{{en-verb", "{{en-adjective", "{{en-adj", "{{en-adverb", "{{en-adv", "{{head" };
-		static string POS_NAMES[] = { "n", "pl", "v", "adj", "adj", "adv", "adv", "" };
+		static string SUBSECTION_PATTERNS[] = { "{{en-noun", "{{en-proper noun", "{{en-plural noun", "{{en-verb", "{{en-adjective", "{{en-adj", "{{en-adverb", "{{en-adv", "{{head" };
+		static string POS_NAMES[] = { "n", "pr", "pl", "v", "adj", "adj", "adv", "adv", "" };
 		for (unsigned int i = english_section + ENGLISH_HEADER.length; i < text.length; i++) {
 			/* check if we reached the end of the English section */
 			if (i + 3 < text.length && text[i] != '=' && text[i + 1] == '=' && text[i + 2] == '=' && text[i + 3] != '=')
@@ -228,12 +227,10 @@ inline bool test_morphology() {
 
 int main(int argc, const char** argv) {
 	setlocale(LC_ALL, "en_US.UTF-8");
-test_morphology();
-return EXIT_SUCCESS;
 	FILE* in = fopen("/home/asaparov/Desktop/enwiktionary-20191101-pages-articles.xml", "rb");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open XML file for reading.\n");
-		return false;
+		return EXIT_FAILURE;
 	}
 
 	wikt_xml_reader reader;

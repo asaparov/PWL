@@ -38,8 +38,64 @@
 #	{![x]:((U(0,x) & cat(x)) => ?[s]:((arg1(s)=x) & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & (arg2(s)=m))))};
 	{![x]:(cat(x) => ?[s]:((arg1(s)=x) & same(s) & present(s) & ?[m]:(mammal(m) & (arg2(s)=m))))};
 
-: Cats are mammals.
-	{![x]:(cat(x) => ?[s]:((arg1(s)=x) & same(s) & present(s) & ?[m]:(mammal(m) & (arg2(s)=m))))};
+: # Mercury is a planet in the Solar System.
+{(S
+	(S':mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative_and_factor
+					(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
+						(NOMINAL_R:identity
+							(NOMINAL_L:identity
+								(N:require_no_correlator,select_predicate_in_set "Mercury"/"Mercury")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular
+					(NP:require_no_preposition,require_no_inverse,select_right_arg2_without_head_predicative_and_factor
+						(A "a")
+						(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential
+							(NOMINAL_R:identity
+								(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
+									(NOMINAL_L:identity
+										(N:require_no_correlator,select_predicate_in_set "planet"/"planet")
+									)
+								)
+								(N_ADJUNCT:try_remove_correlated,select_right_conjunct_in_set
+									(PP:try_remove_correlated,select_right_arg1_of_without_head
+										(P:require_no_preposition,remove_right_conjunct "in")
+										(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative_and_factor
+											(DEF_NP:try_remove_adv,require_no_correlator
+												(THE "the")
+												(NP':try_remove_correlated
+													(NOMINAL_R:identity
+														(NOMINAL_L:identity
+															(N:require_no_correlator,select_predicate_in_set "Solar System"/"Solar System")
+														)
+													)
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[s]:((arg1(s)=mercury) & same(s) & present(s) & ?[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=solar_system) & (arg1_of(p)=l)) & (arg2(s)=p)))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

@@ -1390,7 +1390,7 @@ VP_L -> NEITHER VP_L:remove_neither,add_negative
 NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # NP {A} -> A NP' {A}
-NP -> A NP':try_remove_adv,require_no_correlator
+NP -> A NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))
@@ -1399,6 +1399,10 @@ NP -> NP':require_plural,try_remove_adv,require_no_correlator,require_predicativ
 # where A = ^[P]:(... & W(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x)))))
 #    or A = ^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ... & W(... & ?[x]:(X(x) & P(x)))))
 NP -> NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_wide_scope
+
+# NP {A} -> NP' {A}
+# where A = ^[P]:(... & ?[X]:(F(X=^[x]:x=a) & ?[x]:(X(x) & P(x))))
+NP -> NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~![x]:(X(x) => P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))}
@@ -1450,6 +1454,11 @@ NP -> ALL NP':try_remove_adv,try_remove_correlated,require_no_correlator,require
 # occurrences of A with X (such as in the construction "almost half the cats").
 # this depends on whether `p` is `half`, `subset`, or `almost`
 #NP -> ADV:predicative_set_predicate NP:add_adv,try_remove_correlated,replace_predicative_predicate_with_equality
+
+# NP {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1}
+# NP {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1 & last_name(x)=n2) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1 & last_name(x)=n2}
+# NP {^[P]:(... & ?[X]:(X=^[x]:(nickname(x,n1)) & ?[x]:(X(x) & P(x))))} -> NAME {nickname(x,n1)}
+#NP -> NAME
 
 # NP {^[P,x]:(... & ?[X]:(X=^[x]:f(x) & ... & X(x) & P(x)))}
 #  -> WHICH/WHAT NOMINAL_R {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ?[x]:(X(x) & P(x))))}
@@ -1643,6 +1652,15 @@ NP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #NP_COORDINATION -> COMMA:require_comma NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,add_negative
 
 
+NAME nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+# NAME {nickname(x,s)} -> STRING {s}
+#NAME -> STRING:require_no_correlator,select_nickname
+# NAME {first_name(x)=s} -> STRING {s}
+#NAME -> STRING:require_no_correlator,select_first_name
+# NAME {first_name(x)=s1 & last_name(x)=s2} -> STRING {s1} STRING {s2}
+#NAME -> STRING:require_no_correlator,select_first_name STRING:select_last_name
+
+
 DEF_NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # DEF_NP {A} -> THE NP' {A}
@@ -1789,7 +1807,7 @@ NOMINAL_R -> NOMINAL_L:identity
 # NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => A(x)) & ...))}
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ...))}
 #     N_ADJUNCT {... & ?[x]:(p(x) & A(x))}
-#NOMINAL_R -> NOMINAL_R:try_remove_genitive N_ADJUNCT:try_remove_correlated
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNCT:try_remove_correlated,select_right_conjunct_in_set
 
 # comparative constructions
 # NOMINAL_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
@@ -2005,8 +2023,10 @@ N_ADJUNCT -> PP
 # above the scope of zi, either within the scope of xi (e.g. "i like the house
 # next to the trees") or above it ("a student from each class spoke to her").
 # In this case, the universal quantifiers are also moved into g'.
-#N_ADJUNCT -> PP:try_remove_correlated
-#N_ADJUNCT -> ADJP_R:try_remove_correlated
+N_ADJUNCT -> PP:try_remove_correlated,select_right_arg1_of_without_head
+N_ADJUNCT -> PP:try_remove_correlated,select_right_arg2_of_without_head
+N_ADJUNCT -> ADJP_R:try_remove_correlated,select_right_arg1_of_without_head
+N_ADJUNCT -> ADJP_R:try_remove_correlated,select_right_arg2_of_without_head
 
 # comparative constructions
 # N_ADJUNCT {... & ?[r]:(... & ?[g1]:(U(i1,g1) & p(f1)(g1) & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg2(gn)=r) & ... & h(r) & ...)}
@@ -2271,45 +2291,31 @@ NOMINAL_L -> V:require_no_correlator,select_predicate_in_set,add_tion
 #NOMINAL_L -> VP_L:try_remove_genitive,add_present_participle NOMINAL_L:try_remove_correlated
 #NOMINAL_L -> VP_L:try_remove_genitive,add_past_participle NOMINAL_L:try_remove_correlated
 
-# NOMINAL_L {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1}
-# NOMINAL_L {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1 & last_name(x)=n2) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1 & last_name(x)=n2}
-# NOMINAL_L {^[P]:(... & ?[X]:(X=^[x]:(nickname(x,n1)) & ?[x]:(X(x) & P(x))))} -> NAME {nickname(x,n1)}
-#NOMINAL_L -> NAME
-
-
-NAME nonterminal {} {1.0} {1.0} {} 10 1.0 {}
-# NAME {nickname(x,s)} -> STRING {s}
-#NAME -> STRING:require_no_correlator,select_nickname
-# NAME {first_name(x)=s} -> STRING {s}
-#NAME -> STRING:require_no_correlator,select_first_name
-# NAME {first_name(x)=s1 & last_name(x)=s2} -> STRING {s1} STRING {s2}
-#NAME -> STRING:require_no_correlator,select_first_name STRING:select_last_name
-
 
 PP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # transitive prepositions
 # PP {... & ?[x]:(U(i,x) & p(x) & arg1/arg2/arg3(x)=a)}
-#  -> P {p}
+#  -> P {?[x]:(U(i,x) & p(x))}
 #     NP {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
 # PP {... & ?[x]:(U(i,x) & p(x) & arg1/arg2/arg3(x)=possibility(A))}
-#  -> P {p}
+#  -> P {?[x]:(U(i,x) & p(x))}
 #     NP {^[P]:A'} where p is something that expresses possibility like `capable_of`, and A' has a `P(z)` term added to the head scope (it will also need to be changed into the set-centric form expected by NP)
 # PP {... & ?[x]:(U(i,x) & p(x) & ?[y]:(f(y) & arg1/arg2/arg3(x)=y))}
-#  -> P {p}
+#  -> P {?[x]:(U(i,x) & p(x))}
 #     NP {^[P]:?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y)))}
 # PP {... & ![y]:(f(y) => ?[x]:(U(i,x) & p(x) & arg1/arg2/arg3(x)=y))}
-#  -> P {p}
+#  -> P {?[x]:(U(i,x) & p(x))}
 #     NP {^[P]:?[Y]:(Y=^[y]:f(y) & ![y]:(Y(y) => P(y)))}
 # PP {... & ?[Y]:(F(Y) & ... & ![y]:(Y(y) => ?[x]:(U(i,x) & p(x) & arg1/arg2/arg3(x)=y)))}
-#  -> P {p}
+#  -> P {?[x]:(U(i,x) & p(x))}
 #     NP {^[P]:?[Y]:(F(Y) & ![y]:(Y(y) => P(y)))}
 # e.g. "house(s) next to the tree(s)"
-#PP -> P:require_no_preposition NP:try_remove_correlated,try_remove_is_adjunct
+PP -> P:require_no_preposition,remove_right_conjunct NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative_and_factor
 # e.g. "friend of Mary's", "eyes of Mary's"
-#PP -> P:require_no_preposition NP:add_genitive,try_remove_correlated,try_remove_is_adjunct
+#PP -> P:require_no_preposition,remove_right_conjunct NP:add_genitive,try_remove_correlated,try_remove_is_adjunct
 # for prepositional verbs (i.e. "look forward to", etc)
-#PP -> P_PLACEHOLDER:require_preposition NP:try_remove_correlated,try_remove_is_adjunct
+#PP -> P_PLACEHOLDER:require_preposition,remove_right_conjunct NP:try_remove_correlated,try_remove_is_adjunct
 
 # for (intransitive) prepositional verbs (i.e. "look forward to", etc)
 # PP {... & ?[x]:(U(i,x) & p(x))}
@@ -2805,7 +2811,7 @@ ADJ preterminal {} {1.0} {1.0} {"be", "is", "are", "do", "does", "did", "has", "
 
 ADV preterminal {} {1.0} {1.0} {} 10000 1.0 adverb {}
 
-P preterminal {} {1.0} {1.0} {} 10000 1.0 {}
+P preterminal {predicate_only} {1.0, 10.0} {1.0, 0.1} {} 10000 1.0 {}
 P -> "of"
 P -> "in"
 P -> "through"

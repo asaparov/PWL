@@ -24,6 +24,8 @@ inline bool merge_arrays(
 		}
 		unsigned int new_length = 0;
 		set_union(new_dst, new_length, dst, dst_length, src, src_length);
+		for (unsigned int i = 0; i < dst_length; i++)
+			free(dst[i]);
 		free(dst);
 		dst = new_dst;
 		dst_length = new_length;
@@ -31,8 +33,19 @@ inline bool merge_arrays(
 	return true;
 }
 
+template<typename T>
+unsigned int do_unique(T* array, size_t length)
+{
+	unsigned int result = 0;
+	for (unsigned int i = 1; i < length; i++) {
+		if (array[result] != array[i])
+			move(array[i], array[++result]);
+	}
+	return result + 1;
+}
+
 inline bool init_string_id_array(
-		unsigned int*& dst, unsigned int& dst_length,
+		sequence*& dst, unsigned int& dst_length,
 		const string* strs, unsigned int str_count,
 		hash_map<string, unsigned int>& names)
 {
@@ -40,21 +53,26 @@ inline bool init_string_id_array(
 	if (str_count == 0) {
 		dst = nullptr;
 	} else {
-		dst = (unsigned int*) malloc(sizeof(unsigned int) * str_count);
+		dst = (sequence*) malloc(sizeof(sequence) * str_count);
 		if (dst == nullptr) {
 			fprintf(stderr, "init_string_id_array ERROR: Out of memory.\n");
 			return false;
 		}
 		for (unsigned int i = 0; i < str_count; i++) {
-			if (!get_token(strs[i], dst[i], names)) {
-				free(dst);
-				return false;
+			array<unsigned int> tokens(2);
+			if (!tokenize(strs[i].data, strs[i].length, tokens, names)) {
+				for (unsigned int j = 0; j < i; j++)
+					free(dst[j]);
+				free(dst); return false;
 			}
+
+			sequence src(tokens.data, tokens.length);
+			dst[i] = src;
 		}
 
 		/* sort the IDs */
-		insertion_sort(dst, dst_length);
-		dst_length = unique(dst, dst_length);
+		insertion_sort(dst, dst_length, default_sorter());
+		dst_length = do_unique(dst, dst_length);
 	}
 	return true;
 }
@@ -70,7 +88,7 @@ enum class countability {
 
 struct noun_root {
 	countability count;
-	unsigned int* plural;
+	sequence* plural;
 	unsigned int plural_count;
 
 	inline bool merge(const noun_root& src) {
@@ -127,13 +145,16 @@ struct noun_root {
 
 	static inline void move(const noun_root& src, noun_root& dst) {
 		dst.count = src.count;
-		dst.plural = src.plural;
+		core::move(src.plural, dst.plural);
 		dst.plural_count = src.plural_count;
 	}
 
 	static inline void free(noun_root& root) {
-		if (root.plural_count != 0)
+		if (root.plural_count != 0) {
+			for (unsigned int i = 0; i < root.plural_count; i++)
+				core::free(root.plural[i]);
 			core::free(root.plural);
+		}
 	}
 };
 
@@ -154,7 +175,7 @@ enum class comparability {
 
 struct adjective_root {
 	comparability comp;
-	pair<unsigned int, unsigned int>* inflected_forms; /* comparatives and superlatives, respectively */
+	pair<sequence, sequence>* inflected_forms; /* comparatives and superlatives, respectively */
 	unsigned int inflected_form_count;
 
 	inline bool merge(const adjective_root& src) {
@@ -184,13 +205,20 @@ struct adjective_root {
 
 	static inline void move(const adjective_root& src, adjective_root& dst) {
 		dst.comp = src.comp;
-		dst.inflected_forms = src.inflected_forms;
+		core::move(src.inflected_forms, dst.inflected_forms);
 		dst.inflected_form_count = src.inflected_form_count;
 	}
 
 	static inline void free(adjective_root& root) {
-		if (root.inflected_form_count != 0)
+		if (root.inflected_form_count != 0) {
+			for (unsigned int i = 0; i < root.inflected_form_count; i++) {
+				if (root.inflected_forms[i].key.tokens != nullptr)
+					core::free(root.inflected_forms[i].key);
+				if (root.inflected_forms[i].value.tokens != nullptr)
+					core::free(root.inflected_forms[i].value);
+			}
 			core::free(root.inflected_forms);
+		}
 	}
 };
 
@@ -206,30 +234,53 @@ inline bool init(adjective_root& root, comparability comp,
 	if (inflected_form_count == 0) {
 		root.inflected_forms = nullptr;
 	} else {
-		root.inflected_forms = (pair<unsigned int, unsigned int>*) malloc(sizeof(pair<unsigned int, unsigned int>) * inflected_form_count);
+		root.inflected_forms = (pair<sequence, sequence>*) malloc(sizeof(pair<sequence, sequence>) * inflected_form_count);
 		if (root.inflected_forms == nullptr) {
 			fprintf(stderr, "init ERROR: Insufficient memory for `adjective_root.inflected_forms`.\n");
 			return false;
 		}
 		for (unsigned int i = 0; i < inflected_form_count; i++) {
 			if (inflected_forms[i].key.length == 0) {
-				root.inflected_forms[i].key = 0;
-			} else if (!get_token(inflected_forms[i].key, root.inflected_forms[i].key, names)) {
-				free(root.inflected_forms);
-				return false;
+				root.inflected_forms[i].key = {nullptr, 0};
+			} else {
+				array<unsigned int> tokens(2);
+				if (!tokenize(inflected_forms[i].key.data, inflected_forms[i].key.length, tokens, names)) {
+					for (unsigned int j = 0; j < i; j++) {
+						if (root.inflected_forms[i].key.tokens != nullptr)
+							free(root.inflected_forms[i].key);
+						if (root.inflected_forms[i].value.tokens != nullptr)
+							free(root.inflected_forms[i].value);
+					}
+					free(root.inflected_forms);
+					return false;
+				}
+				sequence src(tokens.data, tokens.length);
+				root.inflected_forms[i].key = src;
 			}
+
 			if (inflected_forms[i].value.length == 0) {
-				root.inflected_forms[i].value = 0;
-			} else if (!get_token(inflected_forms[i].value, root.inflected_forms[i].value, names)) {
-				free(root.inflected_forms);
-				return false;
+				root.inflected_forms[i].value = {nullptr, 0};
+			} else {
+				array<unsigned int> tokens(2);
+				if (!tokenize(inflected_forms[i].value.data, inflected_forms[i].value.length, tokens, names)) {
+					for (unsigned int j = 0; j < i; j++) {
+						if (root.inflected_forms[i].key.tokens != nullptr)
+							free(root.inflected_forms[i].key);
+						if (root.inflected_forms[i].value.tokens != nullptr)
+							free(root.inflected_forms[i].value);
+					}
+					free(root.inflected_forms);
+					return false;
+				}
+				sequence src(tokens.data, tokens.length);
+				root.inflected_forms[i].value = src;
 			}
 		}
 
 		/* remove any entries where both the comparative and superlative are empty */
 		for (unsigned int i = 0; i < root.inflected_form_count; i++) {
-			if (root.inflected_forms[i].key == 0 && root.inflected_forms[i].value == 0) {
-				root.inflected_forms[i] = root.inflected_forms[root.inflected_form_count - 1];
+			if (root.inflected_forms[i].key.tokens == nullptr && root.inflected_forms[i].value.tokens == nullptr) {
+				move(root.inflected_forms[root.inflected_form_count - 1], root.inflected_forms[i]);
 				root.inflected_form_count--;
 				i--;
 			}
@@ -240,21 +291,21 @@ inline bool init(adjective_root& root, comparability comp,
 			root.inflected_forms = nullptr;
 		} else {
 			/* sort the inflected forms */
-			insertion_sort(root.inflected_forms, root.inflected_form_count);
-			root.inflected_form_count = unique(root.inflected_forms, root.inflected_form_count);
+			insertion_sort(root.inflected_forms, root.inflected_form_count, default_sorter());
+			root.inflected_form_count = do_unique(root.inflected_forms, root.inflected_form_count);
 		}
 	}
 	return true;
 }
 
 struct verb_root {
-	unsigned int* present_3sg;
+	sequence* present_3sg;
 	unsigned int present_3sg_count;
-	unsigned int* present_participle;
+	sequence* present_participle;
 	unsigned int present_participle_count;
-	unsigned int* simple_past;
+	sequence* simple_past;
 	unsigned int simple_past_count;
-	unsigned int* past_participle;
+	sequence* past_participle;
 	unsigned int past_participle_count;
 
 	inline bool merge(const verb_root& src) {
@@ -265,25 +316,34 @@ struct verb_root {
 	}
 
 	static inline void move(const verb_root& src, verb_root& dst) {
-		dst.present_3sg = src.present_3sg;
+		core::move(src.present_3sg, dst.present_3sg);
 		dst.present_3sg_count = src.present_3sg_count;
-		dst.present_participle = src.present_participle;
+		core::move(src.present_participle, dst.present_participle);
 		dst.present_participle_count = src.present_participle_count;
-		dst.simple_past = src.simple_past;
+		core::move(src.simple_past, dst.simple_past);
 		dst.simple_past_count = src.simple_past_count;
-		dst.past_participle = src.past_participle;
+		core::move(src.past_participle, dst.past_participle);
 		dst.past_participle_count = src.past_participle_count;
 	}
 
 	static inline void free(verb_root& root) {
-		if (root.present_3sg_count != 0)
+		if (root.present_3sg_count != 0) {
+			for (unsigned int i = 0; i < root.present_3sg_count; i++)
+				core::free(root.present_3sg[i]);
 			core::free(root.present_3sg);
-		if (root.present_participle_count != 0)
+		} if (root.present_participle_count != 0) {
+			for (unsigned int i = 0; i < root.present_participle_count; i++)
+				core::free(root.present_participle[i]);
 			core::free(root.present_participle);
-		if (root.simple_past_count != 0)
+		} if (root.simple_past_count != 0) {
+			for (unsigned int i = 0; i < root.simple_past_count; i++)
+				core::free(root.simple_past[i]);
 			core::free(root.simple_past);
-		if (root.past_participle_count != 0)
+		} if (root.past_participle_count != 0) {
+			for (unsigned int i = 0; i < root.past_participle_count; i++)
+				core::free(root.past_participle[i]);
 			core::free(root.past_participle);
+		}
 	}
 };
 
@@ -412,35 +472,47 @@ inline bool has_intersection(grammatical_person first, grammatical_person second
 }
 
 struct inflected_noun {
-	unsigned int root;
+	sequence root;
 	grammatical_num number;
+
+	static inline void free(inflected_noun& key) {
+		core::free(key.root);
+	}
 };
 
 struct inflected_adjective {
-	unsigned int root;
+	sequence root;
 	grammatical_comparison comp;
+
+	static inline void free(inflected_adjective& key) {
+		core::free(key.root);
+	}
 };
 
 typedef inflected_adjective inflected_adverb;
 
 struct inflected_verb {
-	unsigned int root;
+	sequence root;
 	grammatical_person person;
 	grammatical_num number;
 	grammatical_mood mood;
 	grammatical_tense tense;
+
+	static inline void free(inflected_verb& key) {
+		core::free(key.root);
+	}
 };
 
 struct morphology_en {
-	hash_map<unsigned int, noun_root> nouns;
-	hash_map<unsigned int, adjective_root> adjectives;
-	hash_map<unsigned int, adverb_root> adverbs;
-	hash_map<unsigned int, verb_root> verbs;
+	hash_map<sequence, noun_root> nouns;
+	hash_map<sequence, adjective_root> adjectives;
+	hash_map<sequence, adverb_root> adverbs;
+	hash_map<sequence, verb_root> verbs;
 
-	hash_map<unsigned int, array<inflected_noun>> inflected_nouns;
-	hash_map<unsigned int, array<inflected_adjective>> inflected_adjectives;
-	hash_map<unsigned int, array<inflected_adverb>> inflected_adverbs;
-	hash_map<unsigned int, array<inflected_verb>> inflected_verbs;
+	hash_map<sequence, array<inflected_noun>> inflected_nouns;
+	hash_map<sequence, array<inflected_adjective>> inflected_adjectives;
+	hash_map<sequence, array<inflected_adverb>> inflected_adverbs;
+	hash_map<sequence, array<inflected_verb>> inflected_verbs;
 
 	hash_map<unsigned int, unsigned int> decapitalization_map;
 
@@ -460,22 +532,39 @@ struct morphology_en {
 	{ }
 
 	~morphology_en() {
-		for (auto entry : nouns)
+		for (auto entry : nouns) {
+			free(entry.key);
 			free(entry.value);
-		for (auto entry : adjectives)
+		} for (auto entry : adjectives) {
+			free(entry.key);
 			free(entry.value);
-		for (auto entry : adverbs)
+		} for (auto entry : adverbs) {
+			free(entry.key);
 			free(entry.value);
-		for (auto entry : verbs)
+		} for (auto entry : verbs) {
+			free(entry.key);
 			free(entry.value);
-		for (auto entry : inflected_nouns)
+		} for (auto entry : inflected_nouns) {
+			for (auto& element : entry.value)
+				free(element);
 			free(entry.value);
-		for (auto entry : inflected_adjectives)
+			free(entry.key);
+		} for (auto entry : inflected_adjectives) {
+			for (auto& element : entry.value)
+				free(element);
 			free(entry.value);
-		for (auto entry : inflected_adverbs)
+			free(entry.key);
+		} for (auto entry : inflected_adverbs) {
+			for (auto& element : entry.value)
+				free(element);
 			free(entry.value);
-		for (auto entry : inflected_verbs)
+			free(entry.key);
+		} for (auto entry : inflected_verbs) {
+			for (auto& element : entry.value)
+				free(element);
 			free(entry.value);
+			free(entry.key);
+		}
 	}
 
 	inline bool initialize(hash_map<string, unsigned int>& names) {
@@ -491,28 +580,37 @@ struct morphology_en {
 		 || !get_token("been", been, names))
 			return false;
 
+		sequence be_seq(&be, 1);
+		sequence am_seq(&am, 1);
+		sequence are_seq(&are, 1);
+		sequence is_seq(&is, 1);
+		sequence was_seq(&was, 1);
+		sequence were_seq(&were, 1);
+		sequence being_seq(&being, 1);
+		sequence been_seq(&been, 1);
+
 		/* add the infinitive form */
-		if (!add_inflected_form(inflected_verbs, be, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::BARE_INFINITIVE, grammatical_tense::ANY}))
+		if (!add_inflected_form(inflected_verbs, be_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::BARE_INFINITIVE, grammatical_tense::ANY}))
 			return false;
 
 		/* add the subjunctive forms */
-		if (!add_inflected_form(inflected_verbs, be, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, were, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PAST}))
+		if (!add_inflected_form(inflected_verbs, be_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, were_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PAST}))
 			return false;
 
 		/* add the indicative verb forms */
-		if (!add_inflected_form(inflected_verbs, am, {be, grammatical_person::FIRST, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, are, {be, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, is, {be, grammatical_person::THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, was, {be, grammatical_person::FIRST_OR_THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
-		 || !add_inflected_form(inflected_verbs, were, {be, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
-		 || !add_inflected_form(inflected_verbs, are, {be, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, were, {be, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PAST}))
+		if (!add_inflected_form(inflected_verbs, am_seq, {be_seq, grammatical_person::FIRST, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, are_seq, {be_seq, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, is_seq, {be_seq, grammatical_person::THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, was_seq, {be_seq, grammatical_person::FIRST_OR_THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
+		 || !add_inflected_form(inflected_verbs, were_seq, {be_seq, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
+		 || !add_inflected_form(inflected_verbs, are_seq, {be_seq, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, were_seq, {be_seq, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PAST}))
 			return false;
 
 		/* add the participle forms */
-		if (!add_inflected_form(inflected_verbs, being, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PRESENT_PARTICIPLE, grammatical_tense::ANY})
-		 || !add_inflected_form(inflected_verbs, been, {be, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PAST_PARTICIPLE, grammatical_tense::ANY}))
+		if (!add_inflected_form(inflected_verbs, being_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PRESENT_PARTICIPLE, grammatical_tense::ANY})
+		 || !add_inflected_form(inflected_verbs, been_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PAST_PARTICIPLE, grammatical_tense::ANY}))
 			return false;
 
 		return true;
@@ -529,25 +627,25 @@ struct morphology_en {
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
-	bool add_noun_root(unsigned int root_id, noun_root& root) {
+	bool add_noun_root(const sequence& root_id, noun_root& root) {
 		return add_inflected_forms(inflected_nouns, root_id, root)
 			&& add_root(nouns, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
-	bool add_adjective_root(unsigned int root_id, adjective_root& root) {
+	bool add_adjective_root(const sequence& root_id, adjective_root& root) {
 		return add_inflected_forms(inflected_adjectives, root_id, root)
 			&& add_root(adjectives, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
-	bool add_adverb_root(unsigned int root_id, adverb_root& root) {
+	bool add_adverb_root(const sequence& root_id, adverb_root& root) {
 		return add_inflected_forms(inflected_adverbs, root_id, root)
 			&& add_root(adverbs, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
-	bool add_verb_root(unsigned int root_id, verb_root& root) {
+	bool add_verb_root(const sequence& root_id, verb_root& root) {
 		return add_inflected_forms(inflected_verbs, root_id, root)
 			&& add_root(verbs, root_id, root);
 	}
@@ -555,8 +653,8 @@ struct morphology_en {
 private:
 	template<typename T>
 	static inline bool add_root(
-			hash_map<unsigned int, T>& root_map,
-			unsigned int root_id, T& root)
+			hash_map<sequence, T>& root_map,
+			const sequence& root_id, T& root)
 	{
 		if (!root_map.check_size()) {
 			free(root);
@@ -581,8 +679,8 @@ private:
 
 	template<typename T>
 	static inline bool add_inflected_form(
-			hash_map<unsigned int, array<T>>& inflected_form_map,
-			unsigned int new_inflected_form_id, T new_inflected_form)
+			hash_map<sequence, array<T>>& inflected_form_map,
+			const sequence& new_inflected_form_id, T new_inflected_form)
 	{
 		bool contains; unsigned int bucket;
 		array<T>& inflected_forms = inflected_form_map.get(new_inflected_form_id, contains, bucket);
@@ -596,8 +694,8 @@ private:
 	}
 
 	static inline bool add_inflected_forms(
-			hash_map<unsigned int, array<inflected_noun>>& inflected_form_map,
-			unsigned int root_id, const noun_root& root)
+			hash_map<sequence, array<inflected_noun>>& inflected_form_map,
+			const sequence& root_id, const noun_root& root)
 	{
 		if (!inflected_form_map.check_size(inflected_form_map.table.size + root.plural_count + 1))
 			return false;
@@ -617,8 +715,8 @@ private:
 	}
 
 	static inline bool add_inflected_forms(
-			hash_map<unsigned int, array<inflected_adjective>>& inflected_form_map,
-			unsigned int root_id, const adjective_root& root)
+			hash_map<sequence, array<inflected_adjective>>& inflected_form_map,
+			const sequence& root_id, const adjective_root& root)
 	{
 		if (!inflected_form_map.check_size(inflected_form_map.table.size + root.inflected_form_count * 2 + 1))
 			return false;
@@ -631,12 +729,12 @@ private:
 
 		/* add the comparative and superlative forms */
 		for (unsigned int i = 0; i < root.inflected_form_count; i++) {
-			if (root.inflected_forms[i].key != 0) {
+			if (root.inflected_forms[i].key.tokens != nullptr) {
 				if (!add_inflected_form(inflected_form_map, root.inflected_forms[i].key, {root_id, grammatical_comparison::COMPARATIVE}))
 					return false;
 			}
 
-			if (root.inflected_forms[i].value != 0) {
+			if (root.inflected_forms[i].value.tokens != nullptr) {
 				if (!add_inflected_form(inflected_form_map, root.inflected_forms[i].value, {root_id, grammatical_comparison::SUPERLATIVE}))
 					return false;
 			}
@@ -645,8 +743,8 @@ private:
 	}
 
 	static inline bool add_inflected_forms(
-			hash_map<unsigned int, array<inflected_verb>>& inflected_form_map,
-			unsigned int root_id, const verb_root& root)
+			hash_map<sequence, array<inflected_verb>>& inflected_form_map,
+			const sequence& root_id, const verb_root& root)
 	{
 		if (!inflected_form_map.check_size(inflected_form_map.table.size + root.present_3sg_count + root.simple_past_count + root.present_participle_count + root.past_participle_count + 3))
 			return false;
@@ -807,12 +905,17 @@ inline bool inflect_verb(array<string>& dst, unsigned int index, const char* fir
 	return true;
 }
 
-inline bool emit_entry(morphology_en& m,
-		const string& root, unsigned int root_id,
+inline bool emit_entry(
+		morphology_en& m, const string& root,
 		const array<string>& entry,
 		hash_map<string, unsigned int>& names,
 		position current)
 {
+	array<unsigned int> tokenization(2);
+	if (!tokenize(root.data, root.length, tokenization, names))
+		return false;
+	sequence root_ids(tokenization.data, tokenization.length);
+
 	if (entry.length == 0) {
 		read_error("Found an entry with no elements", current);
 		return false;
@@ -825,7 +928,7 @@ inline bool emit_entry(morphology_en& m,
 			noun_root new_root;
 			if (!init(new_root, countability::COUNTABLE, &plural, 1, names))
 				return false;
-			return m.add_noun_root(root_id, new_root);
+			return m.add_noun_root(root_ids, new_root);
 		} else {
 			array<string> plural_forms(entry.length - 1);
 			countability count = countability::COUNTABLE;
@@ -867,8 +970,44 @@ inline bool emit_entry(morphology_en& m,
 			if (!init(new_root, count, plural_forms.data, plural_forms.length, names))
 				return false;
 			for (string& str : plural_forms) free(str);
-			return m.add_noun_root(root_id, new_root);
+			return m.add_noun_root(root_ids, new_root);
 		}
+	} else if (entry[0] == "pr") {
+		/* this is a proper noun */
+		array<string> plural_forms(max((size_t) 1, entry.length - 1));
+		countability count = countability::UNCOUNTABLE;
+		for (unsigned int i = 1; i < entry.length; i++) {
+			if (entry[i] == "s") {
+				if (!init(plural_forms[plural_forms.length], root)) {
+					for (string& str : plural_forms) free(str);
+					return false;
+				}
+				plural_forms[plural_forms.length++] += "s";
+			} else if (entry[i] == "es") {
+				if (!init(plural_forms[plural_forms.length], root)) {
+					for (string& str : plural_forms) free(str);
+					return false;
+				}
+				plural_forms[plural_forms.length++] += "es";
+			} else if (entry[i] == "-") {
+				count = countability::UNCOUNTABLE;
+			} else if (entry[i] == "~") {
+				count = countability::BOTH;
+			} else if (starts_with(entry[i], "head=")) {
+				/* ignore these for now */
+				continue;
+			} else {
+				if (entry[i].index_of('=') < entry[i].length || entry[i].index_of('[') < entry[i].length)
+					continue;
+				plural_forms[plural_forms.length++] = entry[i];
+			}
+		}
+
+		noun_root new_root;
+		if (!init(new_root, count, plural_forms.data, plural_forms.length, names))
+			return false;
+		for (string& str : plural_forms) free(str);
+		return m.add_noun_root(root_ids, new_root);
 	} else if (entry[0] == "pl") {
 		/* the noun is plural only; we ignore these for now */
 		return true;
@@ -886,8 +1025,8 @@ inline bool emit_entry(morphology_en& m,
 			}
 			free(inflected_forms);
 			if (entry[0] == "adj")
-				return m.add_adjective_root(root_id, new_root);
-			else return m.add_adverb_root(root_id, new_root);
+				return m.add_adjective_root(root_ids, new_root);
+			else return m.add_adverb_root(root_ids, new_root);
 		} else {
 			array<pair<string, string>> inflected_forms(entry.length - 1);
 			array_map<unsigned int, string> superlative_forms(entry.length - 1);
@@ -1034,8 +1173,8 @@ inline bool emit_entry(morphology_en& m,
 				return false;
 			for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
 			if (entry[0] == "adj")
-				return m.add_adjective_root(root_id, new_root);
-			else return m.add_adverb_root(root_id, new_root);
+				return m.add_adjective_root(root_ids, new_root);
+			else return m.add_adverb_root(root_ids, new_root);
 		}
 	} else if (entry[0] == "v") {
 		if (entry.length == 1) {
@@ -1052,7 +1191,7 @@ inline bool emit_entry(morphology_en& m,
 			verb_root new_root;
 			if (!init(new_root, &present_3sg, 1, &present_participle, 1, &past, 1, &past, 1, names))
 				return false;
-			return m.add_verb_root(root_id, new_root);
+			return m.add_verb_root(root_ids, new_root);
 		}
 
 		static constexpr const char* obsolete_str = "obsolete";
@@ -1331,7 +1470,7 @@ inline bool emit_entry(morphology_en& m,
 			return false;
 		}
 		free_strings();
-		return m.add_verb_root(root_id, new_root);
+		return m.add_verb_root(root_ids, new_root);
 	} else {
 		read_error("Unrecognized part of speech", current);
 		return false;
@@ -1356,7 +1495,6 @@ bool morphology_read(morphology_en& m,
 	array<char> token = array<char>(1024);
 
 	string current_root("");
-	unsigned int current_root_id = 0;
 	array<string> current_entry(16);
 
 	std::mbstate_t shift = {0};
@@ -1368,9 +1506,6 @@ bool morphology_read(morphology_en& m,
 			if (next == '\t') {
 				string new_root(token.data, token.length);
 				swap(current_root, new_root);
-				if (!get_token(current_root, current_root_id, names)) {
-					for (string& str : current_entry) { free(str); } return false;
-				}
 				state = morphology_state::ENTRY;
 				token.clear(); shift = {0};
 			} else if (next == '\n') {
@@ -1391,7 +1526,7 @@ bool morphology_read(morphology_en& m,
 				 || !init(current_entry[current_entry.length++], token.data, token.length))
 				{
 					for (string& str : current_entry) { free(str); } return false;
-				} else if (!emit_entry(m, current_root, current_root_id, current_entry, names, current)) {
+				} else if (!emit_entry(m, current_root, current_entry, names, current)) {
 					for (string& str : current_entry) { free(str); } return false;
 				}
 				for (string& str : current_entry) { free(str); }

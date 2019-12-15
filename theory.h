@@ -16,6 +16,9 @@ enum class built_in_predicates : unsigned int {
 	ARG1,
 	ARG2,
 	ARG3,
+	ARG1_OF,
+	ARG2_OF,
+	ARG3_OF,
 	SIZE,
 	INVERSE,
 	OWN,
@@ -100,6 +103,9 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("arg1", (unsigned int) built_in_predicates::ARG1)
 		&& names.put("arg2", (unsigned int) built_in_predicates::ARG2)
 		&& names.put("arg3", (unsigned int) built_in_predicates::ARG3)
+		&& names.put("arg1_of", (unsigned int) built_in_predicates::ARG1_OF)
+		&& names.put("arg2_of", (unsigned int) built_in_predicates::ARG2_OF)
+		&& names.put("arg3_of", (unsigned int) built_in_predicates::ARG3_OF)
 		&& names.put("inverse", (unsigned int) built_in_predicates::INVERSE)
 		&& names.put("size", (unsigned int) built_in_predicates::SIZE)
 		&& names.put("present", (unsigned int) built_in_predicates::PRESENT)
