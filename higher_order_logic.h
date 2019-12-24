@@ -51,6 +51,7 @@ enum class hol_term_type : uint_fast8_t {
 
 	ANY, /* represents a set of all logical forms that contain a subtree within a specified set, and do not contain trees in other specified sets */
 	ANY_RIGHT, /* represents a set of all logical forms that contain a subtree within a specified set that is on the right-leaning branch from the root */
+	ANY_RIGHT_ONLY, /* identical to `ANY_RIGHT` with no excluded sets and is only used when computing set intersections */
 	ANY_ARRAY, /* represents the set of all logical forms with an "array" type (e.g. `AND`, `OR`, `IFF`)  */
 	ANY_CONSTANT, /* represents a set of logical forms of type `CONSTANT` where the constant belongs to a specified set of constants */
 	ANY_CONSTANT_EXCEPT, /* represents a set of logical forms of type `CONSTANT` where the constant does not belong to a specified set of constants */
@@ -291,6 +292,8 @@ struct hol_term
 	static hol_term* new_any(hol_term* included, hol_term** excluded_trees, unsigned int excluded_tree_count);
 	static hol_term* new_any_right(hol_term* included);
 	static hol_term* new_any_right(hol_term* included, hol_term** excluded_trees, unsigned int excluded_tree_count);
+	static hol_term* new_any_right_only(hol_term* included);
+	static hol_term* new_any_right_only(hol_term* included, hol_term** excluded_trees, unsigned int excluded_tree_count);
 	template<typename AnyArray, typename LeftArray, typename RightArray,
 		typename std::enable_if<has_index_operator<AnyArray, hol_term*>::value>::type** = nullptr,
 		typename std::enable_if<has_index_operator<LeftArray, hol_term*>::value>::type** = nullptr,
@@ -362,6 +365,7 @@ private:
 			return true;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 			any.included = src.any.included;
 			if (any.included != nullptr)
 				any.included->reference_count++;
@@ -564,6 +568,7 @@ bool operator == (const hol_term& first, const hol_term& second)
 		return first.quantifier == second.quantifier;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		return first.any == second.any;
 	case hol_term_type::ANY_ARRAY:
 		return first.any_array == second.any_array;
@@ -677,6 +682,7 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 		return type_hash ^ hol_quantifier::hash(key.quantifier);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		return type_hash ^ hol_any::hash(key.any);
 	case hol_term_type::ANY_ARRAY:
 		return type_hash ^ hol_any_array::hash(key.any_array);
@@ -728,6 +734,7 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 		core::move(src.quantifier, dst.quantifier); return;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		core::move(src.any, dst.any); return;
 	case hol_term_type::ANY_ARRAY:
 		core::move(src.any_array, dst.any_array); return;
@@ -826,6 +833,7 @@ inline void hol_term::free_helper() {
 			core::free(uint_list); return;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 			core::free(any); return;
 		case hol_term_type::ANY_ARRAY:
 			core::free(any_array); return;
@@ -1060,6 +1068,28 @@ const char left_curly_brace[] = "{";
 const char right_curly_brace[] = "}";
 const char comma[] = ",";
 
+template<hol_term_type Type> struct any_symbol;
+template<> struct any_symbol<hol_term_type::ANY> { static const char symbol[]; };
+template<> struct any_symbol<hol_term_type::ANY_RIGHT> { static const char symbol[]; };
+template<> struct any_symbol<hol_term_type::ANY_RIGHT_ONLY> { static const char symbol[]; };
+const char any_symbol<hol_term_type::ANY>::symbol[] = "C";
+const char any_symbol<hol_term_type::ANY_RIGHT>::symbol[] = "R";
+const char any_symbol<hol_term_type::ANY_RIGHT_ONLY>::symbol[] = "ℜ";
+
+inline const char* get_any_symbol(hol_term_type type) {
+	switch (type) {
+	case hol_term_type::ANY:
+		return any_symbol<hol_term_type::ANY>::symbol;
+	case hol_term_type::ANY_RIGHT:
+		return any_symbol<hol_term_type::ANY_RIGHT>::symbol;
+	case hol_term_type::ANY_RIGHT_ONLY:
+		return any_symbol<hol_term_type::ANY_RIGHT_ONLY>::symbol;
+	default:
+		fprintf(stderr, "get_any_symbol ERROR: Unrecognized hol_term_type.\n");
+		return nullptr;
+	}
+}
+
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
 inline bool print_iff(const hol_array_term& term, Stream& out, Printer&&... printer) {
 	if (term.length < 2) {
@@ -1228,11 +1258,12 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		if (term.any.included == nullptr) {
 			if (!print('*', out)) return false;
 		} else {
-			const char* any_string = (term.type == hol_term_type::ANY ? "C(" : "R(");
-			if (!print(any_string, out) || !print(*term.any.included, out, std::forward<Printer>(printer)...) || !print(')', out))
+			const char* any_string = get_any_symbol(term.type);
+			if (!print(any_string, out) || !print('(', out) || !print(*term.any.included, out, std::forward<Printer>(printer)...) || !print(')', out))
 				return false;
 		} if (term.any.excluded_tree_count != 0) {
 			if (!print("∖", out)) return false;
@@ -1412,6 +1443,10 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return visit<hol_term_type::ANY_RIGHT>(term, std::forward<Visitor>(visitor)...)
 			&& (term.any.included == nullptr || visit(*term.any.included, std::forward<Visitor>(visitor)...))
 			&& end_visit<hol_term_type::ANY_RIGHT>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::ANY_RIGHT_ONLY:
+		return visit<hol_term_type::ANY_RIGHT_ONLY>(term, std::forward<Visitor>(visitor)...)
+			&& (term.any.included == nullptr || visit(*term.any.included, std::forward<Visitor>(visitor)...))
+			&& end_visit<hol_term_type::ANY_RIGHT_ONLY>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::ANY_ARRAY:
 		return visit<hol_term_type::ANY_ARRAY>(term, std::forward<Visitor>(visitor)...)
 			&& visit(*term.any_array.all, std::forward<Visitor>(visitor)...)
@@ -1512,7 +1547,7 @@ inline bool end_visit(const hol_term& term, free_variable_collector& visitor) {
 
 inline bool get_free_variables(const hol_term& src, array<unsigned int>& variables) {
 	free_variable_collector visitor(variables);
-	return !visit(src, visitor);
+	return visit(src, visitor);
 }
 
 struct max_bound_variable_collector {
@@ -1600,8 +1635,9 @@ struct unambiguity_visitor { };
 
 template<hol_term_type Type>
 inline bool visit(const hol_term& term, unambiguity_visitor& visitor) {
-	if (Type == hol_term_type::ANY || Type == hol_term_type::ANY_RIGHT || Type == hol_term_type::ANY_ARRAY
-	 || Type == hol_term_type::ANY_CONSTANT || Type == hol_term_type::ANY_CONSTANT_EXCEPT || Type == hol_term_type::ANY_QUANTIFIER)
+	if (Type == hol_term_type::ANY || Type == hol_term_type::ANY_RIGHT || Type == hol_term_type::ANY_RIGHT_ONLY
+	 || Type == hol_term_type::ANY_ARRAY || Type == hol_term_type::ANY_CONSTANT
+	 || Type == hol_term_type::ANY_CONSTANT_EXCEPT || Type == hol_term_type::ANY_QUANTIFIER)
 		return false;
 	return true;
 }
@@ -1758,6 +1794,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return true;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		dst.any.excluded_tree_count = src.any.excluded_tree_count;
 		if (src.any.included != nullptr) {
 			if (!new_hol_term(dst.any.included)
@@ -2173,6 +2210,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		changed = false;
 		if (src->any.included != 0) {
 			first = apply(src->any.included, std::forward<Function>(function)...);
@@ -2326,6 +2364,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::ANY>(src, std::forward<Function>(function)...);
 	case hol_term_type::ANY_RIGHT:
 		return apply<hol_term_type::ANY_RIGHT>(src, std::forward<Function>(function)...);
+	case hol_term_type::ANY_RIGHT_ONLY:
+		return apply<hol_term_type::ANY_RIGHT_ONLY>(src, std::forward<Function>(function)...);
 	case hol_term_type::ANY_ARRAY:
 		return apply<hol_term_type::ANY_ARRAY>(src, std::forward<Function>(function)...);
 	case hol_term_type::ANY_CONSTANT:
@@ -2831,11 +2871,12 @@ bool unify(
 		return true;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
-		fprintf(stderr, "unify ERROR: hol_term_types `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER` unsupported.\n");
+		fprintf(stderr, "unify ERROR: hol_term_types `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER` unsupported.\n");
 		return false;
 	}
 	fprintf(stderr, "unify ERROR: Unrecognized hol_term_type.\n");
@@ -3191,6 +3232,16 @@ hol_term* hol_term::new_any_right(hol_term* included,
 		hol_term** excluded_trees, unsigned int excluded_tree_count)
 {
 	return new_hol_any<hol_term_type::ANY_RIGHT>(included, excluded_trees, excluded_tree_count);
+}
+
+inline hol_term* hol_term::new_any_right_only(hol_term* included) {
+	return new_hol_any<hol_term_type::ANY_RIGHT_ONLY>(included, nullptr, 0);
+}
+
+hol_term* hol_term::new_any_right_only(hol_term* included,
+		hol_term** excluded_trees, unsigned int excluded_tree_count)
+{
+	return new_hol_any<hol_term_type::ANY_RIGHT_ONLY>(included, excluded_trees, excluded_tree_count);
 }
 
 template<typename AnyArray, typename LeftArray, typename RightArray,
@@ -4177,6 +4228,9 @@ bool compute_type(const hol_term& term,
 	case hol_term_type::ANY_RIGHT:
 		return compute_any_type<PolymorphicEquality, hol_term_type::ANY_RIGHT>(term.any, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
+	case hol_term_type::ANY_RIGHT_ONLY:
+		return compute_any_type<PolymorphicEquality, hol_term_type::ANY_RIGHT_ONLY>(term.any, term, types,
+				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::ANY_ARRAY:
 		return types.template push<hol_term_type::ANY_ARRAY>(term)
 			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
@@ -4612,6 +4666,7 @@ int_fast8_t compare(
 		return compare(first.quantifier, second.quantifier);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		return compare(first.any, second.any);
 	case hol_term_type::ANY_ARRAY:
 		return compare(first.any_array, second.any_array);
@@ -4790,13 +4845,14 @@ struct hol_scope {
 			return;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 		case hol_term_type::ANY_ARRAY:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
 		case hol_term_type::VARIABLE_PREIMAGE:
-			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+			fprintf(stderr, "hol_scope.move ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 		}
 		fprintf(stderr, "hol_scope.move ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -4845,13 +4901,14 @@ private:
 			return true;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 		case hol_term_type::ANY_ARRAY:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
 		case hol_term_type::VARIABLE_PREIMAGE:
-			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+			fprintf(stderr, "hol_scope.init_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 		}
 		fprintf(stderr, "hol_scope.init_helper ERROR: Unrecognized hol_term_type.\n");
 		return false;
@@ -4896,13 +4953,14 @@ private:
 			return;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 		case hol_term_type::ANY_ARRAY:
 		case hol_term_type::ANY_CONSTANT:
 		case hol_term_type::ANY_CONSTANT_EXCEPT:
 		case hol_term_type::ANY_QUANTIFIER:
 		case hol_term_type::VARIABLE_PREIMAGE:
-			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+			fprintf(stderr, "hol_scope.free_helper ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+			exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 		}
 		fprintf(stderr, "hol_scope.free_helper ERROR: Unrecognized hol_term_type.\n");
 		exit(EXIT_FAILURE);
@@ -5017,13 +5075,14 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 		return true;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 	case hol_term_type::VARIABLE_PREIMAGE:
-		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+		fprintf(stderr, "operator == ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "operator == ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -5148,13 +5207,14 @@ int_fast8_t compare(
 		return 0;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 	case hol_term_type::VARIABLE_PREIMAGE:
-		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+		fprintf(stderr, "compare ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "compare ERROR: Unrecognized hol_term_type when comparing hol_scopes.\n");
 	exit(EXIT_FAILURE);
@@ -5234,13 +5294,14 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 		return;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 	case hol_term_type::VARIABLE_PREIMAGE:
-		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+		fprintf(stderr, "shift_variables ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "shift_variables ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
@@ -5580,13 +5641,14 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 		return &HOL_FALSE;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 	case hol_term_type::VARIABLE_PREIMAGE:
-		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+		fprintf(stderr, "scope_to_term ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "scope_to_term ERROR: Unrecognized hol_term_type.\n");
 	return nullptr;
@@ -7054,13 +7116,14 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 		return init(out, hol_term_type::FALSE);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
 	case hol_term_type::VARIABLE_PREIMAGE:
-		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
-		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
+		fprintf(stderr, "canonicalize_scope ERROR: Canonicalization of formulas with expressions of type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` are not supported.\n");
+		exit(EXIT_FAILURE); /* we don't support canonicalization of expressions with type `ANY`, `ANY_RIGHT`, `ANY_RIGHT_ONLY`, `ANY_ARRAY`, `ANY_CONSTANT`, `ANY_CONSTANT_EXCEPT`, `ANY_QUANTIFIER`, or `VARIABLE_PREIMAGE` */
 	}
 	fprintf(stderr, "canonicalize_scope ERROR: Unrecognized hol_term_type.\n");
 	return false;
@@ -7265,6 +7328,7 @@ bool is_subset(const hol_term* first, const hol_term* second)
 	case hol_term_type::FALSE:
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -7857,7 +7921,7 @@ inline bool init_variable_map(
 		array_map<unsigned int, variable_set>& dst,
 		const array_map<unsigned int, variable_set>& src)
 {
-	if (!array_map_init(dst, src.size))
+	if (!array_map_init(dst, max((size_t) 1, src.size)))
 		return false;
 	for (unsigned int i = 0; i < src.size; i++) {
 		dst.keys[i] = src.keys[i];
@@ -7963,7 +8027,7 @@ inline void free_all(array<pair<hol_term*, array_map<unsigned int, variable_set>
 }
 
 inline bool any_number(const hol_term& src) {
-	return src.type == hol_term_type::ANY;
+	return src.type == hol_term_type::ANY || src.type == hol_term_type::ANY_RIGHT;
 }
 
 /* NOTE: this function assumes src is not ANY */
@@ -7977,7 +8041,7 @@ inline bool get_number(const hol_term& src, int& value) {
 inline bool set_number(hol_term& exp,
 		const hol_term& set, int value)
 {
-	if (set.type != hol_term_type::ANY && set.type != hol_term_type::INTEGER)
+	if (set.type != hol_term_type::ANY && set.type != hol_term_type::ANY_RIGHT && set.type != hol_term_type::INTEGER)
 		return false;
 	exp.type = hol_term_type::INTEGER;
 	exp.integer = value;
@@ -7986,7 +8050,7 @@ inline bool set_number(hol_term& exp,
 }
 
 inline bool any_uint_list(const hol_term& src) {
-	return src.type == hol_term_type::ANY;
+	return src.type == hol_term_type::ANY || src.type == hol_term_type::ANY_RIGHT;
 }
 
 /* NOTE: this function assumes src is not ANY */
@@ -7999,7 +8063,7 @@ inline bool get_uint_list(const hol_term& src, sequence& value) {
 inline bool set_uint_list(hol_term& exp,
 		const hol_term& set, const sequence& value)
 {
-	if (set.type != hol_term_type::ANY && set.type != hol_term_type::UINT_LIST)
+	if (set.type != hol_term_type::ANY && set.type != hol_term_type::ANY_RIGHT && set.type != hol_term_type::UINT_LIST)
 		return false;
 	exp.type = hol_term_type::UINT_LIST;
 	exp.uint_list = value;
@@ -8195,7 +8259,7 @@ bool is_reduceable(
 		} else {
 			return false;
 		}
-	} else if (first_src->type == hol_term_type::ANY || first_src->type == hol_term_type::ANY_RIGHT) {
+	} else if (first_src->type == hol_term_type::ANY || first_src->type == hol_term_type::ANY_RIGHT || first_src->type == hol_term_type::ANY_RIGHT_ONLY) {
 		if ((first_src->any.included == nullptr || second_src->any.included == nullptr)
 		 && first_src->any.included != second_src->any.included)
 		{
@@ -8288,6 +8352,7 @@ bool is_reduceable(
 			&& is_reduceable(first_src->any_quantifier.operand, second_src->any_quantifier.operand, first_node, second_node, prefix_index);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		break; /* we already handle this case above */
 	}
 	fprintf(stderr, "is_reduceable ERROR: Unrecognized hol_term_type.\n");
@@ -8307,8 +8372,8 @@ inline hol_term* apply(hol_term* src, reducer& r) {
 	if (Type == hol_term_type::ANY && r.prefix_index == r.target_prefix_index) {
 #else
 	if (r.prefix_index == r.target_prefix_index) {
-		if (Type != hol_term_type::ANY)
-			fprintf(stderr, "apply WARNING: Expected an `ANY` type during reduction.\n");
+		if (Type != hol_term_type::ANY && Type != hol_term_type::ANY_RIGHT)
+			fprintf(stderr, "apply WARNING: Expected an `ANY` or `ANY_RIGHT` type during reduction.\n");
 #endif
 
 		if (src->any.included == nullptr && r.kept_tree_count == 0) {
@@ -8334,7 +8399,9 @@ inline hol_term* apply(hol_term* src, reducer& r) {
 			}
 		}
 		new_node->any.included = src->any.included;
-		new_node->any.included->reference_count++;
+		if (new_node->any.included != nullptr)
+			new_node->any.included->reference_count++;
+		return new_node;
 	}
 
 	r.prefix_index++;
@@ -8344,7 +8411,7 @@ inline hol_term* apply(hol_term* src, reducer& r) {
 inline hol_term* reduce(hol_term* src, const unsigned int target_prefix_index,
 		const unsigned int* kept_tree_indices, const unsigned int kept_tree_count)
 {
-	const reducer r = {0, target_prefix_index, kept_tree_indices, kept_tree_count};
+	reducer r = {0, target_prefix_index, kept_tree_indices, kept_tree_count};
 	hol_term* dst = apply(src, r);
 	if (dst == src)
 		dst->reference_count++;
@@ -8357,7 +8424,7 @@ inline hol_term* reduce(hol_term* src, const unsigned int target_prefix_index,
 template<typename BuiltInPredicates>
 inline bool any_is_subset(hol_term* first_subtree, hol_term* second)
 {
-	if (second->type == hol_term_type::ANY || second->type == hol_term_type::ANY_RIGHT) {
+	if (second->type == hol_term_type::ANY) {
 		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
 			array<hol_term*> dummy(1);
 			hol_term* any = hol_term::new_any(first_subtree);
@@ -8368,7 +8435,7 @@ inline bool any_is_subset(hol_term* first_subtree, hol_term* second)
 			if (non_empty_intersection) return false;
 		}
 		return is_subset<BuiltInPredicates>(first_subtree, second);
-	} else if (second->type == hol_term_type::ANY_RIGHT) {
+	} else if (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
 		if (second->any.included != nullptr)
 			return false;
 		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
@@ -8424,13 +8491,13 @@ inline bool reduce_union(
 		}
 
 		/* they differ in only one node (and one of them is ANY), so try reducing `first[i]` and `expanded_set` */
-		if (node->type == hol_term_type::ANY) {
+		if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT) {
 			unsigned int kept_tree_count = 0;
 			unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * node->any.excluded_tree_count));
 			if (kept_tree_indices == nullptr)
 				return false;
 			for (unsigned int k = 0; k < node->any.excluded_tree_count; k++) {
-				if (!any_is_subset<BuiltInPredicates>(node->any.excluded_trees[k], expanded_node))
+				if (!is_subset<BuiltInPredicates>(node->any.excluded_trees[k], expanded_node))
 					kept_tree_indices[kept_tree_count++] = k;
 			}
 
@@ -8470,13 +8537,13 @@ inline bool reduce_union(
 		}
 
 		/* they differ in only one node (and one of them is ANY), so try reducing `second[i]` and `expanded_set` */
-		if (node->type == hol_term_type::ANY) {
+		if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT) {
 			unsigned int kept_tree_count = 0;
 			unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * node->any.excluded_tree_count));
 			if (kept_tree_indices == nullptr)
 				return false;
 			for (unsigned int k = 0; k < node->any.excluded_tree_count; k++) {
-				if (!any_is_subset<BuiltInPredicates>(node->any.excluded_trees[k], expanded_node))
+				if (!is_subset<BuiltInPredicates>(node->any.excluded_trees[k], expanded_node))
 					kept_tree_indices[kept_tree_count++] = k;
 			}
 
@@ -8523,13 +8590,13 @@ bool reduce_union(
 			}
 
 			/* they differ in only one node (and one of them is ANY), so try reducing `src[i]` and `dst[j]` */
-			if (first_node->type == hol_term_type::ANY) {
+			if (first_node->type == hol_term_type::ANY || first_node->type == hol_term_type::ANY_RIGHT) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * first_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
 					return false;
 				for (unsigned int k = 0; k < first_node->any.excluded_tree_count; k++) {
-					if (!any_is_subset<BuiltInPredicates>(first_node->any.excluded_trees[k], second_node))
+					if (!is_subset<BuiltInPredicates>(first_node->any.excluded_trees[k], second_node))
 						kept_tree_indices[kept_tree_count++] = k;
 				}
 
@@ -8553,13 +8620,13 @@ bool reduce_union(
 				} else {
 					free(kept_tree_indices);
 				}
-			} if (second_node->type == hol_term_type::ANY) {
+			} if (second_node->type == hol_term_type::ANY || second_node->type == hol_term_type::ANY_RIGHT) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * second_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
 					return false;
 				for (unsigned int k = 0; k < second_node->any.excluded_tree_count; k++) {
-					if (!any_is_subset<BuiltInPredicates>(second_node->any.excluded_trees[k], first_node))
+					if (!is_subset<BuiltInPredicates>(second_node->any.excluded_trees[k], first_node))
 						kept_tree_indices[kept_tree_count++] = k;
 				}
 
@@ -8611,13 +8678,13 @@ bool reduce_union(
 			}
 
 			/* they differ in only one node (and one of them is ANY), so try reducing `sets[i]` and `sets[j]` */
-			if (first_node->type == hol_term_type::ANY) {
+			if (first_node->type == hol_term_type::ANY || first_node->type == hol_term_type::ANY_RIGHT) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * first_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
 					return false;
 				for (unsigned int k = 0; k < first_node->any.excluded_tree_count; k++) {
-					if (!any_is_subset<BuiltInPredicates>(first_node->any.excluded_trees[k], second_node))
+					if (!is_subset<BuiltInPredicates>(first_node->any.excluded_trees[k], second_node))
 						kept_tree_indices[kept_tree_count++] = k;
 				}
 
@@ -8638,13 +8705,13 @@ bool reduce_union(
 				} else {
 					free(kept_tree_indices);
 				}
-			} if (second_node->type == hol_term_type::ANY) {
+			} if (second_node->type == hol_term_type::ANY || second_node->type == hol_term_type::ANY_RIGHT) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * second_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
 					return false;
 				for (unsigned int k = 0; k < second_node->any.excluded_tree_count; k++) {
-					if (!any_is_subset<BuiltInPredicates>(second_node->any.excluded_trees[k], first_node))
+					if (!is_subset<BuiltInPredicates>(second_node->any.excluded_trees[k], first_node))
 						kept_tree_indices[kept_tree_count++] = k;
 				}
 
@@ -8696,9 +8763,9 @@ bool is_subset(hol_term* first, hol_term* second)
 {
 	if (first == second) {
 		return true;
-	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT) {
-		if (second->type == hol_term_type::ANY || second->type == hol_term_type::ANY_RIGHT) {
-			if (first->type == hol_term_type::ANY && second->type == hol_term_type::ANY_RIGHT && second->any.included != nullptr)
+	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
+		if (second->type == hol_term_type::ANY || second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
+			if (first->type == hol_term_type::ANY && (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) && second->any.included != nullptr)
 				return false;
 			unsigned int first_tree_union_length = first->any.excluded_tree_count;
 			unsigned int second_tree_union_length = 1;
@@ -8835,18 +8902,19 @@ bool is_subset(hol_term* first, hol_term* second)
 			return false;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 			/* we already handle this before the switch statement */
 			break;
 		}
 		fprintf(stderr, "is_subset ERROR: Unrecognized hol_term_type.\n");
 		return false;
-	} else if (second->type == hol_term_type::ANY_RIGHT) {
+	} else if (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
 		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++)
 			if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) return false;
 		if (second->any.included == nullptr || is_subset<BuiltInPredicates>(first, second->any.included)) return true;
 
 		hol_term included_any;
-		included_any.type = hol_term_type::ANY_RIGHT;
+		included_any.type = second->type;
 		included_any.any.included = second->any.included;
 		included_any.any.included->reference_count++;
 		switch (first->type) {
@@ -8886,6 +8954,7 @@ bool is_subset(hol_term* first, hol_term* second)
 			return false;
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
+		case hol_term_type::ANY_RIGHT_ONLY:
 			/* we already handle this before the switch statement */
 			break;
 		}
@@ -9038,6 +9107,7 @@ bool is_subset(hol_term* first, hol_term* second)
 		return true;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -9357,7 +9427,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	}
 #endif
 	size_t old_dst_length = dst.length;
-	if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT) {
+	if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
 		return subtract_any_with_any<BuiltInPredicates, MapSecondVariablesToFirst>(dst, first, second);
 
 	} else if (first->type == hol_term_type::ANY_ARRAY) {
@@ -9800,6 +9870,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 		break; /* we already handle this case before the switch statement */
 	}
@@ -9811,12 +9882,12 @@ template<typename BuiltInPredicates, bool MapSecondVariablesToFirst, typename Lo
 bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 {
 #if !defined(NDEBUG)
-	if (second->type != hol_term_type::ANY_RIGHT || second->any.included == nullptr) {
-		fprintf(stderr, "subtract_any_right ERROR: Expected `second` to have type `ANY_ARRAY`.\n");
+	if ((second->type != hol_term_type::ANY_RIGHT && second->type != hol_term_type::ANY_RIGHT_ONLY) || second->any.included == nullptr) {
+		fprintf(stderr, "subtract_any_right ERROR: Expected `second` to have type `ANY_RIGHT` or `ANY_RIGHT_ONLY` with a non-null `included` field.\n");
 		return false;
 	}
 #endif
-	if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT) {
+	if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
 		return subtract_any_with_any<BuiltInPredicates, MapSecondVariablesToFirst>(dst, first, second);
 
 	} else if (first->type == hol_term_type::ANY_ARRAY) {
@@ -10150,6 +10221,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 		break; /* we already handle this case before the switch statement */
 	}
@@ -10318,12 +10390,12 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 		return true;
 
-	} else if (second->type == hol_term_type::ANY_RIGHT) {
+	} else if (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
 		if (second->any.included != nullptr)
 			return subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(dst, first, second);
 		else return false;
 
-	} else if (first->type == hol_term_type::ANY_RIGHT) {
+	} else if (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
 		if (!has_intersection<BuiltInPredicates>(first, second)) {
 			return add<false>(dst, first);
 		} else {
@@ -10351,17 +10423,29 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 
 	} else if (second->type == hol_term_type::ANY_ARRAY) {
 		if (first->type == hol_term_type::AND || first->type == hol_term_type::OR || first->type == hol_term_type::IFF) {
-			if (second->any_array.oper != hol_term_type::ANY_ARRAY && second->any_array.oper != first->type) {
+			if (second->any_array.oper != hol_term_type::ANY_ARRAY && second->any_array.oper != first->type)
 				return add<false>(dst, first);
-			} else if (is_subset<BuiltInPredicates>(first, second)) {
+		}
+
+		if (std::is_same<LogicalFormSet, hol_term*>::value) {
+			if (is_subset<BuiltInPredicates>(first, second))
+				return false;
+			else if (!has_intersection<BuiltInPredicates>(first, second))
+				return add<false>(dst, first);
+		} else {
+			array<LogicalFormSet> intersection(8);
+			intersect<BuiltInPredicates, true, false>(intersection, first, second);
+			if (intersection.length == 0) {
+				return add<false>(dst, first);
+			} else if (intersection.length == 1 && (get_term(intersection[0]) == first || *get_term(intersection[0]) == *first)) {
+				free_all(intersection);
 				return false;
 			}
-			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
-			return false;
-		} else {
-			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
-			return false;
+			free_all(intersection);
 		}
+
+		fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
+		return false;
 
 	} else if (first->type == hol_term_type::ANY_CONSTANT) {
 		if (second->type == hol_term_type::ANY_CONSTANT || second->type == hol_term_type::ANY_CONSTANT_EXCEPT || second->type == hol_term_type::CONSTANT) {
@@ -10742,7 +10826,9 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				return false;
 			}
 			free_all(first_differences);
-			return true;
+			if (std::is_same<LogicalFormSet, hol_term*>::value)
+				return true;
+			else first_differences.clear();
 		}
 		for (LogicalFormSet& first_child : first_differences) {
 			hol_term* new_term;
@@ -10804,7 +10890,9 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				return false;
 			}
 			free_all(first_differences);
-			return true;
+			if (std::is_same<LogicalFormSet, hol_term*>::value)
+				return true;
+			else first_differences.clear();
 		}
 		for (LogicalFormSet& first_child : first_differences) {
 			hol_term* new_term;
@@ -11178,6 +11266,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		return false;
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -11195,7 +11284,7 @@ inline bool any_is_excluded(
 		hol_term** excluded_trees, unsigned int excluded_tree_count,
 		bool same_trees_as_first, bool same_trees_as_second)
 {
-	if (term != nullptr && (term->type == hol_term_type::ANY || term->type == hol_term_type::ANY_RIGHT)) {
+	if (term != nullptr && (term->type == hol_term_type::ANY || term->type == hol_term_type::ANY_RIGHT || term->type == hol_term_type::ANY_RIGHT_ONLY)) {
 		unsigned int first_union_length = term->any.excluded_tree_count;
 		unsigned int second_union_length = excluded_tree_count;
 		hol_term** first_union = (hol_term**) malloc(max((size_t) 1, sizeof(hol_term*) * first_union_length));
@@ -11414,7 +11503,7 @@ inline bool intersect_any_with_any(array<LogicalFormSet>& dst,
 		}
 		return false;
 	}
-	new_term->type = (included[0] == first->any.included ? first->type : second->type);
+	new_term->type = (included[0] == first->any.included || first->type == hol_term_type::ANY_RIGHT_ONLY ? first->type : second->type);
 	new_term->reference_count = 1;
 	new_term->any.included = included[0];
 	if (included[0] != nullptr) included[0]->reference_count++;
@@ -11431,11 +11520,11 @@ template<typename BuiltInPredicates, bool ComputeIntersection, bool MapSecondVar
 inline bool intersect_any_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 {
 #if !defined(NDEBUG)
-	if (first->type != hol_term_type::ANY && first->type != hol_term_type::ANY_RIGHT) {
-		fprintf(stderr, "intersect_any_with_any ERROR: Expected `first` to be of type `ANY` or `ANY_RIGHT`.\n");
+	if (first->type != hol_term_type::ANY && first->type != hol_term_type::ANY_RIGHT && first->type != hol_term_type::ANY_RIGHT_ONLY) {
+		fprintf(stderr, "intersect_any_with_any ERROR: Expected `first` to be of type `ANY`, `ANY_RIGHT`, or `ANY_RIGHT_ONLY`.\n");
 		return false;
-	} if (second->type != hol_term_type::ANY && second->type != hol_term_type::ANY_RIGHT) {
-		fprintf(stderr, "intersect_any_with_any ERROR: Expected `second` to be of type `ANY` or `ANY_RIGHT`.\n");
+	} if (second->type != hol_term_type::ANY && second->type != hol_term_type::ANY_RIGHT && second->type != hol_term_type::ANY_RIGHT_ONLY) {
+		fprintf(stderr, "intersect_any_with_any ERROR: Expected `second` to be of type `ANY`, `ANY_RIGHT`, or `ANY_RIGHT_ONLY`.\n");
 		return false;
 	}
 	if (first->any.included != nullptr && *first->any.included == HOL_ANY)
@@ -11459,7 +11548,9 @@ inline bool intersect_any_with_any(array<LogicalFormSet>& dst, hol_term* first, 
 	} else if (second->any.included == nullptr) {
 		included[0] = first->any.included;
 		included[1] = nullptr;
-	} else if (first->type == hol_term_type::ANY_RIGHT && second->type == hol_term_type::ANY_RIGHT) {
+	} else if ((first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY)
+			&& (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY))
+	{
 		if (second->any.excluded_tree_count == 0) {
 			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersection, first->any.included, second);
 		} else {
@@ -11482,10 +11573,10 @@ inline bool intersect_any_with_any(array<LogicalFormSet>& dst, hol_term* first, 
 		}
 		if (intersection.length == 0)
 			return false;
-	} else if (!(first->type == hol_term_type::ANY && second->type == hol_term_type::ANY_RIGHT) && is_subset<BuiltInPredicates>(first->any.included, second)) {
+	} else if (!(first->type == hol_term_type::ANY && (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY)) && is_subset<BuiltInPredicates>(first->any.included, second)) {
 		included[0] = first->any.included;
 		included[1] = nullptr;
-	} else if (!(second->type == hol_term_type::ANY && first->type == hol_term_type::ANY_RIGHT) && is_subset<BuiltInPredicates>(second->any.included, first)) {
+	} else if (!(second->type == hol_term_type::ANY && (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY)) && is_subset<BuiltInPredicates>(second->any.included, first)) {
 		included[0] = second->any.included;
 		included[1] = nullptr;
 	} else {
@@ -11554,7 +11645,7 @@ inline bool intersect_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_
 	} else if (first == second) {
 		if (ComputeIntersection) return add<true>(dst, first);
 		return true;
-	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT) {
+	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
 		return intersect_any_with_any<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, first, second);
 	}
 
@@ -12664,6 +12755,7 @@ inline bool intersect_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		/* we assume `first` is not of type `ANY` */
 		break;
 	}
@@ -12677,14 +12769,14 @@ template<typename BuiltInPredicates, bool ComputeIntersection, bool MapSecondVar
 inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 {
 #if !defined(NDEBUG)
-	if (second->type != hol_term_type::ANY_RIGHT)
-		fprintf(stderr, "intersect_with_any_right WARNING: Expected the type of `second` to be `ANY_RIGHT`.\n");
+	if (second->type != hol_term_type::ANY_RIGHT && second->type != hol_term_type::ANY_RIGHT_ONLY)
+		fprintf(stderr, "intersect_with_any_right WARNING: Expected the type of `second` to be `ANY_RIGHT` or `ANY_RIGHT_ONLY`.\n");
 #endif
 
 	if (first == second) {
 		if (ComputeIntersection) return add<true>(dst, first);
 		return true;
-	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT) {
+	} else if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
 		return intersect_any_with_any<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, first, second);
 	}
 
@@ -12760,9 +12852,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -12850,9 +12941,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -12951,9 +13041,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -13049,9 +13138,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -13161,9 +13249,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -13284,9 +13371,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -13392,9 +13478,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					free_all(differences); free_all(first_intersection);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					free_all(first_intersection);
+					continue;
 				}
 			}
 			for (LogicalFormSet& first_child : first_intersection) {
@@ -13461,6 +13546,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 		return (dst.length > old_dst_length);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 		/* we assume `first` is not of type `ANY` or `ANY_ARRAY` */
 		break;
 	}
@@ -13476,8 +13562,8 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 #if !defined(NDEBUG)
 	if (second->type != hol_term_type::ANY_ARRAY)
 		fprintf(stderr, "intersect_with_any_array WARNING: Expected the type of `second` to be `ANY_ARRAY`.\n");
-	if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT)
-		fprintf(stderr, "intersect_with_any_array WARNING: Expected the type of `first` to not be `ANY` or `ANY_RIGHT`.\n");
+	if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY)
+		fprintf(stderr, "intersect_with_any_array WARNING: Expected the type of `first` to not be `ANY`, `ANY_RIGHT`, or `ANY_RIGHT_ONLY`.\n");
 #endif
 
 	if (first->type == hol_term_type::ANY_ARRAY) {
@@ -14453,9 +14539,9 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		return intersect_with_any<BuiltInPredicates, ComputeIntersection, !MapSecondVariablesToFirst>(dst, second, first);
 	} else if (second->type == hol_term_type::ANY) {
 		return intersect_with_any<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, first, second);
-	} else if (first->type == hol_term_type::ANY_RIGHT) {
+	} else if (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
 		return intersect_with_any_right<BuiltInPredicates, ComputeIntersection, !MapSecondVariablesToFirst>(dst, second, first);
-	} else if (second->type == hol_term_type::ANY_RIGHT) {
+	} else if (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
 		return intersect_with_any_right<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, first, second);
 	} else if (first->type == hol_term_type::ANY_ARRAY) {
 		return intersect_with_any_array<BuiltInPredicates, ComputeIntersection, !MapSecondVariablesToFirst>(dst, second, first);
@@ -14849,7 +14935,7 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					free(terms[j]);
 				}
 				free(terms); free(index_array);
-				return true;
+				return (dst.length > 0);
 			} if (same_as_second) {
 				if (!emplace(dst, second, terms, index_array, first->array.length)) {
 					for (unsigned int j = 0; j < first->array.length; j++) {
@@ -14864,7 +14950,7 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					free(terms[j]);
 				}
 				free(terms); free(index_array);
-				return true;
+				return (dst.length > 0);
 			}
 		}
 		while (true) {
@@ -15075,6 +15161,7 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		return add<false>(dst, first);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:

@@ -39,15 +39,15 @@ template<typename Derivation>
 struct sentence {
 	sentence_token* tokens;
 	unsigned int length;
-	Derivation* derivation;
+	Derivation derivation;
 
 	static inline bool is_empty(const sentence& key) {
 		return key.tokens == nullptr;
 	}
 
 	static inline unsigned int hash(const sentence& key) {
-		if (key.derivation != nullptr)
-			return hasher<Derivation>::hash(*key.derivation);
+		if (!core::is_empty(key.derivation))
+			return hasher<Derivation>::hash(key.derivation);
 		return default_hash(key.tokens, key.length);
 	}
 
@@ -60,11 +60,8 @@ struct sentence {
 	static inline void free(sentence& s) {
 		if (s.tokens != nullptr)
 			core::free(s.tokens);
-		if (s.derivation != nullptr) {
-			core::free(*s.derivation);
-			if (s.derivation->reference_count == 0)
-				core::free(s.derivation);
-		}
+		if (!core::is_empty(s.derivation))
+			core::free(s.derivation);
 	}
 };
 
@@ -84,8 +81,6 @@ inline bool init(sentence<Derivation>& dst, const sentence<Derivation>& src) {
 	}
 
 	dst.derivation = src.derivation;
-	if (dst.derivation != nullptr)
-		dst.derivation->reference_count++;
 	return true;
 }
 
@@ -103,26 +98,26 @@ inline bool operator == (const sentence<Derivation>& first, const sentence<Deriv
 		}
 	}
 
-	if (first.derivation == nullptr) {
-		if (second.derivation == nullptr) {
+	if (core::is_empty(first.derivation)) {
+		if (core::is_empty(second.derivation)) {
 			return true;
 		} else {
 			return false;
 		}
 	} else {
-		if (second.derivation == nullptr) {
+		if (core::is_empty(second.derivation)) {
 			return false;
 		} else {
-			return *first.derivation == *second.derivation;
+			return first.derivation == second.derivation;
 		}
 	}
 }
 
 template<typename Derivation, typename Stream, typename... Printer>
 bool print(const sentence<Derivation>& s, Stream& out, Printer&&... printer) {
-	if (s.derivation != nullptr) {
+	if (!core::is_empty(s.derivation)) {
 		return print("<derivation tree printing not implemented>", out);
-		//return print(*s.derivation, out, std::forward<Printer>(printer)...);
+		//return print(s.derivation, out, std::forward<Printer>(printer)...);
 	}
 
 	if (s.length == 0) return true;
@@ -180,6 +175,7 @@ enum class article_token_type {
 	PERIOD,
 	COLON,
 	SEMICOLON,
+	HYPHEN,
 	TOKEN,
 	FORMULA
 };
@@ -195,6 +191,8 @@ inline bool print(article_token_type type, Stream& stream) {
 		return print(':', stream);
 	case article_token_type::SEMICOLON:
 		return print(';', stream);
+	case article_token_type::HYPHEN:
+		return print('-', stream);
 	case article_token_type::TOKEN:
 		return print("TOKEN", stream);
 	case article_token_type::FORMULA:
@@ -219,6 +217,8 @@ bool article_emit_symbol(array<article_token>& tokens, const position& start, ch
 		return emit_token(tokens, start, start + 1, article_token_type::COLON);
 	case ';':
 		return emit_token(tokens, start, start + 1, article_token_type::SEMICOLON);
+	case '-':
+		return emit_token(tokens, start, start + 1, article_token_type::HYPHEN);
 	default:
 		fprintf(stderr, "article_emit_symbol ERROR: Unexpected symbol.\n");
 		return false;
@@ -238,7 +238,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 	while (next != WEOF) {
 		switch (state) {
 		case article_lexer_state::TOKEN:
-			if (next == '.' || next == ':' || next == ';') {
+			if (next == '.' || next == ':' || next == ';' || next == '-') {
 				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN)
 				 || !article_emit_symbol(tokens, current, next))
 					return false;
@@ -285,7 +285,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 			break;
 
 		case article_lexer_state::DEFAULT:
-			if (next == '.' || next == ':' || next == ';') {
+			if (next == '.' || next == ':' || next == ';' || next == '-') {
 				if (!article_emit_symbol(tokens, current, next))
 					return false;
 			} else if (next == '{') {
@@ -360,6 +360,9 @@ inline bool article_interpret_sentence_token(
 	} else if (tokens[index].type == article_token_type::PERIOD) {
 		if (!get_token(".", token_id, names) || !sentence_tokens.add({token_id}))
 			return false;
+	} else if (tokens[index].type == article_token_type::HYPHEN) {
+		if (!get_token("-", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
 	} else {
 		read_error("Expected a sentence token", tokens[index].start);
 		return false;
@@ -379,19 +382,10 @@ inline bool interpret_derivation_tree(
 	in.buffer = tokens[index].text.data;
 	in.length = tokens[index].text.length;
 	in.position = 0; in.shift = {0};
-	unsigned int root_nonterminal;
-	Derivation* derivation;
-	if (!parse(in, derivation, root_nonterminal, names, nonterminal_names, tokens[index].start + 1))
+	Derivation derivation;
+	if (!parse(in, derivation, names, nonterminal_names, tokens[index].start + 1))
 		return false;
 	index++;
-
-	bool contains;
-	unsigned int expected_root_nonterminal = nonterminal_names.get("S", contains);
-	if (!contains) {
-		fprintf(stderr, "article_interpret_sentence WARNING: There is no nonterminal with name `S`.\n");
-	} else if (root_nonterminal != expected_root_nonterminal) {
-		fprintf(stderr, "WARNING at %d:%d: Root nonterminal is not `S`.\n", tokens[index].start.line, tokens[index].start.column);
-	}
 
 	out.derivation = derivation;
 	out.tokens = nullptr;
@@ -435,7 +429,7 @@ bool article_interpret_sentence(
 
 	move(sentence_tokens.data, out.tokens);
 	out.length = sentence_tokens.length;
-	out.derivation = nullptr;
+	set_empty(out.derivation);
 	return true;
 }
 
@@ -478,7 +472,7 @@ bool article_interpret_sentence(
 
 	move(sentence_tokens.data, out.tokens);
 	out.length = sentence_tokens.length;
-	out.derivation = nullptr;
+	set_empty(out.derivation);
 	return true;
 }
 
@@ -672,12 +666,8 @@ bool article_interpret(
 
 		if (index < tokens.length && tokens[index].type == article_token_type::FORMULA) {
 			/* parse the formula */
-			memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
-			in.buffer = tokens[index].text.data;
-			in.length = tokens[index].text.length;
-			in.position = 0; in.shift = {0};
 			if (!logical_forms.check_size()
-			 || !parse(in, *new_label.logical_form, names, tokens[index].start + 1)) {
+			 || !parse(tokens[index].text.data, tokens[index].text.length, *new_label.logical_form, names, tokens[index].start + 1)) {
 				for (sentence<Derivation>& s : sentences) free(s);
 				free(sentences); free(new_label);
 				return false;
@@ -777,11 +767,7 @@ bool article_interpret(
 		}
 
 		/* parse the formula */
-		memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
-		in.buffer = tokens[index].text.data;
-		in.length = tokens[index].text.length;
-		in.position = 0; in.shift = {0};
-		if (!parse(in, logical_forms.values[logical_forms.size], names, tokens[index].start + 1)) {
+		if (!parse(tokens[index].text.data, tokens[index].text.length, logical_forms.values[logical_forms.size], names, tokens[index].start + 1)) {
 			free(logical_forms.keys[logical_forms.size]);
 			return false;
 		}
@@ -829,6 +815,30 @@ bool articles_interpret(
 			free(value); return false;
 		}
 	}
+	return true;
+}
+
+/* a utility function for tokenizing individual sentences represented as C strings */
+template<typename Derivation>
+inline bool tokenize(
+		const char* input, sentence<Derivation>& out,
+		hash_map<string, unsigned int>& names)
+{
+	memory_stream in(input, strlen(input));
+
+	array<article_token> tokens(256);
+	if (!article_lex(tokens, in)) {
+		free_tokens(tokens);
+		return false;
+	}
+
+	unsigned int index = 0;
+	hash_map<string, unsigned int> dummy(1);
+	if (!article_interpret_sentence(tokens, index, out, names, dummy)) {
+		free_tokens(tokens);
+		return false;
+	}
+	free_tokens(tokens);
 	return true;
 }
 

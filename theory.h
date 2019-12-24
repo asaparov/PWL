@@ -36,6 +36,10 @@ enum class built_in_predicates : unsigned int {
 	FUTURE_PERFECT_PROGRESSIVE,
 	EMPTY_REF,
 	WIDE_SCOPE,
+
+	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
+	SUBSET,
+
 	COUNT
 };
 
@@ -121,7 +125,9 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("future_perfect", (unsigned int) built_in_predicates::FUTURE_PERFECT)
 		&& names.put("future_perfect_progressive", (unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE)
 		&& names.put("empty_ref", (unsigned int) built_in_predicates::EMPTY_REF)
-		&& names.put("W", (unsigned int) built_in_predicates::WIDE_SCOPE);
+		&& names.put("W", (unsigned int) built_in_predicates::WIDE_SCOPE)
+		&& names.put("=", (unsigned int) built_in_predicates::EQUALS)
+		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET);
 }
 
 template<typename Proof>

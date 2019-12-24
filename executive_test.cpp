@@ -575,6 +575,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
 	case hol_term_type::ANY_ARRAY:
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
@@ -847,7 +848,7 @@ int main(int argc, const char** argv)
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "english.morph", "english.gram");
+			names, "english.morph.short", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");
@@ -866,13 +867,13 @@ int main(int argc, const char** argv)
 	fclose(in);
 
 	unsigned int index = 0;
-	typedef sentence<syntax_node<flagged_logical_form<hol_term>>> sentence_type;
-	array<array_map<sentence_type, hol_term>> seed_training_set(64);
+	typedef sentence<rooted_syntax_node<flagged_logical_form<hol_term>>> sentence_type;
+	array<array_map<sentence_type, flagged_logical_form<hol_term>>> seed_training_set(64);
 	while (index < tokens.length) {
 		if (!seed_training_set.ensure_capacity(seed_training_set.length + 1)
 		 || !array_map_init(seed_training_set[seed_training_set.length], 4))
 		{
-			for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
+			for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 				free(paragraph);
 			}
@@ -883,7 +884,7 @@ int main(int argc, const char** argv)
 		seed_training_set.length++;
 		if (!article_interpret(tokens, index, seed_training_set.last(), names, parser.G.nonterminal_names)) {
 			fprintf(stderr, "ERROR: Failed to parse training data.\n");
-			for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
+			for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 				for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 				free(paragraph);
 			}
@@ -897,21 +898,32 @@ int main(int argc, const char** argv)
 	/* train the parser */
 	if (!parser.train(seed_training_set, names, 10)) {
 		for (auto entry : names) free(entry.key);
-		for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
+		for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 			for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 			free(paragraph);
 		}
 		return EXIT_FAILURE;
 	}
+
+sentence_type sentence;
+if (!tokenize("Mercury is a planet in the Solar System.", sentence, names)) {
+	for (auto entry : names) free(entry.key);
+	return EXIT_FAILURE;
+}
+
 constexpr unsigned int max_parse_count = 20;
 hol_term* logical_forms[max_parse_count];
 double log_probabilities[max_parse_count];
 unsigned int parse_count;
 array<sentence_token> unrecognized(4);
-if (parser.invert_name_map(names)) {
+debug_flag = true;
+const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
+if (nonterminal_name_map != nullptr && parser.invert_name_map(names)) {
 	string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
+	string_map_scribe nonterminal_printer = { nonterminal_name_map, parser.G.nonterminal_names.table.size + 1 };
 	debug_terminal_printer = &terminal_printer;
-	if (parser.parse<max_parse_count>(seed_training_set[1].keys[0], logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
+	debug_nonterminal_printer = &nonterminal_printer;
+	if (parser.parse<max_parse_count>(sentence, logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
 		for (unsigned int i = 0; i < parse_count; i++) {
 			print(*logical_forms[i], stderr, terminal_printer); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
 			free(*logical_forms[i]);
@@ -921,10 +933,14 @@ if (parser.invert_name_map(names)) {
 	} else {
 		fprintf(stderr, "ERROR: Parsing failed.\n");
 	}
+	free(nonterminal_name_map);
 } else {
 	fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
+	if (nonterminal_name_map != nullptr)
+		free(nonterminal_name_map);
 }
-	for (array_map<sentence_type, hol_term>& paragraph : seed_training_set) {
+free(sentence);
+	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 		free(paragraph);
 	}
@@ -949,8 +965,8 @@ return EXIT_SUCCESS;
 	fclose(in);
 
 	index = 0;
-	typedef article<syntax_node<flagged_logical_form<hol_term>>> article_type;
-	typedef in_memory_article_store<syntax_node<flagged_logical_form<hol_term>>> article_store_type;
+	typedef article<rooted_syntax_node<flagged_logical_form<hol_term>>> article_type;
+	typedef in_memory_article_store<rooted_syntax_node<flagged_logical_form<hol_term>>> article_store_type;
 	article_store_type corpus;
 	while (index < tokens.length) {
 		unsigned int article_name = 0;

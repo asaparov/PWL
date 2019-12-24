@@ -480,6 +480,11 @@ struct inflected_noun {
 	}
 };
 
+inline bool operator == (const inflected_noun& first, const inflected_noun& second) {
+	return first.root == second.root
+		&& first.number == second.number;
+}
+
 struct inflected_adjective {
 	sequence root;
 	grammatical_comparison comp;
@@ -488,6 +493,11 @@ struct inflected_adjective {
 		core::free(key.root);
 	}
 };
+
+inline bool operator == (const inflected_adjective& first, const inflected_adjective& second) {
+	return first.root == second.root
+		&& first.comp == second.comp;
+}
 
 typedef inflected_adjective inflected_adverb;
 
@@ -502,6 +512,14 @@ struct inflected_verb {
 		core::free(key.root);
 	}
 };
+
+inline bool operator == (const inflected_verb& first, const inflected_verb& second) {
+	return first.root == second.root
+		&& first.person == second.person
+		&& first.number == second.number
+		&& first.mood == second.mood
+		&& first.tense == second.tense;
+}
 
 struct morphology_en {
 	hash_map<sequence, noun_root> nouns;
@@ -690,7 +708,10 @@ private:
 			inflected_form_map.table.keys[bucket] = new_inflected_form_id;
 			inflected_form_map.table.size++;
 		}
-		return inflected_forms.add(new_inflected_form);
+
+		if (!inflected_forms.contains(new_inflected_form))
+			return inflected_forms.add(new_inflected_form);
+		else return true;
 	}
 
 	static inline bool add_inflected_forms(

@@ -1401,8 +1401,12 @@ NP -> NP':require_plural,try_remove_adv,require_no_correlator,require_predicativ
 NP -> NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_wide_scope
 
 # NP {A} -> NP' {A}
-# where A = ^[P]:(... & ?[X]:(F(X=^[x]:x=a) & ?[x]:(X(x) & P(x))))
+# where A = ^[P]:(... & ?[X]:(F(X=^[x]:x=a) & ... & ?[x]:(X(x) & P(x))))
 NP -> NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
+
+# NP {A} -> NP' {A}
+# where A = ^[P]:(... & ?[X]:(F(X) & size(X)=1 & ... & ?[x]:(X(x) & P(x))))
+NP -> NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_singleton
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~![x]:(X(x) => P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))}
@@ -1734,9 +1738,9 @@ DEF_NP -> THE NP':try_remove_correlated
 
 NP' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
-# NP {^[P]:(... & ?[S]:(f(S) & g(S=^[x]:f(x)) & ...))} -> Q {f(S)} NOMINAL_R {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & ...))}
+# NP {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & f(S) & ...))} -> Q {f(x_1)} NOMINAL_R {^[P]:(?[S]:(g(S=^[x]:f(x)) & ...))}
 # this depends on whether the head predicate of the left conjunct f(S) is one that expresses information about the size of the set
-#NP' -> Q NOMINAL_R:try_remove_correlated
+NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
 
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
@@ -1757,7 +1761,7 @@ Q nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #Q -> ADVP_L Q:try_remove_correlated
 
 # Q {size(x)=n} -> NUMBER {n}
-#Q -> NUMBER
+Q -> NUMBER:size
 
 # comparative constructions where sizes of sets are compared
 # Q {?[R]:size(X)>size(R)} -> MORE
@@ -1807,7 +1811,14 @@ NOMINAL_R -> NOMINAL_L:identity
 # NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ![x]:(S(x) => A(x)) & ...))}
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ...))}
 #     N_ADJUNCT {... & ?[x]:(p(x) & A(x))}
-NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNCT:try_remove_correlated,select_right_conjunct_in_set
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNCT:try_remove_correlated,select_right_conjunct_in_set,try_remove_number,add_singular
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNCT:try_remove_correlated,select_right_conjunct_in_set,try_remove_number,add_plural
+
+# NOMINAL_R {^[P]:(... & ?[T]:(... & ?[S]:(F(S,^[x]:(... & T(x))) & ![x]:(S(x) => A(x)) & ...)))}
+#  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:(...)) & ...))}
+#     OF
+#     NP {^[P]:(... & ?[T]:(... & ?[x]:(T(x) & P(x)))}
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:try_remove_correlated,select_right_subset_in_set,try_remove_number,add_plural
 
 # comparative constructions
 # NOMINAL_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
@@ -2227,6 +2238,9 @@ NOMINAL_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # This depends on whether `p` is an event (i.e. typically has arguments, even
 # if it doesnt in this particular logical form).
 NOMINAL_L -> N:require_no_correlator,select_predicate_in_set
+
+# NOMINAL_L {^[P]:?[X]:(X=^[x]:T & size(X)=n & ...)} -> NUMBER {n}
+NOMINAL_L -> NUMBER:require_no_correlator,set_size
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))} -> V {a}
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & p(x)) & ?[x]:(X(x) & P(x)))} -> V {p}
@@ -2805,11 +2819,13 @@ ADVP_L -> NEITHER ADVP_L:remove_neither,add_negative
 
 V preterminal {predicate} {1.0, 10.0} {1.0, 0.1} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.95 verb {"through"}
 
-N preterminal {constant} {1.0, 10.0} {1.0, 0.1} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.9995 noun {}
+N preterminal {constant} {1.0, 10.0} {1.0, 0.1} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.99 noun {}
 
 ADJ preterminal {} {1.0} {1.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000 1.0 adjective {}
 
 ADV preterminal {} {1.0} {1.0} {} 10000 1.0 adverb {}
+
+NUMBER number_preterminal {} {100.0} {1.0} {} 1 1.0 {}
 
 P preterminal {predicate_only} {1.0, 10.0} {1.0, 0.1} {} 10000 1.0 {}
 P -> "of"
@@ -2908,3 +2924,6 @@ THE -> "the"
 
 EACH preterminal {} {1.0} {1.0} {} 10 1.0 {}
 EACH -> "each"
+
+OF preterminal {} {1.0} {1.0} {} 10 1.0 {}
+OF -> "of"
