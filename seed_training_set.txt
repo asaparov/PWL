@@ -62,7 +62,7 @@
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular
 					(NP:require_no_preposition,require_no_inverse,select_right_arg2_without_head_predicative_and_factor
 						(A "a")
-						(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential
+						(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity
 								(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
 									(NOMINAL_L:identity
@@ -128,7 +128,7 @@
 									)
 								)
 								(OF "of")
-								(NP:try_remove_correlated,select_right_subset_in_set,try_remove_number,add_plural		# out: ^[Q]:?[P]:(P=^[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=solar_system) & arg1_of(p)=l)) & size(P)=8 & ?[x]:(P(x) & Q(x)))
+								(NP:try_remove_correlated,select_right_subset_in_set,try_remove_number,require_no_constant_in_set,add_plural		# out: ^[Q]:?[P]:(P=^[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=solar_system) & arg1_of(p)=l)) & size(P)=8 & ?[x]:(P(x) & Q(x)))
 									(DEF_NP:try_remove_adv,require_no_correlator
 										(THE "the")
 										(NP':try_remove_correlated
@@ -192,6 +192,10 @@
 : # state
 {(N "state"/"state")}
 	{state[index:sg]};
+
+: # New York
+{(N "New York"/"New York")}
+	{ny[index:sg]};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

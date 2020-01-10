@@ -906,12 +906,12 @@ int main(int argc, const char** argv)
 	}
 
 sentence_type sentence;
-if (!tokenize("Mercury is a planet in the Solar System.", sentence, names)) {
+if (!tokenize("New York is a state.", sentence, names)) {
 	for (auto entry : names) free(entry.key);
 	return EXIT_FAILURE;
 }
 
-constexpr unsigned int max_parse_count = 20;
+constexpr unsigned int max_parse_count = 10;
 hol_term* logical_forms[max_parse_count];
 double log_probabilities[max_parse_count];
 unsigned int parse_count;

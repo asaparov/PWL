@@ -765,7 +765,7 @@ S_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #S_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma
 
 
-S'' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+S'' nonterminal {left_arg} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
 # S'' {(~)?[x]:f(x)} -> THERE IS NP {^[P]:?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x)))}
 # NOTE: This above rule is only really useful if we choose to represent "there
@@ -1390,7 +1390,7 @@ VP_L -> NEITHER VP_L:remove_neither,add_negative
 NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # NP {A} -> A NP' {A}
-NP -> A NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential
+NP -> A NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_no_constant_in_set
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))
@@ -1818,7 +1818,7 @@ NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNC
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:(...)) & ...))}
 #     OF
 #     NP {^[P]:(... & ?[T]:(... & ?[x]:(T(x) & P(x)))}
-NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:try_remove_correlated,select_right_subset_in_set,try_remove_number,add_plural
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:try_remove_correlated,select_right_subset_in_set,try_remove_number,require_no_constant_in_set,add_plural
 
 # comparative constructions
 # NOMINAL_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
@@ -2817,9 +2817,9 @@ ADVP_L -> BOTH ADVP_L:remove_both
 ADVP_L -> NEITHER ADVP_L:remove_neither,add_negative
 
 
-V preterminal {predicate} {1.0, 10.0} {1.0, 0.1} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.95 verb {"through"}
+V preterminal {predicate} {10.0, 10.0} {1.0, 1.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.95 verb {"through"}
 
-N preterminal {constant} {1.0, 10.0} {1.0, 0.1} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.99 noun {}
+N preterminal {constant} {8.0, 16.0} {1.0, 1.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.99 noun {}
 
 ADJ preterminal {} {1.0} {1.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000 1.0 adjective {}
 
@@ -2827,7 +2827,7 @@ ADV preterminal {} {1.0} {1.0} {} 10000 1.0 adverb {}
 
 NUMBER number_preterminal {} {100.0} {1.0} {} 1 1.0 {}
 
-P preterminal {predicate_only} {1.0, 10.0} {1.0, 0.1} {} 10000 1.0 {}
+P preterminal {predicate_only} {100.0, 0.1} {0.1, 100.0} {} 10000 1.0 {}
 P -> "of"
 P -> "in"
 P -> "through"
