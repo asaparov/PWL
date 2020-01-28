@@ -297,7 +297,7 @@
 				)
 				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular	# ?[f]:female(f) | ?[m]:male(m)
 					(ADJP_R:add_is_adjunct,require_no_preposition	# ?[f]:female(f) | ?[m]:male(m)
-						(ADJP_R:require_not_adjunct,require_disjunction,select_left_operand		# ?[f]:female(f)
+						(ADJP_R:require_disjunction,select_left_operand		# ?[f]:female(f)
 							(ADJP_L:try_remove_is_adjunct
 								(ADJ:require_no_correlator "female"/"female")
 							)

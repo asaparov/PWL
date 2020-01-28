@@ -2582,14 +2582,14 @@ ADJP_R -> ADJP_L:try_remove_is_adjunct
 # NOTE: In the below rules, we require that none of the Ai are themselves
 # coordinations with the coordinator (unless Ai is negated).
 # ADJP_R {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
-ADJP_R -> ADJP_R:require_not_adjunct,require_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_and
-ADJP_R -> ADJP_R:require_not_adjunct,require_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_and,add_comma
+ADJP_R -> ADJP_R:require_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_and
+ADJP_R -> ADJP_R:require_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_and,add_comma
 # ADJP_R {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADJP_R -> ADJP_R:require_not_adjunct,require_disjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_or
-ADJP_R -> ADJP_R:require_not_adjunct,require_disjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_or,add_comma
+ADJP_R -> ADJP_R:require_disjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_or
+ADJP_R -> ADJP_R:require_disjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_or,add_comma
 # ADJP_R {... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn))} -> ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & (~?[x2]:f2(x2) & ... & ~?[xn]:fn(xn))}
-ADJP_R -> ADJP_R:require_not_adjunct,require_negative_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,require_negative,remove_left_operand,add_nor
-ADJP_R -> ADJP_R:require_not_adjunct,require_negative_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,require_negative,remove_left_operand,add_nor,add_comma
+ADJP_R -> ADJP_R:require_negative_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,require_negative,remove_left_operand,add_nor
+ADJP_R -> ADJP_R:require_negative_conjunction,select_left_operand ADJP_COORDINATION:try_remove_correlator,require_negative,remove_left_operand,add_nor,add_comma
 
 # ADJP_R {... & but((~)?[x1]:f1(x1),(~)?[x2]:f2(x2))} -> ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & (~)?[x2]:f2(x2)}
 #ADJP_R -> ADJP_R:require_not_adjunct BUT ADJP_R:try_remove_correlator
