@@ -248,6 +248,19 @@ struct hol_term
 #endif
 	}
 
+	hol_term(hol_term_type type, unsigned int value) : type(type), reference_count(1) {
+#if !defined(NDEBUG)
+		if (type != hol_term_type::VARIABLE && type != hol_term_type::VARIABLE_PREIMAGE && type != hol_term_type::CONSTANT && type != hol_term_type::PARAMETER)
+			fprintf(stderr, "hol_term WARNING: This constructor should only be used if `type` is `VARIABLE`, `VARIABLE_PREIMAGE`, `CONSTANT`, or `PARAMETER`.\n");
+#endif
+		if (type == hol_term_type::VARIABLE || type == hol_term_type::VARIABLE_PREIMAGE)
+			variable = value;
+		else if (type == hol_term_type::CONSTANT)
+			constant = value;
+		else if (type == hol_term_type::PARAMETER)
+			parameter = value;
+	}
+
 	hol_term(const hol_term& src) : type(src.type), reference_count(1) {
 		init_helper(src);
 	}
@@ -8387,7 +8400,7 @@ inline bool subtract(
 	}
 
 	/* make sure the new variable map is one-to-one */
-	array<unsigned int> range(dst.free_variables.size);
+	array<unsigned int> range(max((size_t) 1, dst.free_variables.size));
 	for (unsigned int i = 0; i < dst.free_variables.size; i++) {
 		if (dst.free_variables.values[i].type != variable_set_type::SINGLETON) continue;
 		if (range.contains(dst.free_variables.values[i].variable)) {
@@ -9197,7 +9210,7 @@ bool is_reduceable(
 		} else if (first_inner_node != nullptr) {
 			first_node = first_inner_node;
 			second_node = second_inner_node;
-			prefix_index += inner_prefix_index;
+			prefix_index += inner_prefix_index + 1;
 		}
 		return true;
 	}
@@ -9272,10 +9285,10 @@ struct reducer {
 template<hol_term_type Type>
 inline hol_term* apply(hol_term* src, reducer& r) {
 #if defined(NDEBUG)
-	if (Type == hol_term_type::ANY && r.prefix_index == r.target_prefix_index) {
+	if ((Type == hol_term_type::ANY || Type == hol_term_type::ANY_RIGHT || Type == hol_term_type::ANY_RIGHT_ONLY) && r.prefix_index == r.target_prefix_index) {
 #else
 	if (r.prefix_index == r.target_prefix_index) {
-		if (Type != hol_term_type::ANY && Type != hol_term_type::ANY_RIGHT)
+		if (Type != hol_term_type::ANY && Type != hol_term_type::ANY_RIGHT && Type != hol_term_type::ANY_RIGHT_ONLY)
 			fprintf(stderr, "apply WARNING: Expected an `ANY` or `ANY_RIGHT` type during reduction.\n");
 #endif
 
@@ -9394,7 +9407,7 @@ inline bool reduce_union(
 		}
 
 		/* they differ in only one node (and one of them is ANY), so try reducing `first[i]` and `expanded_set` */
-		if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT) {
+		if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT || node->type == hol_term_type::ANY_RIGHT_ONLY) {
 			unsigned int kept_tree_count = 0;
 			unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * node->any.excluded_tree_count));
 			if (kept_tree_indices == nullptr)
@@ -9440,7 +9453,7 @@ inline bool reduce_union(
 		}
 
 		/* they differ in only one node (and one of them is ANY), so try reducing `second[i]` and `expanded_set` */
-		if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT) {
+		if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT || node->type == hol_term_type::ANY_RIGHT_ONLY) {
 			unsigned int kept_tree_count = 0;
 			unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * node->any.excluded_tree_count));
 			if (kept_tree_indices == nullptr)
@@ -9493,7 +9506,7 @@ bool reduce_union(
 			}
 
 			/* they differ in only one node (and one of them is ANY), so try reducing `src[i]` and `dst[j]` */
-			if (first_node->type == hol_term_type::ANY || first_node->type == hol_term_type::ANY_RIGHT) {
+			if (first_node->type == hol_term_type::ANY || first_node->type == hol_term_type::ANY_RIGHT || first_node->type == hol_term_type::ANY_RIGHT_ONLY) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * first_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
@@ -9508,6 +9521,8 @@ bool reduce_union(
 					hol_term* new_set = reduce(first[j], prefix_index, kept_tree_indices, kept_tree_count);
 					free(kept_tree_indices);
 					if (new_set == nullptr) return false;
+					if (first[j] == first_node)
+						first_node = new_set;
 					free(*first[j]);
 					if (first[j]->reference_count == 0)
 						free(first[j]);
@@ -9523,7 +9538,7 @@ bool reduce_union(
 				} else {
 					free(kept_tree_indices);
 				}
-			} if (second_node->type == hol_term_type::ANY || second_node->type == hol_term_type::ANY_RIGHT) {
+			} if (second_node->type == hol_term_type::ANY || second_node->type == hol_term_type::ANY_RIGHT || second_node->type == hol_term_type::ANY_RIGHT_ONLY) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * second_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
@@ -9581,7 +9596,7 @@ bool reduce_union(
 			}
 
 			/* they differ in only one node (and one of them is ANY), so try reducing `sets[i]` and `sets[j]` */
-			if (first_node->type == hol_term_type::ANY || first_node->type == hol_term_type::ANY_RIGHT) {
+			if (first_node->type == hol_term_type::ANY || first_node->type == hol_term_type::ANY_RIGHT || first_node->type == hol_term_type::ANY_RIGHT_ONLY) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * first_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
@@ -9597,6 +9612,8 @@ bool reduce_union(
 					hol_term* new_set = reduce(sets[i], prefix_index, kept_tree_indices, kept_tree_count);
 					free(kept_tree_indices);
 					if (new_set == nullptr) return false;
+					if (sets[i] == first_node)
+						first_node = new_set;
 					free(*sets[i]);
 					if (sets[i]->reference_count == 0)
 						free(sets[i]);
@@ -9608,7 +9625,7 @@ bool reduce_union(
 				} else {
 					free(kept_tree_indices);
 				}
-			} if (second_node->type == hol_term_type::ANY || second_node->type == hol_term_type::ANY_RIGHT) {
+			} if (second_node->type == hol_term_type::ANY || second_node->type == hol_term_type::ANY_RIGHT || second_node->type == hol_term_type::ANY_RIGHT_ONLY) {
 				unsigned int kept_tree_count = 0;
 				unsigned int* kept_tree_indices = (unsigned int*) malloc(max((size_t) 1, sizeof(unsigned int) * second_node->any.excluded_tree_count));
 				if (kept_tree_indices == nullptr)
@@ -9778,6 +9795,7 @@ bool is_subset(hol_term* first, hol_term* second)
 				if (is_subset<BuiltInPredicates>(first->array.operands[i], &included_any)) return true;
 			return false;
 		case hol_term_type::ANY_ARRAY:
+			if (is_subset<BuiltInPredicates>(first->any_array.all, &included_any)) return true;
 			for (unsigned int i = 0; i < first->any_array.left.length; i++)
 				if (is_subset<BuiltInPredicates>(first->any_array.left.operands[i], &included_any)) return true;
 			for (unsigned int i = 0; i < first->any_array.right.length; i++)
@@ -11368,6 +11386,13 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		if (second->type == hol_term_type::ANY_ARRAY) {
 			if (first->any_array.oper != hol_term_type::ANY_ARRAY && first->any_array.oper != second->any_array.oper) {
 				return add<false, MapSecondVariablesToFirst>(dst, first);
+			}
+
+			if (!relabels_variables<LogicalFormSet>::value) {
+				if (is_subset<BuiltInPredicates>(first, second))
+					return false;
+				else if (!has_intersection<BuiltInPredicates>(first, second))
+					return add<false, MapSecondVariablesToFirst>(dst, first);
 			}
 
 			/* check if `second` is limiting the length of the array */
@@ -14211,8 +14236,53 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 				}
 			}
 			free_all(first_intersection);
+			first_intersection.clear();
 
-			array<LogicalFormSet> first_differences(8);
+			intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, get_term(root), second->any.included);
+			for (unsigned int i = 0; i < first_intersection.length; i++)
+				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			for (LogicalFormSet& first_child : first_intersection) {
+				array<LogicalFormSet> first_differences(8);
+				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(first_child)->ternary.third, second_any);
+				if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+					free_all(differences); free_all(first_intersection); free_all(first_differences);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				for (LogicalFormSet& first_difference : first_differences) {
+					if (get_term(first_difference) == get_term(first_child)->ternary.third) {
+						if (!emplace<false>(dst, get_term(first_child), get_variable_map(first_child))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					} else {
+						hol_term* term;
+						if (!new_hol_term(term)) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+						term->type = get_term(first_child)->type;
+						term->reference_count = 1;
+						term->ternary.first = get_term(first_child)->ternary.first;
+						term->ternary.second = get_term(first_child)->ternary.second;
+						term->ternary.third = get_term(first_difference);
+						term->ternary.first->reference_count++;
+						term->ternary.second->reference_count++;
+						term->ternary.third->reference_count++;
+						if (!emplace<true>(dst, term, get_variable_map(first_child), get_variable_map(first_difference))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							free(*term); free(term); return false;
+						}
+					}
+				}
+				free_all(first_differences);
+			}
+			free_all(first_intersection);
+
+			/*array<LogicalFormSet> first_differences(8);
 			subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(root)->ternary.third, second_any);
 			for (unsigned int i = 0; i < first_differences.length; i++)
 				if (!intersect_variable_map(first_differences[i], get_variable_map(root))) remove(first_differences, i--);
@@ -14252,7 +14322,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					return true;
 				}
 			}
-			free_all(first_differences);
+			free_all(first_differences);*/
 		}
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -14417,8 +14487,51 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 				}
 			}
 			free_all(first_intersection);
+			first_intersection.clear();
 
-			array<LogicalFormSet> first_differences(8);
+			intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, get_term(root), second->any.included);
+			for (unsigned int i = 0; i < first_intersection.length; i++)
+				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			for (LogicalFormSet& first_child : first_intersection) {
+				array<LogicalFormSet> first_differences(8);
+				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(first_child)->quantifier.operand, second_any);
+				if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+					free_all(differences); free_all(first_intersection); free_all(first_differences);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				for (LogicalFormSet& first_difference : first_differences) {
+					if (get_term(first_difference) == get_term(first_child)->quantifier.operand) {
+						if (!emplace<false>(dst, get_term(first_child), get_variable_map(first_child))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					} else {
+						hol_term* term;
+						if (!new_hol_term(term)) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+						term->type = get_term(first_child)->type;
+						term->reference_count = 1;
+						term->quantifier.variable = get_term(first_child)->quantifier.variable;
+						term->quantifier.variable_type = get_term(first_child)->quantifier.variable_type;
+						term->quantifier.operand = get_term(first_difference);
+						term->quantifier.operand->reference_count++;
+						if (!emplace<true>(dst, term, get_variable_map(first_child), get_variable_map(first_difference))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							free(*term); free(term); return false;
+						}
+					}
+				}
+				free_all(first_differences);
+			}
+			free_all(first_intersection);
+
+			/*array<LogicalFormSet> first_differences(8);
 			subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(root)->quantifier.operand, second_any);
 			for (unsigned int i = 0; i < first_differences.length; i++)
 				if (!intersect_variable_map(first_differences[i], get_variable_map(root))) remove(first_differences, i--);
@@ -14456,7 +14569,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					return true;
 				}
 			}
-			free_all(first_differences);
+			free_all(first_differences);*/
 		}
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -14544,8 +14657,118 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 				}
 			}
 			free_all(first_intersection);
+			first_intersection.clear();
 
-			array<LogicalFormSet> first_differences(8);
+			/* consider the intersection with a non-singleton ANY_ARRAY */
+			hol_term* temp;
+			if (get_term(root)->any_array.left.length > 1 || get_term(root)->any_array.right.length > 1 || get_term(root)->any_array.any.length > 1) {
+				temp = get_term(root);
+				temp->reference_count++;
+			} else if (get_term(root)->any_array.left.length == 0) {
+				temp = hol_term::new_any_array(get_term(root)->any_array.oper, get_term(root)->any_array.all,
+						make_array_view(get_term(root)->any_array.any.operands, get_term(root)->any_array.any.length),
+						make_repeated_array_view(get_term(root)->any_array.all, 2),
+						make_array_view(get_term(root)->any_array.right.operands, get_term(root)->any_array.right.length));
+				if (temp == nullptr) {
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					free_all(differences); return false;
+				}
+				temp->any_array.all->reference_count++;
+				for (unsigned int i = 0; i < temp->any_array.left.length; i++)
+					temp->any_array.left.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < temp->any_array.right.length; i++)
+					temp->any_array.right.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < temp->any_array.any.length; i++)
+					temp->any_array.any.operands[i]->reference_count++;
+			} else {
+				temp = hol_term::new_any_array(get_term(root)->any_array.oper, get_term(root)->any_array.all,
+						make_array_view(get_term(root)->any_array.any.operands, get_term(root)->any_array.any.length),
+						make_appended_array_view(make_array_view(get_term(root)->any_array.left.operands, get_term(root)->any_array.left.length), get_term(root)->any_array.all),
+						make_array_view(get_term(root)->any_array.right.operands, get_term(root)->any_array.right.length));
+				if (temp == nullptr) {
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					free_all(differences); return false;
+				}
+				temp->any_array.all->reference_count++;
+				for (unsigned int i = 0; i < temp->any_array.left.length; i++)
+					temp->any_array.left.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < temp->any_array.right.length; i++)
+					temp->any_array.right.operands[i]->reference_count++;
+				for (unsigned int i = 0; i < temp->any_array.any.length; i++)
+					temp->any_array.any.operands[i]->reference_count++;
+			}
+
+			intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, temp, second->any.included);
+			free(*temp); if (temp->reference_count == 0) free(temp);
+			for (unsigned int i = 0; i < first_intersection.length; i++)
+				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			for (LogicalFormSet& first_child : first_intersection) {
+				unsigned int any_start = 0, any_end = get_term(first_child)->any_array.any.length;
+				unsigned int left_end = get_term(first_child)->any_array.left.length;
+				unsigned int right_start = 0;
+				while (any_start < get_term(first_child)->any_array.any.length && get_term(first_child)->any_array.any.operands[any_start] == get_term(first_child)->any_array.all) any_start++;
+				while (any_end > any_start && get_term(first_child)->any_array.any.operands[any_end - 1] == get_term(first_child)->any_array.all) any_end--;
+				while (left_end > 0 && get_term(first_child)->any_array.left.operands[left_end - 1] == get_term(first_child)->any_array.all) left_end--;
+				while (right_start < get_term(first_child)->any_array.right.length && get_term(first_child)->any_array.right.operands[right_start] == get_term(first_child)->any_array.all) right_start++;
+				unsigned int min_length = max(get_term(first_child)->any_array.left.length, max(get_term(first_child)->any_array.right.length, get_term(first_child)->any_array.any.length));
+				if (get_term(first_child)->any_array.left.length >= min_length) {
+					left_end = get_term(first_child)->any_array.left.length;
+				} else if (get_term(first_child)->any_array.right.length >= min_length) {
+					right_start = 0;
+				} else {
+					any_start = 0, any_end = get_term(first_child)->any_array.any.length;
+				}
+
+				array<LogicalFormSet> first_differences(8);
+				if (get_term(first_child)->any_array.right.length != 0) {
+					subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(first_child)->any_array.right.operands[get_term(first_child)->any_array.right.length - 1], second_any);
+				} else {
+					subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(first_child)->any_array.all, second_any);
+				}
+				if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+					free_all(differences); free_all(first_intersection); free_all(first_differences);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				}
+				for (LogicalFormSet& first_difference : first_differences) {
+					if (any_start == 0 && any_end == get_term(first_child)->any_array.any.length && left_end == get_term(first_child)->any_array.left.length && right_start == 0
+					 && ((get_term(first_child)->any_array.right.length == 0 && get_term(first_difference) == get_term(first_child)->any_array.all)
+					 || (get_term(first_child)->any_array.right.length != 0 && get_term(first_difference) == get_term(first_child)->any_array.right.operands[get_term(first_child)->any_array.right.length - 1])))
+					{
+						if (!emplace<false>(dst, get_term(first_child), get_variable_map(first_child))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					} else {
+						hol_term* term = hol_term::new_any_array(get_term(first_child)->any_array.oper, get_term(first_child)->any_array.all,
+								make_array_view(get_term(first_child)->any_array.any.operands + any_start, any_end - any_start),
+								make_array_view(get_term(first_child)->any_array.left.operands, left_end),
+								make_appended_array_view(make_array_view(get_term(first_child)->any_array.right.operands + right_start, max(1u, get_term(first_child)->any_array.right.length - right_start) - 1), get_term(first_difference)));
+						if (term == nullptr) {
+							free_all(differences); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+						term->any_array.all->reference_count++;
+						for (unsigned int i = 0; i < term->any_array.any.length; i++)
+							term->any_array.any.operands[i]->reference_count++;
+						for (unsigned int i = 0; i < term->any_array.left.length; i++)
+							term->any_array.left.operands[i]->reference_count++;
+						for (unsigned int i = 0; i < term->any_array.right.length; i++)
+							term->any_array.right.operands[i]->reference_count++;
+						if (!emplace<true>(dst, term, get_variable_map(first_child), get_variable_map(first_difference))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							free(*term); free(term); return false;
+						}
+					}
+				}
+				free_all(first_differences);
+			}
+			free_all(first_intersection);
+
+			/*array<LogicalFormSet> first_differences(8);
 			if (get_term(root)->any_array.right.length != 0) {
 				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(root)->any_array.right.operands[get_term(root)->any_array.right.length - 1], second_any);
 			} else {
@@ -14594,7 +14817,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					return true;
 				}
 			}
-			free_all(first_differences);
+			free_all(first_differences);*/
 		}
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -14838,8 +15061,21 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 			}
 		}
 
-		if (!intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(all_intersections, first->any_array.all, second->any_array.all))
+		if (!intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(all_intersections, first->any_array.all, second->any_array.all)) {
+			for (unsigned int j = 0; j < new_left_length; j++) {
+				free_all(left_intersections[j]); free(left_intersections[j]);
+			} for (unsigned int j = 0; j < new_right_length; j++) {
+				free_all(right_intersections[j]); free(right_intersections[j]);
+			}
+			free(left_intersections); free(right_intersections);
+			if (any != nullptr) {
+				for (unsigned int j = 0; j < any_length; j++) {
+					free(*any[j]); if (any[j]->reference_count == 0) free(any[j]);
+				}
+				free(any);
+			}
 			return false;
+		}
 		for (unsigned int i = 0; i < min(first->any_array.left.length, second->any_array.left.length); i++) {
 			if (!intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(left_intersections[i], first->any_array.left.operands[i], second->any_array.left.operands[i])) {
 				free_all(all_intersections);

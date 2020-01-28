@@ -22,6 +22,7 @@ enum class built_in_predicates : unsigned int {
 	SIZE,
 	INVERSE,
 	OWN,
+	EXIST,
 	PRESENT,
 	PRESENT_PROGRESSIVE,
 	PRESENT_PERFECT,
@@ -34,6 +35,7 @@ enum class built_in_predicates : unsigned int {
 	FUTURE_PROGRESSIVE,
 	FUTURE_PERFECT,
 	FUTURE_PERFECT_PROGRESSIVE,
+	EMPTY,
 	EMPTY_REF,
 	WIDE_SCOPE,
 
@@ -100,6 +102,21 @@ unsigned int NON_PROGRESSIVE_PREDICATES[] = {
 	(unsigned int) built_in_predicates::FUTURE_PERFECT
 };
 
+unsigned int TENSE_PREDICATES[] = {
+	(unsigned int) built_in_predicates::PRESENT,
+	(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT,
+	(unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST,
+	(unsigned int) built_in_predicates::PAST_PROGRESSIVE,
+	(unsigned int) built_in_predicates::PAST_PERFECT,
+	(unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE,
+	(unsigned int) built_in_predicates::FUTURE_PROGRESSIVE,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT,
+	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
+};
+
 inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 {
 	return names.put("<ZERO>", (unsigned int) built_in_predicates::ZERO)
@@ -111,6 +128,8 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("arg2_of", (unsigned int) built_in_predicates::ARG2_OF)
 		&& names.put("arg3_of", (unsigned int) built_in_predicates::ARG3_OF)
 		&& names.put("inverse", (unsigned int) built_in_predicates::INVERSE)
+		&& names.put("own", (unsigned int) built_in_predicates::OWN)
+		&& names.put("exist", (unsigned int) built_in_predicates::EXIST)
 		&& names.put("size", (unsigned int) built_in_predicates::SIZE)
 		&& names.put("present", (unsigned int) built_in_predicates::PRESENT)
 		&& names.put("present_progressive", (unsigned int) built_in_predicates::PRESENT_PROGRESSIVE)
@@ -124,6 +143,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("future_progressive", (unsigned int) built_in_predicates::FUTURE_PROGRESSIVE)
 		&& names.put("future_perfect", (unsigned int) built_in_predicates::FUTURE_PERFECT)
 		&& names.put("future_perfect_progressive", (unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE)
+		&& names.put("empty", (unsigned int) built_in_predicates::EMPTY)
 		&& names.put("empty_ref", (unsigned int) built_in_predicates::EMPTY_REF)
 		&& names.put("W", (unsigned int) built_in_predicates::WIDE_SCOPE)
 		&& names.put("=", (unsigned int) built_in_predicates::EQUALS)

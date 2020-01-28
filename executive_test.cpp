@@ -906,12 +906,12 @@ int main(int argc, const char** argv)
 	}
 
 sentence_type sentence;
-if (!tokenize("New York is a state.", sentence, names)) {
+if (!tokenize("There was a large state.", sentence, names)) {
 	for (auto entry : names) free(entry.key);
 	return EXIT_FAILURE;
 }
 
-constexpr unsigned int max_parse_count = 10;
+constexpr unsigned int max_parse_count = 4;
 hol_term* logical_forms[max_parse_count];
 double log_probabilities[max_parse_count];
 unsigned int parse_count;

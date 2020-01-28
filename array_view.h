@@ -1,6 +1,8 @@
 #ifndef ARRAY_VIEW_H_
 #define ARRAY_VIEW_H_
 
+#include <type_traits>
+
 namespace detail {
 	template<typename A, typename C> static auto test_index_operator(int32_t) ->
 			decltype(C(std::declval<A>()[0]), std::true_type{});
@@ -100,12 +102,14 @@ struct lookup_table_array_view {
 	}
 };
 
-template<typename T, template<typename> class Array>
+template<typename T, typename Array>
 struct prepended_array_view {
-	T& first;
-	const Array<T>& second;
+	static_assert(has_index_operator<Array, T>::value, "`Array` does not have an index operator that returns type `T`");
 
-	prepended_array_view(T& first, const Array<T>& second) : first(first), second(second) { }
+	T& first;
+	const Array& second;
+
+	prepended_array_view(T& first, const Array& second) : first(first), second(second) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == 0) return first;
@@ -122,17 +126,19 @@ struct prepended_array_view {
 	}
 };
 
-template<typename T, template<typename> class Array>
-prepended_array_view<T, Array> make_prepended_array_view(T& first, const Array<T>& second) {
+template<typename T, typename Array>
+prepended_array_view<T, Array> make_prepended_array_view(T& first, const Array& second) {
 	return prepended_array_view<T, Array>(first, second);
 }
 
-template<typename T, template<typename> class Array>
+template<typename T, typename Array>
 struct appended_array_view {
-	const Array<T>& first;
+	static_assert(has_index_operator<Array, T>::value, "`Array` does not have an index operator that returns type `T`");
+
+	const Array& first;
 	T& second;
 
-	appended_array_view(const Array<T>& first, T& second) : first(first), second(second) { }
+	appended_array_view(const Array& first, T& second) : first(first), second(second) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == first.size()) return second;
@@ -149,8 +155,8 @@ struct appended_array_view {
 	}
 };
 
-template<typename T, template<typename> class Array>
-appended_array_view<T, Array> make_appended_array_view(const Array<T>& first, T& second) {
+template<typename T, typename Array>
+appended_array_view<T, Array> make_appended_array_view(const Array& first, T& second) {
 	return appended_array_view<T, Array>(first, second);
 }
 
@@ -245,6 +251,73 @@ struct repeated_array_view {
 template<typename T>
 inline repeated_array_view<T> make_repeated_array_view(T& repeated_element, unsigned int length) {
 	return repeated_array_view<T>(repeated_element, length);
+}
+
+template<typename T>
+struct replaced_array_view {
+	T* elements;
+	unsigned int length;
+	T& replaced_element;
+	unsigned int replaced_index;
+
+	replaced_array_view(T* elements, unsigned int length, T& replaced_element, unsigned int replaced_index) :
+			elements(elements), length(length), replaced_element(replaced_element), replaced_index(replaced_index) { }
+
+	inline T& operator[] (size_t index) {
+		if (index == replaced_index)
+			return replaced_element;
+		else return elements[index];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		if (index == replaced_index)
+			return replaced_element;
+		else return elements[index];
+	}
+
+	inline unsigned int size() const {
+		return length;
+	}
+};
+
+template<typename T>
+inline replaced_array_view<T> make_replaced_array_view(T* elements, unsigned int length, T& replaced_element, unsigned int replaced_index) {
+	return replaced_array_view<T>(elements, length, replaced_element, replaced_index);
+}
+
+template<typename T, typename FirstArray, typename SecondArray>
+struct concat_array_view {
+	static_assert(has_index_operator<FirstArray, T>::value, "`FirstArray` does not have an index operator that returns type `T`");
+	static_assert(has_index_operator<SecondArray, T>::value, "`SecondArray` does not have an index operator that returns type `T`");
+
+	const FirstArray& first;
+	const SecondArray& second;
+
+	concat_array_view(const FirstArray& first, const SecondArray& second) : first(first), second(second) { }
+
+	inline T& operator[] (size_t index) {
+		unsigned int first_size = first.size();
+		if (index < first_size)
+			return first[index];
+		else return second[index - first_size];
+	}
+
+	inline const T& operator[] (size_t index) const {
+		unsigned int first_size = first.size();
+		if (index < first_size)
+			return first[index];
+		else return second[index - first_size];
+	}
+
+	inline unsigned int size() const {
+		return first.size() + second.size();
+	}
+};
+
+template<typename FirstArray, typename SecondArray>
+inline concat_array_view<typename std::decay<decltype(std::declval<FirstArray>()[0])>::type, FirstArray, SecondArray>
+make_concat_array_view(const FirstArray& first, const SecondArray& second) {
+	return concat_array_view<typename std::decay<decltype(std::declval<FirstArray>()[0])>::type, FirstArray, SecondArray>(first, second);
 }
 
 #endif /* ARRAY_VIEW_H_ */
