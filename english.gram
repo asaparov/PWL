@@ -887,7 +887,6 @@ VP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # VP_R {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
 #     V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
-# TODO: the `add_singular` and `add_plural` determination should happen within V_ADJUNCT and not here in VP_R, since V_ADJUNCT could select something without number, like ADJP_R
 VP_R -> VP_R:remove_right_conjunct V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular
 VP_R -> VP_R:remove_right_conjunct V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_plural
 VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular,add_preposition
@@ -1062,21 +1061,21 @@ V_ADJUNCT nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-#V_ADJUNCT -> PP:add_is_adjunct,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA PP:require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA ADJP_R:require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> PP:add_is_adjunct,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA PP:require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA ADJP_R:require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
 
 # predicative complements
 # V_ADJUNCT {A} -> PP/ADJP_R/ADVP_R {A}
 # e.g. "Sirius is brighter than Vega", "the cat is in the house"
-V_ADJUNCT -> PP:add_is_adjunct,require_no_preposition
-V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition
-V_ADJUNCT -> ADVP_R:add_is_adjunct,require_no_preposition
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_preposition
+V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_singular
+V_ADJUNCT -> ADVP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_singular
 
 # for prepositional verbs (i.e. "look forward to", etc)
 # V_ADJUNCT {... & ?[y]:(U(i,y) & p(y) & f(y))}
@@ -1084,7 +1083,7 @@ V_ADJUNCT -> ADVP_R:add_is_adjunct,require_no_preposition
 # where `p` is the predicate, `fi` contains verb-specific terms such as
 # `present` as well as any adjuncts of y whereas `f` contains everything else,
 # such as the arguments.
-V_ADJUNCT -> PP:add_is_adjunct
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct
 
 # V_ADJUNCT {... & ?[y1]:(inverse(own)(y1) & arg2(y1)=a) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=a)}
 #  -> NP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1097,8 +1096,7 @@ V_ADJUNCT -> PP:add_is_adjunct
 # V_ADJUNCT {... & ?[X]:(f(X) & ?[y1]:(inverse(own)(y1) & arg2(y1)=X) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=X))} if X is a set variable
 #  -> NP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
 # e.g. "the pencil is Emma's", "the pencils are the students'"
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,select_right_arg2_without_head_predicative,factor_predicative,add_singular
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,select_right_arg2_without_head_predicative,factor_predicative,add_plural
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,select_right_arg2_without_head_predicative,factor_predicative
 
 # V_ADJUNCT {... & ?[y1]:(... & arg1/arg2/arg3(y1)=a) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=a)}
 #  -> NP/ADJP_R {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1137,9 +1135,9 @@ V_ADJUNCT -> PP:add_is_adjunct
 V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative # for arg1
 V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative # for arg2
 V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative # for arg3 (NOTE: we could make this semantic and have only two args)
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head,factor # for arg1
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head,factor # for arg2
-#V_ADJUNCT -> ADJP_R:add_is_adjunct,require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg3_without_head,factor # for arg3 (NOTE: we could make this semantic and have only two args)
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head,factor # for arg1
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head,factor # for arg2
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg3_without_head,factor # for arg3 (NOTE: we could make this semantic and have only two args)
 #V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative # for arg2
 #V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_remove_correlated,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative # for arg3 (NOTE: we could make this semantic and have only two args)
 
@@ -1344,7 +1342,7 @@ VP_L -> TO VP_R:try_remove_correlated,remove_to_infinitive,add_infinitive,requir
 # that without the subjunctive mood, this rule fails. This is to avoid spurious
 # ambiguity where the verb can be interpreted as either being in the
 # subjunctive mood or not (e.g. "it's vital that we keep them informed.").
-VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,predicate_and_tense
+VP_L -> V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense
 
 # VP_L {?[x]:(empty(x) & t(x))} -> BE
 # This is the semantically empty "be"/"is"/"was"/"were" as in "the cat is blue"
@@ -1353,7 +1351,7 @@ VP_L -> V:require_no_future,require_no_perfect,require_no_progressive,require_no
 # that without the subjunctive mood, this rule fails. This is to avoid spurious
 # ambiguity where the verb can be interpreted as either being in the
 # subjunctive mood or not (e.g. "it's vital that we keep them informed.").
-VP_L -> BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_empty_ref,require_no_to_infinitive,require_no_correlator,empty_and_tense
+VP_L -> BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,empty_and_tense
 
 # for gapping and stripping
 #VP_L -> WILL:remove_future,try_remove_req_aux,require_only_empty_ref,require_no_subjunctive,require_no_correlator # future "tense"
@@ -2609,24 +2607,24 @@ ADJP_COORDINATION -> COMMA ADJP_R:remove_coord,remove_comma,select_left_operand 
 ADJP_COORDINATION -> COMMA ADJP_R:remove_coord,remove_comma
 
 # ADJP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> (COMMA) AND ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
-ADJP_COORDINATION -> AND ADJP_R:remove_and,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> AND ADJP_R:remove_and,require_no_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
 ADJP_COORDINATION -> COMMA AND ADJP_R:remove_and,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) AND ADJP_R {... & (~)?[x1]:f1(x1)}
-ADJP_COORDINATION -> AND ADJP_R:remove_and,remove_comma
+ADJP_COORDINATION -> AND ADJP_R:remove_and,require_no_comma
 ADJP_COORDINATION -> COMMA AND ADJP_R:remove_and,remove_comma
 
 # ADJP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> (COMMA) OR ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADJP_COORDINATION -> OR ADJP_R:remove_or,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> OR ADJP_R:remove_or,require_no_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
 ADJP_COORDINATION -> COMMA OR ADJP_R:remove_or,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) OR ADJP_R {... & (~)?[x1]:f1(x1)}
-ADJP_COORDINATION -> OR ADJP_R:remove_or,remove_comma
+ADJP_COORDINATION -> OR ADJP_R:remove_or,require_no_comma
 ADJP_COORDINATION -> COMMA OR ADJP_R:remove_or,remove_comma
 
 # ADJP_COORDINATION {... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn))} -> (COMMA) NOR ADJP_R {... & ~?[x1]:f1(x1)} ADJP_COORDINATION {... & (~?[x2]:f2(x2) & ... & ~?[xn]:fn(xn))}
-ADJP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand ADJP_COORDINATION:remove_left_operand
 ADJP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) NOR ADJP_R {... & (~)?[x1]:f1(x1)}
-ADJP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative
+ADJP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,require_no_comma,add_negative
 ADJP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative
 
 

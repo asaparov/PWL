@@ -828,6 +828,106 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 	}
 }
 
+template<typename Parser>
+inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<string, unsigned int>& names)
+{
+	typedef sentence<rooted_syntax_node<flagged_logical_form<hol_term>>> sentence_type;
+
+	sentence_type sentence;
+	if (!tokenize(input_sentence, sentence, names))
+		return false;
+
+	constexpr unsigned int max_parse_count = 4;
+	hol_term* logical_forms[max_parse_count];
+	double log_probabilities[max_parse_count];
+	unsigned int parse_count;
+	array<sentence_token> unrecognized(4);
+//debug_flag = true;
+	const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
+	if (nonterminal_name_map != nullptr && parser.invert_name_map(names)) {
+		string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
+		string_map_scribe nonterminal_printer = { nonterminal_name_map, parser.G.nonterminal_names.table.size + 1 };
+		debug_terminal_printer = &terminal_printer;
+		debug_nonterminal_printer = &nonterminal_printer;
+		if (parser.template parse<max_parse_count>(sentence, logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
+			for (unsigned int i = 0; i < parse_count; i++) {
+				print(*logical_forms[i], stderr, terminal_printer); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
+				free(*logical_forms[i]);
+				if (logical_forms[i]->reference_count == 0)
+					free(logical_forms[i]);
+			}
+		} else {
+			fprintf(stderr, "ERROR: Parsing failed.\n");
+		}
+		free(nonterminal_name_map);
+	} else {
+		fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
+		if (nonterminal_name_map != nullptr)
+			free(nonterminal_name_map);
+	}
+	free(sentence);
+	return true;
+}
+
+template<typename Stream>
+unsigned int read_line(array<char>& line, Stream& input)
+{
+	unsigned int bytes_read = 0;
+	while (true) {
+		int width;
+		wint_t next = fgetwc(input);
+		if (!line.ensure_capacity(line.length + MB_CUR_MAX)) {
+			fprintf(stderr, "read_line ERROR: Out of memory.\n");
+			return 0;
+		}
+		switch (next) {
+		case WEOF:
+			return bytes_read;
+
+		case '\n':
+			return bytes_read + 1;
+
+		default:
+#if defined(_WIN32)
+			wctomb_s(&width, line.data + line.length, (line.capacity - line.length) * sizeof(char), next);
+#else
+			width = wctomb(line.data + line.length, next);
+#endif
+			if (width == -1)
+				return 0;
+			line.length += width;
+			bytes_read += width;
+		}
+	}
+
+	return bytes_read;
+}
+
+template<typename Stream, typename Parser>
+void run_console(Stream& input, const char* prompt,
+		Parser& parser, hash_map<string, unsigned int>& names)
+{
+	array<char> line = array<char>(256);
+	while (true) {
+		if (prompt) {
+			printf("%s", prompt);
+			fflush(stdout);
+		}
+
+		line.clear();
+		int read = read_line(line, input);
+		if (read == 0) {
+			break;
+		} else if (read > 0) {
+			if (!line.ensure_capacity(line.length + 1))
+				break;
+			line[line.length++] = '\0';
+			parse_sentence(parser, line.data, names);
+		}
+	}
+}
+
+
 unsigned int constant_offset = 0;
 
 template<typename Stream>
@@ -848,7 +948,7 @@ int main(int argc, const char** argv)
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "english.morph.short", "english.gram");
+			names, "english.morph", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");
@@ -905,47 +1005,14 @@ int main(int argc, const char** argv)
 		return EXIT_FAILURE;
 	}
 
-sentence_type sentence;
-if (!tokenize("There was a large state.", sentence, names)) {
-	for (auto entry : names) free(entry.key);
-	return EXIT_FAILURE;
-}
+/*fprintf(stderr, "Parser constructed and trained. Exiting...\n");*/
+run_console(stdin, "\nEnter sentence to parse: ", parser, names);
 
-constexpr unsigned int max_parse_count = 4;
-hol_term* logical_forms[max_parse_count];
-double log_probabilities[max_parse_count];
-unsigned int parse_count;
-array<sentence_token> unrecognized(4);
-debug_flag = true;
-const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
-if (nonterminal_name_map != nullptr && parser.invert_name_map(names)) {
-	string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
-	string_map_scribe nonterminal_printer = { nonterminal_name_map, parser.G.nonterminal_names.table.size + 1 };
-	debug_terminal_printer = &terminal_printer;
-	debug_nonterminal_printer = &nonterminal_printer;
-	if (parser.parse<max_parse_count>(sentence, logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
-		for (unsigned int i = 0; i < parse_count; i++) {
-			print(*logical_forms[i], stderr, terminal_printer); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
-			free(*logical_forms[i]);
-			if (logical_forms[i]->reference_count == 0)
-				free(logical_forms[i]);
-		}
-	} else {
-		fprintf(stderr, "ERROR: Parsing failed.\n");
-	}
-	free(nonterminal_name_map);
-} else {
-	fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
-	if (nonterminal_name_map != nullptr)
-		free(nonterminal_name_map);
-}
-free(sentence);
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 		free(paragraph);
 	}
 
-fprintf(stderr, "Parser constructed and trained. Exiting...\n");
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;
 

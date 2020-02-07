@@ -19,3 +19,15 @@ Ohio	pr
 large	adj\er	n\~	adv\?
 male	adj\-\er\more	n
 female	adj\-\er\more	n
+mountain	n\~
+country	n\countries	adj\-
+city	n\cities
+town	n\~
+county	n\~\counties	adj
+major	n	adj	n	v
+New York City	pr\head=[[New York]] [[city\City]]
+NYC	pr
+river	n	v	n
+big	adj\bigger	adv\bigger	n	v\bigs\bigging\bigged	v\bigs\bigging\bigged	n\-
+small	adj\er	adv\er	n	v
+little	adj\less\lesser\littler\sup=least\sup2=-\sup3=littlest	adv\less\lesser\sup=least\sup2=-	n

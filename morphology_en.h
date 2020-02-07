@@ -33,6 +33,15 @@ inline bool merge_arrays(
 	return true;
 }
 
+inline void try_free(sequence& seq) {
+	free(seq);
+}
+
+inline void try_free(pair<sequence, sequence>& entry) {
+	if (entry.key.tokens != nullptr) free(entry.key);
+	if (entry.value.tokens != nullptr) free(entry.value);
+}
+
 template<typename T>
 unsigned int do_unique(T* array, size_t length)
 {
@@ -40,6 +49,7 @@ unsigned int do_unique(T* array, size_t length)
 	for (unsigned int i = 1; i < length; i++) {
 		if (array[result] != array[i])
 			move(array[i], array[++result]);
+		else try_free(array[i]);
 	}
 	return result + 1;
 }
@@ -177,6 +187,7 @@ struct adjective_root {
 	comparability comp;
 	pair<sequence, sequence>* inflected_forms; /* comparatives and superlatives, respectively */
 	unsigned int inflected_form_count;
+	sequence adj_root;
 
 	inline bool merge(const adjective_root& src) {
 		/* first merge comparabilities */
@@ -207,6 +218,7 @@ struct adjective_root {
 		dst.comp = src.comp;
 		core::move(src.inflected_forms, dst.inflected_forms);
 		dst.inflected_form_count = src.inflected_form_count;
+		core::move(src.adj_root, dst.adj_root);
 	}
 
 	static inline void free(adjective_root& root) {
@@ -219,6 +231,8 @@ struct adjective_root {
 			}
 			core::free(root.inflected_forms);
 		}
+		if (root.adj_root.length != 0)
+			core::free(root.adj_root);
 	}
 };
 
@@ -227,9 +241,17 @@ typedef adjective_root adverb_root;
 inline bool init(adjective_root& root, comparability comp,
 		const pair<string, string>* inflected_forms,
 		unsigned int inflected_form_count,
+		const sequence& adj_root,
 		hash_map<string, unsigned int>& names)
 {
 	root.comp = comp;
+	if (adj_root.length == 0) {
+		root.adj_root.tokens = nullptr;
+		root.adj_root.length = 0;
+	} else if (!init(root.adj_root, adj_root)) {
+		return false;
+	}
+
 	root.inflected_form_count = inflected_form_count;
 	if (inflected_form_count == 0) {
 		root.inflected_forms = nullptr;
@@ -237,6 +259,7 @@ inline bool init(adjective_root& root, comparability comp,
 		root.inflected_forms = (pair<sequence, sequence>*) malloc(sizeof(pair<sequence, sequence>) * inflected_form_count);
 		if (root.inflected_forms == nullptr) {
 			fprintf(stderr, "init ERROR: Insufficient memory for `adjective_root.inflected_forms`.\n");
+			if (root.adj_root.length != 0) free(root.adj_root);
 			return false;
 		}
 		for (unsigned int i = 0; i < inflected_form_count; i++) {
@@ -252,6 +275,7 @@ inline bool init(adjective_root& root, comparability comp,
 							free(root.inflected_forms[i].value);
 					}
 					free(root.inflected_forms);
+					if (root.adj_root.length != 0) free(root.adj_root);
 					return false;
 				}
 				sequence src(tokens.data, tokens.length);
@@ -270,6 +294,7 @@ inline bool init(adjective_root& root, comparability comp,
 							free(root.inflected_forms[i].value);
 					}
 					free(root.inflected_forms);
+					if (root.adj_root.length != 0) free(root.adj_root);
 					return false;
 				}
 				sequence src(tokens.data, tokens.length);
@@ -411,7 +436,9 @@ enum class grammatical_mood : uint_fast8_t {
 enum class grammatical_comparison : uint_fast8_t {
 	NONE,
 	COMPARATIVE,
-	SUPERLATIVE
+	SUPERLATIVE,
+
+	ANY
 };
 
 enum class grammatical_tense : uint_fast8_t {
@@ -926,24 +953,314 @@ inline bool inflect_verb(array<string>& dst, unsigned int index, const char* fir
 	return true;
 }
 
-inline bool emit_entry(
-		morphology_en& m, const string& root,
-		const array<string>& entry,
-		hash_map<string, unsigned int>& names,
-		position current)
+struct wikt_entry {
+	string root;
+	array<string> entries;
+	position pos;
+
+	wikt_entry(position initial_pos) : root(""), entries(16), pos(initial_pos) { }
+
+	~wikt_entry() { free_helper(); }
+
+	static inline void free(wikt_entry& entry) {
+		entry.free_helper();
+		core::free(entry.entries);
+		core::free(entry.root);
+	}
+
+private:
+	inline void free_helper() {
+		for (string& str : entries) core::free(str);
+	}
+};
+
+inline bool init(wikt_entry& entry, const wikt_entry& src) {
+	if (!init(entry.root, src.root)) {
+		return false;
+	} else if (!array_init(entry.entries, src.entries.length)) {
+		free(entry.root);
+		return false;
+	}
+	for (unsigned int i = 0; i < src.entries.length; i++) {
+		if (!init(entry.entries[i], src.entries[i])) {
+			core::free(entry);
+			return false;
+		}
+		entry.entries.length++;
+	}
+	entry.pos = src.pos;
+	return true;
+}
+
+template<bool IsAdverb = false>
+inline bool emit_adj_entry(const sequence& root_ids,
+		morphology_en& m, const wikt_entry& entry,
+		const sequence& adj_root,
+		hash_map<string, unsigned int>& names)
+{
+	if (entry.entries.length == 1) {
+		/* the comparative is formed with "more" and the superlative with "most" */
+		pair<string, string>& inflected_forms = *((pair<string, string>*) alloca(sizeof(pair<string, string>)));
+		inflected_forms.key = morphology_en::MORE_COMPARATIVE_STRING;
+		inflected_forms.value = morphology_en::MOST_SUPERLATIVE_STRING;
+
+		adjective_root& new_root = *((adjective_root*) alloca(sizeof(adjective_root)));
+		if (!init(new_root, comparability::COMPARABLE, &inflected_forms, 1, adj_root, names)) {
+			free(inflected_forms);
+			return false;
+		}
+		free(inflected_forms);
+		if (IsAdverb)
+			return m.add_adverb_root(root_ids, new_root);
+		else return m.add_adjective_root(root_ids, new_root);
+	} else {
+		array<pair<string, string>> inflected_forms(entry.entries.length - 1);
+		array_map<unsigned int, string> superlative_forms(entry.entries.length - 1);
+		comparability comp = comparability::COMPARABLE;
+		for (unsigned int i = 1; i < entry.entries.length; i++) {
+			if (entry.entries[i] == "more" && entry.root != "many" && entry.root != "most") {
+				if (!init(inflected_forms[inflected_forms.length].key, morphology_en::MORE_COMPARATIVE_STRING)) {
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				} else if (!init(inflected_forms[inflected_forms.length].value, morphology_en::MOST_SUPERLATIVE_STRING)) {
+					free(inflected_forms[inflected_forms.length].key);
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				}
+				inflected_forms.length++;
+			} else if (entry.entries[i] == "further" && entry.root != "far") {
+				if (!init(inflected_forms[inflected_forms.length].key, morphology_en::FURTHER_COMPARATIVE_STRING)) {
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				} else if (!init(inflected_forms[inflected_forms.length].value, morphology_en::FURTHEST_SUPERLATIVE_STRING)) {
+					free(inflected_forms[inflected_forms.length].key);
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				}
+				inflected_forms.length++;
+			} else if (entry.entries[i] == "er") {
+				string stem(entry.root.data, entry.root.length);
+				if (entry.root.length > 0 && entry.root[entry.root.length - 1] == 'e') {
+					stem.length--;
+				} else if (entry.root.length > 2 && entry.root[entry.root.length - 2] == 'e' && entry.root[entry.root.length - 1] == 'y'
+						&& (entry.root.length < 3 || !is_vowel(entry.root[entry.root.length - 3])))
+				{
+					stem.length--;
+					stem[stem.length - 1] = 'i';
+				} else if (entry.root.length > 1 && entry.root[entry.root.length - 1] == 'y'
+						&& (entry.root.length < 2 || !is_vowel(entry.root[entry.root.length - 2])))
+				{
+					stem[stem.length - 1] = 'i';
+				}
+
+				if (!init(inflected_forms[inflected_forms.length].key, stem)) {
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				} else if (!init(inflected_forms[inflected_forms.length].value, stem)) {
+					free(inflected_forms[inflected_forms.length].key);
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				}
+
+				inflected_forms[inflected_forms.length].key += "er";
+				inflected_forms[inflected_forms.length++].value += "est";
+			} else if (entry.entries[i] == "-") {
+				comp = comparability::INCOMPARABLE;
+			} else if (entry.entries[i] == "?") {
+				comp = comparability::UNKNOWN;
+			} else if (entry.entries[i] == "+") {
+				comp = comparability::COMPARABLE_ONLY;
+			} else {
+				unsigned int comparative_index;
+				const char* superlative; unsigned int superlative_length;
+				if (get_parameter(entry.entries[i], "sup", "=", comparative_index, superlative, superlative_length)) {
+					unsigned int index = superlative_forms.index_of(comparative_index);
+					if (index < superlative_forms.size)
+						free(superlative_forms.values[index]);
+					superlative_forms.keys[index] = comparative_index;
+					if (!init(superlative_forms.values[index], superlative, superlative_length)) {
+						if (index < superlative_forms.size) {
+							move(superlative_forms.values[superlative_forms.size - 1], superlative_forms.values[index]);
+							superlative_forms.size--;
+						}
+						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+						for (auto entry : superlative_forms) free(entry.value);
+						return false;
+					}
+					if (index == superlative_forms.size)
+						superlative_forms.size++;
+				} else {
+					if (entry.entries[i].index_of('=') < entry.entries[i].length || entry.entries[i].index_of('[') < entry.entries[i].length) {
+						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+						for (auto entry : superlative_forms) free(entry.value);
+						return true;
+					}
+
+					if (!init(inflected_forms[inflected_forms.length].key, entry.entries[i])) {
+						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+						for (auto entry : superlative_forms) free(entry.value);
+						return false;
+					}
+
+					if (entry.entries[i].length > 2 && entry.entries[i][entry.entries[i].length - 2] == 'e' && entry.entries[i][entry.entries[i].length - 1] == 'r') {
+						string superlative(entry.entries[i].data, entry.entries[i].length);
+						superlative.length -= 2;
+						superlative += "est";
+						if (!init(inflected_forms[inflected_forms.length].value, superlative)) {
+							free(inflected_forms[inflected_forms.length].key);
+							for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+							for (auto entry : superlative_forms) free(entry.value);
+							return false;
+						}
+					} else if (!init(inflected_forms[inflected_forms.length].value, "")) {
+						free(inflected_forms[inflected_forms.length].key);
+						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+						for (auto entry : superlative_forms) free(entry.value);
+						return false;
+					}
+					inflected_forms.length++;
+				}
+			}
+		}
+
+		for (auto entry : superlative_forms) {
+			/* if `inflected_forms.length` is smaller than the index, expand
+				`inflected_forms` with empty entries until its sufficiently large */
+			if (!inflected_forms.ensure_capacity(entry.key + 1)) {
+				for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+				for (auto entry : superlative_forms) free(entry.value);
+				return false;
+			}
+			while (entry.key >= inflected_forms.length) {
+				if (!init(inflected_forms[inflected_forms.length].key, "")) {
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				} else if (!init(inflected_forms[inflected_forms.length].value, "")) {
+					free(inflected_forms[inflected_forms.length].key);
+					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+					for (auto entry : superlative_forms) free(entry.value);
+					return false;
+				}
+				inflected_forms.length++;
+			}
+			swap(inflected_forms[entry.key].value, entry.value);
+		}
+		for (auto entry : superlative_forms) free(entry.value);
+
+		adjective_root& new_root = *((adjective_root*) alloca(sizeof(adjective_root)));
+		if (!init(new_root, comp, inflected_forms.data, inflected_forms.length, adj_root, names))
+			return false;
+		for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
+		if (IsAdverb)
+			return m.add_adverb_root(root_ids, new_root);
+		else return m.add_adjective_root(root_ids, new_root);
+	}
+}
+
+inline bool emit_adv_entry(
+		morphology_en& m, const wikt_entry& entry,
+		hash_map<string, unsigned int>& names)
 {
 	array<unsigned int> tokenization(2);
-	if (!tokenize(root.data, root.length, tokenization, names))
+	if (!tokenize(entry.root.data, entry.root.length, tokenization, names))
 		return false;
 	sequence root_ids(tokenization.data, tokenization.length);
 
-	if (entry.length == 0) {
-		read_error("Found an entry with no elements", current);
+	/* check if we can form this adverb from an adjective */
+	bool contains;
+	m.adjectives.get(root_ids, contains);
+	if (contains) {
+		/* the adverb and adjective forms are the same */
+		return emit_adj_entry<true>(root_ids, m, entry, root_ids, names);
+	}
+
+	if (entry.root.length > 2 && entry.root[entry.root.length - 2] == 'l' && entry.root[entry.root.length - 1] == 'y') {
+		string substring(entry.root.data, entry.root.length - 2);
+		array<unsigned int> new_tokenization(2);
+		if (!tokenize(substring.data, substring.length, new_tokenization, names))
+			return false;
+		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		m.adjectives.get(new_root_ids, contains);
+		if (contains)
+			/* we have an adverb of the form '-ly' (e.g. "quickly", "slowly") */
+			return emit_adj_entry<true>(root_ids, m, entry, new_root_ids, names);
+	}
+
+	if (entry.root.length > 2 && entry.root[entry.root.length - 2] == 'l' && entry.root[entry.root.length - 1] == 'y') {
+		string substring(entry.root.data, entry.root.length - 1);
+		substring += "e";
+
+		array<unsigned int> new_tokenization(2);
+		if (!tokenize(substring.data, substring.length, new_tokenization, names))
+			return false;
+		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		m.adjectives.get(new_root_ids, contains);
+		if (contains)
+			/* we have an adverb of the form '-ly' (e.g. "possibly", "forcibly") */
+			return emit_adj_entry<true>(root_ids, m, entry, new_root_ids, names);
+	}
+
+	if (entry.root.length > 6
+	 && entry.root[entry.root.length - 6] == 'i' && entry.root[entry.root.length - 5] == 'c'
+	 && entry.root[entry.root.length - 4] == 'a' && entry.root[entry.root.length - 3] == 'l'
+	 && entry.root[entry.root.length - 2] == 'l' && entry.root[entry.root.length - 1] == 'y')
+	{
+		string substring(entry.root.data, entry.root.length - 4);
+		array<unsigned int> new_tokenization(2);
+		if (!tokenize(substring.data, substring.length, new_tokenization, names))
+			return false;
+		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		m.adjectives.get(new_root_ids, contains);
+		if (contains)
+			/* we have an adverb of the form '-ically' */
+			return emit_adj_entry<true>(root_ids, m, entry, new_root_ids, names);
+	}
+
+	if (entry.root.length > 3
+	 && entry.root[entry.root.length - 3] == 'i' && entry.root[entry.root.length - 2] == 'l'
+	 && entry.root[entry.root.length - 1] == 'y')
+	{
+		string substring(entry.root.data, entry.root.length - 3);
+		substring += "y";
+
+		array<unsigned int> new_tokenization(2);
+		if (!tokenize(substring.data, substring.length, new_tokenization, names))
+			return false;
+		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		m.adjectives.get(new_root_ids, contains);
+		if (contains)
+			/* we have an adverb of the form '-ily' */
+			return emit_adj_entry<true>(root_ids, m, entry, new_root_ids, names);
+	}
+
+	/* the adverb is not formed from an adjective */
+	return emit_adj_entry<true>(root_ids, m, entry, sequence(nullptr, 0), names);
+}
+
+inline bool emit_entry(
+		morphology_en& m, const wikt_entry& entry,
+		hash_map<string, unsigned int>& names,
+		array<wikt_entry>& adv_entries)
+{
+	array<unsigned int> tokenization(2);
+	if (!tokenize(entry.root.data, entry.root.length, tokenization, names))
 		return false;
-	} else if (entry[0] == "n") {
-		if (entry.length == 1) {
+	sequence root_ids(tokenization.data, tokenization.length);
+
+	if (entry.entries.length == 0) {
+		read_error("Found an entry with no elements", entry.pos);
+		return false;
+	} else if (entry.entries[0] == "n") {
+		if (entry.entries.length == 1) {
 			/* the noun is countable and has a simple plural form "-s" */
-			string plural(root.data, root.length);
+			string plural(entry.root.data, entry.root.length);
 			plural += "s";
 
 			noun_root new_root;
@@ -951,39 +1268,39 @@ inline bool emit_entry(
 				return false;
 			return m.add_noun_root(root_ids, new_root);
 		} else {
-			array<string> plural_forms(entry.length - 1);
+			array<string> plural_forms(entry.entries.length - 1);
 			countability count = countability::COUNTABLE;
-			for (unsigned int i = 1; i < entry.length; i++) {
-				if (entry[i] == "s") {
-					if (!init(plural_forms[plural_forms.length], root)) {
+			for (unsigned int i = 1; i < entry.entries.length; i++) {
+				if (entry.entries[i] == "s") {
+					if (!init(plural_forms[plural_forms.length], entry.root)) {
 						for (string& str : plural_forms) free(str);
 						return false;
 					}
 					plural_forms[plural_forms.length++] += "s";
-				} else if (entry[i] == "es") {
-					if (!init(plural_forms[plural_forms.length], root)) {
+				} else if (entry.entries[i] == "es") {
+					if (!init(plural_forms[plural_forms.length], entry.root)) {
 						for (string& str : plural_forms) free(str);
 						return false;
 					}
 					plural_forms[plural_forms.length++] += "es";
-				} else if (entry[i] == "-") {
+				} else if (entry.entries[i] == "-") {
 					count = countability::UNCOUNTABLE;
-				} else if (entry[i] == "~") {
+				} else if (entry.entries[i] == "~") {
 					count = countability::BOTH;
-				} else if (entry[i] == "!") {
+				} else if (entry.entries[i] == "!") {
 					count = countability::PLURAL_UNATTESTED;
-				} else if (entry[i] == "?") {
+				} else if (entry.entries[i] == "?") {
 					count = countability::PLURAL_UNKNOWN;
-				} else if (starts_with(entry[i], "head=")) {
+				} else if (starts_with(entry.entries[i], "head=")) {
 					/* ignore these for now */
 					for (string& str : plural_forms) free(str);
 					return true;
 				} else {
-					if (entry[i].index_of('=') < entry[i].length || entry[i].index_of('[') < entry[i].length) {
+					if (entry.entries[i].index_of('=') < entry.entries[i].length || entry.entries[i].index_of('[') < entry.entries[i].length) {
 						for (string& str : plural_forms) free(str);
 						return true;
 					}
-					plural_forms[plural_forms.length++] = entry[i];
+					plural_forms[plural_forms.length++] = entry.entries[i];
 				}
 			}
 
@@ -993,34 +1310,34 @@ inline bool emit_entry(
 			for (string& str : plural_forms) free(str);
 			return m.add_noun_root(root_ids, new_root);
 		}
-	} else if (entry[0] == "pr") {
+	} else if (entry.entries[0] == "pr") {
 		/* this is a proper noun */
-		array<string> plural_forms(max((size_t) 1, entry.length - 1));
+		array<string> plural_forms(max((size_t) 1, entry.entries.length - 1));
 		countability count = countability::UNCOUNTABLE;
-		for (unsigned int i = 1; i < entry.length; i++) {
-			if (entry[i] == "s") {
-				if (!init(plural_forms[plural_forms.length], root)) {
+		for (unsigned int i = 1; i < entry.entries.length; i++) {
+			if (entry.entries[i] == "s") {
+				if (!init(plural_forms[plural_forms.length], entry.root)) {
 					for (string& str : plural_forms) free(str);
 					return false;
 				}
 				plural_forms[plural_forms.length++] += "s";
-			} else if (entry[i] == "es") {
-				if (!init(plural_forms[plural_forms.length], root)) {
+			} else if (entry.entries[i] == "es") {
+				if (!init(plural_forms[plural_forms.length], entry.root)) {
 					for (string& str : plural_forms) free(str);
 					return false;
 				}
 				plural_forms[plural_forms.length++] += "es";
-			} else if (entry[i] == "-") {
+			} else if (entry.entries[i] == "-") {
 				count = countability::UNCOUNTABLE;
-			} else if (entry[i] == "~") {
+			} else if (entry.entries[i] == "~") {
 				count = countability::BOTH;
-			} else if (starts_with(entry[i], "head=")) {
+			} else if (starts_with(entry.entries[i], "head=")) {
 				/* ignore these for now */
 				continue;
 			} else {
-				if (entry[i].index_of('=') < entry[i].length || entry[i].index_of('[') < entry[i].length)
+				if (entry.entries[i].index_of('=') < entry.entries[i].length || entry.entries[i].index_of('[') < entry.entries[i].length)
 					continue;
-				plural_forms[plural_forms.length++] = entry[i];
+				plural_forms[plural_forms.length++] = entry.entries[i];
 			}
 		}
 
@@ -1029,184 +1346,29 @@ inline bool emit_entry(
 			return false;
 		for (string& str : plural_forms) free(str);
 		return m.add_noun_root(root_ids, new_root);
-	} else if (entry[0] == "pl") {
+	} else if (entry.entries[0] == "pl") {
 		/* the noun is plural only; we ignore these for now */
 		return true;
-	} else if (entry[0] == "adj" || entry[0] == "adv") {
-		if (entry.length == 1) {
-			/* the comparative is formed with "more" and the superlative with "most" */
-			pair<string, string>& inflected_forms = *((pair<string, string>*) alloca(sizeof(pair<string, string>)));
-			inflected_forms.key = morphology_en::MORE_COMPARATIVE_STRING;
-			inflected_forms.value = morphology_en::MOST_SUPERLATIVE_STRING;
-
-			adjective_root new_root;
-			if (!init(new_root, comparability::COMPARABLE, &inflected_forms, 1, names)) {
-				free(inflected_forms);
-				return false;
-			}
-			free(inflected_forms);
-			if (entry[0] == "adj")
-				return m.add_adjective_root(root_ids, new_root);
-			else return m.add_adverb_root(root_ids, new_root);
-		} else {
-			array<pair<string, string>> inflected_forms(entry.length - 1);
-			array_map<unsigned int, string> superlative_forms(entry.length - 1);
-			comparability comp = comparability::COMPARABLE;
-			for (unsigned int i = 1; i < entry.length; i++) {
-				if (entry[i] == "more" && root != "many" && root != "most") {
-					if (!init(inflected_forms[inflected_forms.length].key, morphology_en::MORE_COMPARATIVE_STRING)) {
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					} else if (!init(inflected_forms[inflected_forms.length].value, morphology_en::MOST_SUPERLATIVE_STRING)) {
-						free(inflected_forms[inflected_forms.length].key);
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					}
-					inflected_forms.length++;
-				} else if (entry[i] == "further" && root != "far") {
-					if (!init(inflected_forms[inflected_forms.length].key, morphology_en::FURTHER_COMPARATIVE_STRING)) {
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					} else if (!init(inflected_forms[inflected_forms.length].value, morphology_en::FURTHEST_SUPERLATIVE_STRING)) {
-						free(inflected_forms[inflected_forms.length].key);
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					}
-					inflected_forms.length++;
-				} else if (entry[i] == "er") {
-					string stem(root.data, root.length);
-					if (root.length > 0 && root[root.length - 1] == 'e') {
-						stem.length--;
-					} else if (root.length > 2 && root[root.length - 2] == 'e' && root[root.length - 1] == 'y'
-							&& (root.length < 3 || !is_vowel(root[root.length - 3])))
-					{
-						stem.length--;
-						stem[stem.length - 1] = 'i';
-					} else if (root.length > 1 && root[root.length - 1] == 'y'
-							&& (root.length < 2 || !is_vowel(root[root.length - 2])))
-					{
-						stem[stem.length - 1] = 'i';
-					}
-
-					if (!init(inflected_forms[inflected_forms.length].key, stem)) {
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					} else if (!init(inflected_forms[inflected_forms.length].value, stem)) {
-						free(inflected_forms[inflected_forms.length].key);
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					}
-
-					inflected_forms[inflected_forms.length].key += "er";
-					inflected_forms[inflected_forms.length++].value += "est";
-				} else if (entry[i] == "-") {
-					comp = comparability::INCOMPARABLE;
-				} else if (entry[i] == "?") {
-					comp = comparability::UNKNOWN;
-				} else if (entry[i] == "+") {
-					comp = comparability::COMPARABLE_ONLY;
-				} else {
-					unsigned int comparative_index;
-					const char* superlative; unsigned int superlative_length;
-					if (get_parameter(entry[i], "sup", "=", comparative_index, superlative, superlative_length)) {
-						unsigned int index = superlative_forms.index_of(comparative_index);
-						if (index < superlative_forms.size)
-							free(superlative_forms.values[index]);
-						superlative_forms.keys[index] = comparative_index;
-						if (!init(superlative_forms.values[index], superlative, superlative_length)) {
-							if (index < superlative_forms.size) {
-								move(superlative_forms.values[superlative_forms.size - 1], superlative_forms.values[index]);
-								superlative_forms.size--;
-							}
-							for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-							for (auto entry : superlative_forms) free(entry.value);
-							return false;
-						}
-						if (index == superlative_forms.size)
-							superlative_forms.size++;
-					} else {
-						if (entry[i].index_of('=') < entry[i].length || entry[i].index_of('[') < entry[i].length) {
-							for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-							for (auto entry : superlative_forms) free(entry.value);
-							return true;
-						}
-
-						if (!init(inflected_forms[inflected_forms.length].key, entry[i])) {
-							for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-							for (auto entry : superlative_forms) free(entry.value);
-							return false;
-						}
-
-						if (entry[i].length > 2 && entry[i][entry[i].length - 2] == 'e' && entry[i][entry[i].length - 1] == 'r') {
-							string superlative(entry[i].data, entry[i].length);
-							superlative.length -= 2;
-							superlative += "est";
-							if (!init(inflected_forms[inflected_forms.length].value, superlative)) {
-								free(inflected_forms[inflected_forms.length].key);
-								for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-								for (auto entry : superlative_forms) free(entry.value);
-								return false;
-							}
-						} else if (!init(inflected_forms[inflected_forms.length].value, "")) {
-							free(inflected_forms[inflected_forms.length].key);
-							for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-							for (auto entry : superlative_forms) free(entry.value);
-							return false;
-						}
-						inflected_forms.length++;
-					}
-				}
-			}
-
-			for (auto entry : superlative_forms) {
-				/* if `inflected_forms.length` is smaller than the index, expand
-				   `inflected_forms` with empty entries until its sufficiently large */
-				if (!inflected_forms.ensure_capacity(entry.key + 1)) {
-					for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-					for (auto entry : superlative_forms) free(entry.value);
-					return false;
-				}
-				while (entry.key >= inflected_forms.length) {
-					if (!init(inflected_forms[inflected_forms.length].key, "")) {
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					} else if (!init(inflected_forms[inflected_forms.length].value, "")) {
-						free(inflected_forms[inflected_forms.length].key);
-						for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-						for (auto entry : superlative_forms) free(entry.value);
-						return false;
-					}
-					inflected_forms.length++;
-				}
-				swap(inflected_forms[entry.key].value, entry.value);
-			}
-			for (auto entry : superlative_forms) free(entry.value);
-
-			adjective_root new_root;
-			if (!init(new_root, comp, inflected_forms.data, inflected_forms.length, names))
-				return false;
-			for (auto& pair : inflected_forms) { free(pair.key); free(pair.value); }
-			if (entry[0] == "adj")
-				return m.add_adjective_root(root_ids, new_root);
-			else return m.add_adverb_root(root_ids, new_root);
+	} else if (entry.entries[0] == "adv") {
+		if (!adv_entries.ensure_capacity(adv_entries.length + 1)
+		 || !init(adv_entries[adv_entries.length], entry))
+		{
+			return false;
 		}
-	} else if (entry[0] == "v") {
-		if (entry.length == 1) {
+		adv_entries.length++;
+		return true;
+	} else if (entry.entries[0] == "adj") {
+		return emit_adj_entry(root_ids, m, entry, sequence(nullptr, 0), names);
+	} else if (entry.entries[0] == "v") {
+		if (entry.entries.length == 1) {
 			/* the noun is regular, i.e. the present 3rd person singular is
 			   formed by adding "-s", the present participle by adding "-ing",
 			   and the past by adding "-ed" */
-			string present_3sg(root.data, root.length);
+			string present_3sg(entry.root.data, entry.root.length);
 			present_3sg += "s";
-			string present_participle(root.data, root.length);
+			string present_participle(entry.root.data, entry.root.length);
 			present_participle += "ing";
-			string past(root.data, root.length);
+			string past(entry.root.data, entry.root.length);
 			past += "ed";
 
 			verb_root new_root;
@@ -1219,7 +1381,7 @@ inline bool emit_entry(
 		static unsigned int obsolete_str_length = strlen(obsolete_str);
 
 		/* first process the flags */
-		array<string> args(entry.length - 1);
+		array<string> args(entry.entries.length - 1);
 		array<string> pres_3sg(5);
 		array<string> pres_ptc(5);
 		array<string> past(5);
@@ -1231,24 +1393,24 @@ inline bool emit_entry(
 			for (string& str : past_ptc) { if (str.data != nullptr) free(str); }
 			for (string& str : args) { free(str); }
 		};
-		for (unsigned int i = 1; i < entry.length; i++) {
+		for (unsigned int i = 1; i < entry.entries.length; i++) {
 			unsigned int qualifier_index; const char* qualifier; unsigned int qualifier_length;
-			if (entry[i].index_of('[') < entry[i].length) { free_strings(); return true; }
-			if (get_parameter(entry[i], "head", "=", qualifier_index, qualifier, qualifier_length)) { free_strings(); return true; }
+			if (entry.entries[i].index_of('[') < entry.entries[i].length) { free_strings(); return true; }
+			if (get_parameter(entry.entries[i], "head", "=", qualifier_index, qualifier, qualifier_length)) { free_strings(); return true; }
 
-			if (get_parameter(entry[i], "pres_3sg", "=", qualifier_index, qualifier, qualifier_length)) {
+			if (get_parameter(entry.entries[i], "pres_3sg", "=", qualifier_index, qualifier, qualifier_length)) {
 				if (!inflect_verb(pres_3sg, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
 				continue;
-			} else if (get_parameter(entry[i], "pres_ptc", "=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "pres_ptc", "=", qualifier_index, qualifier, qualifier_length)) {
 				if (!inflect_verb(pres_ptc, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
 				continue;
-			} else if (get_parameter(entry[i], "past_ptc", "=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "past_ptc", "=", qualifier_index, qualifier, qualifier_length)) {
 				if (!inflect_verb(past_ptc, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
 				continue;
-			} else if (get_parameter(entry[i], "past", "=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "past", "=", qualifier_index, qualifier, qualifier_length)) {
 				if (!inflect_verb(past, qualifier_index, qualifier, qualifier_index)) { free_strings(); return false; }
 				continue;
-			} else if (get_parameter(entry[i], "pres_3sg", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "pres_3sg", "_qual=", qualifier_index, qualifier, qualifier_length)) {
 				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
 					if (qualifier_index < pres_3sg.length) {
 						if (pres_3sg[qualifier_index].data != nullptr) {
@@ -1265,7 +1427,7 @@ inline bool emit_entry(
 					}
 				}
 				continue;
-			} else if (get_parameter(entry[i], "pres_ptc", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "pres_ptc", "_qual=", qualifier_index, qualifier, qualifier_length)) {
 				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
 					if (qualifier_index < pres_ptc.length) {
 						if (pres_ptc[qualifier_index].data != nullptr) {
@@ -1282,7 +1444,7 @@ inline bool emit_entry(
 					}
 				}
 				continue;
-			} else if (get_parameter(entry[i], "past_ptc", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "past_ptc", "_qual=", qualifier_index, qualifier, qualifier_length)) {
 				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
 					if (qualifier_index < past_ptc.length) {
 						if (past_ptc[qualifier_index].data != nullptr) {
@@ -1299,7 +1461,7 @@ inline bool emit_entry(
 					}
 				}
 				continue;
-			} else if (get_parameter(entry[i], "past", "_qual=", qualifier_index, qualifier, qualifier_length)) {
+			} else if (get_parameter(entry.entries[i], "past", "_qual=", qualifier_index, qualifier, qualifier_length)) {
 				if (string_compare(qualifier, qualifier_length, obsolete_str, obsolete_str_length)) {
 					if (qualifier_index < past.length) {
 						if (past[qualifier_index].data != nullptr) {
@@ -1319,15 +1481,15 @@ inline bool emit_entry(
 			}
 
 #if !defined(NDEBUG)
-			unsigned int eq_index = entry[i].index_of('=');
-			if (eq_index < entry[i].length) {
-				fprintf(stderr, "WARNING at %u:%u: Unrecognized parameter in entry '", current.line, current.column);
-				print(entry[i], stderr); print("'.\n", stderr);
+			unsigned int eq_index = entry.entries[i].index_of('=');
+			if (eq_index < entry.entries[i].length) {
+				fprintf(stderr, "WARNING at %u:%u: Unrecognized parameter in entry '", entry.pos.line, entry.pos.column);
+				print(entry.entries[i], stderr); print("'.\n", stderr);
 				continue;
 			}
 #endif
 
-			if (!init(args[args.length], entry[i])) {
+			if (!init(args[args.length], entry.entries[i])) {
 				free_strings(); return false;
 			}
 			args.length++;
@@ -1338,29 +1500,29 @@ inline bool emit_entry(
 		bool third_empty = (args.length < 3 || args[2].length == 0);
 		if (!first_empty && second_empty && third_empty) {
 			if (args[0] == "es") {
-				if (!inflect_verb(pres_3sg, root, "es")
-				 || !inflect_verb(pres_ptc, root, "ing")
-				 || !inflect_verb(past, root, "ed"))
+				if (!inflect_verb(pres_3sg, entry.root, "es")
+				 || !inflect_verb(pres_ptc, entry.root, "ing")
+				 || !inflect_verb(past, entry.root, "ed"))
 				{ free_strings(); return false; }
 			} else if (args[0] == "ies") {
-				if (root.length == 0 || root[root.length - 1] != 'y') {
-					fprintf(stderr, "ERROR at %u:%u: Verb root '", current.line, current.column);
-					print(root, stderr); fprintf(stderr, "' does not end in 'y'.\n");
+				if (entry.root.length == 0 || entry.root[entry.root.length - 1] != 'y') {
+					fprintf(stderr, "ERROR at %u:%u: Verb root '", entry.pos.line, entry.pos.column);
+					print(entry.root, stderr); fprintf(stderr, "' does not end in 'y'.\n");
 					return false;
 				}
 
-				string stem(root.data, root.length - 1);
+				string stem(entry.root.data, entry.root.length - 1);
 				if (!inflect_verb(pres_3sg, stem, "ies")
 				 || !inflect_verb(pres_ptc, stem, "ying")
 				 || !inflect_verb(past, stem, "ied"))
 				{ free_strings(); return false; }
 			} else if (args[0] == "d") {
-				if (!inflect_verb(pres_3sg, root, "s")
-				 || !inflect_verb(pres_ptc, root, "ing")
-				 || !inflect_verb(past, root, "d"))
+				if (!inflect_verb(pres_3sg, entry.root, "s")
+				 || !inflect_verb(pres_ptc, entry.root, "ing")
+				 || !inflect_verb(past, entry.root, "d"))
 				{ free_strings(); return false; }
 			} else {
-				if (!inflect_verb(pres_3sg, root, "s")
+				if (!inflect_verb(pres_3sg, entry.root, "s")
 				 || !inflect_verb(pres_ptc, args[0], "ing")
 				 || !inflect_verb(past, args[0], "ed"))
 				{ free_strings(); return false; }
@@ -1377,27 +1539,27 @@ inline bool emit_entry(
 				 || !inflect_verb(past, args[0], "ied"))
 				{ free_strings(); return false; }
 			} else if (args.length > 1 && (args[1] == "ing" || args[1] == "ed")) {
-				if (!inflect_verb(pres_3sg, root, "s")
+				if (!inflect_verb(pres_3sg, entry.root, "s")
 				 || !inflect_verb(pres_ptc, args[0], "ing")
 				 || !inflect_verb(past, args[0], "ed"))
 				{ free_strings(); return false; }
 			} else if (args.length > 1 && args[1] == "d") {
-				if (!inflect_verb(pres_3sg, root, "s")
+				if (!inflect_verb(pres_3sg, entry.root, "s")
 				 || !inflect_verb(pres_ptc, args[0], "ing")
 				 || !inflect_verb(past, args[0], "d"))
 				{ free_strings(); return false; }
 			} else {
 				if (first_empty) {
-					if (!inflect_verb(pres_3sg, root, "s")) { free_strings(); return false; }
+					if (!inflect_verb(pres_3sg, entry.root, "s")) { free_strings(); return false; }
 				} else {
 					if (!inflect_verb(pres_3sg, args[0])) { free_strings(); return false; }
 				}
 				if (second_empty) {
-					if (!inflect_verb(pres_ptc, root, "ing")) { free_strings(); return false; }
+					if (!inflect_verb(pres_ptc, entry.root, "ing")) { free_strings(); return false; }
 				} else {
 					if (!inflect_verb(pres_ptc, args[1])) { free_strings(); return false; }
 				}
-				if (!inflect_verb(past, root, "ed")) { free_strings(); return false; }
+				if (!inflect_verb(past, entry.root, "ed")) { free_strings(); return false; }
 			}
 		} else {
 			if (args[2] == "es") {
@@ -1406,39 +1568,39 @@ inline bool emit_entry(
 				 || !inflect_verb(past, args[0], args[1], "ed"))
 				{ free_strings(); return false; }
 			} else if (args[2] == "ing") {
-				if (!inflect_verb(pres_3sg, root, "s")
+				if (!inflect_verb(pres_3sg, entry.root, "s")
 				 || !inflect_verb(pres_ptc, args[0], args[1], "ing"))
 				{ free_strings(); return false; }
 
 				if (args[1] == "y") {
-					if (!inflect_verb(past, root, "d")) { free_strings(); return false; }
+					if (!inflect_verb(past, entry.root, "d")) { free_strings(); return false; }
 				} else {
 					if (!inflect_verb(past, args[0], args[1], "ed")) { free_strings(); return false; }
 				}
 			} else if (args[2] == "ed") {
 				if (args[1] == "i") {
 					if (!inflect_verb(pres_3sg, args[0], args[1], "es")
-					 || !inflect_verb(pres_ptc, root, "ing"))
+					 || !inflect_verb(pres_ptc, entry.root, "ing"))
 					{ free_strings(); return false; }
 				} else {
-					if (!inflect_verb(pres_3sg, root, "s")
+					if (!inflect_verb(pres_3sg, entry.root, "s")
 					 || !inflect_verb(pres_ptc, args[0], args[1], "ing"))
 					{ free_strings(); return false; }
 				}
 				if (!inflect_verb(past, args[0], args[1], "ed")) { free_strings(); return false; }
 			} else if (args[2] == "d") {
-				if (!inflect_verb(pres_3sg, root, "s")
+				if (!inflect_verb(pres_3sg, entry.root, "s")
 				 || !inflect_verb(pres_ptc, args[0], args[1], "ing")
 				 || !inflect_verb(past, args[0], args[1], "d"))
 				{ free_strings(); return false; }
 			} else {
 				if (first_empty) {
-					if (!inflect_verb(pres_3sg, root, "s")) { free_strings(); return false; }
+					if (!inflect_verb(pres_3sg, entry.root, "s")) { free_strings(); return false; }
 				} else {
 					if (!inflect_verb(pres_3sg, args[0])) { free_strings(); return false; }
 				}
 				if (second_empty) {
-					if (!inflect_verb(pres_ptc, root, "ing")) { free_strings(); return false; }
+					if (!inflect_verb(pres_ptc, entry.root, "ing")) { free_strings(); return false; }
 				} else {
 					if (!inflect_verb(pres_ptc, args[1])) { free_strings(); return false; }
 				}
@@ -1493,7 +1655,7 @@ inline bool emit_entry(
 		free_strings();
 		return m.add_verb_root(root_ids, new_root);
 	} else {
-		read_error("Unrecognized part of speech", current);
+		read_error("Unrecognized part of speech", entry.pos);
 		return false;
 	}
 	return true;
@@ -1511,12 +1673,10 @@ bool morphology_read(morphology_en& m,
 		return false;
 
 	position start(1, 1);
-	position current = start;
 	morphology_state state = morphology_state::DEFAULT;
 	array<char> token = array<char>(1024);
-
-	string current_root("");
-	array<string> current_entry(16);
+	wikt_entry current_entry(start);
+	array<wikt_entry> adv_entries(1024);
 
 	std::mbstate_t shift = {0};
 	wint_t next = fgetwc(input);
@@ -1526,68 +1686,80 @@ bool morphology_read(morphology_en& m,
 		case morphology_state::DEFAULT:
 			if (next == '\t') {
 				string new_root(token.data, token.length);
-				swap(current_root, new_root);
+				swap(current_entry.root, new_root);
 				state = morphology_state::ENTRY;
 				token.clear(); shift = {0};
 			} else if (next == '\n') {
-				fprintf(stderr, "WARNING: Found root with no entries on line %u.\n", current.line);
+				fprintf(stderr, "WARNING: Found root with no entries on line %u.\n", current_entry.pos.line);
 				state = morphology_state::DEFAULT;
 				new_line = true;
 				token.clear(); shift = {0};
 			} else {
 				if (!append_to_token(token, next, shift)) {
-					for (string& str : current_entry) { free(str); } return false;
+					for (auto& entry : adv_entries) free(entry);
+					return false;
 				}
 			}
 			break;
 
 		case morphology_state::ENTRY:
 			if (next == '\t' || next == '\n') {
-				if (!current_entry.ensure_capacity(current_entry.length + 1)
-				 || !init(current_entry[current_entry.length++], token.data, token.length))
+				if (!current_entry.entries.ensure_capacity(current_entry.entries.length + 1)
+				 || !init(current_entry.entries[current_entry.entries.length++], token.data, token.length)
+				 || !emit_entry(m, current_entry, names, adv_entries))
 				{
-					for (string& str : current_entry) { free(str); } return false;
-				} else if (!emit_entry(m, current_root, current_entry, names, current)) {
-					for (string& str : current_entry) { free(str); } return false;
+					for (auto& entry : adv_entries) free(entry);
+					return false;
 				}
-				for (string& str : current_entry) { free(str); }
-				current_entry.clear();
+				for (string& str : current_entry.entries) { free(str); }
+				current_entry.entries.clear();
 				token.clear(); shift = {0};
 				if (next == '\n') {
 					state = morphology_state::DEFAULT;
 					new_line = true;
 				}
 			} else if (next == '\\') {
-				if (!current_entry.ensure_capacity(current_entry.length + 1)
-				 || !init(current_entry[current_entry.length++], token.data, token.length))
+				if (!current_entry.entries.ensure_capacity(current_entry.entries.length + 1)
+				 || !init(current_entry.entries[current_entry.entries.length++], token.data, token.length))
 				{
-					for (string& str : current_entry) { free(str); } return false;
+					for (auto& entry : adv_entries) free(entry);
+					return false;
 				}
 				token.clear(); shift = {0};
 			} else {
 				if (!append_to_token(token, next, shift)) {
-					for (string& str : current_entry) { free(str); } return false;
+					for (auto& entry : adv_entries) free(entry);
+					return false;
 				}
 			}
 			break;
 		}
 
 		if (new_line) {
-			current.line++;
-			current.column = 1;
+			current_entry.pos.line++;
+			current_entry.pos.column = 1;
 			new_line = false;
-		} else current.column++;
+		} else current_entry.pos.column++;
 		next = fgetwc(input);
 	}
 
-	for (string& str : current_entry) { free(str); }
 	if (!feof(input)) {
 		perror("Error occurred while reading morphology file");
+		for (auto& entry : adv_entries) free(entry);
 		return false;
 	} else if (state != morphology_state::DEFAULT) {
-		read_error("Unexpected end of input", current);
+		read_error("Unexpected end of input", current_entry.pos);
+		for (auto& entry : adv_entries) free(entry);
 		return false;
 	}
+
+	for (wikt_entry& entry : adv_entries) {
+		if (!emit_adv_entry(m, entry, names)) {
+			for (auto& entry : adv_entries) free(entry);
+			return false;
+		}
+	}
+	for (auto& entry : adv_entries) free(entry);
 	return true;
 }
 

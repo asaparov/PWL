@@ -80,8 +80,8 @@ inline bool emit_text(const array<char>& text, const position& start, const posi
 			return true;
 
 		bool has_subsections = false;
-		static string SUBSECTION_PATTERNS[] = { "{{en-noun", "{{en-proper noun", "{{en-plural noun", "{{en-verb", "{{en-adjective", "{{en-adj", "{{en-adverb", "{{en-adv", "{{head" };
-		static string POS_NAMES[] = { "n", "pr", "pl", "v", "adj", "adj", "adv", "adv", "" };
+		static string SUBSECTION_PATTERNS[] = { "{{en-noun", "{{en-proper noun", "{{en-proper-noun", "{{en-plural noun", "{{en-verb", "{{en-adjective", "{{en-adj", "{{en-adverb", "{{en-adv", "{{head" };
+		static string POS_NAMES[] = { "n", "pr", "pr", "pl", "v", "adj", "adj", "adv", "adv", "" };
 		for (unsigned int i = english_section + ENGLISH_HEADER.length; i < text.length; i++) {
 			/* check if we reached the end of the English section */
 			if (i + 3 < text.length && text[i] != '=' && text[i + 1] == '=' && text[i + 2] == '=' && text[i + 3] != '=')
