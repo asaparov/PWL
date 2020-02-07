@@ -1492,7 +1492,11 @@ struct hdp_parser
 		{
 			fflush(stdout); fprintf(stderr, "\nERROR: Unable to initialize morphology model.\n");
 			exit(EXIT_FAILURE);
-		} else if (!read_grammar(G, names, grammar_filepath)) {
+		}
+		printf(" done.\n");
+
+		printf("Loading grammar..."); fflush(stdout);
+		if (!read_grammar(G, names, grammar_filepath)) {
 			fflush(stdout); fprintf(stderr, "\nERROR: Unable to read grammar at '%s'.\n", grammar_filepath);
 			exit(EXIT_FAILURE);
 		}
