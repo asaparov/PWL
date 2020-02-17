@@ -837,12 +837,11 @@ inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<
 	if (!tokenize(input_sentence, sentence, names))
 		return false;
 
-	constexpr unsigned int max_parse_count = 4;
+	constexpr unsigned int max_parse_count = 1;
 	hol_term* logical_forms[max_parse_count];
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count;
 	array<sentence_token> unrecognized(4);
-//debug_flag = true;
 	const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
 	if (nonterminal_name_map != nullptr && parser.invert_name_map(names)) {
 		string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
@@ -948,7 +947,7 @@ int main(int argc, const char** argv)
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "english.morph", "english.gram");
+			names, "english.morph.short", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");

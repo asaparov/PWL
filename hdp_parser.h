@@ -1209,8 +1209,8 @@ inline bool equivalent(
 	}
 
 /* TODO: for debugging; remove this */
-//print("first_logical_form:  ", stderr); print(*first_logical_form, stderr, *debug_terminal_printer); print('\n', stderr);
-//print("second_logical_form: ", stderr); print(*second_logical_form, stderr, *debug_terminal_printer); print('\n', stderr);
+print("first_logical_form:  ", stderr); print(*first_logical_form, stderr, *debug_terminal_printer); print('\n', stderr);
+print("second_logical_form: ", stderr); print(*second_logical_form, stderr, *debug_terminal_printer); print('\n', stderr);
 	bool result = (first_logical_form == second_logical_form || *first_logical_form == *second_logical_form);
 	free(*first_logical_form); if (first_logical_form->reference_count == 0) free(first_logical_form);
 	free(*second_logical_form); if (second_logical_form->reference_count == 0) free(second_logical_form);
@@ -1540,7 +1540,7 @@ struct hdp_parser
 		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
 /* TODO: for debugging; remove this */
 debug_terminal_printer = &terminal_printer;
-//detect_duplicate_logical_forms = true;
+detect_duplicate_logical_forms = true;
 		/* construct the initial derivation trees (running the parser with an empty grammar) */
 		rooted_syntax_node<logical_form_type>** syntax = (rooted_syntax_node<logical_form_type>**)
 				calloc(data.length, sizeof(rooted_syntax_node<logical_form_type>*));
@@ -1669,6 +1669,8 @@ debug_terminal_printer = &terminal_printer;
 		auto sentence = tokenized_sentence<logical_form_type>(seq);
 		free(seq);
 
+/* TODO: for debugging; remove this */
+debug_flag = true;
 		if (!::parse<true, false, K>(parsed_syntax, parse_count,
 				logical_form, logical_form_output, G, sentence, morph, *this))
 			return false;
@@ -1678,8 +1680,8 @@ debug_terminal_printer = &terminal_printer;
 const string** nonterminal_name_map = invert(G.nonterminal_names);
 string_map_scribe terminal_printer = { reverse_name_map, name_count };
 string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
-//print(logical_form_output[i], stderr, terminal_printer); print('\n', stdout);
-//print(parsed_syntax[i], stderr, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout);
+print(logical_form_output[i], stderr, terminal_printer); print('\n', stdout);
+print(parsed_syntax[i], stderr, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout);
 free(nonterminal_name_map);
 			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
 			/* TODO: compute this prior */
@@ -7244,7 +7246,8 @@ inline bool predicate_and_tense(
 		hol_term* src, hol_term*& dst)
 {
 	head_index predicate_index; no_op apply;
-	hol_term* head = find_head(src, predicate_index, find_head<built_in_predicates>, apply);
+	auto find_array_head = make_array_finder(find_head<built_in_predicates>);
+	hol_term* head = find_head(src, predicate_index, find_array_head, apply);
 	if (head == nullptr)
 		return false;
 
@@ -7254,26 +7257,98 @@ inline bool predicate_and_tense(
 	unsigned int head_variable;
 	if (head->type == hol_term_type::EXISTS) {
 		head_variable = head->quantifier.variable;
+	} else if (head->type == hol_term_type::ANY_ARRAY) {
+		if (head->any_array.all->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.all->quantifier.variable;
+		} else if (head->any_array.right.length != 0 && head->any_array.right.operands[head->any_array.right.length - 1]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.right.operands[head->any_array.right.length - 1]->quantifier.variable;
+		} else {
+			head_variable = 0;
+		}
+	} else if (head->type == hol_term_type::AND || head->type == hol_term_type::OR) {
+		return false;
 	} else {
+		head_variable = 0;
+	}
+
+	if (head_variable == 0) {
 		unsigned int max_variable = 0;
 		max_bound_variable(*head, max_variable);
 		head_variable = ++max_variable;
 	}
 
+	hol_term* src_head;
+	if (head->type == hol_term_type::ANY_ARRAY) {
+		/* make sure this ANY_ARRAY can be a singleton */
+		if (head->any_array.left.length > 1 || head->any_array.right.length > 1 || head->any_array.any.length > 1)
+			return false;
+
+		array<hol_term*> intersection(2);
+		if (head->any_array.left.length != 0) {
+			intersection[0] = head->any_array.left.operands[0];
+			intersection[0]->reference_count++;
+			intersection.length++;
+		} if (head->any_array.right.length != 0) {
+			if (intersection.length == 0) {
+				intersection[0] = head->any_array.right.operands[0];
+				intersection[0]->reference_count++;
+				intersection.length++;
+			} else {
+				array<hol_term*> new_intersection(2);
+				for (hol_term* term : intersection)
+					intersect<built_in_predicates>(new_intersection, term, head->any_array.right.operands[0]);
+				free_all(intersection);
+				swap(intersection, new_intersection);
+				if (intersection.length == 0)
+					return false;
+			}
+		} if (head->any_array.any.length != 0) {
+			if (intersection.length == 0) {
+				intersection[0] = head->any_array.any.operands[0];
+				intersection[0]->reference_count++;
+				intersection.length++;
+			} else {
+				array<hol_term*> new_intersection(2);
+				for (hol_term* term : intersection)
+					intersect<built_in_predicates>(new_intersection, term, head->any_array.any.operands[0]);
+				free_all(intersection);
+				swap(intersection, new_intersection);
+				if (intersection.length == 0)
+					return false;
+			}
+		}
+
+		if (intersection.length == 0) {
+			src_head = head->any_array.all;
+			src_head->reference_count++;
+		} else if (intersection.length != 1) {
+			fprintf(stderr, "predicate_and_tense ERROR: Intersection is not unique.\n");
+			free_all(intersection); return false;
+		} else {
+			src_head = intersection[0];
+		}
+	} else {
+		src_head = head;
+		src_head->reference_count++;
+	}
+
 	hol_term* var_term = hol_term::new_variable(head_variable);
-	if (var_term == nullptr)
+	if (var_term == nullptr) {
+		free(*src_head); if (src_head->reference_count == 0) free(src_head);
 		return false;
+	}
 
 	hol_term* expected_predicate = hol_term::new_apply(
 			hol_term::new_any(nullptr, hol_non_head_constants<built_in_predicates>::get_terms(), hol_non_head_constants<built_in_predicates>::count()), var_term);
 	if (expected_predicate == nullptr) {
-		free(*var_term); free(var_term);
-		return false;
+		free(*src_head); if (src_head->reference_count == 0) free(src_head);
+		free(*var_term); free(var_term); return false;
 	}
 	var_term->reference_count++;
 	hol_non_head_constants<built_in_predicates>::increment_terms();
 
-	bool result = predicate_and_tense(head, dst, var_term, expected_predicate);
+	bool result = predicate_and_tense(src_head, dst, var_term, expected_predicate);
+	free(*src_head); if (src_head->reference_count == 0) free(src_head);
 	free(*var_term); if (var_term->reference_count == 0) free(var_term);
 	free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 	return result;
@@ -10105,16 +10180,16 @@ inline hol_term* remap_to_invert_apply_head(
 	apply_head_inverter first_inverter; head_index first_predicate_index;
 	apply_head_inverter second_inverter; head_index second_predicate_index;
 /* TODO: for debugging; remove this */
-//print("first:  ", stderr); print(*first, stderr, *debug_terminal_printer); print('\n', stderr);
-//print("second: ", stderr); print(*second, stderr, *debug_terminal_printer); print('\n', stderr);
+print("first:  ", stderr); print(*first, stderr, *debug_terminal_printer); print('\n', stderr);
+print("second: ", stderr); print(*second, stderr, *debug_terminal_printer); print('\n', stderr);
 	hol_term* first_head = find_head(first, first_predicate_index, find_first_head, first_inverter);
 	hol_term* second_head = find_head(second, second_predicate_index, find_second_head, second_inverter);
 	if (first_head == nullptr || second_head == nullptr)
 		return nullptr;
 
 /* TODO: for debugging; remove this */
-//print("first_head:  ", stderr); print(*first_head, stderr, *debug_terminal_printer); print('\n', stderr);
-//print("second_head: ", stderr); print(*second_head, stderr, *debug_terminal_printer); print('\n', stderr);
+print("first_head:  ", stderr); print(*first_head, stderr, *debug_terminal_printer); print('\n', stderr);
+print("second_head: ", stderr); print(*second_head, stderr, *debug_terminal_printer); print('\n', stderr);
 	max_variable = first_inverter.max_variable;
 	max_bound_variable(*first_head, max_variable);
 
@@ -10606,8 +10681,8 @@ inline bool invert_apply_head(
 	for (unsigned int i = 0; i < second_heads.length; i++) {
 		array<hol_term*> new_heads(8);
 /* TODO: for debugging; remove this */
-//fprintf(stderr, "first_head:       "); print(*first_head, stderr, *debug_terminal_printer); print('\n', stderr);
-//fprintf(stderr, "second_heads[%u]: ", i); print(*second_heads[i], stderr, *debug_terminal_printer); print('\n', stderr);
+fprintf(stderr, "first_head:       "); print(*first_head, stderr, *debug_terminal_printer); print('\n', stderr);
+fprintf(stderr, "second_heads[%u]: ", i); print(*second_heads[i], stderr, *debug_terminal_printer); print('\n', stderr);
 		intersect<built_in_predicates>(new_heads, first_head, second_heads[i]);
 		if (new_heads.length == 0)
 			continue;
@@ -10626,8 +10701,8 @@ inline bool invert_apply_head(
 
 			array<hol_term*> new_outer(8);
 /* TODO: for debugging; remove this */
-//fprintf(stderr, "first_outer:      "); print(*first_outer, stderr, *debug_terminal_printer); print('\n', stderr);
-//fprintf(stderr, "new_second_outer: "); print(*new_second_outer, stderr, *debug_terminal_printer); print('\n', stderr);
+fprintf(stderr, "first_outer:      "); print(*first_outer, stderr, *debug_terminal_printer); print('\n', stderr);
+fprintf(stderr, "new_second_outer: "); print(*new_second_outer, stderr, *debug_terminal_printer); print('\n', stderr);
 			intersect<built_in_predicates>(new_outer, first_outer, new_second_outer);
 			free(*new_second_outer); if (new_second_outer->reference_count == 0) free(new_second_outer);
 
@@ -10715,7 +10790,7 @@ inline bool invert_apply_head(
 		inverse[i].flags = flags;
 		inverse[i].root = inverted_logical_forms[i];
 /* TODO: for debugging; remove this */
-//fprintf(stderr, "inverse[%u]: ", i); print(inverse[i], stderr, *debug_terminal_printer); print('\n', stderr);
+fprintf(stderr, "inverse[%u]: ", i); print(inverse[i], stderr, *debug_terminal_printer); print('\n', stderr);
 	}
 	inverse_count = inverted_logical_forms.length;
 	return true;
@@ -13572,7 +13647,8 @@ inline bool invert_select_arg_without_head_predicative(
 					return false;
 				}
 
-				if (must_be_simple_set_def && set_definition->quantifier.operand->type == hol_term_type::EQUALS
+				if (must_be_simple_set_def && can_remove_set_variable
+				 && set_definition->quantifier.operand->type == hol_term_type::EQUALS
 				 && set_definition->quantifier.operand->binary.left->type == hol_term_type::VARIABLE
 				 && set_definition->quantifier.operand->binary.left->variable == set_definition->quantifier.variable
 				 && (set_definition->quantifier.operand->binary.right->type == hol_term_type::CONSTANT
@@ -14749,38 +14825,73 @@ inline bool invert_predicate_and_tense(
 		const grammatical_flags& flags,
 		hol_term* first, hol_term* second)
 {
-	hol_term* any_wide_scope = hol_term::new_any(hol_term::new_apply(hol_term::new_constant((unsigned int) built_in_predicates::WIDE_SCOPE), &HOL_ANY));
-	if (any_wide_scope == nullptr)
+	head_index predicate_index; no_op apply;
+	auto find_array_head = make_array_finder(find_head<built_in_predicates>);
+	hol_term* first_head = find_head(first, predicate_index, find_array_head, apply);
+	if (first_head == nullptr)
 		return false;
+
+	hol_term* first_outer = substitute_head<any_node_position::NONE>(first, first_head, &HOL_ZERO);
+	if (first_outer == nullptr)
+		return false;
+
+	hol_term* any_wide_scope = hol_term::new_any(hol_term::new_apply(hol_term::new_constant((unsigned int) built_in_predicates::WIDE_SCOPE), &HOL_ANY));
+	if (any_wide_scope == nullptr) {
+		free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+		return false;
+	}
 	HOL_ANY.reference_count++;
 
 	hol_term* duplicate_wide_scopes = hol_term::new_any_right(hol_term::new_apply(hol_term::new_constant((unsigned int) built_in_predicates::WIDE_SCOPE), any_wide_scope));
 	if (duplicate_wide_scopes == nullptr) {
-		free(*any_wide_scope); free(any_wide_scope);
-		return false;
+		free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+		free(*any_wide_scope); free(any_wide_scope); return false;
 	}
 
 	hol_term* excluded_universal = hol_term::new_any_right(hol_term::new_any_quantifier(hol_quantifier_type::FOR_ALL, any_wide_scope));
 	if (excluded_universal == nullptr) {
-		free(*duplicate_wide_scopes); free(duplicate_wide_scopes);
-		return false;
+		free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+		free(*duplicate_wide_scopes); free(duplicate_wide_scopes); return false;
 	}
 	any_wide_scope->reference_count++;
 
 	hol_term* excluded_trees[2];
 	excluded_trees[0] = excluded_universal;
 	excluded_trees[1] = duplicate_wide_scopes;
-	hol_term* new_second = hol_term::new_any_right(second, excluded_trees, array_length(excluded_trees));
-	if (new_second == nullptr) {
+	hol_term* new_second_outer = hol_term::new_any_right(&HOL_ZERO, excluded_trees, array_length(excluded_trees));
+	if (new_second_outer == nullptr) {
+		free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
 		free(*duplicate_wide_scopes); free(duplicate_wide_scopes);
 		free(*excluded_universal); free(excluded_universal);
 		return false;
 	}
-	second->reference_count++;
+	HOL_ZERO.reference_count++;
 
-	bool result = intersect(inverse, inverse_count, flags, first, new_second);
-	free(*new_second); if (new_second->reference_count == 0) free(new_second);
-	return result;
+	array<hol_term*> new_outer(4);
+	intersect<built_in_predicates>(new_outer, first_outer, new_second_outer);
+	free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+	free(*new_second_outer); if (new_second_outer->reference_count == 0) free(new_second_outer);
+	if (new_outer.length == 0)
+		return false;
+
+	array<hol_term*> inverted_logical_forms(new_outer.length);
+	for (hol_term* outer : new_outer) {
+		hol_term* new_term = substitute_head<any_node_position::NONE>(outer, &HOL_ZERO, second);
+		if (new_term == nullptr) {
+			free_all(new_outer); free_all(inverted_logical_forms);
+			return false;
+		}
+		inverted_logical_forms[inverted_logical_forms.length++] = new_term;
+	}
+	free_all(new_outer);
+
+	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>) * inverted_logical_forms.length);
+	for (unsigned int i = 0; i < inverted_logical_forms.length; i++) {
+		inverse[i].flags = flags;
+		inverse[i].root = inverted_logical_forms[i];
+	}
+	inverse_count = inverted_logical_forms.length;
+	return true;
 }
 
 inline bool invert_select_predicate_in_set(
@@ -16934,8 +17045,8 @@ inline bool is_subset(
 		return false;
 
 /* TODO: for debugging; remove this */
-//print("first.root:  ", stderr); print(*first.root, stderr, *debug_terminal_printer); print('\n', stderr);
-//print("second.root: ", stderr); print(*second.root, stderr, *debug_terminal_printer); print('\n', stderr);
+print("first.root:  ", stderr); print(*first.root, stderr, *debug_terminal_printer); print('\n', stderr);
+print("second.root: ", stderr); print(*second.root, stderr, *debug_terminal_printer); print('\n', stderr);
 	array<pair<hol_term*, variable_map>> intersection(2);
 	intersect<built_in_predicates>(intersection, first.root, second.root);
 	if (intersection.length == 0)
