@@ -3159,13 +3159,12 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 					}
 					return nullptr;
 				}
-				for (unsigned int i = new_term->array.length; i > 0; i--)
-					new_term->array.operands[i + src->array.length - 1] = new_term->array.operands[i];
+				for (unsigned int i = first->array.length; i > 0; i--)
+					new_term->array.operands[i + src->array.length - 2] = first->array.operands[i - 1];
 				for (unsigned int i = 0; i + 1 < src->array.length; i++) {
 					new_term->array.operands[i] = src->array.operands[i];
 					new_term->array.operands[i]->reference_count++;
 				}
-				new_term->array.operands[src->array.length - 1] = first;
 				new_term->array.length = src->array.length + first->array.length - 1;
 			} else {
 				new_term->array.length = src->array.length;
@@ -3546,13 +3545,12 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 					}
 					return nullptr;
 				}
-				for (unsigned int i = new_term->array.length; i > 0; i--)
-					new_term->array.operands[i + src->array.length - 1] = new_term->array.operands[i];
+				for (unsigned int i = first->array.length; i > 0; i--)
+					new_term->array.operands[i + src->array.length - 2] = first->array.operands[i - 1];
 				for (unsigned int i = 0; i + 1 < src->array.length; i++) {
 					new_term->array.operands[i] = src->array.operands[i];
 					new_term->array.operands[i]->reference_count++;
 				}
-				new_term->array.operands[src->array.length - 1] = first;
 				new_term->array.length = src->array.length + first->array.length - 1;
 			} else {
 				new_term->array.length = src->array.length;
@@ -7818,10 +7816,7 @@ inline bool select_predicate_in_set(array<hol_term*>& out, hol_term* head,
 
 		second_expected_heads[second_expected_heads.length] = hol_term::new_exists(set_variable, hol_term::new_and(
 				hol_term::new_apply(hol_term::new_constant((unsigned int) built_in_predicates::SUBSET), set_var, hol_term::new_lambda(element_variable, hol_term::new_apply(predicates[0], element_var))),
-				hol_term::new_any_right(hol_term::new_for_all(element_variable, hol_term::new_if_then(
-					hol_term::new_apply(set_var, element_var),
-					hol_term::new_apply(hol_term::new_variable(lambda_variable), element_var)
-				)), &excluded_quantifier, 1)));
+				hol_term::new_any(nullptr, &excluded_quantifier, 1)));
 		if (second_expected_heads[second_expected_heads.length] == nullptr) {
 			free_all(second_expected_heads);
 			free(*excluded_quantifier); if (excluded_quantifier->reference_count == 0) free(excluded_quantifier);
@@ -17190,27 +17185,35 @@ bool get_predicate_only(hol_term* src, unsigned int& value,
 	if ((src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT) && src->any.included != nullptr && src->any.included->type == hol_term_type::EXISTS)
 		head = head->any.included;
 
-	unsigned int head_variable = 0;
-	if (head->type == hol_term_type::EXISTS)
+	unsigned int head_variable;
+	if (head->type == hol_term_type::EXISTS) {
 		head_variable = head->quantifier.variable;
-
-	hol_term* excluded_quantifier = hol_term::new_any(hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, &HOL_ANY));
-	if (excluded_quantifier == nullptr)
-		return false;
-	HOL_ANY.reference_count++;
-
-	hol_term* term;
-	if (head_variable == 0) {
-		term = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS,
-				hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_any(nullptr, &excluded_quantifier, 1)));
+	} else if (head->type == hol_term_type::ANY_ARRAY) {
+		if (head->any_array.any.length > 1 || head->any_array.left.length > 1 || head->any_array.right.length > 1)
+			return false;
+		if (head->any_array.left.length == 1 && head->any_array.left.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.left.operands[0]->quantifier.variable;
+		} else if (head->any_array.right.length == 1 && head->any_array.right.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.right.operands[0]->quantifier.variable;
+		} else if (head->any_array.any.length == 1 && head->any_array.any.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.any.operands[0]->quantifier.variable;
+		} else if (head->any_array.all->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.all->quantifier.variable;
+		} else {
+			unsigned int max_variable = 0;
+			max_bound_variable(*head, max_variable);
+			head_variable = ++max_variable;
+		}
 	} else {
-		term = hol_term::new_exists(head_variable,
-				hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_any(nullptr, &excluded_quantifier, 1)));
+		unsigned int max_variable = 0;
+		max_bound_variable(*head, max_variable);
+		head_variable = ++max_variable;
 	}
-	if (term == nullptr) {
-		free(*excluded_quantifier); free(excluded_quantifier);
+
+	hol_term* term = hol_term::new_exists(head_variable,
+			hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_variable(head_variable)));
+	if (term == nullptr)
 		return false;
-	}
 
 	array<hol_term*> intersection(2);
 	intersect<built_in_predicates>(intersection, term, src);

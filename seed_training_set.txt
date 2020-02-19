@@ -371,7 +371,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[P]:((P=^[p]:planet(p)) & (size(P)=1) & ?[x]:(P(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=earth))))};
+	{?[P]:(subset(P,^[p]:planet(p)) & (size(P)=1) & ?[x]:(P(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=earth))))};
 
 # TODO: add this is a training example; currently (as of Feb 7) our parser wants to parse this as ?[f]:(?[x]:(mammal(x) & (arg1(f)=x)) & female(f) & present(f)) | ?[m]:(?[x]:(mammal(x) & (arg1(m)=x)) & male(m) & present(m))
 #: # A mammal is female or male.
