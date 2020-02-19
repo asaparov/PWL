@@ -373,6 +373,41 @@
 )}
 	{?[P]:(subset(P,^[p]:planet(p)) & (size(P)=1) & ?[x]:(P(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=earth))))};
 
+: # Jupiter is large.
+{(S
+	(S':mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative
+					(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
+						(NOMINAL_R:identity
+							(NOMINAL_L:identity
+								(N:require_no_correlator,select_predicate_in_set "Earth"/"Earth")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
+				(VP_R:select_left_predicate_and_tense,set_predicate_empty,factor
+					(VP_L:identity
+						(BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,empty_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular
+					(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_singular
+						(ADJP_L:try_remove_is_adjunct
+							(ADJ:require_no_correlator "large"/"large")
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[l]:((arg1(l)=jupiter) & large(l) & present(l))};
+
 # TODO: add this is a training example; currently (as of Feb 7) our parser wants to parse this as ?[f]:(?[x]:(mammal(x) & (arg1(f)=x)) & female(f) & present(f)) | ?[m]:(?[x]:(mammal(x) & (arg1(m)=x)) & male(m) & present(m))
 #: # A mammal is female or male.
 #{(S

@@ -7822,8 +7822,6 @@ inline bool select_predicate_in_set(array<hol_term*>& out, hol_term* head,
 			free(*excluded_quantifier); if (excluded_quantifier->reference_count == 0) free(excluded_quantifier);
 			free_all(predicates); return false;
 		}
-		set_var->reference_count += 2 - 1;
-		element_var->reference_count += 3 - 1;
 		predicates[0]->reference_count++;
 		excluded_quantifier->reference_count++;
 		second_expected_heads.length++;
@@ -15279,6 +15277,23 @@ inline bool invert_remove_wide_scope(
 	intersect<built_in_predicates>(intersection, second_outer, wide_scope);
 	free(*second_outer); if (second_outer->reference_count == 0) free(second_outer);
 	free(*wide_scope); if (wide_scope->reference_count == 0) free(wide_scope);
+
+	/* also consider the possibility that there is no universal quantifier */
+	hol_term* any_right_universal = hol_term::new_any_right(hol_term::new_any_quantifier(hol_quantifier_type::FOR_ALL, &HOL_ANY));
+	if (any_right_universal == nullptr) {
+		free_all(intersection);
+		return false;
+	}
+
+	hol_term* no_wide_scope = hol_term::new_any_right(&HOL_ZERO, &any_right_universal, 1);
+	if (no_wide_scope == nullptr) {
+		free(*any_right_universal); if (any_right_universal->reference_count == 0) free(any_right_universal);
+		free_all(intersection); return false;
+	}
+	HOL_ZERO.reference_count++;
+
+	intersect<built_in_predicates>(intersection, second_outer, no_wide_scope);
+	free(*no_wide_scope); if (no_wide_scope->reference_count == 0) free(no_wide_scope);
 	if (intersection.length == 0)
 		return false;
 
