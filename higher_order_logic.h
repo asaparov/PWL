@@ -14133,43 +14133,52 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 			}
 			free_all(first_intersection);
 
-			array<LogicalFormSet> first_differences(8);
-			subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(root)->unary.operand, second_any);
-			for (unsigned int i = 0; i < first_differences.length; i++)
-				if (!intersect_variable_map(first_differences[i], get_variable_map(root))) remove(first_differences, i--);
-			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-				free_all(differences); free_all(first_differences);
-				free(*second_any); if (second_any->reference_count == 0) free(second_any);
-				return false;
-			}
-			for (LogicalFormSet& first_difference : first_differences) {
-				hol_term* term;
-				if (get_term(first_difference) == get_term(root)->unary.operand) {
-					term = get_term(root);
-					term->reference_count++;
-				} else {
-					if (!new_hol_term(term)) {
-						free_all(differences); free_all(first_differences);
+			array<LogicalFormSet> intersections(4);
+			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersections, get_term(root), second->any.included);
+			for (unsigned int i = 0; i < intersections.length; i++)
+				if (!intersect_variable_map(intersections[i], get_variable_map(root))) remove(intersections, i--);
+			for (LogicalFormSet& intersection : intersections) {
+				array<LogicalFormSet> first_differences(8);
+				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(intersection)->unary.operand, second_any);
+				for (unsigned int i = 0; i < first_differences.length; i++)
+					if (!intersect_variable_map(first_differences[i], get_variable_map(intersection))) remove(first_differences, i--);
+				if (!ComputeIntersection && first_differences.length > 0) {
+					free_all(differences); free_all(intersections); free_all(first_differences);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return true;
+				} else if (!dst.ensure_capacity(dst.length + first_differences.length)) {
+					free_all(differences); free_all(intersections); free_all(first_differences);
+					free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					return false;
+				} else if (first_differences.length == 1 && get_term(first_differences[0]) == get_term(intersection)->unary.operand) {
+					if (!emplace(dst, get_term(intersection), get_variable_map(first_differences[0]))) {
+						free_all(differences); free_all(intersections); free_all(first_differences);
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					term->type = get_term(root)->type;
-					term->reference_count = 1;
-					term->unary.operand = get_term(first_difference);
-					term->unary.operand->reference_count++;
+					free_all(first_differences);
+					continue;
 				}
-				unsigned int old_length = dst.length;
-				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, term, second->any.included);
-				free(*term); if (term->reference_count == 0) free(term);
-				for (unsigned int i = old_length; i < dst.length; i++)
-					if (!intersect_variable_map(dst[i], get_variable_map(first_difference))) remove(dst, i--);
-				if (!ComputeIntersection && intersection_not_empty) {
-					free_all(differences); free_all(first_differences);
-					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+				for (LogicalFormSet& first_difference : first_differences) {
+					hol_term* new_term;
+					if (!new_hol_term(new_term)) {
+						free_all(differences); free_all(intersections); free_all(first_differences);
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
+						return false;
+					}
+					new_term->type = first->type;
+					new_term->reference_count = 1;
+					new_term->unary.operand = get_term(first_difference);
+					new_term->unary.operand->reference_count++;
+					if (!emplace<true>(dst, new_term, get_variable_map(first_difference))) {
+						free_all(differences); free_all(intersections); free_all(first_differences);
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
+						free(*new_term); free(new_term); return false;
+					}
 				}
+				free_all(first_differences);
 			}
-			free_all(first_differences);
+			free_all(intersections);
 		}
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
