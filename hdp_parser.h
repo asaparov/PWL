@@ -1546,6 +1546,7 @@ struct hdp_parser
 		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
 /* TODO: for debugging; remove this */
 debug_terminal_printer = &terminal_printer;
+debug_nonterminal_printer = &nonterminal_printer;
 detect_duplicate_logical_forms = true;
 		/* construct the initial derivation trees (running the parser with an empty grammar) */
 		rooted_syntax_node<logical_form_type>** syntax = (rooted_syntax_node<logical_form_type>**)
@@ -1676,6 +1677,11 @@ detect_duplicate_logical_forms = true;
 		free(seq);
 
 /* TODO: for debugging; remove this */
+const string** nonterminal_name_map = invert(G.nonterminal_names);
+string_map_scribe terminal_printer = { reverse_name_map, name_count };
+string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
+debug_terminal_printer = &terminal_printer;
+debug_nonterminal_printer = &nonterminal_printer;
 debug_flag = true;
 		if (!::parse<true, false, K>(parsed_syntax, parse_count,
 				logical_form, logical_form_output, G, sentence, morph, *this))
@@ -1683,9 +1689,6 @@ debug_flag = true;
 
 		for (unsigned int i = 0; i < parse_count; i++) {
 /* TODO: for debugging; remove this */
-const string** nonterminal_name_map = invert(G.nonterminal_names);
-string_map_scribe terminal_printer = { reverse_name_map, name_count };
-string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
 print(logical_form_output[i], stderr, terminal_printer); print('\n', stdout);
 print(parsed_syntax[i], stderr, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout);
 free(nonterminal_name_map);
@@ -7971,10 +7974,8 @@ inline bool remove_predicative_not(hol_term* src, hol_term*& dst)
 					last = operand;
 				}
 
-				bool last_is_any = false;
 				if (last->type == hol_term_type::ANY_RIGHT && last->any.included != nullptr) {
 					last = last->any.included;
-					last_is_any = true;
 					could_have_not = true;
 				} else if (last->type == hol_term_type::UNARY_APPLICATION && last->binary.left->type == hol_term_type::CONSTANT && last->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE) {
 					last = last->binary.right;
@@ -14792,7 +14793,7 @@ inline bool invert_select_arg_without_head_predicative(
 					for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
 				}
 
-				if (can_keep_set_variable) {
+				if (can_keep_set_variable && (right->type == hol_term_type::EXISTS || right->type == hol_term_type::FOR_ALL)) {
 					hol_term* new_second_head;
 					if (ConjunctIndex >= 0) {
 						new_second_head = hol_term::new_exists(predicate_variable, hol_term::new_any_array(hol_term_type::AND, conjunct,
@@ -14865,7 +14866,7 @@ inline bool invert_select_arg_without_head_predicative(
 							}
 							HOL_ANY.reference_count++;
 							new_right_conjunct = hol_term::new_any_right_only(hol_term::new_exists(element_variable, hol_term::new_and(hol_term::new_apply(set_var, element_var), hol_term::new_any_right_only(&HOL_ZERO, &excluded_quantifier, 1))));
-						} else if (right->type == hol_term_type::FOR_ALL) {
+						} else {
 							hol_term* excluded_quantifier = hol_term::new_any(hol_term::new_for_all(element_variable, &HOL_ANY));
 							if (excluded_quantifier == nullptr) {
 								free_all(new_heads);
@@ -14884,9 +14885,6 @@ inline bool invert_select_arg_without_head_predicative(
 										hol_term::new_any_right_only(hol_term::new_for_all(element_variable,
 											hol_term::new_if_then(hol_term::new_apply(set_var, element_var), hol_term::new_any_right_only(&HOL_ZERO, &excluded_quantifier, 1))))));
 							}
-						} else {
-							excluded_quantifier = nullptr;
-							new_right_conjunct = hol_term::new_and(hol_term::new_apply(set_var, element_var), hol_term::new_any_right_only(&HOL_ZERO));
 						}
 						if (new_right_conjunct == nullptr) {
 							free_all(new_heads);
@@ -15156,7 +15154,6 @@ inline bool invert_remove_predicative_not(
 			}
 #endif
 
-			bool could_have_not = false;
 			hol_term* last;
 			hol_term* operand = second_head->quantifier.operand;
 			if (operand->type == hol_term_type::ANY_ARRAY) {
@@ -15169,7 +15166,6 @@ inline bool invert_remove_predicative_not(
 				last = operand;
 			}
 
-			bool last_is_any = false;
 			if (last->type == hol_term_type::ANY_RIGHT && last->any.included != nullptr) {
 				/* try adding the negation here */
 				hol_term* negated = hol_term::new_not(last);
@@ -15184,8 +15180,6 @@ inline bool invert_remove_predicative_not(
 				HOL_ZERO.reference_count++;
 
 				last = last->any.included;
-				last_is_any = true;
-				could_have_not = true;
 			} else if (last->type == hol_term_type::UNARY_APPLICATION && last->binary.left->type == hol_term_type::CONSTANT && last->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE) {
 				/* try adding the negation here */
 				hol_term* negated = hol_term::new_not(last);

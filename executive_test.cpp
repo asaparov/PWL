@@ -842,12 +842,8 @@ inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count;
 	array<sentence_token> unrecognized(4);
-	const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
-	if (nonterminal_name_map != nullptr && parser.invert_name_map(names)) {
+	if (parser.invert_name_map(names)) {
 		string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
-		string_map_scribe nonterminal_printer = { nonterminal_name_map, parser.G.nonterminal_names.table.size + 1 };
-		debug_terminal_printer = &terminal_printer;
-		debug_nonterminal_printer = &nonterminal_printer;
 		if (parser.template parse<max_parse_count>(sentence, logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
 			for (unsigned int i = 0; i < parse_count; i++) {
 				print(*logical_forms[i], stderr, terminal_printer); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
@@ -858,11 +854,8 @@ inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<
 		} else {
 			fprintf(stderr, "ERROR: Parsing failed.\n");
 		}
-		free(nonterminal_name_map);
 	} else {
 		fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
-		if (nonterminal_name_map != nullptr)
-			free(nonterminal_name_map);
 	}
 	free(sentence);
 	return true;
