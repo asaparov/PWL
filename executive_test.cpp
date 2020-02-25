@@ -837,7 +837,7 @@ inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<
 	if (!tokenize(input_sentence, sentence, names))
 		return false;
 
-	constexpr unsigned int max_parse_count = 1;
+	constexpr unsigned int max_parse_count = 2;
 	hol_term* logical_forms[max_parse_count];
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count;
@@ -997,14 +997,12 @@ int main(int argc, const char** argv)
 		return EXIT_FAILURE;
 	}
 
-/*fprintf(stderr, "Parser constructed and trained. Exiting...\n");*/
-run_console(stdin, "\nEnter sentence to parse: ", parser, names);
-
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 		free(paragraph);
 	}
 
+run_console(stdin, "\nEnter sentence to parse: ", parser, names);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;
 
