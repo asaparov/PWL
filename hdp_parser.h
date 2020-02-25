@@ -6112,7 +6112,7 @@ inline hol_term* make_selected_arg_without_head(
 		hol_term* temp = hol_term::new_not(quantified_term);
 		if (temp == nullptr) {
 			free(*quantified_term); free(quantified_term);
-			if (negation_count > 0) free(*excluded_quantifier); free(excluded_quantifier);
+			if (negation_count > 0) { free(*excluded_quantifier); free(excluded_quantifier); }
 			return nullptr;
 		}
 		quantified_term = temp;
@@ -6124,7 +6124,7 @@ inline hol_term* make_selected_arg_without_head(
 	else right = quantified_term;
 	if (right == nullptr) {
 		free(*quantified_term); free(quantified_term);
-		if (negation_count > 0) free(*excluded_quantifier); free(excluded_quantifier);
+		if (negation_count > 0) { free(*excluded_quantifier); free(excluded_quantifier); }
 	}
 
 	hol_term* dst = hol_term::new_exists(set_variable, hol_term::new_any_array(hol_term_type::AND, &HOL_ANY, make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_array_view(&right, 1)));
