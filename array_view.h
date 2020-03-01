@@ -136,9 +136,9 @@ struct appended_array_view {
 	static_assert(has_index_operator<Array, T>::value, "`Array` does not have an index operator that returns type `T`");
 
 	const Array& first;
-	T& second;
+	T second;
 
-	appended_array_view(const Array& first, T& second) : first(first), second(second) { }
+	appended_array_view(const Array& first, T second) : first(first), second(second) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == first.size()) return second;
@@ -156,7 +156,7 @@ struct appended_array_view {
 };
 
 template<typename T, typename Array>
-appended_array_view<T, Array> make_appended_array_view(const Array& first, T& second) {
+appended_array_view<T, Array> make_appended_array_view(const Array& first, T second) {
 	return appended_array_view<T, Array>(first, second);
 }
 

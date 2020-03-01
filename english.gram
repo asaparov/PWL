@@ -804,7 +804,7 @@ S'' -> THERE VP_R:try_remove_nullable_subject,require_no_lambda,try_remove_corre
 # This rule requires that `arg1(y)=r` and `arg1(y)=x` appear in both
 # consequents (or `arg2(y)=r` and `arg2(y)=x`, etc).
 S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
-S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct_and_negation VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct_and_negation
+#S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct_and_negation VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct_and_negation
 # TODO: do we need an arg2 version of this rule?
 
 # open interrogative clauses with movement
@@ -1421,7 +1421,7 @@ NP -> NP':require_singular,try_remove_adv,require_no_correlator,require_predicat
 # NP {^[P]:(... & ?[X]:(f(X=^[x]:~f(x)) & ?[x]:(X(x) & P(x))))} -> NOT NP {^[P]:?[X]:(f(X=^[x]:f(x)) & ?[x]:(X(x) & P(x)))}
 # NP {^[P]:(... & ?[X]:(f(X) & ~?[x]:(X(x) & P(x))))} -> NEITHER NP {^[P]:?[X]:(f(X) & ?[x]:(X(x) & P(x)))}
 # this depends on whether the head quantifier is negated
-NP -> NO NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not
+NP -> NO NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential
 #NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative,remove_predicative_not
 #NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative,remove_predicative_set_complement
 #NP -> NEITHER NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential

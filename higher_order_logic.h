@@ -12990,7 +12990,7 @@ if (MapSecondVariablesToFirst) {
 			for (unsigned int i = 0; i < first_differences.length; i++)
 				if (!intersect_variable_map(first_differences[i], get_variable_map(root))) remove(first_differences, i--);
 			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-				free_all(differences); free_all(first_intersection);
+				free_all(differences); free_all(first_differences);
 				free(*second_any); if (second_any->reference_count == 0) free(second_any);
 				return false;
 			}
@@ -13001,7 +13001,7 @@ if (MapSecondVariablesToFirst) {
 					term->reference_count++;
 				} else {
 					if (!new_hol_term(term)) {
-						free_all(differences); free_all(first_intersection);
+						free_all(differences); free_all(first_differences);
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
@@ -13014,14 +13014,14 @@ if (MapSecondVariablesToFirst) {
 				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, term, second->any.included);
 				free(*term); if (term->reference_count == 0) free(term);
 				if (!ComputeIntersection && intersection_not_empty) {
-					free_all(differences); free_all(first_intersection);
+					free_all(differences); free_all(first_differences);
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return true;
 				}
 				for (unsigned int i = old_length; i < dst.length; i++)
 					if (!intersect_variable_map(dst[i], get_variable_map(first_difference))) remove(dst, i--);
 			}
-			free_all(first_intersection);
+			free_all(first_differences);
 		}
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);

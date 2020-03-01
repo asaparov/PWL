@@ -36,7 +36,7 @@
 	(PERIOD ".")
 )}
 #	{![x]:((U(0,x) & cat(x)) => ?[s]:((arg1(s)=x) & U(1,s) & same(s) & present(s) & ?[m]:(U(2,m) & mammal(m) & (arg2(s)=m))))};
-	{![x]:(cat(x) => ?[s]:((arg1(s)=x) & same(s) & present(s) & ?[m]:(mammal(m) & (arg2(s)=m))))};
+	{![x]:(cat(x) => ?[m]:(mammal(m) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=m))))};
 
 : # Mercury is a planet in the Solar System.
 {(S
@@ -95,7 +95,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[s]:((arg1(s)=mercury) & same(s) & present(s) & ?[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=solar_system) & (arg1_of(p)=l)) & (arg2(s)=p)))};
+	{?[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=solar_system) & (arg1_of(p)=l)) & ?[s]:((arg1(s)=mercury) & same(s) & present(s) & (arg2(s)=p)))};
 
 : # Neptune is one of the 8 planets in the solar system.
 {(S
@@ -285,7 +285,7 @@
 	)
 	(PERIOD ".")
 )}
-	{![x]:(cat(x) => ?[s]:((arg1(s)=x) & same(s) & present(s) & ?[m]:(mammal(m) & (arg2(s)=m))))};
+	{![x]:(cat(x) => ?[m]:(mammal(m) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=m))))};
 
 : # Each mammal is female or male.
 {(S
@@ -541,7 +541,7 @@
 							(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
 								(NOMINAL_R:identity
 									(NOMINAL_L:identity
-										(N:require_no_correlator,select_predicate_in_set "Mercury"/"Mercury")
+										(N:require_no_correlator,select_predicate_in_set "Neptune"/"Neptune")
 									)
 								)
 							)
@@ -572,23 +572,23 @@
 	)
 	(PERIOD ".")
 )}
-	{?[s]:((arg1(s)=mercury) & same(s) & present(s) & ?[p]:(planet(p) & (arg2(s)=p))) & ?[s]:((arg1(s)=neptune) & same(s) & present(s) & ?[p]:(planet(p) & (arg2(s)=p)))};
+	{?[p]:(planet(p) & ?[s]:((arg1(s)=mercury) & same(s) & present(s) & (arg2(s)=p))) & ?[p]:(planet(p) & ?[s]:((arg1(s)=neptune) & same(s) & present(s) & (arg2(s)=p)))};
 
 : # No mammal is a fish.
 {(S
 	(S':mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
-			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct_and_negation
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct
 				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative
 					(NO "no")
-					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not
+					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential
 						(NOMINAL_L:identity
 							(N:require_no_correlator,select_predicate_in_set "mammal"/"mammal")
 						)
 					)
 				)
 			)
-			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct_and_negation
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
 				(VP_R:remove_right_conjunct
 					(VP_L:identity
 						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
@@ -611,7 +611,7 @@
 	)
 	(PERIOD ".")
 )}
-	{~?[s]:(?[m]:(mammal(m) & (arg1(s)=m)) & same(s) & present(s) & ?[f]:(fish(f) & (arg2(s)=f)))};
+	{~?[m]:(mammal(m) & ?[f]:(fish(f) & ?[s]:((arg1(s)=m) & same(s) & present(s) & (arg2(s)=f))))};
 
 : # A nucleus inhabits every eukaryote.
 {(S
