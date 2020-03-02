@@ -341,7 +341,7 @@
 						(Q:try_remove_genitive,select_second_left_set_conjunct_root
 							(NUMBER:size "one")
 						)
-						(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
+						(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
 							(NOMINAL_L:identity
 								(N:require_no_correlator,select_predicate_in_set "planet"/"planet")
 							)

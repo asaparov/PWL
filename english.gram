@@ -1746,6 +1746,7 @@ NP' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # NP {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & f(S) & ...))} -> Q {f(x_1)} NOMINAL_R {^[P]:(?[S]:(g(S=^[x]:f(x)) & ...))}
 # this depends on whether the head predicate of the left conjunct f(S) is one that expresses information about the size of the set
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
+NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
 
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
