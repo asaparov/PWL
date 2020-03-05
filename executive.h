@@ -4,7 +4,7 @@
 #include "article.h"
 #include "natural_deduction_mh.h"
 
-constexpr double PERPLEXITY_THRESHOLD = 10.0;
+constexpr double PERPLEXITY_THRESHOLD = 0.01;
 
 template<typename Formula>
 inline void free_logical_forms(Formula** logical_forms, unsigned int count)
@@ -41,13 +41,14 @@ bool read_sentence(
 			/* this could be a definition so try adding it to the theory */
 			bool success = T.add_formula(logical_forms[0], new_constant)
 						&& parser.add_definition(s, logical_forms[0], new_constant);
-			free_logical_forms(logical_forms, parse_count);
 			if (!success) {
 				print("read_sentence ERROR: Unable to add definition to theory.\n", stderr);
 				print("  Sentence:     '", stderr); print(s, stderr, printer); print("'\n", stderr);
 				print("  Logical form: ", stderr); print(*logical_forms[0], stderr, printer); print("\n", stderr);
+				free_logical_forms(logical_forms, parse_count);
 				return false;
 			}
+			free_logical_forms(logical_forms, parse_count);
 
 			//for (unsigned int t = 0; t < 10; t++)
 			//	if (!do_mh_step(T, theory_prior)) return false;

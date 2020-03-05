@@ -391,9 +391,26 @@ inline bool init(
 }
 
 template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline void on_free_set(unsigned int set_id,
+		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets)
+{ }
+
+inline bool compute_new_set_size(
+		unsigned int set_id, unsigned int& out,
+		unsigned int min_set_size, unsigned int max_set_size)
+{
+	out = (max_set_size == UINT_MAX) ? (min_set_size + 20) : ((min_set_size + max_set_size + 1) / 2);
+	return true;
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 struct set_reasoning
 {
 	typedef typename ProofCalculus::Proof Proof;
+
+	struct changes {
+		array_map<unsigned int, unsigned int> removed_sets;
+	};
 
 	extensional_set_graph<ProofCalculus> extensional_graph;
 	intensional_set_graph intensional_graph;
@@ -480,13 +497,6 @@ struct set_reasoning
 		try_free_set(set_formula, set_id);
 	}
 
-	inline bool compute_new_set_size(unsigned int& out,
-			unsigned int min_set_size, unsigned int max_set_size)
-	{
-		out = (max_set_size == UINT_MAX) ? (min_set_size + 10) : ((min_set_size + max_set_size) / 2);
-		return true;
-	}
-
 	inline bool new_set(unsigned int& set_id)
 	{
 		set_id = get_next_free_set();
@@ -501,7 +511,8 @@ struct set_reasoning
 		return true;
 	}
 
-	bool new_set(Formula* set_formula, unsigned int& set_id)
+	template<typename... Args>
+	bool new_set(Formula* set_formula, unsigned int& set_id, Args&&... visitor)
 	{
 		if (!new_set(set_id)) return false;
 
@@ -625,16 +636,9 @@ struct set_reasoning
 		}
 
 		/* compute the upper bound and lower bound on the size of this new set */
-		unsigned int min_set_size, max_set_size = UINT_MAX, initial_set_size;
-		for (unsigned int parent : intensional_graph.vertices[set_id].parents) {
-			if (sets[parent].set_size == 0) {
-				max_set_size = 0;
-				break;
-			}
-		}
-		if (!get_size_lower_bound(set_id, min_set_size)
-		 || (max_set_size != 0 && !get_size_upper_bound(set_id, max_set_size))
-		 || !compute_new_set_size(initial_set_size, min_set_size, max_set_size))
+		unsigned int min_set_size, max_set_size, initial_set_size;
+		if (!set_size_bounds(set_id, min_set_size, max_set_size)
+		 || !compute_new_set_size(set_id, initial_set_size, min_set_size, max_set_size, std::forward<Args>(visitor)...))
 		{
 			free_set(set_id); return false;
 		}
@@ -643,6 +647,20 @@ struct set_reasoning
 		if (set_id == set_count + 1)
 			set_count++;
 		return true;
+	}
+
+	inline bool set_size_bounds(unsigned int set_id,
+			unsigned int& min_set_size, unsigned int& max_set_size)
+	{
+		max_set_size = UINT_MAX;
+		for (unsigned int parent : intensional_graph.vertices[set_id].parents) {
+			if (sets[parent].set_size == 0) {
+				max_set_size = 0;
+				break;
+			}
+		}
+		return get_size_lower_bound(set_id, min_set_size)
+			&& (max_set_size == 0 || get_size_upper_bound(set_id, max_set_size));
 	}
 
 	bool free_set(unsigned int set_id)
@@ -714,7 +732,8 @@ struct set_reasoning
 		return free_set(set_id);
 	}
 
-	inline bool get_set_id(Formula* formula, unsigned int& set_id, bool& is_new) {
+	template<typename... Args>
+	inline bool get_set_id(Formula* formula, unsigned int& set_id, bool& is_new, Args&&... visitor) {
 		bool contains; unsigned int bucket;
 		if (!set_ids.check_size()) return false;
 		set_id = set_ids.get(*formula, contains, bucket);
@@ -725,7 +744,7 @@ struct set_reasoning
 
 			if (!init(set_ids.table.keys[bucket], *formula)) {
 				return false;
-			} else if (!new_set(formula, set_id)) {
+			} else if (!new_set(formula, set_id, std::forward<Args>(visitor)...)) {
 				core::free(set_ids.table.keys[bucket]);
 				core::set_empty(set_ids.table.keys[bucket]);
 				return false;
@@ -739,9 +758,10 @@ struct set_reasoning
 		return true;
 	}
 
-	inline bool get_set_id(Formula* formula, unsigned int& set_id) {
+	template<typename... Args>
+	inline bool get_set_id(Formula* formula, unsigned int& set_id, Args&&... visitor) {
 		bool is_new;
-		return get_set_id(formula, set_id, is_new);
+		return get_set_id(formula, set_id, is_new, std::forward<Args>(visitor)...);
 	}
 
 	inline bool get_strongly_connected_component(
@@ -1167,22 +1187,19 @@ struct set_reasoning
 		return true;
 	}
 
-	template<bool ResolveInconsistencies>
-	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, int& unfixed_set_count_change)
+	template<bool ResolveInconsistencies, typename... Args>
+	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, Args&&... visitor)
 	{
 		if (!set_ids.check_size(set_ids.table.size + 2)) return NULL;
 
 		unsigned int antecedent_set, consequent_set;
 		bool is_antecedent_new, is_consequent_new;
-		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new)) {
+		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
 			return NULL;
-		} else if (!get_set_id(consequent, consequent_set, is_consequent_new)) {
+		} else if (!get_set_id(consequent, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
 			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
 			return NULL;
 		}
-
-		if (is_antecedent_new) unfixed_set_count_change++;
-		if (is_consequent_new) unfixed_set_count_change++;
 
 #if !defined(NDEBUG)
 		if (consequent_set == antecedent_set)
@@ -1324,12 +1341,6 @@ struct set_reasoning
 			}
 		}
 		return axiom;
-	}
-
-	template<bool ResolveInconsistencies>
-	inline Proof* get_subset_axiom(Formula* antecedent, Formula* consequent) {
-		int unfixed_set_count_change;
-		return get_subset_axiom<ResolveInconsistencies>(antecedent, consequent, unfixed_set_count_change);
 	}
 
 	bool remove_subset_relation(
@@ -1518,8 +1529,8 @@ struct set_reasoning
 		return true;
 	}
 
-	template<bool ResolveInconsistencies>
-	bool move_element_to_set(unsigned int element, Formula* new_set_formula)
+	template<bool ResolveInconsistencies, typename... Args>
+	bool move_element_to_set(unsigned int element, Formula* new_set_formula, Args&&... visitor)
 	{
 		if (!element_map.check_size()) return false;
 		bool contains; unsigned int bucket;
@@ -1536,7 +1547,7 @@ struct set_reasoning
 #endif
 
 		unsigned int new_set_id;
-		if (!get_set_id(new_set_formula, new_set_id))
+		if (!get_set_id(new_set_formula, new_set_id, std::forward<Args>(visitor)...))
 			return false;
 		else if (new_set_id == old_set_id)
 			return true;
@@ -1656,11 +1667,15 @@ struct set_reasoning
 			element_map.table.size++;
 		}
 		element_map.values[bucket] = new_set_id;
-		if (is_freeable(old_set_id)) free_set(sets[old_set_id].set_formula(), old_set_id);
+		if (is_freeable(old_set_id)) {
+			on_free_set(old_set_id, *this, std::forward<Args>(visitor)...);
+			free_set(sets[old_set_id].set_formula(), old_set_id);
+		}
 		return true;
 	}
 
-	bool move_element_to_superset(unsigned int element, Formula* new_set_formula)
+	template<typename... Args>
+	bool move_element_to_superset(unsigned int element, Formula* new_set_formula, Args&&... visitor)
 	{
 		bool contains; unsigned int bucket;
 		unsigned int old_set_id = element_map.get(element, contains, bucket);
@@ -1672,7 +1687,7 @@ struct set_reasoning
 #endif
 
 		unsigned int new_set_id;
-		if (!get_set_id(new_set_formula, new_set_id))
+		if (!get_set_id(new_set_formula, new_set_id, std::forward<Args>(visitor)...))
 			return false;
 		else if (new_set_id == old_set_id)
 			return true;
@@ -1704,11 +1719,15 @@ struct set_reasoning
 
 		/* `old_set_id` may now be freeable */
 		element_map.values[bucket] = new_set_id;
-		if (is_freeable(old_set_id)) free_set(sets[old_set_id].set_formula(), old_set_id);
+		if (is_freeable(old_set_id)) {
+			on_free_set(old_set_id, *this, std::forward<Args>(visitor)...);
+			free_set(sets[old_set_id].set_formula(), old_set_id);
+		}
 		return true;
 	}
 
-	void remove_element(unsigned int element)
+	template<typename... Args>
+	void remove_element(unsigned int element, Args&&... visitor)
 	{
 		bool contains; unsigned int bucket;
 		unsigned int set_id = element_map.get(element, contains, bucket);
@@ -1730,7 +1749,10 @@ struct set_reasoning
 
 		/* `set_id` may now be freeable */
 		element_map.remove_at(bucket);
-		if (is_freeable(set_id)) free_set(sets[set_id].set_formula(), set_id);
+		if (is_freeable(set_id)) {
+			on_free_set(set_id, *this, std::forward<Args>(visitor)...);
+			free_set(sets[set_id].set_formula(), set_id);
+		}
 	}
 
 	inline bool are_disjoint(Formula* first, Formula* second) const

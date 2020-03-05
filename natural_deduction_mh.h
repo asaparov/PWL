@@ -245,7 +245,7 @@ nd_step<Formula>* get_proof(
 	unsigned int index = proofs.index_of(a.predicate);
 #if !defined(NDEBUG)
 	if (index == proofs.size) {
-		fprintf(stderr, "propose_universal_intro WARNING: Theory is invalid.\n");
+		fprintf(stderr, "get_proof WARNING: Theory is invalid.\n");
 		return NULL;
 	}
 #endif
@@ -262,7 +262,7 @@ nd_step<Formula>* get_proof(
 	unsigned int index = proofs.index_of(r);
 #if !defined(NDEBUG)
 	if (index == proofs.size) {
-		fprintf(stderr, "propose_universal_intro WARNING: Theory is invalid.\n");
+		fprintf(stderr, "get_proof WARNING: Theory is invalid.\n");
 		return NULL;
 	}
 #endif
@@ -601,6 +601,33 @@ bool get_satisfying_extensional_edges(
 	return true;
 }
 
+constexpr double SET_SIZE_PROPOSAL_P = 0.1;
+double SET_SIZE_PROPOSAL_LOG_P = log(SET_SIZE_PROPOSAL_P);
+double SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P = log(1.0 - SET_SIZE_PROPOSAL_P);
+
+struct unfixed_set_counter {
+	int change;
+	double log_probability;
+};
+
+inline bool compute_new_set_size(
+		unsigned int set_id, unsigned int& out,
+		unsigned int min_set_size, unsigned int max_set_size,
+		unfixed_set_counter& counter)
+{
+	if (max_set_size == UINT_MAX) {
+		out = min_set_size + sample_geometric(0.1);
+		counter.log_probability += (out - min_set_size) * SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P + SET_SIZE_PROPOSAL_LOG_P;
+	} else {
+		out = min_set_size + sample_uniform(max_set_size - min_set_size + 1);
+		if (!log_cache<double>::instance().ensure_size(max_set_size - min_set_size + 2))
+			return false;
+		counter.log_probability += -log_cache<double>::instance().get(max_set_size - min_set_size + 1);
+	}
+	counter.change++;
+	return true;
+}
+
 template<bool Negated, unsigned int Arity,
 	typename Formula, typename Canonicalizer, typename ProofPrior>
 bool propose_universal_intro(
@@ -627,7 +654,7 @@ bool propose_universal_intro(
 	nd_step<Formula>* axiom_step;
 	unsigned int random = sample_uniform(satisfying_extensional_edges.length + 1);
 	log_proposal_probability_ratio -= -log_cache<double>::instance().get(satisfying_extensional_edges.length + 1);
-	int unfixed_set_count_change = 0;
+	unfixed_set_counter unfixed_set_count_change = {0};
 	if (random < satisfying_extensional_edges.length) {
 		const pair<unsigned int, unsigned int>& selected = satisfying_extensional_edges[random];
 		axiom_step = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
@@ -699,7 +726,7 @@ bool propose_universal_intro(
 		set_intersect(intersection, get_concept_set(T, a));
 
 		/* we've finished constructing the new universally-quantified formula,
-		and now we need to transform all the relevant proofs */
+		   and now we need to transform all the relevant proofs */
 		array<Formula*> conjuncts(32);
 		for (unsigned int type : selected_types) {
 			Formula* conjunct = Formula::new_atom(type, Formula::new_variable(1));
@@ -730,8 +757,13 @@ bool propose_universal_intro(
 			}
 		}
 
-		Formula* axiom = Formula::new_for_all(1, Formula::new_if_then(
-				Formula::new_and(make_array_view(conjuncts.data, conjuncts.length)), new_lifted_atom<Formula>(a)));
+		Formula* axiom;
+		if (conjuncts.length == 1) {
+			axiom = Formula::new_for_all(1, Formula::new_if_then(conjuncts[0], new_lifted_atom<Formula>(a)));
+		} else {
+			axiom = Formula::new_for_all(1, Formula::new_if_then(
+					Formula::new_and(make_array_view(conjuncts.data, conjuncts.length)), new_lifted_atom<Formula>(a)));
+		}
 		if (axiom == NULL) {
 			free_formulas(conjuncts);
 			free(proposed_proofs); return false;
@@ -741,7 +773,7 @@ bool propose_universal_intro(
 			free_formulas(conjuncts);
 		}
 
-		Formula* canonicalized = canonicalize(*axiom, T.canonicalizer);
+		Formula* canonicalized = Canonicalizer::canonicalize(*axiom);
 		free(*axiom); if (axiom->reference_count == 0) free(axiom);
 		if (canonicalized == NULL) {
 			free(proposed_proofs); return false;
@@ -769,16 +801,23 @@ bool propose_universal_intro(
 	 && T.sets.extensional_graph.vertices[old_set_id].parents.size == 0
 	 && T.sets.sets[old_set_id].elements.length == 1
 	 && T.sets.sets[old_set_id].size_axiom->children.length == 0)
-		unfixed_set_count_change--;
+	{
+		unfixed_set_count_change.change--;
+		double log_prob = 0.0;
+		set_size_proposal_log_probability(old_set_id, T.sets, log_prob);
+		unfixed_set_count_change.log_probability -= log_prob;
+		unfixed_set_count_change.change--;
+	}
 
 	/* compute the probability of the inverse proposal */
-	unsigned int new_axiom_count = old_axiom_count + unfixed_set_count_change;
+	unsigned int new_axiom_count = old_axiom_count + unfixed_set_count_change.change;
 	if (satisfying_extensional_edges.length == 0) new_axiom_count++;
 	if (Arity == 2 && a.args[0] == a.args[1]) new_axiom_count -= 3;
 	else if (Arity == 2) new_axiom_count -= 2;
 	else new_axiom_count -= 1;
 	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) { free(proposed_proofs); return false; }
 	log_proposal_probability_ratio += -log_cache<double>::instance().get(new_axiom_count);
+	log_proposal_probability_ratio += unfixed_set_count_change.log_probability;
 
 	unsigned int antecedent_length;
 	if (antecedent->type != FormulaType::AND) {
@@ -1019,7 +1058,7 @@ bool propose_universal_elim(
 	const concept<ProofCalculus>& c = T.ground_concepts[constant - T.new_constant_offset];
 #if !defined(NDEBUG)
 	if (c.types.keys == NULL)
-		fprintf(stderr, "make_grounded_conjunction WARNING: Theory does not contain a concept for ID %u.\n", constant);
+		fprintf(stderr, "propose_universal_elim WARNING: Theory does not contain a concept for ID %u.\n", constant);
 #endif
 
 	/* check if `grandchild` is observed */
@@ -1071,7 +1110,7 @@ bool propose_universal_elim(
 		free(proposed_proofs); return false;
 	}
 
-	int unfixed_set_count_change = 0;
+	unfixed_set_counter unfixed_set_count_change = {0};
 	if (selected_edge.axiom->reference_count == 3) {
 		/* if this edge is removed from the set graph, two unfixed sets may also be freed */
 		if (T.sets.is_unfixed(selected_edge.consequent_set, T.observations)
@@ -1079,14 +1118,24 @@ bool propose_universal_elim(
 		  + T.sets.extensional_graph.vertices[selected_edge.consequent_set].children.size == 1
 		 && T.sets.sets[selected_edge.consequent_set].elements.length == 0
 		 && T.sets.sets[selected_edge.consequent_set].size_axiom->children.length == 0)
-			unfixed_set_count_change--;
+		{
+			double log_prob = 0.0;
+			set_size_proposal_log_probability(selected_edge.consequent_set, T.sets, log_prob);
+			unfixed_set_count_change.log_probability -= log_prob;
+			unfixed_set_count_change.change--;
+		}
 		if (T.sets.is_unfixed(selected_edge.antecedent_set, T.observations)
 		 && T.sets.extensional_graph.vertices[selected_edge.antecedent_set].parents.size
 		  + T.sets.extensional_graph.vertices[selected_edge.antecedent_set].children.size == 1
 		 && (T.sets.sets[selected_edge.antecedent_set].elements.length == 0
 		  || (T.sets.sets[selected_edge.antecedent_set].elements.length == 1 && T.sets.sets[selected_edge.antecedent_set].elements[0] == constant))
 		 && T.sets.sets[selected_edge.antecedent_set].size_axiom->children.length == 0)
-			unfixed_set_count_change--;
+		{
+			double log_prob = 0.0;
+			set_size_proposal_log_probability(selected_edge.antecedent_set, T.sets, log_prob);
+			unfixed_set_count_change.log_probability -= log_prob;
+			unfixed_set_count_change.change--;
+		}
 	}
 
 	/* determine if removing this edge will create a new set */
@@ -1117,15 +1166,14 @@ bool propose_universal_elim(
 		free(proposed_proofs); return false;
 	}
 	old_set_formula->reference_count++;
-	Formula* canonicalized_new_set_formula = canonicalize(*new_set_formula, T.canonicalizer);
+	Formula* canonicalized_new_set_formula = Canonicalizer::canonicalize(*new_set_formula);
 	free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 	if (canonicalized_new_set_formula == NULL) {
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 		free(proposed_proofs); return false;
 	}
-	if (!T.sets.set_ids.table.contains(*canonicalized_new_set_formula))
-		unfixed_set_count_change++;
-	free(*canonicalized_new_set_formula); if (canonicalized_new_set_formula->reference_count == 0) free(canonicalized_new_set_formula);
+	unsigned int new_set_id;
+	T.sets.get_set_id(canonicalized_new_set_formula, new_set_id, unfixed_set_count_change);
 
 	/* the old set could also be removed */
 	if (old_set_id != selected_edge.antecedent_set
@@ -1134,9 +1182,9 @@ bool propose_universal_elim(
 	 && T.sets.extensional_graph.vertices[old_set_id].children.size == 0
 	 && T.sets.sets[old_set_id].elements.length == 1
 	 && T.sets.sets[old_set_id].size_axiom->children.length == 0)
-		unfixed_set_count_change--;
+		unfixed_set_count_change.change--;
 
-	unsigned int new_axiom_count = old_axiom_count + unfixed_set_count_change;
+	unsigned int new_axiom_count = old_axiom_count + unfixed_set_count_change.change;
 	unsigned int new_axiom_indices_length = c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size;
 	unsigned int new_satisfying_extensional_edges_length = satisfying_extensional_edges.length;
 	if (is_consequent_symmetric) {
@@ -1156,6 +1204,7 @@ bool propose_universal_elim(
 	}
 	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) {
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(*canonicalized_new_set_formula); if (canonicalized_new_set_formula->reference_count == 0) free(canonicalized_new_set_formula);
 		free(proposed_proofs); return false;
 	}
 
@@ -1169,7 +1218,8 @@ bool propose_universal_elim(
 
 	log_proposal_probability_ratio += logsumexp(
 			-log_cache<double>::instance().get(new_satisfying_extensional_edges_length + 1), /* log probability of relifting the grounded consequent to this extensional edge */
-			-log_cache<double>::instance().get(new_satisfying_extensional_edges_length + 1) + log_rebuild_probability); /* log probability of rebuilding this extensional edge */
+			-log_cache<double>::instance().get(new_satisfying_extensional_edges_length + 1) + log_rebuild_probability) /* log probability of rebuilding this extensional edge */
+			+ unfixed_set_count_change.log_probability; /* log probability of selecting the set size when creating sets */
 
 	/* go ahead and compute the probability ratios and perform the accept/reject step */
 	selected_edge.axiom->reference_count++;
@@ -1214,6 +1264,8 @@ bool propose_universal_elim(
 	free(proposed_proofs); free(*selected_edge.axiom);
 	if (selected_edge.axiom->reference_count == 1)
 		T.sets.free_subset_axiom(selected_edge.axiom);
+	T.sets.try_free_set(canonicalized_new_set_formula, new_set_id);
+	free(*canonicalized_new_set_formula); if (canonicalized_new_set_formula->reference_count == 0) free(canonicalized_new_set_formula);
 	return success;
 }
 
@@ -1315,10 +1367,12 @@ constexpr bool visit_disjunction_intro(log_probability_computer& visitor) { retu
 template<typename Formula>
 struct proof_sampler {
 	hash_map<const Formula*, hash_set<unsigned int>> inconsistencies;
+	array_map<unsigned int, unsigned int> removed_sets;
 	bool all_descendants_inconsistent;
 	double log_probability;
+	double set_size_log_probability;
 
-	proof_sampler() : inconsistencies(64), log_probability(0.0) { }
+	proof_sampler() : inconsistencies(64), removed_sets(4), log_probability(0.0), set_size_log_probability(0.0) { }
 	~proof_sampler() {
 		for (auto entry : inconsistencies)
 			free(entry.value);
@@ -1370,12 +1424,47 @@ inline void finished_constants(const Formula* formula, unsigned int original_con
 	}
 }
 
+struct undo_remove_sets {
+	array_map<unsigned int, unsigned int>& removed_sets;
+
+	undo_remove_sets(array_map<unsigned int, unsigned int>& removed_sets) : removed_sets(removed_sets) { }
+};
+
+inline bool compute_new_set_size(
+		unsigned int set_id, unsigned int& out,
+		unsigned int min_set_size, unsigned int max_set_size,
+		const undo_remove_sets& visitor)
+{
+	bool contains;
+	out = visitor.removed_sets.get(set_id, contains);
+	if (contains) {
+#if !defined(NDEBUG)
+		if (out < min_set_size || out > max_set_size)
+			fprintf(stderr, "compute_new_set_size WARNING: The recorded set size in `undo_remove_sets.removed_sets` is outside the bounds of `[min_set_size, max_set_size]`.\n");
+#endif
+		return true;
+	}
+	if (max_set_size == UINT_MAX) {
+		out = min_set_size + sample_geometric(0.1);
+	} else {
+		out = min_set_size + sample_uniform(max_set_size - min_set_size + 1);
+	}
+	return true;
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline void on_free_set(unsigned int set_id,
+		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const undo_remove_sets& visitor)
+{ }
+
 template<typename Formula, typename Canonicalizer>
 bool undo_proof_changes(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
 		const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
-		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof)
+		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof,
+		const undo_remove_sets& old_sets, const undo_remove_sets& new_sets)
 {
 	typedef nd_step<Formula> Proof;
 
@@ -1399,10 +1488,88 @@ bool undo_proof_changes(
 	}
 	free(proposed_proofs);
 
-	if (!T.subtract_changes(new_proof_changes)) return false;
+	if (!T.subtract_changes(new_proof_changes, new_sets)) return false;
 
 	/* add the changes back into T from `selected_step.value` */
-	return T.add_changes(old_proof_changes);
+	return T.add_changes(old_proof_changes, old_sets);
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline void set_size_proposal_log_probability(unsigned int set_id,
+		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		double& log_probability_value)
+{
+	unsigned int min_set_size, max_set_size;
+	if (!sets.set_size_bounds(set_id, min_set_size, max_set_size)) {
+		fprintf(stderr, "on_free_set ERROR: `set_size_bounds` failed.\n");
+		return;
+	}
+
+	if (max_set_size == UINT_MAX) {
+		log_probability_value += (sets.sets[set_id].set_size - min_set_size) * SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P + SET_SIZE_PROPOSAL_LOG_P;
+	} else {
+		log_cache<double>::instance().ensure_size(max_set_size - min_set_size + 2);
+		log_probability_value += -log_cache<double>::instance().get(max_set_size - min_set_size + 1);
+	}
+}
+
+struct inverse_set_size_log_probability {
+	double value;
+	array_map<unsigned int, unsigned int> removed_sets;
+
+	inverse_set_size_log_probability() : value(0), removed_sets(4) { }
+};
+
+inline bool compute_new_set_size(
+		unsigned int set_id, unsigned int& out,
+		unsigned int min_set_size, unsigned int max_set_size,
+		inverse_set_size_log_probability& visitor)
+{
+	if (max_set_size == UINT_MAX) {
+		out = min_set_size + sample_geometric(0.1);
+		visitor.value -= (out - min_set_size) * SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P + SET_SIZE_PROPOSAL_LOG_P;
+	} else {
+		out = min_set_size + sample_uniform(max_set_size - min_set_size + 1);
+		if (!log_cache<double>::instance().ensure_size(max_set_size - min_set_size + 2))
+			return false;
+		visitor.value -= -log_cache<double>::instance().get(max_set_size - min_set_size + 1);
+	}
+	return true;
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline void on_free_set(unsigned int set_id,
+		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		inverse_set_size_log_probability& visitor)
+{
+	set_size_proposal_log_probability(set_id, sets, visitor.value);
+	visitor.removed_sets.put(set_id, sets.sets[set_id].set_size);
+}
+
+template<typename Formula>
+inline bool compute_new_set_size(
+		unsigned int set_id, unsigned int& out,
+		unsigned int min_set_size, unsigned int max_set_size,
+		proof_sampler<Formula>& sampler)
+{
+	if (max_set_size == UINT_MAX) {
+		out = min_set_size + sample_geometric(0.1);
+		sampler.set_size_log_probability += (out - min_set_size) * SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P + SET_SIZE_PROPOSAL_LOG_P;
+	} else {
+		out = min_set_size + sample_uniform(max_set_size - min_set_size + 1);
+		if (!log_cache<double>::instance().ensure_size(max_set_size - min_set_size + 2))
+			return false;
+		sampler.set_size_log_probability += -log_cache<double>::instance().get(max_set_size - min_set_size + 1);
+	}
+	return true;
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline void on_free_set(unsigned int set_id,
+		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		proof_sampler<Formula>& sampler)
+{
+	sampler.removed_sets.put(set_id, sets.sets[set_id].set_size);
 }
 
 template<typename Formula, typename Canonicalizer, typename TheoryPrior>
@@ -1415,17 +1582,18 @@ bool propose_disjunction_intro(
 	typedef nd_step<Formula> Proof;
 
 	log_probability_computer visitor;
+	inverse_set_size_log_probability set_size_log_probability;
 	typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes old_proof_changes;
 	if (!T.get_theory_changes(*selected_step.value, old_proof_changes, visitor)) return false;
 	selected_step.key->reference_count++;
-	T.subtract_changes(old_proof_changes);
+	T.subtract_changes(old_proof_changes, set_size_log_probability);
 
 	/* compute the number of concepts in T after removing the old proof */
 	unsigned int concept_count = 1;
+	double log_proposal_probability = 0.0;
 	for (unsigned int i = 0; i < T.ground_concept_capacity; i++)
 		if (T.ground_concepts[i].types.keys != NULL) concept_count++;
 
-	double log_proposal_probability = 0.0;
 	for (unsigned int i = 0; i < visitor.concept_indices.size; i++) {
 		unsigned int id = visitor.concept_indices.keys[i];
 		if (id >= T.new_constant_offset && T.ground_concepts[id - T.new_constant_offset].types.keys == NULL)
@@ -1482,7 +1650,9 @@ bool propose_disjunction_intro(
 	}
 
 	log_proposal_probability_ratio -= sampler.log_probability;
+	log_proposal_probability_ratio -= sampler.set_size_log_probability;
 	log_proposal_probability_ratio += log_proposal_probability;
+	log_proposal_probability_ratio += set_size_log_probability.value;
 
 	typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes new_proof_changes;
 	if (!T.get_theory_changes(*new_proof, new_proof_changes)) {
@@ -1494,12 +1664,12 @@ bool propose_disjunction_intro(
 	array<Proof*> old_observations(8), new_observations(8);
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (!init(proposed_proofs)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof);
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 		return false;
 	} else if (!propose_transformation(T, proposed_proofs, old_observations, new_observations, selected_step.value, new_proof)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof);
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 		free(proposed_proofs); return false;
@@ -1518,7 +1688,7 @@ bool propose_disjunction_intro(
 
 	selected_step.value->reference_count++;
 	if (!transform_proofs(proposed_proofs)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof);
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
@@ -1531,7 +1701,7 @@ bool propose_disjunction_intro(
 	}
 	for (auto proof : new_observations) {
 		if (!T.observations.add(proof)) {
-			undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof);
+			undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
 			free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 			free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
 			free(proposed_proofs); return false;
@@ -1555,7 +1725,9 @@ bool propose_disjunction_intro(
 	log_proposal_probability_ratio += -log_cache<double>::instance().get(new_axiom_count);
 
 	bool success = do_mh_disjunction_intro(T, selected_step, new_proof, old_proof_changes,
-			new_proof_changes, old_axioms, new_axioms, log_proposal_probability_ratio);
+			new_proof_changes, old_axioms, new_axioms, log_proposal_probability_ratio,
+			log_proposal_probability_ratio + sampler.set_size_log_probability - set_size_log_probability.value,
+			undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
 	free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 	free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 	free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
@@ -1581,6 +1753,9 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 		if (!entry.value->children.ensure_capacity(entry.key->children.length))
 			return false;
 
+		/* this is to avoid freeing `entry.key` while we are inside the next loop */
+		entry.key->reference_count++;
+
 		/* change the operand of any child to the new proof step */
 		for (unsigned int i = entry.key->children.length; i > 0; i--) {
 			Proof* child = entry.key->children[i - 1];
@@ -1592,7 +1767,6 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 					if (child->operand_array[j] == entry.key) {
 						child->operand_array[j] = entry.value;
 						entry.key->reference_count--;
-						if (entry.key->reference_count == 0) free(entry.key);
 						entry.value->reference_count++;
 					}
 				}
@@ -1621,7 +1795,6 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 					if (child->operands[j] == entry.key) {
 						child->operands[j] = entry.value;
 						entry.key->reference_count--;
-						if (entry.key->reference_count == 0) free(entry.key);
 						entry.value->reference_count++;
 					}
 				}
@@ -1643,6 +1816,10 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 			entry.value->children[entry.value->children.length++] = child;
 			entry.key->children.length--;
 		}
+
+		free(*entry.key);
+		if (entry.key->reference_count == 0)
+			free(entry.key);
 	}
 	return true;
 }
@@ -1754,7 +1931,7 @@ bool do_mh_universal_elim(
 
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
-		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
+		fprintf(stderr, "do_mh_universal_elim WARNING: The computed log probability ratio is NaN.\n");
 #endif
 
 	if (!T.observations.check_size(T.observations.size + new_observations.length))
@@ -1790,7 +1967,7 @@ inline bool do_mh_change_set_size(
 {
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
-		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
+		fprintf(stderr, "do_mh_change_set_size WARNING: The computed log probability ratio is NaN.\n");
 #endif
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio))
@@ -1807,13 +1984,16 @@ inline bool do_mh_disjunction_intro(
 	const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 	const array_multiset<Formula*, false>& old_axioms,
 	const array_multiset<Formula*, false>& new_axioms,
-	double& log_proposal_probability_ratio)
+	double log_proposal_probability_ratio,
+	double log_proposal_probability_ratio_without_set_sizes,
+	const undo_remove_sets& old_sets,
+	const undo_remove_sets& new_sets)
 {
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
-		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
-	if (*selected_step.value == *proposed_proof && fabs(log_proposal_probability_ratio) > 1.0e-12)
-		fprintf(stderr, "do_mh_universal_intro WARNING: This identity proposal does not have probability ratio 1.\n");
+		fprintf(stderr, "do_mh_disjunction_intro WARNING: The computed log probability ratio is NaN.\n");
+	if (*selected_step.value == *proposed_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
+		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
 #endif
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
@@ -1822,7 +2002,7 @@ inline bool do_mh_disjunction_intro(
 		if (!add(T.proof_axioms, new_axioms))
 			return false;
 	} else {
-		return undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, proposed_proof);
+		return undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, proposed_proof, old_sets, new_sets);
 	}
 	return true;
 }

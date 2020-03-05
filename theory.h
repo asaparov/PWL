@@ -41,6 +41,7 @@ enum class built_in_predicates : unsigned int {
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
+	SAME,
 
 	COUNT
 };
@@ -147,7 +148,8 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("empty_ref", (unsigned int) built_in_predicates::EMPTY_REF)
 		&& names.put("W", (unsigned int) built_in_predicates::WIDE_SCOPE)
 		&& names.put("=", (unsigned int) built_in_predicates::EQUALS)
-		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET);
+		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET)
+		&& names.put("same", (unsigned int) built_in_predicates::SAME);
 }
 
 template<typename Proof>
@@ -277,6 +279,16 @@ inline bool init(concept<ProofCalculus>& c) {
 	return true;
 }
 
+template<typename Formula>
+inline Formula* preprocess_formula(Formula* src) {
+	Formula* temp = same_to_equals(src);
+	if (temp == nullptr) return nullptr;
+
+	Formula* next = remove_exists(temp);
+	free(*temp); if (temp->reference_count == 0) free(temp);
+	return next;
+}
+
 template<typename Formula,
 	typename ProofCalculus,
 	typename Canonicalizer>
@@ -320,8 +332,6 @@ struct theory
 	array<pair<Formula*, Proof*>> existential_intro_nodes;
 
 	Proof* empty_set_axiom;
-
-	Canonicalizer canonicalizer;
 
 	theory(unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), types(64), relations(64),
@@ -450,15 +460,22 @@ struct theory
 	bool add_formula(Formula* formula, unsigned int& new_constant)
 	{
 		new_constant = 0;
-		Formula* canonicalized = canonicalize(*formula, canonicalizer);
+
+		Formula* new_formula = preprocess_formula(formula);
+		if (new_formula == NULL) return false;
+
+		Formula* canonicalized = Canonicalizer::canonicalize(*new_formula);
+		free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
 		if (canonicalized == NULL) return false;
 
+/* TODO: for debugging; delete this */
+print("canonicalized: ", stderr); print(*canonicalized, stderr); print('\n', stderr);
 		Proof* new_proof = make_proof<false, true, true>(canonicalized, new_constant);
 if (new_proof != NULL) {
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
-if (!check_proof<built_in_predicates>(*new_proof, expected_conclusion, canonicalizer))
+if (!check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer>(*new_proof, expected_conclusion))
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(expected_conclusion);
 }
@@ -526,8 +543,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return success;
 	}
 
-	template<bool Negated, bool ResolveInconsistencies>
-	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom)
+	template<bool Negated, bool ResolveInconsistencies, typename... Args>
+	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom, Args&&... visitor)
 	{
 		Formula* lifted_literal;
 		Formula* lifted_atom = Formula::new_atom(predicate, Formula::new_variable(1));
@@ -540,7 +557,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		} else {
 			lifted_literal = lifted_atom;
 		}
-		if (!move_element_to_subset<ResolveInconsistencies>(arg, lifted_literal)) {
+		if (!move_element_to_subset<ResolveInconsistencies>(arg, lifted_literal, std::forward<Args>(visitor)...)) {
 			free(*lifted_literal); free(lifted_literal);
 			return false;
 		}
@@ -576,8 +593,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return true;
 	}
 
-	template<bool Negated, bool ResolveInconsistencies>
-	inline bool add_binary_atom(relation rel, Proof* axiom)
+	template<bool Negated, bool ResolveInconsistencies, typename... Args>
+	inline bool add_binary_atom(relation rel, Proof* axiom, Args&&... visitor)
 	{
 		/* check if this observation is inconsistent with the theory (can we prove its negation?) */
 		if (rel.arg1 == rel.arg2) {
@@ -595,7 +612,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			} else {
 				lifted_literal = lifted_atom;
 			}
-			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg1, lifted_literal)) {
+			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
 				free(*lifted_literal); free(lifted_literal);
 				return false;
 			}
@@ -613,7 +630,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			} else {
 				lifted_literal = lifted_atom;
 			}
-			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg1, lifted_literal)) {
+			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
 				free(*lifted_literal); free(lifted_literal);
 				return false;
 			}
@@ -629,7 +646,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			} else {
 				lifted_literal = lifted_atom;
 			}
-			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg2, lifted_literal)) {
+			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg2, lifted_literal, std::forward<Args>(visitor)...)) {
 				free(*lifted_literal); free(lifted_literal);
 				return false;
 			}
@@ -728,8 +745,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return true;
 	}
 
-	template<bool Negated>
-	inline bool remove_unary_atom(unsigned int predicate, unsigned int arg)
+	template<bool Negated, typename... Args>
+	inline bool remove_unary_atom(unsigned int predicate, unsigned int arg, Args&&... visitor)
 	{
 		Formula* lifted_literal;
 		Formula* lifted_atom = Formula::new_atom(predicate, Formula::new_variable(1));
@@ -742,7 +759,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		} else {
 			lifted_literal = lifted_atom;
 		}
-		if (!move_element_to_superset(arg, lifted_literal)) {
+		if (!move_element_to_superset(arg, lifted_literal, std::forward<Args>(visitor)...)) {
 			fprintf(stderr, "theory.remove_unary_atom ERROR: `move_element_to_superset` failed.\n");
 			if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
 			return false;
@@ -779,8 +796,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return true;
 	}
 
-	template<bool Negated>
-	inline bool remove_binary_atom(relation rel)
+	template<bool Negated, typename... Args>
+	inline bool remove_binary_atom(relation rel, Args&&... visitor)
 	{
 		if (rel.arg1 == rel.arg2) {
 			Formula* lifted_literal;
@@ -797,7 +814,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			} else {
 				lifted_literal = lifted_atom;
 			}
-			if (!move_element_to_superset(rel.arg1, lifted_literal)) {
+			if (!move_element_to_superset(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
 				fprintf(stderr, "theory.remove_binary_atom ERROR: `move_element_to_superset` failed.\n");
 				if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
 				return false;
@@ -816,7 +833,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			} else {
 				lifted_literal = lifted_atom;
 			}
-			if (!move_element_to_superset(rel.arg1, lifted_literal)) {
+			if (!move_element_to_superset(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
 				fprintf(stderr, "theory.remove_binary_atom ERROR: `move_element_to_superset` failed.\n");
 				if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
 				return false;
@@ -833,7 +850,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			} else {
 				lifted_literal = lifted_atom;
 			}
-			if (!move_element_to_superset(rel.arg2, lifted_literal)) {
+			if (!move_element_to_superset(rel.arg2, lifted_literal, std::forward<Args>(visitor)...)) {
 				fprintf(stderr, "theory.remove_binary_atom ERROR: `move_element_to_superset` failed.\n");
 				if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
 				return false;
@@ -967,22 +984,23 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		{ }
 	};
 
-	bool add_changes(const theory::changes& changes)
+	template<typename... Args>
+	bool add_changes(const theory::changes& changes, Args&&... visitor)
 	{
 		for (const auto& entry : changes.unary_atoms) {
 			if (!try_init_concept(entry.key.key) || !try_init_concept(entry.key.value)
-			 || !add_unary_atom<false, false>(entry.key.key, entry.key.value, entry.value)) return false;
+			 || !add_unary_atom<false, false>(entry.key.key, entry.key.value, entry.value, std::forward<Args>(visitor)...)) return false;
 		} for (const auto& entry : changes.negated_unary_atoms) {
 			if (!try_init_concept(entry.key.key) || !try_init_concept(entry.key.value)
-			 || !add_unary_atom<true, false>(entry.key.key, entry.key.value, entry.value)) return false;
+			 || !add_unary_atom<true, false>(entry.key.key, entry.key.value, entry.value, std::forward<Args>(visitor)...)) return false;
 		} for (const auto& entry : changes.binary_atoms) {
 			if (!try_init_concept(entry.key.predicate)
 			 || !try_init_concept(entry.key.arg1) || !try_init_concept(entry.key.arg2)
-			 || !add_binary_atom<false, false>(entry.key, entry.value)) return false;
+			 || !add_binary_atom<false, false>(entry.key, entry.value, std::forward<Args>(visitor)...)) return false;
 		} for (const auto& entry : changes.negated_binary_atoms) {
 			if (!try_init_concept(entry.key.predicate)
 			 || !try_init_concept(entry.key.arg1) || !try_init_concept(entry.key.arg2)
-			 || !add_binary_atom<true, false>(entry.key, entry.value)) return false;
+			 || !add_binary_atom<true, false>(entry.key, entry.value, std::forward<Args>(visitor)...)) return false;
 		} for (Proof* subset_axiom : changes.subset_axioms) {
 			unsigned int variable = subset_axiom->formula->quantifier.variable;
 			if (subset_axiom->formula->quantifier.operand->type == FormulaType::IF_THEN) {
@@ -1017,23 +1035,24 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return true;
 	}
 
-	bool subtract_changes(const theory::changes& changes)
+	template<typename... Args>
+	bool subtract_changes(const theory::changes& changes, Args&&... visitor)
 	{
 		for (const auto& entry : changes.unary_atoms) {
-			remove_unary_atom<false>(entry.key.key, entry.key.value);
+			remove_unary_atom<false>(entry.key.key, entry.key.value, std::forward<Args>(visitor)...);
 			try_free_concept_id(entry.key.key);
 			try_free_concept_id(entry.key.value);
 		} for (const auto& entry : changes.negated_unary_atoms) {
-			remove_unary_atom<true>(entry.key.key, entry.key.value);
+			remove_unary_atom<true>(entry.key.key, entry.key.value, std::forward<Args>(visitor)...);
 			try_free_concept_id(entry.key.key);
 			try_free_concept_id(entry.key.value);
 		} for (const auto& entry : changes.binary_atoms) {
-			remove_binary_atom<false>(entry.key);
+			remove_binary_atom<false>(entry.key, std::forward<Args>(visitor)...);
 			try_free_concept_id(entry.key.predicate);
 			try_free_concept_id(entry.key.arg1);
 			try_free_concept_id(entry.key.arg2);
 		} for (const auto& entry : changes.negated_binary_atoms) {
-			remove_binary_atom<true>(entry.key);
+			remove_binary_atom<true>(entry.key, std::forward<Args>(visitor)...);
 			try_free_concept_id(entry.key.predicate);
 			try_free_concept_id(entry.key.arg1);
 			try_free_concept_id(entry.key.arg2);
@@ -1261,7 +1280,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	{
 		unsigned int predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
-			return make_atom_proof<DefinitionsAllowed, Contradiction, ResolveInconsistencies>(predicate, arg1, arg2, new_constant);
+			return make_atom_proof<DefinitionsAllowed, Contradiction, ResolveInconsistencies>(predicate, arg1, arg2, new_constant, std::forward<Args>(args)...);
 
 		} else if (canonicalized->type == FormulaType::NOT) {
 			return make_proof<!Contradiction, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->unary.operand, new_constant, std::forward<Args>(args)...);
@@ -1526,7 +1545,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 						for (Formula* other_disjunct : other_disjuncts)
 							other_disjunct->reference_count++;
 					}
-					Proof* proof = ProofCalculus::new_disjunction_intro(operand, other_disjunction);
+					Proof* proof = ProofCalculus::new_disjunction_intro(operand, other_disjunction, index - 1);
 					free(*other_disjunction); if (other_disjunction->reference_count == 0) free(other_disjunction);
 					if (proof == NULL) {
 						/* undo changes made by the recursive call to `make_proof` */
@@ -1731,6 +1750,40 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(arg1->quantifier.operand, right->integer);
 				set_size_axiom->reference_count++;
 				return set_size_axiom;
+			} else if (left == right || *left == *right) {
+				Proof* proof = ProofCalculus::new_beta(left, left);
+				if (proof == NULL) return NULL;
+				proof->reference_count++;
+				return proof;
+			} else if (left->type == hol_term_type::CONSTANT && right->type == hol_term_type::CONSTANT) {
+				if (left->constant == (unsigned int) built_in_predicates::UNKNOWN) {
+					if (right->constant == (unsigned int) built_in_predicates::UNKNOWN) {
+						/* TODO: implement this */
+						fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+						return NULL;
+					} else {
+						new_constant = right->constant;
+						Proof* proof = ProofCalculus::new_beta(right, right);
+						if (proof == NULL) return NULL;
+						proof->reference_count++;
+						return proof;
+					}
+				} else if (right->constant == (unsigned int) built_in_predicates::UNKNOWN) {
+					new_constant = left->constant;
+					Proof* proof = ProofCalculus::new_beta(left, left);
+					if (proof == NULL) return NULL;
+					proof->reference_count++;
+					return proof;
+				} else {
+					if (Contradiction) {
+						/* TODO: implement this */
+						fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+						return NULL;
+					} else {
+						/* this is impossible */
+						return NULL;
+					}
+				}
 			} else {
 				/* TODO: implement this */
 				fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
@@ -1788,23 +1841,23 @@ private:
 					return NULL;
 				}
 			} else {
-				new_constant = get_free_concept_id();
+				unsigned int constant_id = get_free_concept_id();
 
-				if (!try_init_concept(new_constant)) {
+				if (!try_init_concept(constant_id)) {
 					free(*var); if (var->reference_count == 0) free(var);
 					return NULL;
 				}
 
-				constant = Formula::new_constant(new_constant);
+				constant = Formula::new_constant(constant_id);
 				if (constant == NULL) {
 					free(*var); if (var->reference_count == 0) free(var);
-					free_concept_id(new_constant); return NULL;
+					free_concept_id(constant_id); return NULL;
 				}
 				Formula* substituted = substitute(quantified, var, constant);
 				if (substituted == NULL) {
 					free(*var); if (var->reference_count == 0) free(var);
 					free(*constant); if (constant->reference_count == 0) free(constant);
-					free_concept_id(new_constant); return NULL;
+					free_concept_id(constant_id); return NULL;
 				}
 
 				Proof* proof = make_proof<Contradiction, false, ResolveInconsistencies>(substituted, new_constant, std::forward<Args>(args)...);
@@ -1814,7 +1867,9 @@ private:
 					return proof;
 				}
 				free(*constant); if (constant->reference_count == 0) free(constant);
-				free_concept_id(new_constant);
+				if (ground_concepts[constant_id - new_constant_offset].types.keys != NULL)
+					/* `make_proof` could have already freed the new concept */
+					free_concept_id(constant_id);
 
 				if (!inconsistent_constant(quantified, id, std::forward<Args>(args)...)) {
 					free(*var); if (var->reference_count == 0) free(var);
@@ -1828,9 +1883,12 @@ private:
 		return NULL;
 	}
 
-	template<bool DefinitionsAllowed, bool Negated, bool ResolveInconsistencies>
-	Proof* make_atom_proof(unsigned int predicate,
-			Term* arg1, Term* arg2, unsigned int& new_constant)
+	template<bool DefinitionsAllowed, bool Negated, bool ResolveInconsistencies, typename... Args>
+	Proof* make_atom_proof(
+			unsigned int predicate,
+			Term* arg1, Term* arg2,
+			unsigned int& new_constant,
+			Args&&... args)
 	{
 		if (arg1->type == TermType::CONSTANT && arg2 == NULL)
 		{
@@ -1856,7 +1914,7 @@ private:
 					if (!try_init_concept(new_constant)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
-					} if (!add_unary_atom<Negated, ResolveInconsistencies>(predicate, new_constant, new_axiom)) {
+					} if (!add_unary_atom<Negated, ResolveInconsistencies>(predicate, new_constant, new_axiom, std::forward<Args>(args)...)) {
 						free(*new_axiom); free(new_axiom);
 						free_concept_id(new_constant); return NULL;
 					}
@@ -1929,7 +1987,7 @@ private:
 					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_unary_atom<Negated, ResolveInconsistencies>(predicate, arg1->constant, new_axiom)) {
+					if (!add_unary_atom<Negated, ResolveInconsistencies>(predicate, arg1->constant, new_axiom, std::forward<Args>(args)...)) {
 						free(*new_axiom); free(new_axiom); return NULL;
 					}
 					return new_axiom;
@@ -2026,7 +2084,7 @@ private:
 					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_binary_atom<Negated, ResolveInconsistencies>({predicate, arg1->constant, arg2->constant}, new_axiom)) {
+					if (!add_binary_atom<Negated, ResolveInconsistencies>({predicate, arg1->constant, arg2->constant}, new_axiom, std::forward<Args>(args)...)) {
 						free(*new_axiom); free(new_axiom); return NULL;
 					}
 					return new_axiom;
@@ -2117,8 +2175,8 @@ private:
 		}
 	}
 
-	template<bool ResolveInconsistencies>
-	bool move_element_to_subset(unsigned int element, Formula* lifted_literal)
+	template<bool ResolveInconsistencies, typename... Args>
+	bool move_element_to_subset(unsigned int element, Formula* lifted_literal, Args&&... visitor)
 	{
 		Formula* new_set_formula; bool contains;
 		unsigned int old_set_id = sets.element_map.get(element, contains);
@@ -2134,11 +2192,11 @@ private:
 		}
 		if (new_set_formula == NULL)
 			return false;
-		Formula* canonicalized = canonicalize(*new_set_formula, canonicalizer);
+		Formula* canonicalized = Canonicalizer::canonicalize(*new_set_formula);
 		free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		if (canonicalized == NULL)
 			return false;
-		if (!sets.template move_element_to_set<ResolveInconsistencies>(element, canonicalized)) {
+		if (!sets.template move_element_to_set<ResolveInconsistencies>(element, canonicalized, std::forward<Args>(visitor)...)) {
 			free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 			return false;
 		}
@@ -2194,11 +2252,12 @@ private:
 		return true;
 	}
 
-	bool move_element_to_superset(unsigned int element, Formula* lifted_literal)
+	template<typename... Args>
+	bool move_element_to_superset(unsigned int element, Formula* lifted_literal, Args&&... visitor)
 	{
 		Formula* old_set_formula = sets.sets[sets.element_map.get(element)].set_formula();
 
-		Formula* canonicalized = canonicalize(*lifted_literal, canonicalizer);
+		Formula* canonicalized = Canonicalizer::canonicalize(*lifted_literal);
 		array<Formula*> difference(8);
 		if (canonicalized == NULL) {
 			return false;
@@ -2237,10 +2296,10 @@ private:
 
 		bool success;
 		if (new_set_formula == NULL) {
-			sets.remove_element(element);
+			sets.remove_element(element, std::forward<Args>(visitor)...);
 			success = true;
 		} else {
-			success = sets.move_element_to_superset(element, new_set_formula);
+			success = sets.move_element_to_superset(element, new_set_formula, std::forward<Args>(visitor)...);
 			free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		}
 		return success;

@@ -209,6 +209,10 @@
 {(N "NYC"/"NYC")}
 	{nyc[index:sg]};
 
+: # thing
+{(N "thing"/"thing")}
+	{object[index:sg]};
+
 : # There are four large planets.
 {(S
 	(S':mark_wide_scope
@@ -651,6 +655,110 @@
 	(PERIOD ".")
 )}
 	{?[n]:(nucleus(n) & ![e]:(eukaryote(e) => ?[l]:((arg1(l)=n) & location(l) & present(l) & (arg2(l)=e))))};
+
+: # No cell is both eukaryotic and prokaryotic.
+{(S
+	(S':mark_wide_scope 
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative
+					(NO:empty "no")
+					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential
+						(NOMINAL_L:identity
+							(N:require_no_correlator,select_predicate_in_set "cell"/"cell")
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct
+				(VP_R:select_left_predicate_and_tense,set_predicate_empty,factor
+					(VP_L:identity
+						(BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,empty_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular
+					(BOTH "both")
+					(V_ADJUNCT:require_binary_conjunction,require_not_correlated,add_correlated_by_both
+						(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_singular
+							(ADJP_R:require_conjunction,select_left_operand
+								(ADJP_L:try_remove_is_adjunct
+									(ADJ:require_no_correlator "eukaryotic"/"eukaryotic")
+								)
+							)
+							(ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_and
+								(AND:empty "and")
+								(ADJP_R:remove_and,require_no_comma
+									(ADJP_L:try_remove_is_adjunct
+										(ADJ:require_no_correlator "prokaryotic"/"prokaryotic")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD:empty ".")
+)}
+	{~?[c]:(cell(c) & (?[x]:((arg1(x)=c) & eukaryote(x) & present(x)) & ?[x]:((arg1(x)=c) & prokaryote(x) & present(x))))};
+
+: # There are 8 gaseous or terrestrial planets.
+{(S
+	(S':mark_wide_scope
+		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+			(THERE "there")
+			(VP_R:try_remove_nullable_subject,require_no_lambda,try_remove_correlated,require_no_correlator,require_left_predicate_exist
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"are")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_plural
+					(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative
+						(NP':require_plural,try_remove_adv,require_no_correlator,require_predicative_universal
+							(Q:try_remove_genitive,select_second_left_set_conjunct_root 
+								(NUMBER:size "8"/"8")
+							)
+							(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
+								(NOMINAL_L:identity
+									(ADJP_R:try_remove_genitive,select_left_conjunct_in_set,select_right_arg1_of_without_head
+										(ADJP_R:require_disjunction,select_left_operand
+											(ADJP_L:try_remove_is_adjunct
+												(ADJ:require_no_correlator "gaseous"/"gaseous")
+											)
+										)
+										(ADJP_COORDINATION:try_remove_correlator,remove_left_operand,add_or
+											(OR:empty "or")
+											(ADJP_R:remove_or,require_no_comma
+												(ADJP_L:try_remove_is_adjunct
+													(ADJ:require_no_correlator "terrestrial"/"terrestrial")
+												)
+											)
+										)
+									)
+									(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+										(N:require_no_correlator,select_predicate_in_set "planet"/"planets")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[X]:((X=^[x]:((?[g]:(gaseous(g) & (arg1_of(x)=g)) | ?[t]:(terrestrial(t) & (arg1_of(x)=t))) & planet(x))) & (size(X)=8) & ![x]:(X(x) => ?[e]:(exist(e) & present(e) & (arg1(e)=x))))};
+
+: # red
+{(ADJ "red"/"red")}
+	{?[x]:red(x)};
+
+: # blue
+{(ADJ "blue"/"blue")}
+	{?[x]:blue(x)};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

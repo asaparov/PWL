@@ -837,7 +837,7 @@ inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<
 	if (!tokenize(input_sentence, sentence, names))
 		return false;
 
-	constexpr unsigned int max_parse_count = 2;
+	constexpr unsigned int max_parse_count = 4;
 	hol_term* logical_forms[max_parse_count];
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count;
@@ -1002,9 +1002,9 @@ int main(int argc, const char** argv)
 		free(paragraph);
 	}
 
-run_console(stdin, "\nEnter sentence to parse: ", parser, names);
+/*run_console(stdin, "\nEnter sentence to parse: ", parser, names);
 for (auto entry : names) free(entry.key);
-return EXIT_SUCCESS;
+return EXIT_SUCCESS;*/
 
 	/* read the articles */
 	in = fopen("simple_set_reasoning_articles.txt", "r");
@@ -1053,6 +1053,12 @@ return EXIT_SUCCESS;
 	}
 	free_tokens(tokens);
 
+	if (!parser.invert_name_map(names)) {
+		fprintf(stderr, "ERROR: `hdp_parser.invert_name_map` failed.\n");
+		for (auto entry : names) free(entry.key);
+		return EXIT_FAILURE;
+	}
+
 	/* read the articles */
 	theory<hol_term, natural_deduction<hol_term>, standard_canonicalizer<true, false>> T(names.table.size + 1);
 	constant_offset = T.new_constant_offset;
@@ -1073,7 +1079,7 @@ return EXIT_SUCCESS;
 	bool success = true;
 	success &= read_article(names.get("Nemo"), corpus, parser, T, theory_prior, printer);
 	success &= read_article(names.get("Dory"), corpus, parser, T, theory_prior, printer);
-	//success &= read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
 	//success &= read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
 	//success &= read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
 	//success &= read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
@@ -1122,7 +1128,7 @@ for (const auto& entry : set_size_distribution.counts)
 fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribution.sum);
 			stopwatch.start();
 		}
-if (t == 7)
+if (t == 4)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");
 		do_mh_step(T, theory_prior);
 

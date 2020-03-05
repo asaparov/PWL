@@ -1248,26 +1248,26 @@ V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_left_predic
 # coordination and the head scope to be a feature to decide between the rules
 # at this nonterminal (e.g. "both" moves left much less often than "either").
 # V_ADJUNCT {A1 | ... | An} -> EITHER V_ADJUNCT {A1 | ... | An}
-#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_either,add_correlated_by_either,require_disjunction # this transformation requires the coordination is at the head
-#V_ADJUNCT -> EITHER V_ADJUNCT:require_not_correlated,add_correlated_by_either,require_disjunction # this transformation requires the coordination is a descendant of the head
+V_ADJUNCT -> V_ADJUNCT:require_disjunction,require_not_correlated,add_either,add_correlated_by_either # this transformation requires the coordination is at the head
+V_ADJUNCT -> EITHER V_ADJUNCT:require_disjunction,require_not_correlated,add_correlated_by_either # this transformation requires the coordination is a descendant of the head
 # V_ADJUNCT {A1 & A2} -> BOTH V_ADJUNCT {A1 & A2}
-#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_both,add_correlated_by_both,require_binary_conjunction # this transformation requires the coordination is at the head
-#V_ADJUNCT -> BOTH V_ADJUNCT:require_not_correlated,add_correlated_by_both,require_binary_conjunction # this transformation requires the coordination is a descendant of the head
+V_ADJUNCT -> V_ADJUNCT:require_binary_conjunction,require_not_correlated,add_both,add_correlated_by_both # this transformation requires the coordination is at the head
+V_ADJUNCT -> BOTH V_ADJUNCT:require_binary_conjunction,require_not_correlated,add_correlated_by_both # this transformation requires the coordination is a descendant of the head
 # V_ADJUNCT {~A1 | ... | ~An} -> NEITHER V_ADJUNCT {A1 | ... | An}
-#V_ADJUNCT -> V_ADJUNCT:require_not_correlated,add_neither,add_correlated_by_neither,negated_disjunction_into_disjunction # this transformation requires the coordination is at the head
-#V_ADJUNCT -> NEITHER V_ADJUNCT:require_not_correlated,add_correlated_by_neither,add_negative,negated_disjunction_into_disjunction # this transformation requires the coordination is a descendant of the head
+#V_ADJUNCT -> V_ADJUNCT:negated_disjunction_into_disjunction,require_not_correlated,add_neither,add_correlated_by_neither # this transformation requires the coordination is at the head
+#V_ADJUNCT -> NEITHER V_ADJUNCT:negated_disjunction_into_disjunction,require_not_correlated,add_correlated_by_neither,add_negative # this transformation requires the coordination is a descendant of the head
 
 # NOTE: In the below rules, we require that none of the Ai are themselves
 # coordinations with the coordinator (unless Ai is negated).
 # V_ADJUNCT {(~)A1 & ... & (~)An} -> V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_and
-#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_and,add_comma
+V_ADJUNCT -> V_ADJUNCT:require_conjunction,select_left_operand V_ADJUNCT_COORDINATION:try_remove_correlator,remove_left_operand,add_and
+V_ADJUNCT -> V_ADJUNCT:require_conjunction,select_left_operand V_ADJUNCT_COORDINATION:try_remove_correlator,remove_left_operand,add_and,add_comma
 # V_ADJUNCT {(~)A1 | ... | (~)An} -> V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_or
-#V_ADJUNCT -> V_ADJUNCT:select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand,try_remove_correlator,add_or,add_comma
-# V_ADJUNCT {(~)A1 | ... | (~)An} -> V_ADJUNCT {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT -> V_ADJUNCT:select_left_operand VP_COORDINATION:remove_left_operand,try_remove_correlator,add_nor,require_negative
-#V_ADJUNCT -> V_ADJUNCT:select_left_operand VP_COORDINATION:remove_left_operand,try_remove_correlator,add_nor,require_negative,add_comma
+V_ADJUNCT -> V_ADJUNCT:require_disjunction,select_left_operand V_ADJUNCT_COORDINATION:try_remove_correlator,remove_left_operand,add_or
+V_ADJUNCT -> V_ADJUNCT:require_disjunction,select_left_operand V_ADJUNCT_COORDINATION:try_remove_correlator,remove_left_operand,add_or,add_comma
+# V_ADJUNCT {(~)A1 & ... & (~)An} -> V_ADJUNCT {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
+V_ADJUNCT -> V_ADJUNCT:require_negative_conjunction,select_left_operand VP_COORDINATION:try_remove_correlator,require_negative,remove_left_operand,add_nor
+V_ADJUNCT -> V_ADJUNCT:require_negative_conjunction,select_left_operand VP_COORDINATION:try_remove_correlator,require_negative,remove_left_operand,add_nor,add_comma
 
 # V_ADJUNCT {but((~)A1,(~)A2)} -> V_ADJUNCT {(~)A1} (COMMA) BUT V_ADJUNCT {(~)A2}
 #V_ADJUNCT -> V_ADJUNCT:select_left_in_but BUT V_ADJUNCT:select_right_in_but,try_remove_correlator
@@ -1282,30 +1282,30 @@ V_ADJUNCT_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
 # V_ADJUNCT_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA V_ADJUNCT:remove_coord,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) V_ADJUNCT {(~)A1}
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma V_ADJUNCT:remove_coordinator,remove_comma
+V_ADJUNCT_COORDINATION -> COMMA V_ADJUNCT:remove_coord,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-#V_ADJUNCT_COORDINATION -> AND:require_and V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma AND:require_and V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> AND V_ADJUNCT:remove_and,require_no_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA AND V_ADJUNCT:remove_and,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) AND V_ADJUNCT {(~)A1}
-#V_ADJUNCT_COORDINATION -> AND:require_and V_ADJUNCT:remove_coordinator,remove_comma
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma AND:require_and V_ADJUNCT:remove_coordinator,remove_comma
+V_ADJUNCT_COORDINATION -> AND V_ADJUNCT:remove_and,require_no_comma
+V_ADJUNCT_COORDINATION -> COMMA AND V_ADJUNCT:remove_and,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-#V_ADJUNCT_COORDINATION -> OR:require_or V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma OR:require_or V_ADJUNCT:remove_coordinator,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> OR V_ADJUNCT:remove_or,require_no_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA OR V_ADJUNCT:remove_or,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) OR V_ADJUNCT {(~)A1}
-#V_ADJUNCT_COORDINATION -> OR:require_or V_ADJUNCT:remove_coordinator,remove_comma
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma OR:require_or V_ADJUNCT:remove_coordinator,remove_comma
+V_ADJUNCT_COORDINATION -> OR V_ADJUNCT:remove_or,require_no_comma
+V_ADJUNCT_COORDINATION -> COMMA OR V_ADJUNCT:remove_or,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) NOR V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-#V_ADJUNCT_COORDINATION -> NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> NOR V_ADJUNCT:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA NOR V_ADJUNCT:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) NOR V_ADJUNCT {(~)A1}
-#V_ADJUNCT_COORDINATION -> NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative
-#V_ADJUNCT_COORDINATION -> COMMA:require_comma NOR:require_nor V_ADJUNCT:add_req_aux,remove_coordinator,remove_comma,add_negative
+V_ADJUNCT_COORDINATION -> NOR V_ADJUNCT:remove_nor,add_req_aux,require_no_comma,add_negative
+V_ADJUNCT_COORDINATION -> COMMA NOR V_ADJUNCT:remove_nor,add_req_aux,remove_comma,add_negative
 
 
 VP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1467,7 +1467,7 @@ NP -> ALL NP':try_remove_adv,try_remove_correlated,require_no_correlator,require
 # NP {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1}
 # NP {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1 & last_name(x)=n2) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1 & last_name(x)=n2}
 # NP {^[P]:(... & ?[X]:(X=^[x]:(nickname(x,n1)) & ?[x]:(X(x) & P(x))))} -> NAME {nickname(x,n1)}
-#NP -> NAME
+#NP -> NAME:try_remove_adv,require_no_correlator,select_name
 
 # NP {^[P,x]:(... & ?[X]:(X=^[x]:f(x) & ... & X(x) & P(x)))}
 #  -> WHICH/WHAT NOMINAL_R {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ?[x]:(X(x) & P(x))))}
@@ -2720,7 +2720,7 @@ ADVP_R -> ADVP_L:try_remove_is_adjunct
 #ADVP_R -> EITHER:require_not_correlated,require_not_adjunct ADVP_R:add_correlated_by_either # this transformation requires the coordination is a descendant of the head
 # ADVP_R {... & ?[x]:(p(x) & (?[x1]:f1(x1) & ?[x2]:f2(x2)))} -> BOTH ADVP_R {... & ?[x]:(p(x) & (?[x1]:f1(x1) & ?[x2]:f2(x2)))}
 #ADVP_R -> ADVP_R:require_not_correlated,require_not_adjunct,add_both,add_correlated_by_both # this transformation requires the coordination is at the head
-#ADVP_R -> BOTH:require_not_correlated,require_not_adjunct ADVP_R:add_correlated_by_both # this transformation requires the coordination is a descendant of the head
+ADVP_R -> BOTH:require_not_correlated,require_not_adjunct ADVP_R:add_correlated_by_both # this transformation requires the coordination is a descendant of the head
 # ADVP_R {... & ?[x]:(p(x) & (~?[x1]:f1(x1) | ... | ~?[xn]:fn(xn)))} -> NEITHER ADVP_R {... & ?[x]:(p(x) & (?[x1]:f1(x1) | ... | ?[xn]:fn(xn)))}
 #ADVP_R -> ADVP_R:require_not_correlated,require_not_adjunct,add_neither,add_correlated_by_neither # this transformation requires the coordination is at the head
 #ADVP_R -> NEITHER:require_not_correlated,require_not_adjunct ADVP_R:add_correlated_by_neither,add_negative # this transformation requires the coordination is a descendant of the head
@@ -2748,32 +2748,32 @@ ADVP_R -> ADVP_R:require_negative_conjunction,select_left_operand ADVP_COORDINAT
 
 ADVP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
-# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> COMMA ADJP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
-# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> COMMA ADJP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADVP_COORDINATION -> COMMA ADJP_R:remove_coord,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> COMMA ADJP_R {... & (~)?[x1]:f1(x1)}
-ADVP_COORDINATION -> COMMA ADJP_R:remove_coord,remove_comma
+# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> COMMA ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
+# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> COMMA ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
+ADVP_COORDINATION -> COMMA ADVP_R:remove_coord,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> COMMA ADVP_R {... & (~)?[x1]:f1(x1)}
+ADVP_COORDINATION -> COMMA ADVP_R:remove_coord,remove_comma
 
-# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> (COMMA) AND ADJP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
-ADVP_COORDINATION -> AND ADJP_R:remove_and,require_no_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-ADVP_COORDINATION -> COMMA AND ADJP_R:remove_and,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) AND ADJP_R {... & (~)?[x1]:f1(x1)}
-ADVP_COORDINATION -> AND ADJP_R:remove_and,require_no_comma
-ADVP_COORDINATION -> COMMA AND ADJP_R:remove_and,remove_comma
+# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> (COMMA) AND ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
+ADVP_COORDINATION -> AND ADVP_R:remove_and,require_no_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA AND ADVP_R:remove_and,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) AND ADVP_R {... & (~)?[x1]:f1(x1)}
+ADVP_COORDINATION -> AND ADVP_R:remove_and,require_no_comma
+ADVP_COORDINATION -> COMMA AND ADVP_R:remove_and,remove_comma
 
-# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> (COMMA) OR ADJP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADVP_COORDINATION -> OR ADJP_R:remove_or,require_no_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-ADVP_COORDINATION -> COMMA OR ADJP_R:remove_or,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) OR ADJP_R {... & (~)?[x1]:f1(x1)}
-ADVP_COORDINATION -> OR ADJP_R:remove_or,require_no_comma
-ADVP_COORDINATION -> COMMA OR ADJP_R:remove_or,remove_comma
+# ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> (COMMA) OR ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
+ADVP_COORDINATION -> OR ADVP_R:remove_or,require_no_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA OR ADVP_R:remove_or,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) OR ADVP_R {... & (~)?[x1]:f1(x1)}
+ADVP_COORDINATION -> OR ADVP_R:remove_or,require_no_comma
+ADVP_COORDINATION -> COMMA OR ADVP_R:remove_or,remove_comma
 
-# ADVP_COORDINATION {... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn))} -> (COMMA) NOR ADJP_R {... & ~?[x1]:f1(x1)} ADVP_COORDINATION {... & (~?[x2]:f2(x2) & ... & ~?[xn]:fn(xn))}
-ADVP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand ADVP_COORDINATION:remove_left_operand
-ADVP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand ADVP_COORDINATION:remove_left_operand
-# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) NOR ADJP_R {... & (~)?[x1]:f1(x1)}
-ADVP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,require_no_comma,add_negative
-ADVP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative
+# ADVP_COORDINATION {... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn))} -> (COMMA) NOR ADVP_R {... & ~?[x1]:f1(x1)} ADVP_COORDINATION {... & (~?[x2]:f2(x2) & ... & ~?[xn]:fn(xn))}
+ADVP_COORDINATION -> NOR ADVP_R:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA NOR ADVP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand ADVP_COORDINATION:remove_left_operand
+# ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) NOR ADVP_R {... & (~)?[x1]:f1(x1)}
+ADVP_COORDINATION -> NOR ADVP_R:remove_nor,add_req_aux,require_no_comma,add_negative
+ADVP_COORDINATION -> COMMA NOR ADVP_R:remove_nor,add_req_aux,remove_comma,add_negative
 
 
 ADVP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}

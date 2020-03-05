@@ -229,10 +229,10 @@ inline included_array_view<T> make_included_array_view(T* elements, unsigned int
 
 template<typename T>
 struct repeated_array_view {
-	T& repeated_element;
+	T repeated_element;
 	unsigned int length;
 
-	repeated_array_view(T& repeated_element, unsigned int length) :
+	repeated_array_view(T repeated_element, unsigned int length) :
 			repeated_element(repeated_element), length(length) { }
 
 	inline T& operator[] (size_t index) {
@@ -249,7 +249,7 @@ struct repeated_array_view {
 };
 
 template<typename T>
-inline repeated_array_view<T> make_repeated_array_view(T& repeated_element, unsigned int length) {
+inline repeated_array_view<T> make_repeated_array_view(T repeated_element, unsigned int length) {
 	return repeated_array_view<T>(repeated_element, length);
 }
 

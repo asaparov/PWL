@@ -662,9 +662,9 @@ bool subtract_unifying_hypotheses(
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer>
-inline Formula* try_canonicalize(Formula* formula, Canonicalizer& canonicalizer) {
-	Formula* out = canonicalize(*formula, canonicalizer);
+template<typename Canonicalizer, typename Formula>
+inline Formula* try_canonicalize(Formula* formula) {
+	Formula* out = Canonicalizer::canonicalize(*formula);
 	free(*formula); if (formula->reference_count == 0) free(formula);
 	return out;
 }
@@ -707,12 +707,11 @@ inline const nd_step<Formula>* map(
 	else return step;
 }
 
-template<typename BuiltInPredicates, typename Formula, typename Canonicalizer, typename... ProofMap>
+template<typename BuiltInPredicates, typename Canonicalizer, typename Formula, typename... ProofMap>
 bool check_proof(proof_state<Formula>& out,
 		const nd_step<Formula>& proof,
 		proof_state<Formula>** operand_states,
 		unsigned int operand_count,
-		Canonicalizer& canonicalizer,
 		ProofMap&&... proof_map)
 {
 	typedef typename Formula::Type FormulaType;
@@ -721,13 +720,14 @@ bool check_proof(proof_state<Formula>& out,
 
 	Formula* formula;
 	const nd_step<Formula>* second_operand;
+	const nd_step<Formula>* third_operand;
 	Term* parameter; Term* variable;
 	array<unsigned int> constants = array<unsigned int>(8);
 	exclude<const Formula*, Formula*>* assumptions;
 	unsigned int max_variable;
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
-		if (!is_canonical(*proof.formula, canonicalizer)) {
+		if (!is_canonical<Canonicalizer>(*proof.formula)) {
 			fprintf(stderr, "check_proof ERROR: Axiom is not in canonical form.\n");
 			return false;
 		}
@@ -764,7 +764,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		for (unsigned int i = 0; i < operand_count; i++)
 			operand_states[i]->formula->reference_count++;
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, make_proof_state_assumptions(operand_states, operand_count));
 	case nd_step_type::CONJUNCTION_ELIMINATION:
@@ -810,19 +810,39 @@ bool check_proof(proof_state<Formula>& out,
 			free(formula);
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_INTRODUCTION:
+		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
+		third_operand = map(proof.operands[2], std::forward<ProofMap>(proof_map)...);
+		if (operand_count != 3 || second_operand->type != nd_step_type::FORMULA_PARAMETER || third_operand->type != nd_step_type::PARAMETER)
+			return false;
+		if (second_operand->formula->type == FormulaType::OR) {
+			out.formula = Formula::new_or(make_included_array_view(
+					second_operand->formula->array.operands,
+					second_operand->formula->array.length,
+					operand_states[0]->formula, third_operand->parameter));
+		} else if (third_operand->parameter == 0) {
+			out.formula = Formula::new_or(operand_states[0]->formula, second_operand->formula);
+		} else {
+			out.formula = Formula::new_or(second_operand->formula, operand_states[0]->formula);
+		}
+		if (out.formula == NULL) return false;
+		operand_states[0]->formula->reference_count++;
+		second_operand->formula->reference_count++;
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
+		if (out.formula == NULL) return false;
+		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
 	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
 		second_operand = map(proof.operands[1], std::forward<ProofMap>(proof_map)...);
-		if (operand_count != 2 || second_operand->type != nd_step_type::FORMULA_PARAMETER)
+		if (operand_count != 3 || second_operand->type != nd_step_type::FORMULA_PARAMETER)
 			return false;
-		if (proof.type == nd_step_type::DISJUNCTION_INTRODUCTION_LEFT || proof.type == nd_step_type::DISJUNCTION_INTRODUCTION)
+		if (proof.type == nd_step_type::DISJUNCTION_INTRODUCTION_LEFT)
 			out.formula = Formula::new_or(operand_states[0]->formula, second_operand->formula);
 		if (proof.type == nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT)
 			out.formula = Formula::new_or(second_operand->formula, operand_states[0]->formula);
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		second_operand->formula->reference_count++;
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_ELIMINATION:
@@ -852,7 +872,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->reference_count++;
 		operand_states[1]->formula->reference_count++;
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions,
 				make_exclude(operand_states[0]->assumptions.data, operand_states[0]->assumptions.length, operand_states[1]->formula));
@@ -875,7 +895,7 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		operand_states[0]->formula->binary.left->reference_count++;
 		operand_states[0]->formula->binary.right->reference_count++;
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions, operand_states[1]->assumptions);
 	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
@@ -951,7 +971,7 @@ bool check_proof(proof_state<Formula>& out,
 			free(*formula); if (formula->reference_count == 0) free(formula);
 			return false;
 		}
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::UNIVERSAL_ELIMINATION:
@@ -975,7 +995,7 @@ bool check_proof(proof_state<Formula>& out,
 		free(*formula); if (formula->reference_count == 0) free(formula);
 		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (out.formula == NULL) return false;
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
@@ -995,7 +1015,7 @@ bool check_proof(proof_state<Formula>& out,
 			free(*formula); if (formula->reference_count == 0) free(formula);
 			return false;
 		}
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::EXISTENTIAL_ELIMINATION:
@@ -1038,7 +1058,7 @@ bool check_proof(proof_state<Formula>& out,
 			return false;
 		}
 
-		out.formula = try_canonicalize(out.formula, canonicalizer);
+		out.formula = try_canonicalize<Canonicalizer>(out.formula);
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::PARAMETER:
@@ -1153,9 +1173,8 @@ bool compute_in_degrees(const nd_step<Formula>* proof,
 	return true;
 }
 
-template<typename BuiltInPredicates, typename Formula, typename Canonicalizer, typename... ProofMap>
-Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
-		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
+template<typename BuiltInPredicates, typename Canonicalizer, typename Formula, typename... ProofMap>
+Formula* compute_proof_conclusion(const nd_step<Formula>& proof, ProofMap&&... proof_map)
 {
 	/* first list the proof steps in reverse topological order */
 	hash_map<const nd_step<Formula>*, unsigned int> in_degrees(128);
@@ -1226,7 +1245,7 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 		}
 
 		/* check this proof step */
-		if (!check_proof<BuiltInPredicates>(state, *node, operand_states.data, operand_states.length, canonicalizer, std::forward<ProofMap>(proof_map)...)) {
+		if (!check_proof<BuiltInPredicates, Canonicalizer>(state, *node, operand_states.data, operand_states.length, std::forward<ProofMap>(proof_map)...)) {
 			free_proof_states(proof_states);
 			return NULL;
 		}
@@ -1247,12 +1266,12 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof,
 	return formula;
 }
 
-template<typename BuiltInPredicates, typename Formula, typename Canonicalizer, typename... ProofMap>
+template<typename BuiltInPredicates, typename Canonicalizer, typename Formula, typename... ProofMap>
 bool check_proof(const nd_step<Formula>& proof,
 		const Formula* expected_conclusion,
-		Canonicalizer& canonicalizer, ProofMap&&... proof_map)
+		ProofMap&&... proof_map)
 {
-	Formula* actual_conclusion = compute_proof_conclusion<BuiltInPredicates>(proof, canonicalizer, std::forward<ProofMap>(proof_map)...);
+	Formula* actual_conclusion = compute_proof_conclusion<BuiltInPredicates, Canonicalizer>(proof, std::forward<ProofMap>(proof_map)...);
 	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 	if (!success)
@@ -1277,12 +1296,13 @@ bool new_nd_step(nd_step<Formula>*& step, nd_step_type type)
 	return true;
 }
 
-template<typename Formula>
+template<typename Formula, typename Canonicalizer = identity_canonicalizer>
 struct natural_deduction
 {
 	typedef nd_step<Formula> Proof;
 	typedef nd_step_type ProofType;
 	typedef typename Formula::Term Term;
+	typedef Canonicalizer ProofCanonicalizer;
 
 	static inline Proof* new_axiom(Formula* axiom) {
 		return new_parameterized_step<nd_step_type::AXIOM>(axiom);
@@ -1315,8 +1335,8 @@ struct natural_deduction
 		return new_unary_step<nd_step_type::CONJUNCTION_ELIMINATION_RIGHT>(proof);
 	}
 
-	static inline Proof* new_disjunction_intro(Proof* proof, Formula* parameter) {
-		return new_binary_step<nd_step_type::DISJUNCTION_INTRODUCTION>(proof, new_formula_parameter(parameter));
+	static inline Proof* new_disjunction_intro(Proof* proof, Formula* parameter, unsigned int index_to_insert) {
+		return new_ternary_step<nd_step_type::DISJUNCTION_INTRODUCTION>(proof, new_formula_parameter(parameter), new_uint_parameter(index_to_insert));
 	}
 
 	static inline Proof* new_disjunction_intro_left(Proof* proof, Formula* parameter) {

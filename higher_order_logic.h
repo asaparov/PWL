@@ -7274,38 +7274,35 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	return false;
 }
 
-struct identity_canonicalizer { };
-
-inline hol_term* canonicalize(hol_term& src,
-		const identity_canonicalizer& canonicalizer)
-{
-	src.reference_count++;
-	return &src;
-}
-
-template<bool AllConstantsDistinct, bool PolymorphicEquality>
-struct standard_canonicalizer { };
+struct identity_canonicalizer {
+	static inline hol_term* canonicalize(hol_term& src)
+	{
+		src.reference_count++;
+		return &src;
+	}
+};
 
 template<bool AllConstantsDistinct, bool PolymorphicEquality>
-inline hol_term* canonicalize(const hol_term& src,
-		const standard_canonicalizer<AllConstantsDistinct, PolymorphicEquality>& canonicalizer)
-{
-	equals_arg_types types(16);
-	if (!compute_type<PolymorphicEquality>(src, types))
-		return NULL;
+struct standard_canonicalizer {
+	static inline hol_term* canonicalize(const hol_term& src)
+	{
+		equals_arg_types types(16);
+		if (!compute_type<PolymorphicEquality>(src, types))
+			return NULL;
 
-	array_map<unsigned int, unsigned int> variable_map(16);
-	hol_scope& scope = *((hol_scope*) alloca(sizeof(hol_scope)));
-	if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map, types))
-		return NULL;
-	hol_term* canonicalized = scope_to_term(scope);
-	free(scope);
-	return canonicalized;
-}
+		array_map<unsigned int, unsigned int> variable_map(16);
+		hol_scope& scope = *((hol_scope*) alloca(sizeof(hol_scope)));
+		if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map, types))
+			return NULL;
+		hol_term* canonicalized = scope_to_term(scope);
+		free(scope);
+		return canonicalized;
+	}
+};
 
 template<typename Canonicalizer>
-bool is_canonical(const hol_term& src, Canonicalizer& canonicalizer) {
-	hol_term* canonicalized = canonicalize(src, canonicalizer);
+bool is_canonical(const hol_term& src) {
+	hol_term* canonicalized = Canonicalizer::canonicalize(src);
 	if (canonicalized == NULL) {
 		fprintf(stderr, "is_canonical ERROR: Unable to canonicalize term.\n");
 		exit(EXIT_FAILURE);
@@ -7318,9 +7315,7 @@ bool is_canonical(const hol_term& src, Canonicalizer& canonicalizer) {
 }
 
 template<>
-constexpr bool is_canonical<identity_canonicalizer>(
-		const hol_term& src, identity_canonicalizer& canonicalizer)
-{
+constexpr bool is_canonical<identity_canonicalizer>(const hol_term& src) {
 	return true;
 }
 
@@ -7488,10 +7483,9 @@ bool is_subset(const hol_term* first, const hol_term* second)
 
 inline hol_term* intersect(hol_term* first, hol_term* second)
 {
-	standard_canonicalizer<false, false> canonicalizer;
 	hol_term* conjunction = hol_term::new_and(first, second);
 	first->reference_count++; second->reference_count++;
-	hol_term* canonicalized = canonicalize(*conjunction, canonicalizer);
+	hol_term* canonicalized = standard_canonicalizer<false, false>::canonicalize(*conjunction);
 	free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
 	return canonicalized;
 }
