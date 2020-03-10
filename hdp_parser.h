@@ -1629,6 +1629,115 @@ inline hol_term* remove_exists(hol_term* src)
 	return dst;
 }
 
+struct arg_of_to_arg_converter { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EQUALS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, arg_of_to_arg_converter& converter) {
+	if (src->binary.left->type == hol_term_type::UNARY_APPLICATION
+	 && src->binary.left->binary.left->type == hol_term_type::CONSTANT)
+	{
+		unsigned int index = index_of(src->binary.left->binary.left->constant, ARGS_OF, array_length(ARGS_OF));
+		if (index < array_length(ARGS_OF)) {
+			hol_term* left = apply(src->binary.left->binary.right, converter);
+			if (left == nullptr) return nullptr;
+			hol_term* right = apply(src->binary.right, converter);
+			if (right == nullptr) {
+				if (left != src->binary.left->binary.right) { free(*left); if (left->reference_count == 0) free(left); }
+				return nullptr;
+			}
+
+			hol_term* new_term = hol_term::new_equals(hol_term::new_apply(hol_term::new_constant(ARGS[index]), right), left);
+			if (new_term == nullptr) {
+				if (left != src->binary.left->binary.right) { free(*left); if (left->reference_count == 0) free(left); }
+				if (right != src->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left->binary.right) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+			return new_term;
+		}
+	} if (src->binary.right->type == hol_term_type::UNARY_APPLICATION
+	   && src->binary.right->binary.left->type == hol_term_type::CONSTANT)
+	{
+		unsigned int index = index_of(src->binary.right->binary.left->constant, ARGS_OF, array_length(ARGS_OF));
+		if (index < array_length(ARGS_OF)) {
+			hol_term* right = apply(src->binary.right->binary.right, converter);
+			if (right == nullptr) return nullptr;
+			hol_term* left = apply(src->binary.left, converter);
+			if (left == nullptr) {
+				if (right != src->binary.right->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				return nullptr;
+			}
+
+			hol_term* new_term = hol_term::new_equals(right, hol_term::new_apply(hol_term::new_constant(ARGS[index]), left));
+			if (new_term == nullptr) {
+				if (right != src->binary.right->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
+				return nullptr;
+			}
+			if (right == src->binary.right->binary.right) right->reference_count++;
+			if (left == src->binary.left) left->reference_count++;
+			return new_term;
+		}
+	}
+	return default_apply<Type>(src, converter);
+}
+
+inline hol_term* arg_of_to_arg(hol_term* src)
+{
+	arg_of_to_arg_converter converter;
+	hol_term* dst = apply(src, converter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct tense_remover { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, tense_remover& remover) {
+	if (src->binary.left->type == hol_term_type::CONSTANT)
+	{
+		unsigned int index = index_of(src->binary.left->constant, TENSE_PREDICATES, array_length(TENSE_PREDICATES));
+		if (index < array_length(TENSE_PREDICATES)) {
+			HOL_TRUE.reference_count++;
+			return &HOL_TRUE;
+		}
+	}
+	return default_apply<Type>(src, remover);
+}
+
+inline hol_term* remove_tense(hol_term* src)
+{
+	tense_remover remover;
+	hol_term* dst = apply(src, remover);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct object_remover { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, object_remover& remover) {
+	if (src->binary.left->type == hol_term_type::CONSTANT
+	 && src->binary.left->constant == (unsigned int) built_in_predicates::OBJECT)
+	{
+		HOL_TRUE.reference_count++;
+		return &HOL_TRUE;
+	}
+	return default_apply<Type>(src, remover);
+}
+
+inline hol_term* remove_object(hol_term* src)
+{
+	object_remover remover;
+	hol_term* dst = apply(src, remover);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
 template<typename Formula>
 struct hdp_parser
 {
@@ -2002,7 +2111,7 @@ inline bool is_ambiguous(const flagged_logical_form<Formula>& exp) {
 
 template<typename BuiltInPredicates>
 struct hol_non_head_constants {
-	hol_term* constants[17];
+	hol_term* constants[18];
 
 	hol_non_head_constants() {
 		constants[0] = hol_term::new_constant((unsigned int) BuiltInPredicates::UNKNOWN);
@@ -2010,18 +2119,19 @@ struct hol_non_head_constants {
 		constants[2] = hol_term::new_constant((unsigned int) BuiltInPredicates::ARG2);
 		constants[3] = hol_term::new_constant((unsigned int) BuiltInPredicates::ARG3);
 		constants[4] = hol_term::new_constant((unsigned int) BuiltInPredicates::SIZE);
-		constants[5] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT);
-		constants[6] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT_PROGRESSIVE);
-		constants[7] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT_PERFECT);
-		constants[8] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT_PERFECT_PROGRESSIVE);
-		constants[9] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST);
-		constants[10] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST_PROGRESSIVE);
-		constants[11] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST_PERFECT);
-		constants[12] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST_PERFECT_PROGRESSIVE);
-		constants[13] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE);
-		constants[14] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE_PROGRESSIVE);
-		constants[15] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE_PERFECT);
-		constants[16] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE_PERFECT_PROGRESSIVE);
+		constants[5] = hol_term::new_constant((unsigned int) BuiltInPredicates::WIDE_SCOPE);
+		constants[6] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT);
+		constants[7] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT_PROGRESSIVE);
+		constants[8] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT_PERFECT);
+		constants[9] = hol_term::new_constant((unsigned int) BuiltInPredicates::PRESENT_PERFECT_PROGRESSIVE);
+		constants[10] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST);
+		constants[11] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST_PROGRESSIVE);
+		constants[12] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST_PERFECT);
+		constants[13] = hol_term::new_constant((unsigned int) BuiltInPredicates::PAST_PERFECT_PROGRESSIVE);
+		constants[14] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE);
+		constants[15] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE_PROGRESSIVE);
+		constants[16] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE_PERFECT);
+		constants[17] = hol_term::new_constant((unsigned int) BuiltInPredicates::FUTURE_PERFECT_PROGRESSIVE);
 	}
 
 	~hol_non_head_constants() {
@@ -2061,6 +2171,7 @@ inline bool is_built_in(unsigned int constant) {
 		|| constant == (unsigned int) BuiltInPredicates::ARG2_OF
 		|| constant == (unsigned int) BuiltInPredicates::ARG3_OF
 		|| constant == (unsigned int) BuiltInPredicates::SIZE
+		|| constant == (unsigned int) BuiltInPredicates::WIDE_SCOPE
 		|| constant == (unsigned int) BuiltInPredicates::PRESENT
 		|| constant == (unsigned int) BuiltInPredicates::PRESENT_PROGRESSIVE
 		|| constant == (unsigned int) BuiltInPredicates::PRESENT_PERFECT

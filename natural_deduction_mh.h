@@ -1505,6 +1505,11 @@ inline void set_size_proposal_log_probability(unsigned int set_id,
 		return;
 	}
 
+#if !defined(NDEBUG)
+	if (sets.sets[set_id].set_size < min_set_size || sets.sets[set_id].set_size > max_set_size)
+		fprintf(stderr, "set_size_proposal_log_probability WARNING: The set with ID %u has size outside the bounds computed by `set_reasoning.set_size_bounds`.\n", set_id);
+#endif
+
 	if (max_set_size == UINT_MAX) {
 		log_probability_value += (sets.sets[set_id].set_size - min_set_size) * SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P + SET_SIZE_PROPOSAL_LOG_P;
 	} else {
@@ -1645,6 +1650,7 @@ bool propose_disjunction_intro(
 		   also compute the log probability of the new path */
 		unsigned int new_constant = 0;
 		sampler.log_probability = 0.0;
+		sampler.removed_sets.clear();
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_constant, sampler);
 		if (new_proof != NULL) break;
 	}
@@ -1658,6 +1664,14 @@ bool propose_disjunction_intro(
 	if (!T.get_theory_changes(*new_proof, new_proof_changes)) {
 		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 		return false;
+	}
+
+	/* check if the proposed proof is the same as the original proof */
+	if (*selected_step.value == *new_proof) {
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
+		return true;
 	}
 
 	/* propose `new_proof` to substitute `selected_step.value` */
@@ -1675,16 +1689,11 @@ bool propose_disjunction_intro(
 		free(proposed_proofs); return false;
 	}
 
-	for (const Proof* set_size_axiom : old_proof_changes.set_size_axioms) {
-		log_proposal_probability_ratio -= log_probability(set_size_axiom->formula->binary.right->integer, theory_prior.set_size_prior);
-	} for (const Proof* set_size_axiom : new_proof_changes.set_size_axioms) {
-		log_proposal_probability_ratio += log_probability(set_size_axiom->formula->binary.right->integer, theory_prior.set_size_prior);
+	for (const auto& set_size_axiom : old_proof_changes.set_size_axioms) {
+		log_proposal_probability_ratio -= log_probability(set_size_axiom.key->formula->binary.right->integer, theory_prior.set_size_prior);
+	} for (const auto& set_size_axiom : new_proof_changes.set_size_axioms) {
+		log_proposal_probability_ratio += log_probability(set_size_axiom.key->formula->binary.right->integer, theory_prior.set_size_prior);
 	}
-
-	/* compute the proof portion of the prior for both current and proposed theories */
-	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
-	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs.transformed_proofs, theory_prior.proof_prior, T.proof_axioms, old_axioms, new_axioms);
 
 	selected_step.value->reference_count++;
 	if (!transform_proofs(proposed_proofs)) {
@@ -1694,6 +1703,11 @@ bool propose_disjunction_intro(
 		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
 		free(proposed_proofs); return false;
 	}
+
+	/* compute the proof portion of the prior for both current and proposed theories */
+	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
+	log_proposal_probability_ratio += log_probability_ratio(
+			proposed_proofs.transformed_proofs, theory_prior.proof_prior, T.proof_axioms, old_axioms, new_axioms);
 
 	for (auto proof : old_observations) {
 		T.observations.remove(proof);
@@ -2128,6 +2142,10 @@ bool do_mh_step(
 			+ eliminable_extensional_edges.length + unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+#if !defined(NDEBUG)
+	if (axiom_count == 0)
+		fprintf(stderr, "do_mh_step WARNING: `axiom_count` is 0.\n");
+#endif
 	unsigned int random = sample_uniform(axiom_count);
 	if (!log_cache<double>::instance().ensure_size(axiom_count + 1)) return false;
 	log_proposal_probability_ratio -= -log_cache<double>::instance().get(axiom_count);

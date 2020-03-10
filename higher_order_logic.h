@@ -1586,6 +1586,29 @@ inline bool max_bound_variable(const hol_term& src, unsigned int& max_variable) 
 	return true;
 }
 
+struct min_bound_variable_collector {
+	bool has_variable;
+	unsigned int variable;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, min_bound_variable_collector& visitor) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		visitor.variable = min(visitor.variable, term.quantifier.variable);
+		visitor.has_variable = true;
+	}
+	return true;
+}
+
+inline bool min_bound_variable(const hol_term& src, unsigned int& min_variable) {
+	min_bound_variable_collector visitor = {false, UINT_MAX};
+	visit(src, visitor);
+	if (!visitor.has_variable)
+		return false;
+	min_variable = min(min_variable, visitor.variable);
+	return true;
+}
+
 struct parameter_collector {
 	array<unsigned int>& parameters;
 };
@@ -2637,7 +2660,7 @@ inline hol_term* apply(hol_term* src, variable_relabeler& relabeler) {
 		}
 
 		hol_term* new_operand = apply(src->quantifier.operand, relabeler);
-		relabeler.variable_map.size--;
+		relabeler.variable_map.remove_at(relabeler.variable_map.index_of(src->quantifier.variable));
 
 		if (new_operand == nullptr)
 			return nullptr;
@@ -2745,7 +2768,6 @@ inline hol_term* substitute(hol_term* src,
 	return dst;
 }
 
-template<int VariableShift>
 struct index_substituter {
 	const hol_term* src;
 	hol_term* dst;
@@ -2754,8 +2776,8 @@ struct index_substituter {
 	unsigned int current_term_index;
 };
 
-template<hol_term_type Type, int VariableShift>
-inline hol_term* apply(hol_term* src, index_substituter<VariableShift>& substituter)
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, index_substituter& substituter)
 {
 	if (substituter.term_index_count > 0 && *substituter.term_indices == substituter.current_term_index) {
 		if (substituter.src == NULL) {
@@ -2777,13 +2799,12 @@ inline hol_term* apply(hol_term* src, index_substituter<VariableShift>& substitu
 }
 
 /* NOTE: this function assumes `src.type == SrcType` */
-template<int VariableShift = 0>
 inline hol_term* substitute(
 		hol_term* src, const unsigned int* term_indices,
 		unsigned int term_index_count, hol_term* dst_term,
 		const hol_term* expected_src_term = NULL)
 {
-	index_substituter<VariableShift> substituter = {expected_src_term, dst_term, term_indices, term_index_count, 0};
+	index_substituter substituter = {expected_src_term, dst_term, term_indices, term_index_count, 0};
 	hol_term* term = apply(src, substituter);
 	if (term == src)
 		term->reference_count++;
@@ -4061,7 +4082,6 @@ inline bool compute_type(
 #if !defined(NDEBUG)
 	if (variable_types.contains(quantifier.variable))
 		fprintf(stderr, "compute_type WARNING: `variable_types` already contains key %u.\n", quantifier.variable);
-	unsigned int old_variable_types_size = variable_types.size;
 #endif
 	variable_types.keys[variable_types.size] = quantifier.variable;
 	if (!init(variable_types.values[variable_types.size], new_type_variable))
@@ -4074,17 +4094,18 @@ inline bool compute_type(
 		return false;
 	}
 
+	unsigned index = variable_types.index_of(quantifier.variable);
 #if !defined(NDEBUG)
-	if (old_variable_types_size + 1 != variable_types.size
-	 || variable_types.keys[variable_types.size - 1] != quantifier.variable)
+	if (index == variable_types.size)
 		fprintf(stderr, "compute_type WARNING: Quantified term is not well-formed.\n");
 #endif
-	variable_types.size--;
-	if (!types.template add<Type>(term, HOL_BOOLEAN_TYPE, variable_types.values[variable_types.size])) {
-		free(variable_types.values[variable_types.size]);
+	if (!types.template add<Type>(term, HOL_BOOLEAN_TYPE, variable_types.values[index])) {
+		free(variable_types.values[index]);
+		variable_types.remove_at(index);
 		return false;
 	}
-	free(variable_types.values[variable_types.size]);
+	free(variable_types.values[index]);
+	variable_types.remove_at(index);
 	return true;
 }
 
@@ -4175,7 +4196,6 @@ inline bool compute_lambda_type(
 #if !defined(NDEBUG)
 	if (variable_types.contains(quantifier.variable))
 		fprintf(stderr, "compute_lambda_type WARNING: `variable_types` already contains key %u.\n", quantifier.variable);
-	unsigned int old_variable_types_size = variable_types.size;
 #endif
 	variable_types.keys[variable_types.size] = quantifier.variable;
 	move(left_type, variable_types.values[variable_types.size]);
@@ -4184,19 +4204,20 @@ inline bool compute_lambda_type(
 	if (!compute_type<PolymorphicEquality>(*quantifier.operand, types, right_type, constant_types, variable_types, parameter_types, type_variables))
 		return false;
 
+	unsigned int index = variable_types.index_of(quantifier.variable);
 #if !defined(NDEBUG)
-	if (old_variable_types_size + 1 != variable_types.size
-	 || variable_types.keys[variable_types.size - 1] != quantifier.variable)
+	if (index == variable_types.size)
 		fprintf(stderr, "compute_lambda_type WARNING: Lambda term is not well-formed.\n");
 #endif
-	variable_types.size--;
 	free(expected_type);
-	if (!init(expected_type, variable_types.values[variable_types.size], right_type)) {
+	if (!init(expected_type, variable_types.values[index], right_type)) {
 		expected_type.kind = hol_type_kind::ANY; /* make sure `expected_type` is valid since its destructor will be called */
-		free(variable_types.values[variable_types.size]); free(right_type);
+		free(variable_types.values[index]); free(right_type);
+		variable_types.remove_at(index);
 		return false;
 	}
-	free(variable_types.values[variable_types.size]); free(right_type);
+	free(variable_types.values[index]); free(right_type);
+	variable_types.remove_at(index);
 	return types.template add<hol_term_type::LAMBDA>(term, expected_type);
 }
 
@@ -4580,11 +4601,8 @@ struct equals_arg_types {
 			}
 			types.keys[index] = &term;
 			types.size++;
-			return true;
-		} else {
-			fprintf(stderr, "equals_arg_types.add ERROR: We've already seen this term.\n");
-			return false;
 		}
+		return true;
 	}
 
 	template<typename Function>
@@ -6907,7 +6925,7 @@ bool canonicalize_quantifier_scope(
 		free(operand); return false;
 	}
 
-	variable_map.size--;
+	variable_map.remove_at(variable_map.index_of(src.variable));
 
 	/* check if the operand has any instances of the quantified variable */
 	if (!operand->variables.contains(quantifier_variable)) {
@@ -7447,11 +7465,33 @@ bool is_subset(const hol_term* first, const hol_term* second)
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
 		return *first == *second;
-	case hol_term_type::IF_THEN:
+	case hol_term_type::EXISTS:
+		if (second->type == hol_term_type::EXISTS) {
+			hol_term* relabeled_first = relabel_variables(first->quantifier.operand);
+			hol_term* relabeled_second = relabel_variables(second->quantifier.operand);
+			bool result = is_subset(relabeled_first, relabeled_second);
+			free(*relabeled_first); if (relabeled_first->reference_count == 0) free(relabeled_first);
+			free(*relabeled_second); if (relabeled_second->reference_count == 0) free(relabeled_second);
+			return result;
+		} else {
+			return false;
+		}
 	case hol_term_type::EQUALS:
+		{
+			hol_term* temp = hol_term::new_or(
+					hol_term::new_and(first->binary.left, first->binary.right),
+					hol_term::new_and(hol_term::new_not(first->binary.left), hol_term::new_not(first->binary.right)));
+			if (temp == nullptr)
+				return false;
+			first->binary.left->reference_count += 2;
+			first->binary.right->reference_count += 2;
+			bool result = is_subset(temp, second);
+			free(*temp); free(temp);
+			return result;
+		}
+	case hol_term_type::IF_THEN:
 	case hol_term_type::IFF:
 	case hol_term_type::FOR_ALL:
-	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		/* TODO: finish implementing this */
 		fprintf(stderr, "is_subset ERROR: Not implemented.\n");

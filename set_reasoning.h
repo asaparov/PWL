@@ -346,8 +346,12 @@ struct set_info
 		return size_axiom->formula->binary.left->binary.right->quantifier.operand;
 	}
 
-	/* TODO: this function does not check the consistency of the new size */
+	/* NOTE: this function does not check the consistency of the new size */
 	inline void change_size(unsigned int new_size) {
+#if !defined(NDEBUG)
+		if (size_axiom->children.length != 0 && new_size != set_size)
+			fprintf(stderr, "set_info.change_size WARNING: Attempted to change the size of a fixed set.\n");
+#endif
 		set_size = new_size;
 		size_axiom->formula->binary.right->integer = new_size;
 	}
@@ -650,8 +654,14 @@ struct set_reasoning
 	}
 
 	inline bool set_size_bounds(unsigned int set_id,
-			unsigned int& min_set_size, unsigned int& max_set_size)
+			unsigned int& min_set_size, unsigned int& max_set_size) const
 	{
+		if (!is_unfixed(set_id)) {
+			min_set_size = sets[set_id].set_size;
+			max_set_size = min_set_size;
+			return true;
+		}
+
 		max_set_size = UINT_MAX;
 		for (unsigned int parent : intensional_graph.vertices[set_id].parents) {
 			if (sets[parent].set_size == 0) {
@@ -874,8 +884,11 @@ struct set_reasoning
 
 	bool contract_component(
 			unsigned int set, unsigned int& contracted_set,
-			const hash_set<unsigned int>& connected_component)
+			const hash_set<unsigned int>& connected_component,
+			bool& is_fixed)
 	{
+		is_fixed = false;
+
 		Formula* conjunction = Formula::new_and(subgraph_formula_view(sets, connected_component));
 		if (conjunction == NULL) return false;
 		for (unsigned int member : connected_component)
@@ -902,6 +915,8 @@ struct set_reasoning
 		}
 
 		for (unsigned int member : connected_component) {
+			if (!is_unfixed(member))
+				is_fixed = true;
 			for (const auto& entry : extensional_graph.vertices[member].parents) {
 				if (!connected_component.contains(entry.key)) {
 					extensional_graph.vertices[entry.key].children.remove(member);
@@ -978,6 +993,7 @@ struct set_reasoning
 			array<unsigned int>& stack, bool& graph_changed)
 	{
 		/* first check if `set` is part of a strongly-connected component */
+		bool is_fixed;
 		hash_set<unsigned int> connected_component(16);
 		if (!get_strongly_connected_component(set, connected_component)) {
 			return false;
@@ -985,8 +1001,10 @@ struct set_reasoning
 			/* perform "surgery" on the graph by creating a new "virtual"
 			   vertex that represents the strongly-connected component with all
 			   of its internal edges contracted */
-			if (!contract_component(set, set, connected_component))
+			if (!contract_component(set, set, connected_component, is_fixed))
 				return false;
+		} else {
+			is_fixed = !is_unfixed(set);
 		}
 
 		if (!stack.ensure_capacity(stack.length + 1)) {
@@ -1000,7 +1018,9 @@ struct set_reasoning
 		stack[stack.length++] = set;
 
 		unsigned int* clique = NULL; unsigned int clique_count, ancestor_of_clique, upper_bound = 0;
-		if (!get_size_upper_bound(set, upper_bound, clique, clique_count, ancestor_of_clique)) {
+		if (is_fixed) {
+			upper_bound = sets[set].set_size;
+		} else if (!get_size_upper_bound(set, upper_bound, clique, clique_count, ancestor_of_clique)) {
 			if (connected_component.size > 1)
 				uncontract_component(set, connected_component);
 			return false;
@@ -1030,26 +1050,9 @@ struct set_reasoning
 			}
 		}
 
-		bool child_graph_changed;
-		if (!increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed)) {
-			if (connected_component.size > 1)
-				uncontract_component(set, connected_component);
-			free(clique); return false;
-		} else if (child_graph_changed) {
-			/* the graph has been changed */
-			free(clique); stack.length--;
-			graph_changed = true;
-			if (connected_component.size > 1)
-				return uncontract_component(set, connected_component);
-			else return true;
-		}
-
-		for (unsigned int i = 0; i < clique_count; i++) {
-			unsigned int requested_child_size;
-			if (sets[clique[i]].set_size > requested_size - upper_bound)
-				requested_child_size = sets[clique[i]].set_size - (requested_size - upper_bound);
-			else requested_child_size = 0;
-			if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
+		if (!is_fixed) {
+			bool child_graph_changed = false;
+			if (!increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed)) {
 				if (connected_component.size > 1)
 					uncontract_component(set, connected_component);
 				free(clique); return false;
@@ -1058,8 +1061,27 @@ struct set_reasoning
 				free(clique); stack.length--;
 				graph_changed = true;
 				if (connected_component.size > 1)
-					uncontract_component(set, connected_component);
+					return uncontract_component(set, connected_component);
 				else return true;
+			}
+
+			for (unsigned int i = 0; i < clique_count; i++) {
+				unsigned int requested_child_size;
+				if (sets[clique[i]].set_size > requested_size - upper_bound)
+					requested_child_size = sets[clique[i]].set_size - (requested_size - upper_bound);
+				else requested_child_size = 0;
+				if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
+					if (connected_component.size > 1)
+						uncontract_component(set, connected_component);
+					free(clique); return false;
+				} else if (child_graph_changed) {
+					/* the graph has been changed */
+					free(clique); stack.length--;
+					graph_changed = true;
+					if (connected_component.size > 1)
+						uncontract_component(set, connected_component);
+					else return true;
+				}
 			}
 		}
 
@@ -1076,6 +1098,7 @@ struct set_reasoning
 			array<unsigned int>& stack, bool& graph_changed)
 	{
 		/* first check if `set` is part of a strongly-connected component */
+		bool is_fixed;
 		hash_set<unsigned int> connected_component(16);
 		if (!get_strongly_connected_component(set, connected_component)) {
 			return false;
@@ -1083,8 +1106,10 @@ struct set_reasoning
 			/* perform "surgery" on the graph by creating a new "virtual"
 			   vertex that represents the strongly-connected component with all
 			   of its internal edges contracted */
-			if (!contract_component(set, set, connected_component))
+			if (!contract_component(set, set, connected_component, is_fixed))
 				return false;
+		} else {
+			is_fixed = !is_unfixed(set);
 		}
 
 		if (!stack.ensure_capacity(stack.length + 1)) {
@@ -1097,8 +1122,10 @@ struct set_reasoning
 		}
 		stack[stack.length++] = set;
 
-		unsigned int* clique = NULL; unsigned int clique_count, lower_bound;
-		if (!get_size_lower_bound(set, lower_bound, clique, clique_count)) {
+		unsigned int* clique = NULL; unsigned int clique_count, lower_bound, ancestor_of_clique;
+		if (is_fixed) {
+			lower_bound = sets[set].set_size;
+		} else if (!get_size_lower_bound(set, lower_bound, clique, clique_count, ancestor_of_clique)) {
 			if (connected_component.size > 1)
 				uncontract_component(set, connected_component);
 			return false;
@@ -1128,23 +1155,64 @@ struct set_reasoning
 			}
 		}
 
-		bool child_graph_changed;
-		for (unsigned int i = 0; i < clique_count; i++) {
-			unsigned int requested_child_size;
-			if (sets[clique[i]].set_size > lower_bound - requested_size)
-				requested_child_size = sets[clique[i]].set_size - (lower_bound - requested_size);
-			else requested_child_size = 0;
-			if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
-				if (connected_component.size > 1)
-					uncontract_component(set, connected_component);
-				free(clique); return false;
-			} else if (child_graph_changed) {
-				/* the graph has been changed */
-				free(clique); stack.length--;
-				graph_changed = true;
-				if (connected_component.size > 1)
-					return uncontract_component(set, connected_component);
-				else return true;
+		if (!is_fixed) {
+			bool child_graph_changed;
+			if (ancestor_of_clique == 0) {
+				/* the lower bound comes from a subset clique of `set` */
+				for (unsigned int i = 0; i < clique_count; i++) {
+					unsigned int requested_child_size;
+					if (sets[clique[i]].set_size > lower_bound - requested_size)
+						requested_child_size = sets[clique[i]].set_size - (lower_bound - requested_size);
+					else requested_child_size = 0;
+					if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
+						if (connected_component.size > 1)
+							uncontract_component(set, connected_component);
+						free(clique); return false;
+					} else if (child_graph_changed) {
+						/* the graph has been changed */
+						free(clique); stack.length--;
+						graph_changed = true;
+						if (connected_component.size > 1)
+							return uncontract_component(set, connected_component);
+						else return true;
+					}
+				}
+			} else {
+				/* the lower bound comes from an ancestor of `set` and the `requested_size` is 0 */
+				unsigned int requested_ancestor_size = 0;
+				for (unsigned int i = 0; i < clique_count; i++)
+					requested_ancestor_size += sets[clique[i]].set_size;
+				if (!increase_set_size(ancestor_of_clique, requested_ancestor_size, stack, child_graph_changed)) {
+					if (connected_component.size > 1)
+						uncontract_component(set, connected_component);
+					free(clique); return false;
+				} else if (child_graph_changed) {
+					/* the graph has been changed */
+					free(clique); stack.length--;
+					graph_changed = true;
+					if (connected_component.size > 1)
+						return uncontract_component(set, connected_component);
+					else return true;
+				}
+
+				for (unsigned int i = 0; i < clique_count; i++) {
+					unsigned int requested_child_size;
+					if (sets[clique[i]].set_size > requested_ancestor_size - sets[ancestor_of_clique].set_size)
+						requested_child_size = sets[clique[i]].set_size - (requested_ancestor_size - sets[ancestor_of_clique].set_size);
+					else requested_child_size = 0;
+					if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
+						if (connected_component.size > 1)
+							uncontract_component(set, connected_component);
+						free(clique); return false;
+					} else if (child_graph_changed) {
+						/* the graph has been changed */
+						free(clique); stack.length--;
+						graph_changed = true;
+						if (connected_component.size > 1)
+							return uncontract_component(set, connected_component);
+						else return true;
+					}
+				}
 			}
 		}
 
@@ -1284,7 +1352,7 @@ struct set_reasoning
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
 					if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
 					if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
-					return NULL;
+					free(clique); return NULL;
 				} else if (graph_changed) { free(clique); continue; }
 
 				for (unsigned int i = 0; i < clique_count; i++) {
@@ -1297,7 +1365,7 @@ struct set_reasoning
 						extensional_graph.remove_edge(consequent_set, antecedent_set);
 						if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
 						if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
-						return NULL;
+						free(clique); return NULL;
 					} else if (graph_changed) break;
 				}
 
@@ -1307,7 +1375,7 @@ struct set_reasoning
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
 				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
 				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
-				return NULL;
+				free(clique); return NULL;
 			} else {
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
 				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
@@ -1381,19 +1449,19 @@ struct set_reasoning
 		return true;
 	}
 
-	bool free_subset_axiom(Proof* subset_axiom)
+	bool free_subset_axiom(Formula* antecedent, Formula* consequent)
 	{
-		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
-		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
 		antecedent->reference_count++;
 		consequent->reference_count++;
 
 #if !defined(NDEBUG)
 		bool contains;
 		unsigned int antecedent_set = set_ids.get(*antecedent, contains);
-		if (!contains) fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given antecedent.\n");
+		if (!contains)
+			fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given antecedent.\n");
 		unsigned int consequent_set = set_ids.get(*consequent, contains);
-		if (!contains) fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given consequent.\n");
+		if (!contains)
+			fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given consequent.\n");
 #else
 		unsigned int antecedent_set = set_ids.get(*antecedent);
 		unsigned int consequent_set = set_ids.get(*consequent);
@@ -1405,18 +1473,29 @@ struct set_reasoning
 		return success;
 	}
 
+	inline bool free_subset_axiom(Proof* subset_axiom)
+	{
+		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
+		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
+		return free_subset_axiom(antecedent, consequent);
+	}
+
 	template<bool ResolveInconsistencies>
 	Proof* get_size_axiom(unsigned int set_id, unsigned int new_size)
 	{
+		bool is_fixed = !is_unfixed(set_id);
 		if (new_size > sets[set_id].set_size) {
 			unsigned int upper_bound = 0;
-			if (!get_size_upper_bound(set_id, upper_bound)) return NULL;
+			if (is_fixed) {
+				upper_bound = sets[set_id].set_size;
+			} else if (!get_size_upper_bound(set_id, upper_bound))
+				return NULL;
 			if (new_size <= upper_bound) {
 				sets[set_id].change_size(new_size);
 				return sets[set_id].size_axiom;
 			}
 
-			if (!ResolveInconsistencies) return NULL;
+			if (!ResolveInconsistencies || is_fixed) return NULL;
 
 			while (true) {
 				/* compute the upper bound on the size of this set; if the new size
@@ -1430,13 +1509,16 @@ struct set_reasoning
 			}
 		} else if (new_size < sets[set_id].set_size) {
 			unsigned int lower_bound = 0;
-			if (!get_size_lower_bound(set_id, lower_bound)) return NULL;
+			if (is_fixed) {
+				lower_bound = sets[set_id].set_size;
+			} else if (!get_size_lower_bound(set_id, lower_bound))
+				return NULL;
 			if (new_size >= lower_bound) {
 				sets[set_id].change_size(new_size);
 				return sets[set_id].size_axiom;
 			}
 
-			if (!ResolveInconsistencies) return NULL;
+			if (!ResolveInconsistencies || is_fixed) return NULL;
 
 			while (true) {
 				/* compute the lower bound on the size of this set; if the new size
@@ -1471,8 +1553,14 @@ struct set_reasoning
 	}
 
 	bool get_size_lower_bound(unsigned int set_id, unsigned int& lower_bound,
-			unsigned int*& clique, unsigned int& clique_count) const
+			unsigned int*& clique, unsigned int& clique_count,
+			unsigned int& ancestor_of_clique) const
 	{
+#if !defined(NDEBUG)
+		if (!is_unfixed(set_id))
+			fprintf(stderr, "get_size_lower_bound WARNING: Set with ID %u is fixed. This function should not be called on fixed sets.\n", set_id);
+#endif
+
 		/* first compute the number of elements that provably belong to this set */
 		hash_set<unsigned int> provable_elements(16);
 		if (!get_provable_elements(set_id, provable_elements))
@@ -1483,19 +1571,61 @@ struct set_reasoning
 		   (maximal in the sense of the size of their union) */
 		if (!find_largest_disjoint_subset_clique(*this, set_id, clique, clique_count, lower_bound))
 			return false;
-		if (clique == NULL)
-			return true;
 
-		lower_bound = 0;
-		for (unsigned int i = 0; i < clique_count; i++)
-			lower_bound += sets[clique[i]].set_size;
+		if (clique != NULL) {
+			lower_bound = 0;
+			for (unsigned int i = 0; i < clique_count; i++)
+				lower_bound += sets[clique[i]].set_size;
+		}
+
+		if (lower_bound == 0) {
+			/* we need to be more careful since this set being empty causes
+			   some ancestor sets to become disjoint, which could cause set
+			   size bounds of some ancestors to be violated */
+
+			/* determine which pairs of sets are "newly disjoint" if this `set_id` becomes empty */
+			unsigned int old_size = sets[set_id].set_size;
+			sets[set_id].set_size = 0;
+			bool can_be_zero = true;
+			for (unsigned int i = 1; can_be_zero && i < set_count + 1; i++) {
+				if (sets[i].size_axiom == NULL) continue;
+				for (unsigned int j = i + 1; j < set_count + 1; j++) {
+					if (sets[j].size_axiom == NULL) continue;
+					if (are_newly_disjoint(sets[i].set_formula(), sets[j].set_formula(), set_id)) {
+						/* check if any ancestor of `i` and `j` has a set size smaller than its lower bound */
+						if (!find_largest_disjoint_clique_with_edge(*this, i, j, clique, clique_count, ancestor_of_clique, INT_MIN, 0)) {
+							sets[set_id].set_size = old_size;
+							return false;
+						}
+						if (clique != NULL) {
+							unsigned int clique_size = 0;
+							for (unsigned int i = 0; i < clique_count; i++)
+								clique_size += sets[clique[i]].set_size;
+							if (clique_size > sets[ancestor_of_clique].set_size) {
+								lower_bound = 1;
+								can_be_zero = false;
+								break;
+							} else {
+								free(clique);
+								clique = NULL;
+								clique_count = 0;
+								ancestor_of_clique = 0;
+							}
+						}
+					}
+				}
+			}
+			sets[set_id].set_size = old_size;
+		} else {
+			ancestor_of_clique = 0;
+		}
 		return true;
 	}
 
 	inline bool get_size_lower_bound(unsigned int set_id, unsigned int& lower_bound) const
 	{
-		unsigned int* clique = NULL; unsigned int clique_count;
-		if (!get_size_lower_bound(set_id, lower_bound, clique, clique_count))
+		unsigned int* clique = NULL; unsigned int clique_count, ancestor_of_clique;
+		if (!get_size_lower_bound(set_id, lower_bound, clique, clique_count, ancestor_of_clique))
 			return false;
 		if (clique != NULL) free(clique);
 		return true;
@@ -1504,6 +1634,11 @@ struct set_reasoning
 	bool get_size_upper_bound(unsigned int set_id, unsigned int& upper_bound,
 			unsigned int*& clique, unsigned int& clique_count, unsigned int& ancestor_of_clique) const
 	{
+#if !defined(NDEBUG)
+		if (!is_unfixed(set_id))
+			fprintf(stderr, "get_size_upper_bound WARNING: Set with ID %u is fixed. This function should not be called on fixed sets.\n", set_id);
+#endif
+
 		if (!find_largest_disjoint_clique_with_set(*this, set_id, clique, clique_count, ancestor_of_clique, INT_MIN))
 			return false;
 		if (clique == NULL) {
@@ -1787,9 +1922,48 @@ struct set_reasoning
 		return are_disjoint(sets[first_set].set_formula(), sets[second_set].set_formula());
 	}
 
+	/**
+	 * Returns `true` when `first` and `second` are disjoint iff the set with
+	 * ID `set_id` is empty (and all other sets stay the same).
+	 */
+	inline bool are_newly_disjoint(Formula* first, Formula* second, unsigned int set_id) const
+	{
+		Formula* intersection = intersect(first, second);
+
+		/* first check if the intersection belongs to `set_id` */
+		if (!is_subset(intersection, sets[set_id].set_formula())) {
+			free(*intersection); if (intersection->reference_count == 0) free(intersection);
+			return false;
+		}
+
+		/* then check if the intersection belongs to any child */
+		for (const auto& entry : extensional_graph.vertices[set_id].children) {
+			if (is_subset(intersection, sets[entry.key].set_formula())) {
+				free(*intersection); if (intersection->reference_count == 0) free(intersection);
+				return false;
+			}
+		} for (unsigned int child : intensional_graph.vertices[set_id].children) {
+			if (is_subset(intersection, sets[child].set_formula())) {
+				free(*intersection); if (intersection->reference_count == 0) free(intersection);
+				return false;
+			}
+		}
+
+		free(*intersection); if (intersection->reference_count == 0) free(intersection);
+		return true;
+	}
+
+	inline bool is_unfixed(Proof* size_axiom) const {
+		return (size_axiom->children.length == 0);
+	}
+
 	inline bool is_unfixed(Proof* size_axiom, const hash_set<Proof*>& observations) const {
 		return (size_axiom->children.length == 0
 			&& !observations.contains(size_axiom));
+	}
+
+	inline bool is_unfixed(unsigned int set_id) const {
+		return is_unfixed(sets[set_id].size_axiom);
 	}
 
 	inline bool is_unfixed(unsigned int set_id, const hash_set<Proof*>& observations) const {
@@ -1898,8 +2072,23 @@ struct set_reasoning
 		for (unsigned int i = 1; i < set_count + 1; i++) {
 			if (sets[i].size_axiom == NULL) continue;
 			if (is_freeable(i))
-				fprintf(stderr, "has_freeable_sets: Set with ID %u is freeable.\n", i);
+				fprintf(stderr, "set_reasoning.check_freeable_sets: Set with ID %u is freeable.\n", i);
 		}
+	}
+
+	bool are_set_sizes_valid() const {
+		bool success = true;
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axiom == NULL) continue;
+			unsigned int min_set_size, max_set_size;
+			if (!set_size_bounds(i, min_set_size, max_set_size))
+				return false;
+			if (sets[i].set_size < min_set_size || sets[i].set_size > max_set_size) {
+				fprintf(stderr, "set_reasoning.are_set_sizes_valid WARNING: Set with ID %u has size outside the bounds computed by `set_reasoning.set_size_bounds`.\n", i);
+				success = false;
+			}
+		}
+		return success;
 	}
 };
 
@@ -2043,10 +2232,10 @@ struct search_queue {
 	}
 
 	inline void push(const search_state<StateData>& state) {
-//#if !defined(NDEBUG)
+#if !defined(NDEBUG)
 		if (state.state->get_priority() > last_priority)
 			fprintf(stderr, "search_queue.push WARNING: Search is not monotonic.\n");
-//#endif
+#endif
 		queue.insert(state);
 	}
 
@@ -2213,7 +2402,7 @@ bool process_clique_search_state(
 		for (unsigned int i = 0; i < children.length; i++) {
 			unsigned int child = children[i];
 			neighborhood.length = old_neighborhood_length;
-			priority = priority_without_parent;
+			priority = priority_without_parent + sets.sets[child].set_size;
 
 			/* only add the children to neighborhood that are disjoint with `child` */
 			for (unsigned int j = 0; j < i; j++) {
@@ -2242,6 +2431,7 @@ bool process_clique_search_state(
 	return true;
 }
 
+/* this is the Bron-Kerbosch algorithm */
 template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 bool find_largest_disjoint_subset_clique(
 		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
@@ -2358,16 +2548,14 @@ struct singleton_parent {
 };
 
 template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename SetParents>
-bool find_largest_disjoint_clique_with_set(
+bool get_non_ancestor_neighborhoods(
 		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		unsigned int set, const SetParents& set_parents,
-		unsigned int*& clique, unsigned int& clique_count,
-		unsigned int& ancestor_of_clique, int min_priority)
+		hash_map<unsigned int, array<unsigned int>>& non_ancestor_neighborhood)
 {
 	/* first collect all ancestors of `set` */
 	unsigned int parent_count = set_parents.count(sets, set);
 	array<unsigned int> stack((parent_count == 0) ? 1 : (1 << (core::log2(parent_count) + 1)));
-	hash_map<unsigned int, array<unsigned int>> non_ancestor_neighborhood(32);
 	auto init_non_ancestor_neighborhood = [&](unsigned int current) {
 		if (!non_ancestor_neighborhood.check_size())
 			return false;
@@ -2433,6 +2621,19 @@ bool find_largest_disjoint_clique_with_set(
 	bool contains; unsigned int bucket;
 	free(non_ancestor_neighborhood.get(set, contains, bucket));
 	non_ancestor_neighborhood.remove_at(bucket);
+	return true;
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename SetParents>
+bool find_largest_disjoint_clique_with_set(
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		unsigned int set, const SetParents& set_parents,
+		unsigned int*& clique, unsigned int& clique_count,
+		unsigned int& ancestor_of_clique, int min_priority)
+{
+	hash_map<unsigned int, array<unsigned int>> non_ancestor_neighborhood(32);
+	if (!get_non_ancestor_neighborhoods(sets, set, set_parents, non_ancestor_neighborhood))
+		return false;
 
 	search_queue<ancestor_clique_search_state> queue;
 	clique = NULL; clique_count = 0;
@@ -2523,6 +2724,153 @@ inline bool find_largest_disjoint_clique_with_set(
 {
 	singleton_parent set_parent = { parent };
 	return find_largest_disjoint_clique_with_set(sets, set, set_parent, clique, clique_count, ancestor_of_clique, min_priority);
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename FirstSetParents, typename SecondSetParents>
+bool find_largest_disjoint_clique_with_edge(
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		unsigned int first, unsigned int second,
+		const FirstSetParents& first_set_parents,
+		const SecondSetParents& second_set_parents,
+		unsigned int*& clique, unsigned int& clique_count,
+		unsigned int& ancestor_of_clique, int min_priority,
+		int stop_priority)
+{
+	hash_map<unsigned int, array<unsigned int>> first_non_ancestor_neighborhood(32);
+	hash_map<unsigned int, array<unsigned int>> second_non_ancestor_neighborhood(32);
+	if (!get_non_ancestor_neighborhoods(sets, first, first_set_parents, first_non_ancestor_neighborhood)) {
+		return false;
+	} else if (!get_non_ancestor_neighborhoods(sets, second, second_set_parents, second_non_ancestor_neighborhood)) {
+		for (auto entry : first_non_ancestor_neighborhood) free(entry.value);
+		return false;
+	}
+
+	/* intersect the two non-ancestor neighborhoods */
+	hash_map<unsigned int, array<unsigned int>> non_ancestor_neighborhood(RESIZE_THRESHOLD_INVERSE * (max(first_non_ancestor_neighborhood.table.size, second_non_ancestor_neighborhood.table.size) + 1));
+	for (auto entry : first_non_ancestor_neighborhood) {
+		bool contains;
+		array<unsigned int>& first_neighborhood = entry.value;
+		if (!first_neighborhood.contains(second))
+			continue;
+		array<unsigned int>& second_neighborhood = second_non_ancestor_neighborhood.get(entry.key, contains);
+		if (contains) {
+			unsigned int bucket;
+			array<unsigned int>& intersection = non_ancestor_neighborhood.get(entry.key, contains, bucket);
+			if (!array_init(intersection, max(first_neighborhood.length, second_neighborhood.length) + 1)) {
+				for (auto entry : first_non_ancestor_neighborhood) free(entry.value);
+				for (auto entry : second_non_ancestor_neighborhood) free(entry.value);
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				return false;
+			}
+			non_ancestor_neighborhood.table.keys[bucket] = entry.key;
+			non_ancestor_neighborhood.table.size++;
+
+			if (first_neighborhood.length > 1)
+				insertion_sort(first_neighborhood);
+			if (second_neighborhood.length > 1)
+				insertion_sort(second_neighborhood);
+			set_intersect(intersection, first_neighborhood, second_neighborhood);
+			if (intersection.length != 0)
+				move(intersection[0], intersection[intersection.length]);
+			intersection[0] = second;
+			intersection.length++;
+		}
+	}
+	for (auto entry : first_non_ancestor_neighborhood) free(entry.value);
+	for (auto entry : second_non_ancestor_neighborhood) free(entry.value);
+
+	search_queue<ancestor_clique_search_state> queue;
+	clique = NULL; clique_count = 0;
+	for (const auto& entry : non_ancestor_neighborhood) {
+		/* create search states that contain both `first` and `second` in the clique */
+		unsigned int* new_clique = (unsigned int*) malloc(sizeof(unsigned int));
+		if (new_clique == NULL) {
+			fprintf(stderr, "find_largest_disjoint_clique_with_edge ERROR: Insufficient memory for `new_clique`.\n");
+			for (auto entry : non_ancestor_neighborhood) free(entry.value);
+			return false;
+		}
+		new_clique[0] = first;
+
+		array<unsigned int> neighborhood(16);
+		hash_set<unsigned int> visited(16);
+		unsigned int new_X_count = neighborhood.length;
+		for (unsigned int i = 0; i < entry.value.length; i++) {
+			if (!expand_clique_search_state(sets, neighborhood, neighborhood.data, new_X_count, visited, first, entry.value[i])) {
+				free(new_clique);
+				return false;
+			}
+		}
+
+		int priority = sets.sets[first].set_size;
+		for (unsigned int i = new_X_count; i < neighborhood.length; i++)
+			priority += sets.sets[neighborhood[i]].set_size;
+
+		if (priority >= min_priority) {
+			search_state<ancestor_clique_search_state> new_state;
+			new_state.state = (ancestor_clique_search_state*) malloc(sizeof(ancestor_clique_search_state));
+			priority += sets.sets[second].set_size;
+			if (new_state.state == NULL) {
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				free(new_clique); return false;
+			} else if (!init(*new_state.state, sets, new_clique, 1,
+					neighborhood.data + 1, neighborhood.length - 1, neighborhood.data, 0,
+					second, priority, entry.key))
+			{
+				for (auto entry : non_ancestor_neighborhood) free(entry.value);
+				free(new_state.state); free(new_clique); return false;
+			}
+			queue.push(new_state);
+		}
+		free(new_clique);
+	}
+	for (auto entry : non_ancestor_neighborhood) free(entry.value);
+
+	bool success = true;
+	for (unsigned int iteration = 0; success && !queue.is_empty(); iteration++) {
+		search_state<ancestor_clique_search_state> next = queue.pop(iteration);
+
+		int priority = sets.sets[next.state->ancestor].set_size - sets.sets[next.state->clique_state.next_set].set_size;
+		for (unsigned int i = 0; i < next.state->clique_state.clique_count; i++)
+			priority -= sets.sets[next.state->clique_state.clique[i]].set_size;
+		if (priority < stop_priority) {
+			if (clique != NULL) free(clique);
+			clique = (unsigned int*) malloc(sizeof(unsigned int) * (next.state->clique_state.clique_count + 1));
+			memcpy(clique, next.state->clique_state.clique, sizeof(unsigned int) * next.state->clique_state.clique_count);
+			clique[next.state->clique_state.clique_count] = next.state->clique_state.next_set;
+			clique_count = next.state->clique_state.clique_count + 1;
+			ancestor_of_clique = next.state->ancestor;
+			free(next); break;
+		}
+
+		unsigned int* completed_clique = NULL; unsigned int completed_clique_count;
+		success = process_clique_search_state<true, true, true>(
+				queue, sets, next.state->clique_state, completed_clique,
+				completed_clique_count, min_priority, next.state->ancestor);
+
+		if (completed_clique != NULL)
+			free(completed_clique);
+		free(next);
+	}
+
+#if !defined(NDEBUG)
+	for (unsigned int i = 0; clique != NULL && i < clique_count; i++)
+		if (sets.sets[clique[i]].set_size == 0 && clique[i] != first && clique[i] != second)
+			fprintf(stderr, "find_largest_disjoint_clique_with_set WARNING: `clique` contains an empty set.\n");
+#endif
+
+	return success;
+}
+
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline bool find_largest_disjoint_clique_with_edge(
+		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		unsigned int first, unsigned int second,
+		unsigned int*& clique, unsigned int& clique_count,
+		unsigned int& ancestor_of_clique, int min_priority,
+		int stop_priority)
+{
+	default_parents parents;
+	return find_largest_disjoint_clique_with_edge(sets, first, second, parents, parents, clique, clique_count, ancestor_of_clique, min_priority, stop_priority);
 }
 
 #endif /* SET_GRAPH_H_ */

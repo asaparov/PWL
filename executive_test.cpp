@@ -395,6 +395,7 @@ struct simple_hol_term_distribution
 
 	double log_ground_literal_probability;
 	double log_universal_probability;
+	double log_equals_probability;
 
 	double log_negation_probability;
 	double log_positive_probability;
@@ -410,11 +411,13 @@ struct simple_hol_term_distribution
 	ConstantDistribution constant_distribution;
 
 	simple_hol_term_distribution(const ConstantDistribution& constant_distribution,
-			double ground_literal_probability, double negation_probability,
+			double ground_literal_probability, double universal_probability,
+			double equals_probability, double negation_probability,
 			double unary_probability, double antecedent_stop_probability,
 			double consequent_stop_probability) :
 		log_ground_literal_probability(log(ground_literal_probability)),
-		log_universal_probability(log(1.0 - ground_literal_probability)),
+		log_universal_probability(log(universal_probability)),
+		log_equals_probability(log(equals_probability)),
 		log_negation_probability(log(negation_probability)),
 		log_positive_probability(log(1.0 - negation_probability)),
 		log_unary_probability(log(unary_probability)),
@@ -424,11 +427,15 @@ struct simple_hol_term_distribution
 		log_consequent_continue_probability(log(1.0 - consequent_stop_probability)),
 		log_consequent_stop_probability(log(consequent_stop_probability)),
 		constant_distribution(constant_distribution)
-	{ }
+	{
+		if (fabs(ground_literal_probability + universal_probability + equals_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + universal_probability + equals_probability` is not 1.\n");
+	}
 
 	simple_hol_term_distribution(const simple_hol_term_distribution<ConstantDistribution>& src) :
 		log_ground_literal_probability(src.log_ground_literal_probability),
 		log_universal_probability(src.log_universal_probability),
+		log_equals_probability(src.log_equals_probability),
 		log_negation_probability(src.log_negation_probability),
 		log_positive_probability(src.log_positive_probability),
 		log_unary_probability(src.log_unary_probability),
@@ -444,12 +451,14 @@ struct simple_hol_term_distribution
 template<typename ConstantDistribution>
 inline simple_hol_term_distribution<ConstantDistribution> make_simple_hol_term_distribution(
 		const ConstantDistribution& constant_distribution,
-		double ground_literal_probability, double negation_probability,
+		double ground_literal_probability, double universal_probability,
+		double equals_probability, double negation_probability,
 		double unary_probability, double antecedent_stop_probability,
 		double consequent_stop_probability)
 {
 	return simple_hol_term_distribution<ConstantDistribution>(
 			constant_distribution, ground_literal_probability,
+			universal_probability, equals_probability,
 			negation_probability, unary_probability,
 			antecedent_stop_probability, consequent_stop_probability);
 }
@@ -536,6 +545,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::NOT:
 		return prior.log_ground_literal_probability + log_probability_literal<false>(term, prior, constants);
 	case hol_term_type::FOR_ALL:
+		value = prior.log_universal_probability;
 		if (term->quantifier.operand->type == hol_term_type::IF_THEN) {
 			antecedent = term->quantifier.operand->binary.left;
 			consequent = term->quantifier.operand->binary.right;
@@ -558,11 +568,14 @@ double log_probability_helper(const hol_term* term,
 		} else {
 			return -std::numeric_limits<double>::infinity();
 		}
+	case hol_term_type::EQUALS:
+		value = prior.log_equals_probability;
+		/* TODO: implement this */
+		return value;
 	case hol_term_type::AND:
 	case hol_term_type::OR:
 	case hol_term_type::IF_THEN:
 	case hol_term_type::IFF:
-	case hol_term_type::EQUALS:
 	case hol_term_type::EXISTS:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -1064,7 +1077,7 @@ return EXIT_SUCCESS;*/
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
-	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, 0.01, 0.3, 0.4, 0.2, 0.4);
+	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, 0.01, 0.9, 0.09, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
@@ -1080,9 +1093,9 @@ return EXIT_SUCCESS;*/
 	success &= read_article(names.get("Nemo"), corpus, parser, T, theory_prior, printer);
 	success &= read_article(names.get("Dory"), corpus, parser, T, theory_prior, printer);
 	success &= read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
-	//success &= read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
-	//success &= read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
-	//success &= read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
+	success &= read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
 	/*success &= read_article(names.get("Bob"), corpus, parser, T, theory_prior, printer);
 	success &= read_article(names.get("Kate"), corpus, parser, T, theory_prior, printer);
 	success &= read_article(names.get("Sam"), corpus, parser, T, theory_prior, printer);
@@ -1112,13 +1125,11 @@ return EXIT_SUCCESS;*/
 	auto scribe = parser.get_printer(printer);
 array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
-		//printf("[%u]\n", t);
 T.check_proof_axioms();
 T.sets.are_elements_unique();
 T.sets.check_freeable_sets();
 T.sets.are_descendants_valid();
-		//T.print_axioms(stdout, scribe);
-		//print('\n', stdout); fflush(stdout);
+T.sets.are_set_sizes_valid();
 		if (stopwatch.milliseconds() > 1000) {
 			print("[iteration ", stdout); print(t, stdout); print("]\n", stdout);
 			for (const auto& entry : tracked_logical_forms) {
@@ -1128,14 +1139,16 @@ for (const auto& entry : set_size_distribution.counts)
 fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribution.sum);
 			stopwatch.start();
 		}
-if (t == 4)
-fprintf(stderr, "DEBUG: BREAKPOINT\n");
+/*if (t == 21)
+fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
 		do_mh_step(T, theory_prior);
 
 		for (auto entry : tracked_logical_forms)
 			if (contains_axiom(T, entry.key)) entry.value++;
 hol_term* set_formula = hol_term::new_atom(names.get("fish"), hol_term::new_variable(1));
-set_size_distribution.add(T.sets.sets[T.sets.set_ids.get(*set_formula)].set_size);
+bool contains;
+unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
+if (contains) set_size_distribution.add(T.sets.sets[set_id].set_size);
 free(*set_formula); free(set_formula);
 	}
 

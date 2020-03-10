@@ -4,8 +4,7 @@
 #include "theory.h"
 
 hol_term* canonicalize(hol_term* src) {
-	standard_canonicalizer<true, false> canonicalizer;
-	hol_term* canonicalized = canonicalize(*src, canonicalizer);
+	hol_term* canonicalized = standard_canonicalizer<true, false>::canonicalize(*src);
 	free(*src); if (src->reference_count == 0) free(src);
 	if (canonicalized == NULL) return NULL;
 	return canonicalized;
