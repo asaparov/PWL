@@ -1,4 +1,5 @@
 #include "xml.h"
+#include "morphology_en.h"
 
 #include <locale.h>
 
@@ -135,7 +136,7 @@ inline bool emit_text(const array<char>& text, const position& start, const posi
 							 || tokens[1] == "numeral symbol" || tokens[1] == "pronominal adverbs"
 							 || tokens[1] == "verb forms" || tokens[1] == "noun plural form"
 							 || tokens[1] == " abbreviation" || tokens[1] == "suffix form"
-							 || tokens[1] == "verb")
+							 || tokens[1] == "verb" || tokens[1] == "proverb" || tokens[1] == "numeral")
 							{
 								for (string& token : tokens) free(token);
 								break;
@@ -144,7 +145,60 @@ inline bool emit_text(const array<char>& text, const position& start, const posi
 
 						const char* pos_name = nullptr;
 						if (tokens.length >= 2 && tokens[0] == "en") {
-							if (tokens[1] == "adjective" || tokens[1] == "adjectives") {
+							if (tokens[1] == "noun") {
+								pos_name = "n";
+								bool found_plural = false;
+								bool plural = false;
+								bool gender = false;
+								unsigned int new_length = 2;
+								for (unsigned int i = 2; i < tokens.length; i++) {
+									if (plural) {
+										unsigned int index; const char* qualifier; unsigned int qualifier_length;
+										if (tokens[i] == "usually" || tokens[i] == "rarely") {
+											continue;
+										} else if (get_parameter(tokens[i], "f", "qual=", index, qualifier, qualifier_length)) {
+											string new_token(tokens[i].length + 1);
+											memcpy(new_token.data + 2, tokens[i].data + 1, sizeof(char) * (tokens[i].length - 1));
+											new_token[0] = 'p'; new_token[1] = 'l';
+											swap(tokens[new_length++], tokens[i]);
+											continue;
+										}
+
+										found_plural = true;
+										swap(tokens[new_length++], tokens[i]);
+
+										if (i + 1 < tokens.length && (tokens[i + 1] == "or" || tokens[i + 1] == "rarely" || tokens[i + 1] == "usually")) {
+											i++;
+										} else if (i + 1 < tokens.length && get_parameter(tokens[i + 1], "f", "qual=", index, qualifier, qualifier_length)) {
+											string new_token(tokens[i + 1].length + 1);
+											memcpy(new_token.data + 2, tokens[i + 1].data + 1, sizeof(char) * (tokens[i + 1].length - 1));
+											new_token[0] = 'p'; new_token[1] = 'l';
+											swap(new_token, tokens[i + 1]);
+										} else {
+											plural = false;
+										}
+									} else if (gender) {
+										/* ignore gender inflected forms for now */
+										if (i + 1 < tokens.length && tokens[i + 1] == "or") {
+											i++;
+										} else {
+											gender = false;
+										}
+									} else if (tokens[i] == "masculine" || tokens[i] == "feminine") {
+										gender = true;
+									} else if (tokens[i] == "plural" || tokens[i] == "plural usually") {
+										plural = true;
+									} else if (starts_with(tokens[i], "head=")) {
+										swap(tokens[new_length++], tokens[i]);
+									} else {
+										pos_name = nullptr;
+										break;
+									}
+								}
+								tokens.length = new_length;
+								if (!found_plural)
+									tokens[tokens.length++] = "?";
+							} else if (tokens[1] == "adjective" || tokens[1] == "adjectives") {
 								if (tokens.length == 2) {
 									pos_name = "adj";
 								} else if (tokens.length == 3 && tokens[2].length >= 4 && tokens[2][0] == 'h' && tokens[2][1] == 'e' && tokens[2][2] == 'a' && tokens[2][3] == 'd') {
@@ -210,8 +264,6 @@ inline bool emit_end_element(const xml_element& element, position start, positio
 	reader.element = wikt_xml_element::OTHER;
 	return true;
 }
-
-#include "morphology_en.h"
 
 inline bool test_morphology() {
 	hash_map<string, unsigned int> names(64);

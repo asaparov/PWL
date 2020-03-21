@@ -11928,7 +11928,8 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	array<LogicalFormSet>* difference_array;
 	unsigned int difference_count;
 	size_t old_dst_length = dst.length;
-	hol_term_type dst_variable_type; bool add_variable_pair;
+	hol_term_type dst_variable_type = hol_term_type::FALSE;
+	bool add_variable_pair = false;
 	switch (first->type) {
 	case hol_term_type::NOT:
 		subtract<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, first->unary.operand, second->unary.operand);
@@ -12309,7 +12310,6 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				return add<false, MapSecondVariablesToFirst>(dst, first);
 			} else if (second->quantifier.variable_type == hol_term_type::VARIABLE && first->quantifier.variable == second->quantifier.variable) {
 				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
-				add_variable_pair = false;
 			} else if (second->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
 				if (!dst.ensure_capacity(dst.length + 1))
 					return false;
@@ -12338,7 +12338,6 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				return add<false, MapSecondVariablesToFirst>(dst, first);
 			} else if (first->quantifier.variable_type == hol_term_type::VARIABLE && first->quantifier.variable == second->quantifier.variable) {
 				dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
-				add_variable_pair = false;
 			}
 		} else {
 #if !defined(NDEBUG)

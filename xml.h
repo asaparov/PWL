@@ -108,7 +108,7 @@ bool xml_parse(Stream& input, Reader& reader) {
 	array<char> reference_token = array<char>(16);
 	array<char> attr_token = array<char>(16);
 
-	xml_state prev_state;
+	xml_state prev_state = xml_state::DEFAULT;
 	array<xml_element> element_stack(16);
 	bool preserve_space = false;
 	std::mbstate_t shift = {0};

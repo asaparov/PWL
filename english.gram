@@ -604,7 +604,7 @@ S -> S':mark_wide_scope PERIOD
 
 # for all other interrogatives
 # S {^[x]:A} -> S' {^[x]:A}
-S -> S':mark_wide_scope QUESTION
+S -> S':require_lambda,mark_wide_scope QUESTION
 
 
 # This is the root nonterminal for declarative sentences.
@@ -1413,6 +1413,10 @@ NP -> NP':require_singular,try_remove_adv,require_no_correlator,require_predicat
 # where A = ^[P]:(... & ?[X]:(F(X) & size(X)=1 & ... & ?[x]:(X(x) & P(x))))
 NP -> NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_singleton
 
+# pronouns
+# NP {A} -> PRO {A}
+NP -> PRO:try_remove_adv
+
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~![x]:(X(x) => P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
 # NP {^[P]:(... & ?[X]:(f(X) & ~![x]:(X(x) => P(x))))} -> NOT NP {^[P]:?[X]:(f(X) & ![x]:(X(x) => P(x)))}
@@ -1826,6 +1830,13 @@ NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNC
 #     NP {^[P]:(... & ?[T]:(... & ?[x]:(T(x) & P(x)))}
 NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:try_remove_correlated,select_right_subset_in_set,try_remove_number,require_no_constant_in_set,add_plural
 
+# NOMINAL_R {^[P]:(... & ?[S]:(S=^[v]:?[a]:(... & arg1(a)=x & arg2(a)=v) & ?[v]:(S(v) & P(v))))}
+#  -> NOMINAL_R {^[P]:(... & ?[S]:(S=^[a]:(...) & ?[a]:(S(a) & P(a))))}
+#     OF
+#     NP {^[P]:(... & ?[S]:(S=^[x]:(...) & ?[x]:(S(x) & P(x))))}
+#NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_in_set_without_head_predicative,remove_right_conjunct_in_set OF NP:try_remove_correlated,select_singleton_arg2_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,add_singular
+#NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_in_set_without_head_predicative,remove_right_conjunct_in_set OF NP:try_remove_correlated,select_singleton_arg2_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,add_plural
+
 # comparative constructions
 # NOMINAL_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
 #  -> NOMINAL_R {^[P]:(... & ?[X]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x) & ...)) & ...))}
@@ -1853,10 +1864,6 @@ NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:tr
 # NOMINAL_R {^[P]:(... & ?[X]:(X=^[x]:(x=x1 | ... | x=xn) & ?[x]:(X(x) & P(x))))} -> VP_R {... & ?[x1]:(...) & ... & ?[xn]:(...)} if X is a union
 # e.g. "the heating of the food"
 #NOMINAL_R -> VP_R:add_present_participle,remove_adv
-
-# pronouns
-# NOMINAL_R {A} -> PRO {A}
-NOMINAL_R -> PRO:remove_adv
 
 # noun phrases headed by quantifiers
 # NOMINAL_R {A} -> Q {A}
@@ -2219,10 +2226,11 @@ PRO nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #PRO -> THEM
 
 # PRO {^[P,x]:?[X]:(X=^[x]:U(0,x) & X(x) & P(x))} -> WHICH/WHAT/WHICHEVER/WHATEVER
-#PRO -> WHICH
-#PRO -> WHAT
-#PRO -> WHICHEVER
-#PRO -> WHATEVER
+# PRO {^[P,x]:P(x)} -> WHICH/WHAT/WHICHEVER/WHATEVER
+#PRO -> WHICH:require_predicate_of_lambda
+#PRO -> WHAT:require_predicate_of_lambda
+#PRO -> WHICHEVER:require_predicate_of_lambda
+#PRO -> WHATEVER:require_predicate_of_lambda
 
 # PRO {^[P,x]:?[X]:(X=^[x]:(U(0,x) & animate(x)) & X(x) & P(x))} -> WHO/WHOM/WHOEVER/WHOMEVER
 #PRO -> WHO
@@ -2945,3 +2953,9 @@ COMMA -> ","
 
 NO preterminal {} {1.0} {1.0} {} 10 1.0 {}
 NO -> "no"
+
+WHAT preterminal {} {1.0} {1.0} {} 10 1.0 {}
+WHAT -> "what"
+
+WHICH preterminal {} {1.0} {1.0} {} 10 1.0 {}
+WHICH -> "which"

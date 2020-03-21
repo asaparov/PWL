@@ -173,6 +173,9 @@ struct in_memory_article_store {
 
 enum class article_token_type {
 	PERIOD,
+	QUESTION,
+	EXCLAMATION,
+	COMMA,
 	COLON,
 	SEMICOLON,
 	HYPHEN,
@@ -187,6 +190,12 @@ inline bool print(article_token_type type, Stream& stream) {
 	switch (type) {
 	case article_token_type::PERIOD:
 		return print('.', stream);
+	case article_token_type::QUESTION:
+		return print('?', stream);
+	case article_token_type::EXCLAMATION:
+		return print('!', stream);
+	case article_token_type::COMMA:
+		return print(',', stream);
 	case article_token_type::COLON:
 		return print(':', stream);
 	case article_token_type::SEMICOLON:
@@ -211,14 +220,13 @@ enum class article_lexer_state {
 
 bool article_emit_symbol(array<article_token>& tokens, const position& start, char symbol) {
 	switch (symbol) {
-	case '.':
-		return emit_token(tokens, start, start + 1, article_token_type::PERIOD);
-	case ':':
-		return emit_token(tokens, start, start + 1, article_token_type::COLON);
-	case ';':
-		return emit_token(tokens, start, start + 1, article_token_type::SEMICOLON);
-	case '-':
-		return emit_token(tokens, start, start + 1, article_token_type::HYPHEN);
+	case '.': return emit_token(tokens, start, start + 1, article_token_type::PERIOD);
+	case '?': return emit_token(tokens, start, start + 1, article_token_type::QUESTION);
+	case '!': return emit_token(tokens, start, start + 1, article_token_type::EXCLAMATION);
+	case ',': return emit_token(tokens, start, start + 1, article_token_type::COMMA);
+	case ':': return emit_token(tokens, start, start + 1, article_token_type::COLON);
+	case ';': return emit_token(tokens, start, start + 1, article_token_type::SEMICOLON);
+	case '-': return emit_token(tokens, start, start + 1, article_token_type::HYPHEN);
 	default:
 		fprintf(stderr, "article_emit_symbol ERROR: Unexpected symbol.\n");
 		return false;
@@ -238,7 +246,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 	while (next != WEOF) {
 		switch (state) {
 		case article_lexer_state::TOKEN:
-			if (next == '.' || next == ':' || next == ';' || next == '-') {
+			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-') {
 				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN)
 				 || !article_emit_symbol(tokens, current, next))
 					return false;
@@ -285,7 +293,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 			break;
 
 		case article_lexer_state::DEFAULT:
-			if (next == '.' || next == ':' || next == ';' || next == '-') {
+			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-') {
 				if (!article_emit_symbol(tokens, current, next))
 					return false;
 			} else if (next == '{') {
@@ -360,6 +368,15 @@ inline bool article_interpret_sentence_token(
 	} else if (tokens[index].type == article_token_type::PERIOD) {
 		if (!get_token(".", token_id, names) || !sentence_tokens.add({token_id}))
 			return false;
+	} else if (tokens[index].type == article_token_type::QUESTION) {
+		if (!get_token("?", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
+	} else if (tokens[index].type == article_token_type::EXCLAMATION) {
+		if (!get_token("!", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
+	} else if (tokens[index].type == article_token_type::COMMA) {
+		if (!get_token(",", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
 	} else if (tokens[index].type == article_token_type::HYPHEN) {
 		if (!get_token("-", token_id, names) || !sentence_tokens.add({token_id}))
 			return false;
@@ -423,7 +440,8 @@ bool article_interpret_sentence(
 			index++;
 		}
 
-		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD))
+		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD
+		 && tokens[index].type != article_token_type::QUESTION && tokens[index].type != article_token_type::EXCLAMATION))
 			break;
 	}
 
@@ -466,7 +484,8 @@ bool article_interpret_sentence(
 			index++;
 		}
 
-		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD))
+		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD
+		 && tokens[index].type != article_token_type::QUESTION && tokens[index].type != article_token_type::EXCLAMATION))
 			break;
 	}
 

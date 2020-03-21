@@ -1,6 +1,6 @@
 Nemo: Nemo:nemo is a fish. {fish(nemo)};
-Dory: Dory:dory is a thing. {object(dory)} There is a fish. {?[x]:fish(x)} Dory:dory is a fish or Dory:dory is a cat or there is a fish. {fish(dory) | cat(dory) | (?[x]:fish(x))};
+Dory: Dory:dory is a fish. {fish(dory)};
 red: There are 4 red fish. {size(^[x]:(red(x) & fish(x)))=4};
 blue: There are 6 blue fish. {size(^[x]:(blue(x) & fish(x)))=6};
-red_or_blue: Every fish is red or blue. {![x]:(fish(x) => (red(x) | blue(x)))} There are 10 red and blue things. {size(^[x]:(red(x) | blue(x)))=10};
+red_or_blue: Every fish is red or blue. {![x]:(fish(x) => (red(x) | blue(x)))} There are 10 red or blue things. {size(^[x]:(red(x) | blue(x)))=10};
 red_and_blue: No fish is both red and blue. {~?[x]:(fish(x) & red(x) & blue(x))};

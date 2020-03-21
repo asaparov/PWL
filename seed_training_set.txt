@@ -386,7 +386,7 @@
 					(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
 						(NOMINAL_R:identity
 							(NOMINAL_L:identity
-								(N:require_no_correlator,select_predicate_in_set "Earth"/"Earth")
+								(N:require_no_correlator,select_predicate_in_set "Jupiter"/"Jupiter")
 							)
 						)
 					)
@@ -751,6 +751,56 @@
 	(PERIOD ".")
 )}
 	{?[X]:((X=^[x]:((?[g]:(gaseous(g) & (arg1_of(x)=g)) | ?[t]:(terrestrial(t) & (arg1_of(x)=t))) & planet(x))) & (size(X)=8) & ![x]:(X(x) => ?[e]:(exist(e) & present(e) & (arg1(e)=x))))};
+
+#: # What is the mass of Jupiter?
+#{(S
+#	(S':require_lambda,mark_wide_scope
+#		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct		# ^[x]:?[v]:(?[m]:(mass(m) & (arg1(m)=jupiter) & (arg2(m)=v)) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=v)))
+#			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,select_left_conjunct	# ^[x]:?[s]:(same(s) & (arg1(s)=x))
+#				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative		# ^[P,x]:?[X]:(X=^[y]:(x=y) & ?[y]:(X(y) & P(y))) or ^[P,x]:P(x)
+#					(PRO:remove_adv		# ^[P,x]:?[X]:(X=^[y]:(x=y) & ?[y]:(X(y) & P(y))) or ^[P,x]:P(x)
+#						(WHAT:require_predicate_of_lambda "what")
+#					)
+#				)
+#			)
+#			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct		# ?[v]:(?[m]:(mass(m) & (arg1(m)=jupiter) & (arg2(m)=v)) & ?[s]:(same(s) & present(s) & (arg2(s)=v)))
+#				(VP_R:remove_right_conjunct
+#					(VP_L:identity
+#						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
+#					)
+#				)
+#				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_aux,try_remove_number,add_singular		# ?[v]:(?[m]:(mass(m) & (arg1(m)=jupiter) & (arg2(m)=v)) & ?[s]:(same(s) & (arg2(s)=v)))
+#					(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg2_without_head_predicative,factor_predicative		# ^[P]:?[V]:(V=^[v]:?[m]:(mass(m) & (arg1(m)=jupiter) & (arg2(m)=v)) & ?[v]:(V(v) & P(v)))
+#						(DEF_NP:try_remove_adv,require_no_correlator
+#							(THE "the")
+#							(NP':try_remove_correlated
+#								(NOMINAL_R:identity
+#									(NOMINAL_R:try_remove_genitive,select_singleton_arg2_in_set_without_head_predicative,remove_right_conjunct_in_set
+#										(NOMINAL_L:identity
+#											(N:require_no_correlator,select_predicate_in_set "mass"/"mass")
+#										)
+#									)
+#									(OF "of")
+#									(NP:try_remove_correlated,select_singleton_arg2_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,add_singular
+#										(NP':require_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_constant_in_set
+#											(NOMINAL_R:identity
+#												(NOMINAL_L:identity
+#													(N:require_no_correlator,select_predicate_in_set "Jupiter"/"Jupiter")
+#												)
+#											)
+#										)
+#									)
+#								)
+#							)
+#						)
+#					)
+#				)
+#			)
+#		)
+#	)
+#	(QUESTION "?")
+#)}
+#	{^[x]:?[v]:(?[m]:(mass(m) & (arg1(m)=jupiter) & (arg2(m)=v)) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=v)))};
 
 : # red
 {(ADJ "red"/"red")}

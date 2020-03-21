@@ -953,7 +953,7 @@ int main(int argc, const char** argv)
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "english.morph.short", "english.gram");
+			names, "english.morph", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");
@@ -1015,9 +1015,9 @@ int main(int argc, const char** argv)
 		free(paragraph);
 	}
 
-/*run_console(stdin, "\nEnter sentence to parse: ", parser, names);
+run_console(stdin, "\nEnter sentence to parse: ", parser, names);
 for (auto entry : names) free(entry.key);
-return EXIT_SUCCESS;*/
+return EXIT_SUCCESS;
 
 	/* read the articles */
 	in = fopen("simple_set_reasoning_articles.txt", "r");

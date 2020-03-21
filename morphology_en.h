@@ -671,6 +671,10 @@ struct morphology_en {
 		return contains;
 	}
 
+	inline bool is_capitalized(unsigned int word_id) const {
+		return decapitalization_map.table.contains(word_id);
+	}
+
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_noun_root(const sequence& root_id, noun_root& root) {
 		return add_inflected_forms(inflected_nouns, root_id, root)
