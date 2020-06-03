@@ -399,8 +399,9 @@ inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets)
 { }
 
+template<typename Formula>
 inline bool compute_new_set_size(
-		unsigned int set_id, unsigned int& out,
+		const Formula* set_formula, unsigned int& out,
 		unsigned int min_set_size, unsigned int max_set_size)
 {
 	out = (max_set_size == UINT_MAX) ? (min_set_size + 20) : ((min_set_size + max_set_size + 1) / 2);
@@ -642,7 +643,7 @@ struct set_reasoning
 		/* compute the upper bound and lower bound on the size of this new set */
 		unsigned int min_set_size, max_set_size, initial_set_size;
 		if (!set_size_bounds(set_id, min_set_size, max_set_size)
-		 || !compute_new_set_size(set_id, initial_set_size, min_set_size, max_set_size, std::forward<Args>(visitor)...))
+		 || !compute_new_set_size(set_formula, initial_set_size, min_set_size, max_set_size, std::forward<Args>(visitor)...))
 		{
 			free_set(set_id); return false;
 		}
@@ -738,7 +739,7 @@ struct set_reasoning
 		bool contains;
 		unsigned int bucket = set_ids.table.index_of(*formula, contains);
 		core::free(set_ids.table.keys[bucket]);
-		set_ids.table.remove_at(bucket);
+		set_ids.remove_at(bucket);
 		return free_set(set_id);
 	}
 
@@ -2089,6 +2090,34 @@ struct set_reasoning
 			}
 		}
 		return success;
+	}
+
+	void check_set_ids() const {
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axiom == NULL) continue;
+
+			bool contains;
+			unsigned int set_id = set_ids.get(*sets[i].set_formula(), contains);
+			if (!contains) {
+				fprintf(stderr, "set_reasoning.check_set_ids WARNING: Set with ID %u has set formula '", i);
+				print(*sets[i].set_formula(), stderr); fprintf(stderr, "' that does not exist in the `set_ids` map.\n");
+			} else if (set_id != i) {
+				fprintf(stderr, "set_reasoning.check_set_ids WARNING: Set with ID %u has set formula '", i);
+				print(*sets[i].set_formula(), stderr); fprintf(stderr, "' that is mapped to %u in the `set_ids` map.\n", set_id);
+			}
+		}
+
+		for (const auto& entry : set_ids) {
+			if (sets[entry.value].size_axiom == NULL) {
+				fprintf(stderr, "set_reasoning.check_set_ids WARNING: `set_ids` map contains an entry from formula '");
+				print(entry.key, stderr);
+				fprintf(stderr, "' to %u, but the set with ID %u doesn't exist (the size axiom is null).\n", entry.value, entry.value);
+			} else if (*sets[entry.value].set_formula() != entry.key) {
+				fprintf(stderr, "set_reasoning.check_set_ids WARNING: `set_ids` map contains an entry from formula '");
+				print(entry.key, stderr); fprintf(stderr, "' to %u, but the set with ID %u has set formula '", entry.value, entry.value);
+				print(*sets[entry.value].set_formula(), stderr); fprintf(stderr, "'.\n");
+			}
+		}
 	}
 };
 

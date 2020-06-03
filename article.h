@@ -179,6 +179,8 @@ enum class article_token_type {
 	COLON,
 	SEMICOLON,
 	HYPHEN,
+	LPAREN,
+	RPAREN,
 	TOKEN,
 	FORMULA
 };
@@ -202,6 +204,10 @@ inline bool print(article_token_type type, Stream& stream) {
 		return print(';', stream);
 	case article_token_type::HYPHEN:
 		return print('-', stream);
+	case article_token_type::LPAREN:
+		return print('(', stream);
+	case article_token_type::RPAREN:
+		return print(')', stream);
 	case article_token_type::TOKEN:
 		return print("TOKEN", stream);
 	case article_token_type::FORMULA:
@@ -227,6 +233,8 @@ bool article_emit_symbol(array<article_token>& tokens, const position& start, ch
 	case ':': return emit_token(tokens, start, start + 1, article_token_type::COLON);
 	case ';': return emit_token(tokens, start, start + 1, article_token_type::SEMICOLON);
 	case '-': return emit_token(tokens, start, start + 1, article_token_type::HYPHEN);
+	case '(': return emit_token(tokens, start, start + 1, article_token_type::LPAREN);
+	case ')': return emit_token(tokens, start, start + 1, article_token_type::RPAREN);
 	default:
 		fprintf(stderr, "article_emit_symbol ERROR: Unexpected symbol.\n");
 		return false;
@@ -246,7 +254,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 	while (next != WEOF) {
 		switch (state) {
 		case article_lexer_state::TOKEN:
-			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-') {
+			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-' || next == '(' || next == ')') {
 				if (!emit_token(tokens, token, start, current, article_token_type::TOKEN)
 				 || !article_emit_symbol(tokens, current, next))
 					return false;
@@ -293,7 +301,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 			break;
 
 		case article_lexer_state::DEFAULT:
-			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-') {
+			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-' || next == '(' || next == ')') {
 				if (!article_emit_symbol(tokens, current, next))
 					return false;
 			} else if (next == '{') {
@@ -380,6 +388,12 @@ inline bool article_interpret_sentence_token(
 	} else if (tokens[index].type == article_token_type::HYPHEN) {
 		if (!get_token("-", token_id, names) || !sentence_tokens.add({token_id}))
 			return false;
+	} else if (tokens[index].type == article_token_type::LPAREN) {
+		if (!get_token("(", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
+	} else if (tokens[index].type == article_token_type::RPAREN) {
+		if (!get_token(")", token_id, names) || !sentence_tokens.add({token_id}))
+			return false;
 	} else {
 		read_error("Expected a sentence token", tokens[index].start);
 		return false;
@@ -440,7 +454,9 @@ bool article_interpret_sentence(
 			index++;
 		}
 
-		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::PERIOD
+		if (index >= tokens.length || (tokens[index].type != article_token_type::TOKEN && tokens[index].type != article_token_type::HYPHEN
+		 && tokens[index].type != article_token_type::LPAREN && tokens[index].type != article_token_type::RPAREN
+		 && tokens[index].type != article_token_type::PERIOD && tokens[index].type != article_token_type::COMMA
 		 && tokens[index].type != article_token_type::QUESTION && tokens[index].type != article_token_type::EXCLAMATION))
 			break;
 	}

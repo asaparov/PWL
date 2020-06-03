@@ -11,6 +11,11 @@ constexpr double LOG_2 = 0.69314718055994530941723212145817656807550013436025525
 
 using namespace core;
 
+template<typename Proof>
+constexpr inline bool accept(const hash_set<Proof*>& proofs, double proof_prior_diff) {
+	return true;
+}
+
 template<typename T, bool AutomaticallyFree, bool OtherAutomaticallyFree>
 inline bool add(hash_multiset<T, AutomaticallyFree>& multiset, const array_multiset<T, OtherAutomaticallyFree>& items)
 {
@@ -64,8 +69,7 @@ template<typename Formula, typename Canonicalizer>
 bool propose_transformation(
 		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		proof_transformations<Formula>& proposed_proofs,
-		array<nd_step<Formula>*>& old_observations,
-		array<nd_step<Formula>*>& new_observations,
+		array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		nd_step<Formula>* old_step, nd_step<Formula>* new_step)
 {
 	typedef natural_deduction<Formula> ProofCalculus;
@@ -106,7 +110,7 @@ bool propose_transformation(
 
 	/* check if `old_step` was an observation; if so, add `new_step` as a potential observation */
 	if (T.observations.contains(old_step))
-		return old_observations.add(old_step) && new_observations.add(new_step);
+		return observation_changes.add({old_step, new_step});
 	return true;
 }
 
@@ -610,8 +614,9 @@ struct unfixed_set_counter {
 	double log_probability;
 };
 
+template<typename Formula>
 inline bool compute_new_set_size(
-		unsigned int set_id, unsigned int& out,
+		const Formula* set_formula, unsigned int& out,
 		unsigned int min_set_size, unsigned int max_set_size,
 		unfixed_set_counter& counter)
 {
@@ -629,14 +634,16 @@ inline bool compute_new_set_size(
 }
 
 template<bool Negated, unsigned int Arity,
-	typename Formula, typename Canonicalizer, typename ProofPrior>
+	typename Formula, typename Canonicalizer,
+	typename ProofPrior, typename TheorySampleCollector>
 bool propose_universal_intro(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, Arity> a,
 		unsigned int concept_id,
 		unsigned int old_axiom_count,
 		double& log_proposal_probability_ratio,
-		ProofPrior& proof_prior)
+		ProofPrior& proof_prior,
+		TheorySampleCollector& sample_collector)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
@@ -846,7 +853,7 @@ bool propose_universal_intro(
 		}
 	}
 
-	array<Proof*> old_observations(1), new_observations(1);
+	array<pair<Proof*, Proof*>> observation_changes(1);
 	Proof* old_step = get_proof(instance, a);
 #if !defined(NDEBUG)
 	if (old_step->type != nd_step_type::AXIOM)
@@ -869,7 +876,7 @@ bool propose_universal_intro(
 		return false;
 	}
 
-	if (!propose_transformation(T, proposed_proofs, old_observations, new_observations, old_step, new_step)) {
+	if (!propose_transformation(T, proposed_proofs, observation_changes, old_step, new_step)) {
 		new_step->reference_count++;
 		free(*new_step); if (new_step->reference_count == 0) free(new_step);
 		for (unsigned int i = 0; i < conjunct_steps.length; i++) {
@@ -884,10 +891,9 @@ bool propose_universal_intro(
 	}
 
 	old_step->reference_count++;
-	bool success = do_mh_universal_intro(
-			T, proposed_proofs, old_observations, new_observations,
+	bool success = do_mh_universal_intro(T, proposed_proofs, observation_changes,
 			make_universal_intro_proposal(concept_id, old_step, axiom_step, a),
-			log_proposal_probability_ratio, proof_prior);
+			log_proposal_probability_ratio, proof_prior, sample_collector);
 	free(proposed_proofs);
 	free(*old_step); if (old_step->reference_count == 0) free(old_step);
 	free(*axiom_step);
@@ -1005,13 +1011,15 @@ inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_prop
 	return {edge, constant, new_axiom, consequent_atom};
 }
 
-template<typename Formula, typename Canonicalizer, typename ProofPrior>
+template<typename Formula, typename Canonicalizer,
+	typename ProofPrior, typename TheorySampleCollector>
 bool propose_universal_elim(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const extensional_edge<Formula>& selected_edge,
 		unsigned int old_axiom_count,
 		double& log_proposal_probability_ratio,
-		ProofPrior& proof_prior)
+		ProofPrior& proof_prior,
+		TheorySampleCollector& sample_collector)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
@@ -1048,7 +1056,7 @@ bool propose_universal_elim(
 		free(proposed_proofs); return true;
 	}
 
-	array<Proof*> old_observations(8), new_observations(8);
+	array<pair<Proof*, Proof*>> observation_changes(8);
 	if (selected_edge.child->type != nd_step_type::UNIVERSAL_ELIMINATION
 	 || selected_edge.child->operands[1]->term->type != TermType::CONSTANT) {
 		free(proposed_proofs); return true;
@@ -1070,7 +1078,7 @@ bool propose_universal_elim(
 	}
 
 	/* propose `new_step` to substitute `grandchild` */
-	if (!propose_transformation(T, proposed_proofs, old_observations, new_observations, selected_edge.grandchild, new_axiom)) {
+	if (!propose_transformation(T, proposed_proofs, observation_changes, selected_edge.grandchild, new_axiom)) {
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 		free(proposed_proofs); return false;
 	}
@@ -1228,34 +1236,34 @@ bool propose_universal_elim(
 			atom<false, 1> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
-			success = do_mh_universal_elim(T, proposed_proofs, old_observations, new_observations,
+			success = do_mh_universal_elim(T, proposed_proofs, observation_changes,
 					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
-					log_proposal_probability_ratio, proof_prior);
+					log_proposal_probability_ratio, proof_prior, sample_collector);
 		} else {
 			atom<false, 2> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
 			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
-			success = do_mh_universal_elim(T, proposed_proofs, old_observations, new_observations,
+			success = do_mh_universal_elim(T, proposed_proofs, observation_changes,
 					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
-					log_proposal_probability_ratio, proof_prior);
+					log_proposal_probability_ratio, proof_prior, sample_collector);
 		}
 	} else if (consequent->type == FormulaType::NOT && is_atomic(*consequent->unary.operand, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			atom<true, 1> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = 0;
-			success = do_mh_universal_elim(T, proposed_proofs, old_observations, new_observations,
+			success = do_mh_universal_elim(T, proposed_proofs, observation_changes,
 					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
-					log_proposal_probability_ratio, proof_prior);
+					log_proposal_probability_ratio, proof_prior, sample_collector);
 		} else {
 			atom<true, 2> consequent_atom;
 			consequent_atom.predicate = predicate;
 			consequent_atom.args[0] = (arg1->type == TermType::VARIABLE ? 0 : arg1->constant);
 			consequent_atom.args[1] = (arg2->type == TermType::VARIABLE ? 0 : arg2->constant);
-			success = do_mh_universal_elim(T, proposed_proofs, old_observations, new_observations,
+			success = do_mh_universal_elim(T, proposed_proofs, observation_changes,
 					make_universal_elim_proposal(selected_edge, constant, new_axiom, consequent_atom),
-					log_proposal_probability_ratio, proof_prior);
+					log_proposal_probability_ratio, proof_prior, sample_collector);
 		}
 	} else {
 		success = true; /* unreachable */
@@ -1269,25 +1277,55 @@ bool propose_universal_elim(
 	return success;
 }
 
-template<typename Formula, typename Canonicalizer, typename SizePrior>
+template<typename Formula, typename Canonicalizer,
+	typename SizePrior, typename TheorySampleCollector>
 bool propose_change_set_size(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int selected_set,
 		unsigned int axiom_count,
 		double& log_proposal_probability_ratio,
-		SizePrior& set_size_prior)
+		SizePrior& set_size_prior,
+		TheorySampleCollector& sample_collector)
 {
+	typedef nd_step<Formula> Proof;
+
 	/* compute the upper and lower bounds of the size of this set */
 	unsigned int lower_bound = 0, upper_bound = 0;
 	if (!T.sets.get_size_lower_bound(selected_set, lower_bound)
 	 || !T.sets.get_size_upper_bound(selected_set, upper_bound)) return false;
 
 	unsigned int new_size = sample(set_size_prior, lower_bound, upper_bound);
-	log_proposal_probability_ratio += log_probability(new_size, set_size_prior);
 	log_proposal_probability_ratio += -log_cache<double>::instance().get(axiom_count);
-	log_proposal_probability_ratio -= log_probability(T.sets.sets[selected_set].set_size, set_size_prior);
+	double proof_prior_diff = log_probability(new_size, set_size_prior) - log_probability(T.sets.sets[selected_set].set_size, set_size_prior);
+	log_proposal_probability_ratio += proof_prior_diff;
 
-	return do_mh_change_set_size(T, selected_set, new_size, log_proposal_probability_ratio);
+#if !defined(NDEBUG)
+	if (isnan(log_proposal_probability_ratio))
+		fprintf(stderr, "propose_change_set_size WARNING: The computed log probability ratio is NaN.\n");
+#endif
+
+	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+		Proof* axiom = T.sets.template get_size_axiom<false>(selected_set, new_size);
+
+		/* check if the axiom is used in any proofs */
+		array<Proof*> stack(8);
+		stack[stack.length++] = axiom;
+		bool proves_observation = false;
+		while (stack.length != 0) {
+			Proof* proof = stack.pop();
+			if (T.observations.contains(proof)) {
+				proves_observation = true;
+				break;
+			}
+
+			if (!stack.append(proof->children.data, proof->children.length))
+				return false;
+		}
+
+		if (!sample_collector.accept(T.observations, proves_observation ? proof_prior_diff : 0.0))
+			return false;
+	}
+	return true;
 }
 
 struct log_probability_computer {
@@ -1361,23 +1399,49 @@ inline bool visit_negated_universal_intro(log_probability_computer& visitor) {
 	return visitor.negated_universal_intro_indices.add(visitor.counter);
 }
 
-constexpr bool visit_negated_conjunction(log_probability_computer& visitor) { return true; }
-constexpr bool visit_disjunction_intro(log_probability_computer& visitor) { return true; }
+constexpr bool visit_negated_conjunction(const log_probability_computer& visitor) { return true; }
+constexpr bool visit_disjunction_intro(const log_probability_computer& visitor) { return true; }
+inline void on_subtract_changes(const log_probability_computer& visitor) { }
 
 template<typename Formula>
 struct proof_sampler {
-	hash_map<const Formula*, hash_set<unsigned int>> inconsistencies;
-	array_map<unsigned int, unsigned int> removed_sets;
-	bool all_descendants_inconsistent;
+	/* this tracking of inconsistent constants may too liberally exclude
+	   constants if the expression contains a set size term, since we don't
+	   keep track of inconsistent set sizes here */
+	/*hash_map<Formula, hash_set<unsigned int>> inconsistencies;*/
+	array_map<Formula, array<unsigned int>> removed_sets;
+	/*bool all_descendants_inconsistent;*/
 	double log_probability;
 	double set_size_log_probability;
+	bool undo;
 
-	proof_sampler() : inconsistencies(64), removed_sets(4), log_probability(0.0), set_size_log_probability(0.0) { }
+	proof_sampler() : /*inconsistencies(64),*/ removed_sets(4), log_probability(0.0), set_size_log_probability(0.0), undo(false) { }
 	~proof_sampler() {
-		for (auto entry : inconsistencies)
+		/*for (auto entry : inconsistencies) {
+			free(entry.key);
 			free(entry.value);
+		}*/ for (auto entry : removed_sets) {
+			free(entry.key);
+			free(entry.value);
+		}
 	}
 };
+
+template<typename Proof, typename Formula>
+inline void visit_node(const Proof& proof, const proof_sampler<Formula>& visitor) { }
+
+template<bool Negated, typename Formula> constexpr bool visit_unary_atom(unsigned int predicate, unsigned int arg, const proof_sampler<Formula>& visitor) { return true; }
+template<bool Negated, typename Formula> constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2, const proof_sampler<Formula>& visitor) { return true; }
+template<typename Proof, typename Formula> constexpr bool visit_subset_axiom(const Proof& proof, const proof_sampler<Formula>& visitor) { return true; }
+template<typename Formula> constexpr bool visit_existential_intro(const proof_sampler<Formula>& visitor) { return true; }
+template<typename Formula> constexpr bool visit_negated_universal_intro(const proof_sampler<Formula>& visitor) { return true; }
+template<typename Formula> constexpr bool visit_negated_conjunction(const proof_sampler<Formula>& visitor) { return true; }
+template<typename Formula> constexpr bool visit_disjunction_intro(const proof_sampler<Formula>& visitor) { return true; }
+
+template<typename Formula>
+inline void on_subtract_changes(proof_sampler<Formula>& visitor) {
+	visitor.undo = true;
+}
 
 template<typename Formula>
 inline bool filter_constants(const Formula* formula, array<unsigned int>& constants, proof_sampler<Formula>& sampler)
@@ -1385,12 +1449,16 @@ inline bool filter_constants(const Formula* formula, array<unsigned int>& consta
 	if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
 	sampler.log_probability += -log_cache<double>::instance().get(constants.length);
 
-	if (!sampler.inconsistencies.check_size()) return false;
+	/*if (!sampler.inconsistencies.check_size()) return false;
 	bool contains; unsigned int bucket;
-	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(formula, contains, bucket);
+	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
 	if (!contains) {
-		if (!hash_set_init(inconsistent_constants, 8)) return false;
-		sampler.inconsistencies.table.keys[bucket] = formula;
+		if (!hash_set_init(inconsistent_constants, 8)) {
+			return false;
+		} else if (!init(sampler.inconsistencies.table.keys[bucket], *formula)) {
+			free(inconsistent_constants);
+			return false;
+		}
 		sampler.inconsistencies.table.size++;
 	}
 	unsigned int original_constant_count = constants.length;
@@ -1402,46 +1470,58 @@ inline bool filter_constants(const Formula* formula, array<unsigned int>& consta
 			break;
 		}
 	}
-	sampler.all_descendants_inconsistent = true;
+	sampler.all_descendants_inconsistent = true;*/
+	constants.length = 1;
 	return true;
 }
 
 template<typename Formula>
 inline bool inconsistent_constant(const Formula* formula, unsigned int constant, proof_sampler<Formula>& sampler) {
-	if (!sampler.all_descendants_inconsistent) return true;
+	/*if (!sampler.all_descendants_inconsistent) return true;
 	sampler.all_descendants_inconsistent = true;
-	return sampler.inconsistencies.get(formula).add(constant);
+	return sampler.inconsistencies.get(*formula).add(constant);*/
+	return true;
 }
 
 template<typename Formula>
 inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler<Formula>& sampler) {
-	bool contains; unsigned int bucket;
-	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(formula, contains, bucket);
+	/*bool contains; unsigned int bucket;
+	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
 	sampler.all_descendants_inconsistent = (inconsistent_constants.size == original_constant_count);
 	if (sampler.all_descendants_inconsistent) {
+		free(sampler.inconsistencies.table.keys[bucket]);
 		core::free(inconsistent_constants);
 		sampler.inconsistencies.remove_at(bucket);
-	}
+	}*/
 }
 
+template<typename Formula>
 struct undo_remove_sets {
-	array_map<unsigned int, unsigned int>& removed_sets;
+	array_map<Formula, array<unsigned int>>& removed_sets;
 
-	undo_remove_sets(array_map<unsigned int, unsigned int>& removed_sets) : removed_sets(removed_sets) { }
+	undo_remove_sets(array_map<Formula, array<unsigned int>>& removed_sets) : removed_sets(removed_sets) { }
 };
 
+template<typename Formula>
+inline void on_subtract_changes(const undo_remove_sets<Formula>& visitor) { }
+
+template<typename Formula>
 inline bool compute_new_set_size(
-		unsigned int set_id, unsigned int& out,
+		const Formula* set_formula, unsigned int& out,
 		unsigned int min_set_size, unsigned int max_set_size,
-		const undo_remove_sets& visitor)
+		const undo_remove_sets<Formula>& visitor)
 {
 	bool contains;
-	out = visitor.removed_sets.get(set_id, contains);
+	array<unsigned int>& set_sizes = visitor.removed_sets.get(*set_formula, contains);
 	if (contains) {
+		out = set_sizes.last();
 #if !defined(NDEBUG)
+		if (set_sizes.length == 0)
+			fprintf(stderr, "compute_new_set_size WARNING: The recorded array of set sizes is empty.\n");
 		if (out < min_set_size || out > max_set_size)
 			fprintf(stderr, "compute_new_set_size WARNING: The recorded set size in `undo_remove_sets.removed_sets` is outside the bounds of `[min_set_size, max_set_size]`.\n");
 #endif
+		set_sizes.length--;
 		return true;
 	}
 	if (max_set_size == UINT_MAX) {
@@ -1455,7 +1535,7 @@ inline bool compute_new_set_size(
 template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
-		const undo_remove_sets& visitor)
+		const undo_remove_sets<Formula>& visitor)
 { }
 
 template<typename Formula, typename Canonicalizer>
@@ -1464,27 +1544,25 @@ bool undo_proof_changes(
 		const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
 		const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof,
-		const undo_remove_sets& old_sets, const undo_remove_sets& new_sets)
+		const undo_remove_sets<Formula>& old_sets, const undo_remove_sets<Formula>& new_sets)
 {
 	typedef nd_step<Formula> Proof;
 
-	array<Proof*> old_observations(8), new_observations(8);
+	array<pair<Proof*, Proof*>> observation_changes(8);
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (!init(proposed_proofs)) {
 		return false;
-	} else if (!propose_transformation(T, proposed_proofs, old_observations, new_observations, new_proof, old_proof)) {
+	} else if (!propose_transformation(T, proposed_proofs, observation_changes, new_proof, old_proof)) {
 		free(proposed_proofs); return false;
 	} else if (!transform_proofs(proposed_proofs)) {
 		free(proposed_proofs); return false;
 	}
 
-	for (auto proof : old_observations) {
-		T.observations.remove(proof);
-		free(*proof); if (proof->reference_count == 0) free(proof);
-	}
-	for (auto proof : new_observations) {
-		T.observations.add(proof);
-		proof->reference_count++;
+	for (auto& entry : observation_changes) {
+		T.observations.remove(entry.key);
+		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+		T.observations.add(entry.value);
+		entry.value->reference_count++;
 	}
 	free(proposed_proofs);
 
@@ -1501,7 +1579,7 @@ inline void set_size_proposal_log_probability(unsigned int set_id,
 {
 	unsigned int min_set_size, max_set_size;
 	if (!sets.set_size_bounds(set_id, min_set_size, max_set_size)) {
-		fprintf(stderr, "on_free_set ERROR: `set_size_bounds` failed.\n");
+		fprintf(stderr, "set_size_proposal_log_probability ERROR: `set_size_bounds` failed.\n");
 		return;
 	}
 
@@ -1518,17 +1596,25 @@ inline void set_size_proposal_log_probability(unsigned int set_id,
 	}
 }
 
+template<typename Formula>
 struct inverse_set_size_log_probability {
 	double value;
-	array_map<unsigned int, unsigned int> removed_sets;
+	array_map<Formula, array<unsigned int>> removed_sets;
 
 	inverse_set_size_log_probability() : value(0), removed_sets(4) { }
+	~inverse_set_size_log_probability() {
+		for (auto entry : removed_sets) { free(entry.key); free(entry.value); }
+	}
 };
 
+template<typename Formula>
+inline void on_subtract_changes(const inverse_set_size_log_probability<Formula>& visitor) { }
+
+template<typename Formula>
 inline bool compute_new_set_size(
-		unsigned int set_id, unsigned int& out,
+		const Formula* set_formula, unsigned int& out,
 		unsigned int min_set_size, unsigned int max_set_size,
-		inverse_set_size_log_probability& visitor)
+		inverse_set_size_log_probability<Formula>& visitor)
 {
 	if (max_set_size == UINT_MAX) {
 		out = min_set_size + sample_geometric(0.1);
@@ -1545,18 +1631,46 @@ inline bool compute_new_set_size(
 template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
-		inverse_set_size_log_probability& visitor)
+		inverse_set_size_log_probability<Formula>& visitor)
 {
 	set_size_proposal_log_probability(set_id, sets, visitor.value);
-	visitor.removed_sets.put(set_id, sets.sets[set_id].set_size);
+	if (!visitor.removed_sets.ensure_capacity(visitor.removed_sets.size + 1)) return;
+	const Formula* set_formula = sets.sets[set_id].set_formula();
+	unsigned int index = visitor.removed_sets.index_of(*set_formula);
+	if (index == visitor.removed_sets.size) {
+		if (!init(visitor.removed_sets.keys[index], *set_formula)) {
+			return;
+		} else if (!array_init(visitor.removed_sets.values[index], 4)) {
+			free(visitor.removed_sets.keys[index]);
+			return;
+		}
+		visitor.removed_sets.size++;
+	}
+	visitor.removed_sets.values[index].add(sets.sets[set_id].set_size);
 }
 
 template<typename Formula>
 inline bool compute_new_set_size(
-		unsigned int set_id, unsigned int& out,
+		const Formula* set_formula, unsigned int& out,
 		unsigned int min_set_size, unsigned int max_set_size,
 		proof_sampler<Formula>& sampler)
 {
+	if (sampler.undo) {
+		bool contains;
+		array<unsigned int>& set_sizes = sampler.removed_sets.get(*set_formula, contains);
+		if (contains) {
+			out = set_sizes.last();
+#if !defined(NDEBUG)
+			if (set_sizes.length == 0)
+				fprintf(stderr, "compute_new_set_size WARNING: The recorded array of set sizes is empty.\n");
+			if (out < min_set_size || out > max_set_size)
+				fprintf(stderr, "compute_new_set_size WARNING: The recorded set size in `proof_sampler.removed_sets` is outside the bounds of `[min_set_size, max_set_size]`.\n");
+#endif
+			set_sizes.length--;
+			return true;
+		}
+	}
+
 	if (max_set_size == UINT_MAX) {
 		out = min_set_size + sample_geometric(0.1);
 		sampler.set_size_log_probability += (out - min_set_size) * SET_SIZE_PROPOSAL_LOG_ONE_MINUS_P + SET_SIZE_PROPOSAL_LOG_P;
@@ -1574,23 +1688,38 @@ inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
 		proof_sampler<Formula>& sampler)
 {
-	sampler.removed_sets.put(set_id, sets.sets[set_id].set_size);
+	if (sampler.undo) return;
+	if (!sampler.removed_sets.ensure_capacity(sampler.removed_sets.size + 1)) return;
+	const Formula* set_formula = sets.sets[set_id].set_formula();
+	unsigned int index = sampler.removed_sets.index_of(*set_formula);
+	if (index == sampler.removed_sets.size) {
+		if (!init(sampler.removed_sets.keys[index], *set_formula)) {
+			return;
+		} else if (!array_init(sampler.removed_sets.values[index], 4)) {
+			free(sampler.removed_sets.keys[index]);
+			return;
+		}
+		sampler.removed_sets.size++;
+	}
+	sampler.removed_sets.values[index].add(sets.sets[set_id].set_size);
 }
 
-template<typename Formula, typename Canonicalizer, typename TheoryPrior>
+template<typename Formula, typename Canonicalizer,
+	typename ProofPrior, typename TheorySampleCollector>
 bool propose_disjunction_intro(
 	theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*> selected_step,
 	double& log_proposal_probability_ratio,
-	TheoryPrior& theory_prior)
+	ProofPrior& proof_prior,
+	TheorySampleCollector& sample_collector)
 {
 	typedef nd_step<Formula> Proof;
+	typedef theory<Formula, natural_deduction<Formula>, Canonicalizer> Theory;
 
-	log_probability_computer visitor;
-	inverse_set_size_log_probability set_size_log_probability;
+	log_probability_computer computer;
+	inverse_set_size_log_probability<Formula> set_size_log_probability;
 	typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes old_proof_changes;
-	if (!T.get_theory_changes(*selected_step.value, old_proof_changes, visitor)) return false;
-	selected_step.key->reference_count++;
+	if (!T.get_theory_changes(*selected_step.value, old_proof_changes, computer)) return false;
 	T.subtract_changes(old_proof_changes, set_size_log_probability);
 
 	/* compute the number of concepts in T after removing the old proof */
@@ -1599,44 +1728,42 @@ bool propose_disjunction_intro(
 	for (unsigned int i = 0; i < T.ground_concept_capacity; i++)
 		if (T.ground_concepts[i].types.keys != NULL) concept_count++;
 
-	for (unsigned int i = 0; i < visitor.concept_indices.size; i++) {
-		unsigned int id = visitor.concept_indices.keys[i];
+	for (unsigned int i = 0; i < computer.concept_indices.size; i++) {
+		unsigned int id = computer.concept_indices.keys[i];
 		if (id >= T.new_constant_offset && T.ground_concepts[id - T.new_constant_offset].types.keys == NULL)
 			/* this concept was freed by `subtract_changes` */
-			visitor.concept_indices.remove_at(i--);
-	} for (const auto& entry : old_proof_changes.disjunction_intro_nodes) {
-		if (!log_cache<double>::instance().ensure_size(entry.key->array.length + 1)) {
-			T.add_changes(old_proof_changes);
-			free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
-			return false;
+			computer.concept_indices.remove_at(i--);
+	} for (const typename Theory::change& c : old_proof_changes.list) {
+		if (c.type == Theory::change_type::DISJUNCTION_INTRO_NODE) {
+			if (!log_cache<double>::instance().ensure_size(c.intro_node.key->array.length + 1)) {
+				T.add_changes(old_proof_changes);
+				return false;
+			}
+			log_proposal_probability += -log_cache<double>::instance().get(c.intro_node.key->array.length);
+		} else if (c.type == Theory::change_type::NEGATED_CONJUNCTION_NODE) {
+			if (!log_cache<double>::instance().ensure_size(c.intro_node.key->unary.operand->array.length + 1)) {
+				T.add_changes(old_proof_changes);
+				return false;
+			}
+			log_proposal_probability += -log_cache<double>::instance().get(c.intro_node.key->unary.operand->array.length);
 		}
-		log_proposal_probability += -log_cache<double>::instance().get(entry.key->array.length);
-	} for (const auto& entry : old_proof_changes.negated_conjunction_nodes) {
-		if (!log_cache<double>::instance().ensure_size(entry.key->unary.operand->array.length + 1)) {
-			T.add_changes(old_proof_changes);
-			free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
-			return false;
-		}
-		log_proposal_probability += -log_cache<double>::instance().get(entry.key->unary.operand->array.length);
-	} for (unsigned int existential_intro_index : visitor.existential_intro_indices) {
+	} for (unsigned int existential_intro_index : computer.existential_intro_indices) {
 		/* count the number of new concepts added to `T` before this step */
 		unsigned int new_concept_count = 0;
-		for (const auto& index : visitor.concept_indices)
+		for (const auto& index : computer.concept_indices)
 			if (index.value < existential_intro_index) new_concept_count++;
 		if (!log_cache<double>::instance().ensure_size(concept_count + new_concept_count + 1)) {
 			T.add_changes(old_proof_changes);
-			free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 			return false;
 		}
 		log_proposal_probability += -log_cache<double>::instance().get(concept_count + new_concept_count);
-	} for (unsigned int negated_universal_intro_index : visitor.negated_universal_intro_indices) {
+	} for (unsigned int negated_universal_intro_index : computer.negated_universal_intro_indices) {
 		/* count the number of new concepts added to `T` before this step */
 		unsigned int new_concept_count = 0;
-		for (const auto& index : visitor.concept_indices)
+		for (const auto& index : computer.concept_indices)
 			if (index.value < negated_universal_intro_index) new_concept_count++;
 		if (!log_cache<double>::instance().ensure_size(concept_count + new_concept_count + 1)) {
 			T.add_changes(old_proof_changes);
-			free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 			return false;
 		}
 		log_proposal_probability += -log_cache<double>::instance().get(concept_count + new_concept_count);
@@ -1650,7 +1777,9 @@ bool propose_disjunction_intro(
 		   also compute the log probability of the new path */
 		unsigned int new_constant = 0;
 		sampler.log_probability = 0.0;
+		for (auto entry : sampler.removed_sets) { free(entry.key); free(entry.value); }
 		sampler.removed_sets.clear();
+		sampler.undo = false;
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_constant, sampler);
 		if (new_proof != NULL) break;
 	}
@@ -1661,66 +1790,51 @@ bool propose_disjunction_intro(
 	log_proposal_probability_ratio += set_size_log_probability.value;
 
 	typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes new_proof_changes;
-	if (!T.get_theory_changes(*new_proof, new_proof_changes)) {
-		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
+	if (!T.get_theory_changes(*new_proof, new_proof_changes))
 		return false;
-	}
 
 	/* check if the proposed proof is the same as the original proof */
 	if (*selected_step.value == *new_proof) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets<Formula>(set_size_log_probability.removed_sets), undo_remove_sets<Formula>(sampler.removed_sets));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
-		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 		return true;
 	}
 
 	/* propose `new_proof` to substitute `selected_step.value` */
-	array<Proof*> old_observations(8), new_observations(8);
+	array<pair<Proof*, Proof*>> observation_changes(8);
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (!init(proposed_proofs)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets<Formula>(set_size_log_probability.removed_sets), undo_remove_sets<Formula>(sampler.removed_sets));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
-		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
 		return false;
-	} else if (!propose_transformation(T, proposed_proofs, old_observations, new_observations, selected_step.value, new_proof)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
+	} else if (!propose_transformation(T, proposed_proofs, observation_changes, selected_step.value, new_proof)) {
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets<Formula>(set_size_log_probability.removed_sets), undo_remove_sets<Formula>(sampler.removed_sets));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
-		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
-		free(proposed_proofs); return false;
-	}
-
-	for (const auto& set_size_axiom : old_proof_changes.set_size_axioms) {
-		log_proposal_probability_ratio -= log_probability(set_size_axiom.key->formula->binary.right->integer, theory_prior.set_size_prior);
-	} for (const auto& set_size_axiom : new_proof_changes.set_size_axioms) {
-		log_proposal_probability_ratio += log_probability(set_size_axiom.key->formula->binary.right->integer, theory_prior.set_size_prior);
-	}
-
-	selected_step.value->reference_count++;
-	if (!transform_proofs(proposed_proofs)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
-		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
-		free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
-		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
 		free(proposed_proofs); return false;
 	}
 
 	/* compute the proof portion of the prior for both current and proposed theories */
 	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
-	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs.transformed_proofs, theory_prior.proof_prior, T.proof_axioms, old_axioms, new_axioms);
+	double proof_prior_diff = log_probability_ratio(
+			proposed_proofs.transformed_proofs, proof_prior, T.proof_axioms, old_axioms, new_axioms, sample_collector);
+	log_proposal_probability_ratio += proof_prior_diff;
 
-	for (auto proof : old_observations) {
-		T.observations.remove(proof);
-		free(*proof); if (proof->reference_count == 0) free(proof);
+	if (!transform_proofs(proposed_proofs)) {
+		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets<Formula>(set_size_log_probability.removed_sets), undo_remove_sets<Formula>(sampler.removed_sets));
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
+		free(proposed_proofs); return false;
 	}
-	for (auto proof : new_observations) {
-		if (!T.observations.add(proof)) {
-			undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
-			free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
+
+	for (auto& entry : observation_changes) {
+		T.observations.remove(entry.key);
+		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+		if (!T.observations.add(entry.value)) {
+			undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets<Formula>(set_size_log_probability.removed_sets), undo_remove_sets<Formula>(sampler.removed_sets));
 			free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
 			free(proposed_proofs); return false;
 		}
-		proof->reference_count++;
+		entry.value->reference_count++;
 	}
 
 	/* count all unfixed sets */
@@ -1738,13 +1852,12 @@ bool propose_disjunction_intro(
 	if (!log_cache<double>::instance().ensure_size(new_axiom_count + 1)) return false;
 	log_proposal_probability_ratio += -log_cache<double>::instance().get(new_axiom_count);
 
-	bool success = do_mh_disjunction_intro(T, selected_step, new_proof, old_proof_changes,
-			new_proof_changes, old_axioms, new_axioms, log_proposal_probability_ratio,
+	bool success = do_mh_disjunction_intro(T, selected_step, new_proof, observation_changes,
+			old_proof_changes, new_proof_changes, old_axioms, new_axioms, log_proposal_probability_ratio,
 			log_proposal_probability_ratio + sampler.set_size_log_probability - set_size_log_probability.value,
-			undo_remove_sets(set_size_log_probability.removed_sets), undo_remove_sets(sampler.removed_sets));
+			undo_remove_sets<Formula>(set_size_log_probability.removed_sets), undo_remove_sets<Formula>(sampler.removed_sets),
+			proof_prior_diff, sample_collector);
 	free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
-	free(*selected_step.key); if (selected_step.key->reference_count == 0) free(selected_step.key);
-	free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
 	free(proposed_proofs);
 	return success;
 }
@@ -1857,32 +1970,29 @@ inline bool remove_ground_axiom(
 	return T.template remove_binary_atom<Negated>(rel);
 }
 
-template<typename Formula,
-	typename Canonicalizer,
+template<typename Formula, typename Canonicalizer,
 	bool Negated, unsigned int Arity,
-	typename ProofPrior>
+	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_intro(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
-		const array<nd_step<Formula>*>& old_observations,
-		const array<nd_step<Formula>*>& new_observations,
+		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
-		double log_proposal_probability_ratio, ProofPrior& proof_prior)
+		double log_proposal_probability_ratio, ProofPrior& proof_prior,
+		TheorySampleCollector& sample_collector)
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
 	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
-	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs.transformed_proofs, proof_prior, T.proof_axioms, old_axioms, new_axioms);
+	double proof_prior_diff = log_probability_ratio(proposed_proofs.transformed_proofs,
+			proof_prior, T.proof_axioms, old_axioms, new_axioms, sample_collector);
+	log_proposal_probability_ratio += proof_prior_diff;
 
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
 		fprintf(stderr, "do_mh_universal_intro WARNING: The computed log probability ratio is NaN.\n");
 #endif
 
-	if (!T.observations.check_size(T.observations.size + new_observations.length))
-		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
-//fprintf(stderr, "%u, accepted universal introduction (%u)\n", iteration, T.observations.size);
 		/* we've accepted the proposal */
 		if (!remove_ground_axiom(T, proposal.consequent_atom, proposal.concept_id))
 			return false;
@@ -1890,16 +2000,16 @@ bool do_mh_universal_intro(
 			add_ground_axiom(T, proposal.consequent_atom, proposal.concept_id, proposal.old_axiom);
 			return false;
 		}
-		for (auto proof : old_observations) {
-			T.observations.remove_at(T.observations.index_of(proof));
-			free(*proof); if (proof->reference_count == 0) free(proof);
-		}
-		for (auto proof : new_observations) {
-			T.observations.add(proof);
-			proof->reference_count++;
+		for (auto& entry : observation_changes) {
+			T.observations.remove_at(T.observations.index_of(entry.key));
+			free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+			T.observations.add(entry.value);
+			entry.value->reference_count++;
 		}
 		subtract(T.proof_axioms, old_axioms);
 		if (!add(T.proof_axioms, new_axioms))
+			return false;
+		if (!sample_collector.accept_with_observation_changes(T.observations, proof_prior_diff, observation_changes))
 			return false;
 	}
 	return true;
@@ -1926,82 +2036,65 @@ inline bool add_ground_axiom(
 	return T.template add_binary_atom<Negated, true>(rel, axiom);
 }
 
-template<typename Formula,
-	typename Canonicalizer,
+template<typename Formula, typename Canonicalizer,
 	bool Negated, unsigned int Arity,
-	typename ProofPrior>
+	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_elim(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
-		const array<nd_step<Formula>*>& old_observations,
-		const array<nd_step<Formula>*>& new_observations,
+		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_elim_proposal<Formula, Negated, Arity>& proposal,
-		double log_proposal_probability_ratio, ProofPrior& proof_prior)
+		double log_proposal_probability_ratio, ProofPrior& proof_prior,
+		TheorySampleCollector& sample_collector)
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
 	array_multiset<Formula*, false> old_axioms(16), new_axioms(16);
-	log_proposal_probability_ratio += log_probability_ratio(
-			proposed_proofs.transformed_proofs, proof_prior, T.proof_axioms, old_axioms, new_axioms);
+	double proof_prior_diff = log_probability_ratio(
+			proposed_proofs.transformed_proofs, proof_prior, T.proof_axioms, old_axioms, new_axioms, sample_collector);
+	log_proposal_probability_ratio += proof_prior_diff;
 
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
 		fprintf(stderr, "do_mh_universal_elim WARNING: The computed log probability ratio is NaN.\n");
 #endif
 
-	if (!T.observations.check_size(T.observations.size + new_observations.length))
-		return false;
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
-//fprintf(stderr, "%u, accepted universal elimination (%u)\n", iteration, T.observations.size);
 		/* we've accepted the proposal */
 		if (!add_ground_axiom(T, proposal.consequent_atom, proposal.constant, proposal.new_axiom))
 			return false;
 		if (!transform_proofs(proposed_proofs)) return false;
 
-		for (auto proof : old_observations) {
-			T.observations.remove(proof);
-			free(*proof); if (proof->reference_count == 0) free(proof);
-		}
-		for (auto proof : new_observations) {
-			T.observations.add(proof);
-			proof->reference_count++;
+		for (auto& entry : observation_changes) {
+			T.observations.remove(entry.key);
+			free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+			T.observations.add(entry.value);
+			entry.value->reference_count++;
 		}
 		subtract(T.proof_axioms, old_axioms);
 		if (!add(T.proof_axioms, new_axioms))
+			return false;
+		if (!sample_collector.accept_with_observation_changes(T.observations, proof_prior_diff, observation_changes))
 			return false;
 	}
 	return true;
 }
 
-
-template<typename Formula, typename Canonicalizer>
-inline bool do_mh_change_set_size(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		unsigned int selected_set, unsigned int new_size,
-		double log_proposal_probability_ratio)
-{
-#if !defined(NDEBUG)
-	if (isnan(log_proposal_probability_ratio))
-		fprintf(stderr, "do_mh_change_set_size WARNING: The computed log probability ratio is NaN.\n");
-#endif
-
-	if (sample_uniform<double>() < exp(log_proposal_probability_ratio))
-		T.sets.template get_size_axiom<false>(selected_set, new_size);
-	return true;
-}
-
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, typename Canonicalizer, typename TheorySampleCollector>
 inline bool do_mh_disjunction_intro(
 	theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*>& selected_step,
 	nd_step<Formula>* proposed_proof,
+	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 	const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
 	const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 	const array_multiset<Formula*, false>& old_axioms,
 	const array_multiset<Formula*, false>& new_axioms,
 	double log_proposal_probability_ratio,
 	double log_proposal_probability_ratio_without_set_sizes,
-	const undo_remove_sets& old_sets,
-	const undo_remove_sets& new_sets)
+	const undo_remove_sets<Formula>& old_sets,
+	const undo_remove_sets<Formula>& new_sets,
+	double proof_prior_diff,
+	TheorySampleCollector& sample_collector)
 {
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
@@ -2015,26 +2108,12 @@ inline bool do_mh_disjunction_intro(
 		subtract(T.proof_axioms, old_axioms);
 		if (!add(T.proof_axioms, new_axioms))
 			return false;
+		if (!sample_collector.accept_with_observation_changes(T.observations, proof_prior_diff, observation_changes))
+			return false;
 	} else {
 		return undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, proposed_proof, old_sets, new_sets);
 	}
 	return true;
-}
-
-template<typename ProofPrior, typename SizePrior>
-struct theory_prior {
-	ProofPrior proof_prior;
-	SizePrior set_size_prior;
-
-	theory_prior(const ProofPrior& proof_prior, const SizePrior& set_size_prior) :
-		proof_prior(proof_prior), set_size_prior(set_size_prior) { }
-};
-
-template<typename ProofPrior, typename SizePrior>
-inline theory_prior<ProofPrior, SizePrior> make_theory_prior(
-		const ProofPrior& proof_prior, const SizePrior& size_prior)
-{
-	return theory_prior<ProofPrior, SizePrior>(proof_prior, size_prior);
 }
 
 template<typename Formula, typename Canonicalizer>
@@ -2121,10 +2200,12 @@ bool get_eliminable_extensional_edges(
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer, typename ProofPrior, typename SizePrior>
+template<typename Formula, typename Canonicalizer,
+	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_step(
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		theory_prior<ProofPrior, SizePrior>& theory_prior)
+		ProofPrior& proof_prior,
+		TheorySampleCollector& sample_collector)
 {
 	typedef natural_deduction<Formula> ProofCalculus;
 
@@ -2157,24 +2238,24 @@ bool do_mh_step(
 			concept<ProofCalculus>& c = T.ground_concepts[i];
 			if (random < c.types.size) {
 				atom<false, 1> a = {c.types.keys[random], {0}};
-				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
+				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, proof_prior, sample_collector);
 			}
 			random -= c.types.size;
 			if (random < c.negated_types.size) {
 				atom<true, 1> a = {c.negated_types.keys[random], {0}};
-				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
+				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, proof_prior, sample_collector);
 			}
 			random -= c.negated_types.size;
 			if (random < c.relations.size) {
 				relation rel = c.relations.keys[random];
 				atom<false, 2> a = {rel.predicate, {rel.arg1, rel.arg2}};
-				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
+				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, proof_prior, sample_collector);
 			}
 			random -= c.relations.size;
 			if (random < c.negated_relations.size) {
 				relation rel = c.relations.keys[random];
 				atom<true, 2> a = {rel.predicate, {rel.arg1, rel.arg2}};
-				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
+				return propose_universal_intro(T, a, concept_id, axiom_count, log_proposal_probability_ratio, proof_prior, sample_collector);
 			}
 			random -= c.negated_relations.size;
 		}
@@ -2183,30 +2264,30 @@ bool do_mh_step(
 
 	if (random < eliminable_extensional_edges.length) {
 		/* we've selected a universally-quantified formula */
-		return propose_universal_elim(T, eliminable_extensional_edges[random], axiom_count, log_proposal_probability_ratio, theory_prior.proof_prior);
+		return propose_universal_elim(T, eliminable_extensional_edges[random], axiom_count, log_proposal_probability_ratio, proof_prior, sample_collector);
 	}
 	random -= eliminable_extensional_edges.length;
 
 	if (random < unfixed_sets.length) {
 		/* we've selected to resample the size of a set */
-		return propose_change_set_size(T, unfixed_sets[random], axiom_count, log_proposal_probability_ratio, theory_prior.set_size_prior);
+		return propose_change_set_size(T, unfixed_sets[random], axiom_count, log_proposal_probability_ratio, proof_prior.axiom_prior.base_distribution.set_size_distribution, sample_collector);
 	}
 	random -= unfixed_sets.length;
 
 	if (random < T.disjunction_intro_nodes.length) {
-		return propose_disjunction_intro(T, T.disjunction_intro_nodes[random], log_proposal_probability_ratio, theory_prior);
+		return propose_disjunction_intro(T, T.disjunction_intro_nodes[random], log_proposal_probability_ratio, proof_prior, sample_collector);
 	}
 	random -= T.disjunction_intro_nodes.length;
 	if (random < T.negated_conjunction_nodes.length) {
-		return propose_disjunction_intro(T, T.negated_conjunction_nodes[random], log_proposal_probability_ratio, theory_prior);
+		return propose_disjunction_intro(T, T.negated_conjunction_nodes[random], log_proposal_probability_ratio, proof_prior, sample_collector);
 	}
 	random -= T.negated_conjunction_nodes.length;
 	if (random < T.implication_intro_nodes.length) {
-		return propose_disjunction_intro(T, T.implication_intro_nodes[random], log_proposal_probability_ratio, theory_prior);
+		return propose_disjunction_intro(T, T.implication_intro_nodes[random], log_proposal_probability_ratio, proof_prior, sample_collector);
 	}
 	random -= T.implication_intro_nodes.length;
 	if (random < T.existential_intro_nodes.length) {
-		return propose_disjunction_intro(T, T.existential_intro_nodes[random], log_proposal_probability_ratio, theory_prior);
+		return propose_disjunction_intro(T, T.existential_intro_nodes[random], log_proposal_probability_ratio, proof_prior, sample_collector);
 	}
 	random -= T.existential_intro_nodes.length;
 

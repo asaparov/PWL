@@ -106,10 +106,10 @@ template<typename T, typename Array>
 struct prepended_array_view {
 	static_assert(has_index_operator<Array, T>::value, "`Array` does not have an index operator that returns type `T`");
 
-	T& first;
+	T first;
 	const Array& second;
 
-	prepended_array_view(T& first, const Array& second) : first(first), second(second) { }
+	prepended_array_view(T first, const Array& second) : first(first), second(second) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == 0) return first;
@@ -127,7 +127,7 @@ struct prepended_array_view {
 };
 
 template<typename T, typename Array>
-prepended_array_view<T, Array> make_prepended_array_view(T& first, const Array& second) {
+prepended_array_view<T, Array> make_prepended_array_view(T first, const Array& second) {
 	return prepended_array_view<T, Array>(first, second);
 }
 
@@ -253,36 +253,37 @@ inline repeated_array_view<T> make_repeated_array_view(T repeated_element, unsig
 	return repeated_array_view<T>(repeated_element, length);
 }
 
-template<typename T>
+template<typename T, typename Array>
 struct replaced_array_view {
-	T* elements;
-	unsigned int length;
-	T& replaced_element;
+	static_assert(has_index_operator<Array, T>::value, "`Array` does not have an index operator that returns type `T`");
+
+	const Array& array;
+	T replaced_element;
 	unsigned int replaced_index;
 
-	replaced_array_view(T* elements, unsigned int length, T& replaced_element, unsigned int replaced_index) :
-			elements(elements), length(length), replaced_element(replaced_element), replaced_index(replaced_index) { }
+	replaced_array_view(const Array& array, T replaced_element, unsigned int replaced_index) :
+			array(array), replaced_element(replaced_element), replaced_index(replaced_index) { }
 
 	inline T& operator[] (size_t index) {
 		if (index == replaced_index)
 			return replaced_element;
-		else return elements[index];
+		else return array[index];
 	}
 
 	inline const T& operator[] (size_t index) const {
 		if (index == replaced_index)
 			return replaced_element;
-		else return elements[index];
+		else return array[index];
 	}
 
 	inline unsigned int size() const {
-		return length;
+		return array.size();
 	}
 };
 
-template<typename T>
-inline replaced_array_view<T> make_replaced_array_view(T* elements, unsigned int length, T& replaced_element, unsigned int replaced_index) {
-	return replaced_array_view<T>(elements, length, replaced_element, replaced_index);
+template<typename T, typename Array>
+inline replaced_array_view<T, Array> make_replaced_array_view(const Array& array, T replaced_element, unsigned int replaced_index) {
+	return replaced_array_view<T, Array>(array, replaced_element, replaced_index);
 }
 
 template<typename T, typename FirstArray, typename SecondArray>

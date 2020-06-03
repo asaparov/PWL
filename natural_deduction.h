@@ -280,6 +280,204 @@ struct nd_step
 		fprintf(stderr, "nd_step.free ERROR: Unrecognized nd_step_type.\n");
 		exit(EXIT_FAILURE);
 	}
+
+	static inline unsigned int hash(const nd_step<Formula>& key)
+	{
+		unsigned int hash_value = 0;
+		/* TODO: precompute these and store them in a table for faster access */
+		unsigned int type_hash = default_hash<nd_step_type, 0x25a5dd87>(key.type);
+		switch (key.type) {
+		case nd_step_type::PARAMETER:
+			return type_hash ^ default_hash(key.parameter);
+		case nd_step_type::TERM_PARAMETER:
+			return type_hash ^ Term::hash(*key.term);
+		case nd_step_type::ARRAY_PARAMETER:
+			return type_hash ^ default_hash(key.parameters.data, key.parameters.length);
+		case nd_step_type::AXIOM:
+		case nd_step_type::FORMULA_PARAMETER:
+			return type_hash ^ Formula::hash(*key.formula);
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+			hash_value = type_hash ^ default_hash(key.operand_array.length);
+			for (unsigned int i = 0; i < key.operand_array.length; i++)
+				hash_value ^= hash(*key.operand_array[i]);
+			return hash_value;
+		case nd_step_type::BETA_EQUIVALENCE:
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::FALSITY_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
+		case nd_step_type::EQUALITY_ELIMINATION:
+			hash_value = type_hash;
+			for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+				if (key.operands[i] != NULL)
+					hash_value ^= hash(*key.operands[i]);
+			}
+			return hash_value;
+		case nd_step_type::COUNT:
+			break;
+		}
+		fprintf(stderr, "nd_step.hash ERROR: Unrecognized nd_step_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	static inline bool clone(const nd_step<Formula>& src, nd_step<Formula>& dst)
+	{
+		dst.type = src.type;
+		dst.reference_count = 1;
+		if (!array_init(dst.children, max((size_t) 1, src.children.length)))
+			return false;
+		switch (src.type) {
+		case nd_step_type::PARAMETER:
+			dst.parameter = src.parameter;
+			return true;
+		case nd_step_type::ARRAY_PARAMETER:
+			if (!array_init(dst.parameters, src.parameters.length)) {
+				core::free(dst.children);
+				return false;
+			}
+			for (unsigned int i = 0; i < src.parameters.length; i++)
+				dst.parameters[i] = src.parameters[i];
+			dst.parameters.length = src.parameters.length;
+			return true;
+		case nd_step_type::TERM_PARAMETER:
+			dst.term = src.term;
+			dst.term->reference_count++;
+			return true;
+		case nd_step_type::AXIOM:
+		case nd_step_type::FORMULA_PARAMETER:
+			dst.formula = src.formula;
+			dst.formula->reference_count++;
+			return true;
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+			if (!array_init(dst.operand_array, src.operand_array.length)) {
+				core::free(dst.children);
+				return false;
+			}
+			for (unsigned int i = 0; i < src.operand_array.length; i++) {
+				dst.operand_array[i] = (nd_step<Formula>*) malloc(sizeof(nd_step<Formula>));
+				if (dst.operand_array[i] == nullptr) {
+					for (unsigned int j = 0; j < i; j++) { core::free(*dst.operand_array[j]); core::free(dst.operand_array[j]); }
+					core::free(dst.children); return false;
+				} else if (!clone(*src.operand_array[i], *dst.operand_array[i])) {
+					for (unsigned int j = 0; j < i; j++) { core::free(*dst.operand_array[j]); core::free(dst.operand_array[j]); }
+					core::free(dst.operand_array[i]); core::free(dst.children); return false;
+				}
+				dst.operand_array[i]->children.add(&dst);
+			}
+			dst.operand_array.length = src.operand_array.length;
+			return true;
+		case nd_step_type::BETA_EQUIVALENCE:
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::FALSITY_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
+		case nd_step_type::EQUALITY_ELIMINATION:
+			for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+				if (src.operands[i] == nullptr) {
+					dst.operands[i] = nullptr;
+				} else {
+					dst.operands[i] = (nd_step<Formula>*) malloc(sizeof(nd_step<Formula>));
+					if (dst.operands[i] == nullptr) {
+						for (unsigned int j = 0; j < i; j++) { if (dst.operands[i] != nullptr) { core::free(*dst.operands[j]); core::free(dst.operands[j]); } }
+						core::free(dst.children); return false;
+					} else if (!clone(*src.operands[i], *dst.operands[i])) {
+						for (unsigned int j = 0; j < i; j++) { if (dst.operands[i] != nullptr) { core::free(*dst.operands[j]); core::free(dst.operands[j]); } }
+						core::free(dst.operands[i]); core::free(dst.children); return false;
+					}
+					dst.operands[i]->children.add(&dst);
+				}
+			}
+			return true;
+		case nd_step_type::COUNT:
+			break;
+		}
+		fprintf(stderr, "nd_step.clone ERROR: Unrecognized nd_step_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	static inline void move(const nd_step<Formula>& src, nd_step<Formula>& dst) {
+		dst.type = src.type;
+		dst.reference_count = src.reference_count;
+		core::move(src.children, dst.children);
+		switch (src.type) {
+		case nd_step_type::PARAMETER:
+			dst.parameter = src.parameter; return;
+		case nd_step_type::ARRAY_PARAMETER:
+			core::move(src.parameters, dst.parameters); return;
+		case nd_step_type::TERM_PARAMETER:
+			dst.term = src.term; return;
+		case nd_step_type::AXIOM:
+		case nd_step_type::FORMULA_PARAMETER:
+			dst.formula = src.formula; return;
+		case nd_step_type::CONJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_ELIMINATION:
+			core::move(src.operand_array, dst.operand_array); return;
+		case nd_step_type::BETA_EQUIVALENCE:
+		case nd_step_type::CONJUNCTION_ELIMINATION:
+		case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+		case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+		case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+		case nd_step_type::IMPLICATION_INTRODUCTION:
+		case nd_step_type::IMPLICATION_ELIMINATION:
+		case nd_step_type::BICONDITIONAL_INTRODUCTION:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+		case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+		case nd_step_type::PROOF_BY_CONTRADICTION:
+		case nd_step_type::NEGATION_ELIMINATION:
+		case nd_step_type::FALSITY_ELIMINATION:
+		case nd_step_type::UNIVERSAL_INTRODUCTION:
+		case nd_step_type::UNIVERSAL_ELIMINATION:
+		case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		case nd_step_type::EXISTENTIAL_ELIMINATION:
+		case nd_step_type::EQUALITY_ELIMINATION:
+			for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++)
+				dst.operands[i] = src.operands[i];
+			return;
+		case nd_step_type::COUNT:
+			break;
+		}
+		fprintf(stderr, "nd_step.move ERROR: Unrecognized nd_step_type.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	static inline void swap(nd_step<Formula>& first, nd_step<Formula>& second) {
+		char* first_data = (char*) &first;
+		char* second_data = (char*) &second;
+		for (unsigned int i = 0; i < sizeof(nd_step<Formula>); i++)
+			core::swap(first_data[i], second_data[i]);
+	}
 };
 
 template<typename Formula>
@@ -1073,7 +1271,7 @@ bool check_proof(proof_state<Formula>& out,
 	return false;
 }
 
-template<typename Formula, typename Visitor>
+template<bool RevisitVisitedNodes = false, typename Formula, typename Visitor>
 bool visit(const nd_step<Formula>* proof, Visitor& visitor)
 {
 	array<const nd_step<Formula>*> stack(64);
@@ -1082,7 +1280,7 @@ bool visit(const nd_step<Formula>* proof, Visitor& visitor)
 	while (stack.length > 0)
 	{
 		const nd_step<Formula>* node = stack.pop();
-		if (!visited.add(node)) return false;
+		if (!RevisitVisitedNodes && !visited.add(node)) return false;
 
 		unsigned int operand_count;
 		const nd_step<Formula>* const* operands;
@@ -1094,7 +1292,7 @@ bool visit(const nd_step<Formula>* proof, Visitor& visitor)
 		for (unsigned int i = 0; i < operand_count; i++) {
 			if (operands[i] == NULL) continue;
 
-			if (visited.contains(operands[i]))
+			if (!RevisitVisitedNodes && visited.contains(operands[i]))
 				continue;
 			if (!stack.add(operands[i]))
 				return false;
@@ -1118,7 +1316,25 @@ inline bool visit_node(const nd_step<Formula>* proof, axiom_collector<Collection
 template<typename Formula, typename Collection>
 inline bool get_axioms(const nd_step<Formula>* proof, Collection& axioms) {
 	axiom_collector<Collection> collector = {axioms};
-	return visit(proof, collector);
+	return visit<true>(proof, collector);
+}
+
+template<nd_step_type Type, typename Collection>
+struct proof_step_collector {
+	Collection& steps;
+};
+
+template<nd_step_type Type, typename Formula, typename Collection>
+inline bool visit_node(const nd_step<Formula>* proof, proof_step_collector<Type, Collection>& collector) {
+	if (proof->type == Type)
+		return collector.steps.add(proof);
+	return true;
+}
+
+template<nd_step_type Type, typename Formula, typename Collection>
+inline bool get_proof_steps(const nd_step<Formula>* proof, Collection& steps) {
+	proof_step_collector<Type, Collection> collector = {steps};
+	return visit<true>(proof, collector);
 }
 
 template<typename Formula, typename... ProofMap>
@@ -1862,6 +2078,35 @@ make_canonicalized_proof_prior(
 			axiom_prior, conjunction_introduction_prior, universal_introduction_prior, universal_elimination_prior, term_indices_prior, proof_length_prior);
 }
 
+template<typename Formula, typename... ProofMap>
+inline bool count_axioms(nd_step<Formula>& proof,
+		array_multiset<Formula*, false>& axioms,
+		ProofMap&&... proof_map)
+{
+	/* count the axioms */
+	array<nd_step<Formula>*> stack(8);
+	stack[stack.length++] = map(&proof, std::forward<ProofMap>(proof_map)...);
+	while (stack.length > 0) {
+		nd_step<Formula>* node = stack.pop();
+		if (node->type == nd_step_type::AXIOM
+		 && !axioms.add_unsorted(node->formula))
+			return false;
+
+		unsigned int operand_count;
+		nd_step<Formula>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
+			nd_step<Formula>* operand = map(
+					operands[i], std::forward<ProofMap>(proof_map)...);
+
+			if (!stack.add(operand))
+				return false;
+		}
+	}
+	return true;
+}
+
 template<typename Formula,
 	typename ConjunctionIntroductions,
 	typename UniversalIntroductions,
@@ -1879,26 +2124,8 @@ inline double log_probability_helper(
 		ProofLengthPrior& proof_length_prior,
 		ProofMap&&... proof_map)
 {
-	/* count the axioms */
-	array<nd_step<Formula>*> stack(8);
-	stack[stack.length++] = map(&proof, std::forward<ProofMap>(proof_map)...);
-	while (stack.length > 0) {
-		nd_step<Formula>* node = stack.pop();
-		if (node->type == nd_step_type::AXIOM)
-			axioms.add_unsorted(node->formula);
-
-		unsigned int operand_count;
-		nd_step<Formula>* const* operands;
-		node->get_subproofs(operands, operand_count);
-		for (unsigned int i = 0; i < operand_count; i++) {
-			if (operands[i] == NULL) continue;
-			nd_step<Formula>* operand = map(
-					operands[i], std::forward<ProofMap>(proof_map)...);
-
-			if (!stack.add(operand))
-				exit(EXIT_FAILURE);
-		}
-	}
+	if (!count_axioms(proof, axioms, std::forward<ProofMap>(proof_map)...))
+		exit(EXIT_FAILURE);
 
 	array<const nd_step<Formula>*> canonical_order(64);
 	if (!canonicalize(proof, canonical_order, std::forward<ProofMap>(proof_map)...)) {
@@ -1958,7 +2185,52 @@ template<
 	typename UniversalEliminationPrior,
 	typename TermIndicesPrior,
 	typename ProofLengthPrior,
+	typename TheorySampleCollector>
+double log_probability(
+		const hash_set<nd_step<Formula>*>& proofs,
+		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
+		TheorySampleCollector& theory_sample_collector)
+{
+	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
+	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
+	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
+	typedef typename TermIndicesPrior::ObservationCollection TermIndices;
+
+	double value = 0.0;
+	array_multiset<Formula*, false> axioms(16);
+	for (nd_step<Formula>* entry : proofs) {
+		if (theory_sample_collector.has_prior(entry)) {
+			ConjunctionIntroductions conjunction_introductions;
+			UniversalIntroductions universal_introductions;
+			UniversalEliminations universal_eliminations;
+			TermIndices term_indices;
+			value += log_probability_helper(*entry, axioms, conjunction_introductions,
+					universal_introductions, universal_eliminations, term_indices, prior.proof_length_prior);
+
+			value += log_probability(conjunction_introductions, prior.conjunction_introduction_prior);
+			value += log_probability(universal_introductions, prior.universal_introduction_prior);
+			value += log_probability(universal_eliminations, prior.universal_elimination_prior);
+			value += log_probability(term_indices, prior.term_indices_prior);
+		} else {
+			if (!count_axioms(*entry, axioms))
+				exit(EXIT_FAILURE);
+		}
+	}
+
+	if (axioms.counts.size > 1)
+		sort(axioms.counts.keys, axioms.counts.values, axioms.counts.size);
+	return value + log_probability(axioms, prior.axiom_prior);
+}
+
+template<
+	typename Formula, typename AxiomPrior,
+	typename ConjunctionIntroductionPrior,
+	typename UniversalIntroductionPrior,
+	typename UniversalEliminationPrior,
+	typename TermIndicesPrior,
+	typename ProofLengthPrior,
 	typename MultisetType,
+	typename TheorySampleCollector,
 	typename... AxiomPriorParameters>
 double log_probability_ratio(
 		const array_map<nd_step<Formula>*, proof_substitution<Formula>>& proofs,
@@ -1966,6 +2238,7 @@ double log_probability_ratio(
 		const MultisetType& proof_axioms,
 		array_multiset<Formula*, false>& old_axioms,
 		array_multiset<Formula*, false>& new_axioms,
+		TheorySampleCollector& theory_sample_collector,
 		AxiomPriorParameters&&... axiom_prior_parameters)
 {
 	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
@@ -1975,19 +2248,25 @@ double log_probability_ratio(
 
 	double value = 0.0;
 	for (const auto& entry : proofs) {
-		ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
-		UniversalIntroductions old_universal_introductions, new_universal_introductions;
-		UniversalEliminations old_universal_eliminations, new_universal_eliminations;
-		TermIndices old_term_indices, new_term_indices;
-		value -= log_probability_helper(*entry.key, old_axioms, old_conjunction_introductions,
-				old_universal_introductions, old_universal_eliminations, old_term_indices, prior.proof_length_prior);
-		value += log_probability_helper(*entry.key, new_axioms, new_conjunction_introductions,
-				new_universal_introductions, new_universal_eliminations, new_term_indices, prior.proof_length_prior, entry.value);
+		if (theory_sample_collector.has_prior(entry.key)) {
+			ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
+			UniversalIntroductions old_universal_introductions, new_universal_introductions;
+			UniversalEliminations old_universal_eliminations, new_universal_eliminations;
+			TermIndices old_term_indices, new_term_indices;
+			value -= log_probability_helper(*entry.key, old_axioms, old_conjunction_introductions,
+					old_universal_introductions, old_universal_eliminations, old_term_indices, prior.proof_length_prior);
+			value += log_probability_helper(*entry.key, new_axioms, new_conjunction_introductions,
+					new_universal_introductions, new_universal_eliminations, new_term_indices, prior.proof_length_prior, entry.value);
 
-		value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
-		value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
-		value += log_probability_ratio(old_universal_eliminations, new_universal_eliminations, prior.universal_elimination_prior);
-		value += log_probability_ratio(old_term_indices, new_term_indices, prior.term_indices_prior);
+			value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
+			value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
+			value += log_probability_ratio(old_universal_eliminations, new_universal_eliminations, prior.universal_elimination_prior);
+			value += log_probability_ratio(old_term_indices, new_term_indices, prior.term_indices_prior);
+		} else {
+			if (!count_axioms(*entry.key, old_axioms)
+			 || !count_axioms(*entry.key, new_axioms, entry.value))
+				exit(EXIT_FAILURE);
+		}
 	}
 
 	if (old_axioms.counts.size > 1)

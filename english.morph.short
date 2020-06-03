@@ -47,4 +47,50 @@ Dory	pr
 Nemo	pr
 thing	n	v
 red	adj\redder	n\~	v\redd
+beige	n\~	adj\er\more
+black	adj\er	n\~	v
+grey	adj\greyer\sup=greyest	v	n
+magenta	n\~	adj
+mauve	n	adj\er\more
+pink	n	n	v	n	n	adj\er	v	v	v	adj\-	n\-
+purple	n	adj\er\more	v\purples\purpling\purpled
+silver	n\~	adj	v
+violet	n	adj\er
+white	adj\er	n\~	v\whit
+yellow	adj\er	n	v\yellows\yellowing\yellowed\yellowed
 blue	adj\er	n\~	v\blues\blueing\pres_ptc2=bluing\blued	adj
+gold	n\~	adj\-\er	v	adj\-	adv\-
+green	adj\er	n	v
+mass	n\~\es	v\es	adj\-\er	n\es	v\es
+Mars	pr	pr
+heavy	adj\er	adv	n\heavies\heavys	v\heavies\heavying\heavied	adj
+north	n\~	adj\-	adv\-	v
+east	n\~	adj\-	adv\-
+south	n\-	adj\-	adv\-	v
+west	n\-	adj\?	adv\-	v
+northeast	n	adj\-
+northwest	n	adj\-
+southwest	n\-\s	adj\-
+southeast	n	adj
+central	adj
+Midwestern United States	pr
+name	n	v\nam	n
+inner	adj\-\-\sup=innermost	n
+outer	adj\outermore\sup=outermost	n	n
+part	n	v	adj\-	adv\-
+locate	v\locat
+orbit	n\~	v
+moon	n	v
+constellation	n
+northern	adj	n
+southern	adj	n
+eastern	adj
+western	adj\-	n
+northeastern	adj
+southeastern	adj\-
+northwestern	adj
+southwestern	adj\-
+cyanobacterium	n\cyanobacteria
+alga	n\algae
+American	n	pr	adj
+month	n\months\month\pl2qual=rare

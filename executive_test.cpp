@@ -131,6 +131,17 @@ struct chinese_restaurant_process
 	~chinese_restaurant_process() { }
 };
 
+template<typename MultisetType, typename T>
+double log_probability(
+		const MultisetType& observations,
+		const chinese_restaurant_process<T>& prior)
+{
+	double value = 0.0;
+	for (unsigned int i = 0; i < size(observations); i++)
+		value += prior.log_alpha + lgamma(get_value(observations, i));
+	return value + lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
+}
+
 template<typename MultisetType,
 	template<typename> class Collection, typename T>
 double log_probability(
@@ -146,6 +157,15 @@ double log_probability(
 	return value + lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
 }
 
+template<typename MultisetType, typename T>
+inline double log_probability_ratio(
+		const MultisetType& old_observations,
+		const MultisetType& new_observations,
+		const chinese_restaurant_process<T>& prior)
+{
+	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
+}
+
 template<typename MultisetType,
 	template<typename> class Collection, typename T>
 inline double log_probability_ratio(
@@ -155,21 +175,6 @@ inline double log_probability_ratio(
 		Collection<T>& old_clusters, Collection<T>& new_clusters)
 {
 	return log_probability(new_observations, prior, new_clusters) - log_probability(old_observations, prior, old_clusters);
-}
-
-template<typename T>
-struct dummy_collection {
-	constexpr bool add(const T& i) const { return true; }
-};
-
-template<typename MultisetType, typename T>
-inline double log_probability_ratio(
-		const MultisetType& old_observations,
-		const MultisetType& new_observations,
-		const chinese_restaurant_process<T>& prior)
-{
-	dummy_collection<T> old_clusters, new_clusters;
-	return log_probability_ratio(old_observations, new_observations, prior, old_clusters, new_clusters);
 }
 
 template<bool AutomaticallyFree, typename T, template<typename> class Collection>
@@ -276,8 +281,7 @@ inline double log_probability_ratio(
 		const MultisetType& new_observations,
 		const chinese_restaurant_process<T>& prior)
 {
-	dummy_collection<T> old_clusters, new_clusters;
-	return log_probability_ratio(tables, old_observations, new_observations, prior, old_clusters, new_clusters);
+	return log_probability_ratio(tables, old_observations, new_observations, prior);
 }
 
 template<typename BaseDistribution>
@@ -304,6 +308,18 @@ inline dirichlet_process<BaseDistribution> make_dirichlet_process(
 	return dirichlet_process<BaseDistribution>(alpha, base_distribution);
 }
 
+template<typename MultisetType, typename BaseDistribution>
+double log_probability(
+		const MultisetType& restaurant_tables,
+		const dirichlet_process<BaseDistribution>& prior)
+{
+	typedef typename BaseDistribution::ObservationCollection Clusters;
+
+	Clusters clusters;
+	return log_probability(restaurant_tables, prior.restaurant, clusters)
+		 + log_probability(clusters, prior.base_distribution);
+}
+
 template<typename MultisetType, typename T, bool AutomaticallyFree, typename BaseDistribution>
 double log_probability_ratio(
 		const MultisetType& restaurant_tables,
@@ -315,7 +331,7 @@ double log_probability_ratio(
 
 	Clusters old_clusters, new_clusters;
 	return log_probability_ratio(restaurant_tables, old_observations, new_observations, prior.restaurant, old_clusters, new_clusters)
-		 + log_probability_ratio(restaurant_tables.counts.table, prior.base_distribution, old_clusters, new_clusters);
+		 + log_probability_ratio(old_clusters, new_clusters, prior.base_distribution);
 }
 
 template<typename ConstantDistribution, typename PredicateDistribution>
@@ -379,6 +395,14 @@ make_simple_constant_distribution(
 }
 
 template<typename ConstantCollection, typename ConstantDistribution, typename PredicateDistribution>
+inline double log_probability(const ConstantCollection& constants,
+		const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+{
+	return log_probability(constants.constants, prior.constant_distribution)
+		 + log_probability(constants.predicates, prior.predicate_distribution);
+}
+
+template<typename ConstantCollection, typename ConstantDistribution, typename PredicateDistribution>
 inline double log_probability_ratio(
 		const ConstantCollection& old_constants, const ConstantCollection& new_constants,
 		const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
@@ -387,7 +411,7 @@ inline double log_probability_ratio(
 		 + log_probability_ratio(old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
 }
 
-template<typename ConstantDistribution>
+template<typename ConstantDistribution, typename SetSizeDistribution>
 struct simple_hol_term_distribution
 {
 	typedef hol_term* ObservationType;
@@ -395,7 +419,9 @@ struct simple_hol_term_distribution
 
 	double log_ground_literal_probability;
 	double log_universal_probability;
-	double log_equals_probability;
+	double log_existential_probability;
+	double log_disjunction_probability;
+	double log_set_size_axiom_probability;
 
 	double log_negation_probability;
 	double log_positive_probability;
@@ -409,15 +435,21 @@ struct simple_hol_term_distribution
 	double log_consequent_stop_probability;
 
 	ConstantDistribution constant_distribution;
+	SetSizeDistribution set_size_distribution;
 
-	simple_hol_term_distribution(const ConstantDistribution& constant_distribution,
+	simple_hol_term_distribution(
+			const ConstantDistribution& constant_distribution,
+			const SetSizeDistribution& set_size_distribution,
 			double ground_literal_probability, double universal_probability,
-			double equals_probability, double negation_probability,
+			double existential_probability, double disjunction_probability,
+			double set_size_axiom_probability, double negation_probability,
 			double unary_probability, double antecedent_stop_probability,
 			double consequent_stop_probability) :
 		log_ground_literal_probability(log(ground_literal_probability)),
 		log_universal_probability(log(universal_probability)),
-		log_equals_probability(log(equals_probability)),
+		log_existential_probability(log(existential_probability)),
+		log_disjunction_probability(log(disjunction_probability)),
+		log_set_size_axiom_probability(log(set_size_axiom_probability)),
 		log_negation_probability(log(negation_probability)),
 		log_positive_probability(log(1.0 - negation_probability)),
 		log_unary_probability(log(unary_probability)),
@@ -426,16 +458,19 @@ struct simple_hol_term_distribution
 		log_antecedent_stop_probability(log(antecedent_stop_probability)),
 		log_consequent_continue_probability(log(1.0 - consequent_stop_probability)),
 		log_consequent_stop_probability(log(consequent_stop_probability)),
-		constant_distribution(constant_distribution)
+		constant_distribution(constant_distribution),
+		set_size_distribution(set_size_distribution)
 	{
-		if (fabs(ground_literal_probability + universal_probability + equals_probability - 1.0) > 1.0e-12)
-			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + universal_probability + equals_probability` is not 1.\n");
+		if (fabs(ground_literal_probability + universal_probability + existential_probability + disjunction_probability + set_size_axiom_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + universal_probability + existential_probability + disjunction_probability + set_size_axiom_probability` is not 1.\n");
 	}
 
-	simple_hol_term_distribution(const simple_hol_term_distribution<ConstantDistribution>& src) :
+	simple_hol_term_distribution(const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& src) :
 		log_ground_literal_probability(src.log_ground_literal_probability),
 		log_universal_probability(src.log_universal_probability),
-		log_equals_probability(src.log_equals_probability),
+		log_existential_probability(src.log_existential_probability),
+		log_disjunction_probability(src.log_disjunction_probability),
+		log_set_size_axiom_probability(src.log_set_size_axiom_probability),
 		log_negation_probability(src.log_negation_probability),
 		log_positive_probability(src.log_positive_probability),
 		log_unary_probability(src.log_unary_probability),
@@ -444,32 +479,37 @@ struct simple_hol_term_distribution
 		log_antecedent_stop_probability(src.log_antecedent_stop_probability),
 		log_consequent_continue_probability(src.log_consequent_continue_probability),
 		log_consequent_stop_probability(src.log_consequent_stop_probability),
-		constant_distribution(src.constant_distribution)
+		constant_distribution(src.constant_distribution),
+		set_size_distribution(src.set_size_distribution)
 	{ }
 };
 
-template<typename ConstantDistribution>
-inline simple_hol_term_distribution<ConstantDistribution> make_simple_hol_term_distribution(
+template<typename ConstantDistribution, typename SetSizeDistribution>
+inline simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution> make_simple_hol_term_distribution(
 		const ConstantDistribution& constant_distribution,
+		const SetSizeDistribution set_size_distribution,
 		double ground_literal_probability, double universal_probability,
-		double equals_probability, double negation_probability,
+		double existential_probability, double disjunction_probability,
+		double set_size_axiom_probability, double negation_probability,
 		double unary_probability, double antecedent_stop_probability,
 		double consequent_stop_probability)
 {
-	return simple_hol_term_distribution<ConstantDistribution>(
-			constant_distribution, ground_literal_probability,
-			universal_probability, equals_probability,
-			negation_probability, unary_probability,
-			antecedent_stop_probability, consequent_stop_probability);
+	return simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>(
+			constant_distribution, set_size_distribution,
+			ground_literal_probability, universal_probability,
+			existential_probability, disjunction_probability,
+			set_size_axiom_probability, negation_probability,
+			unary_probability, antecedent_stop_probability,
+			consequent_stop_probability);
 }
 
-template<bool Quantified, typename ConstantDistribution>
+template<bool Quantified, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_atom(const hol_term* function, const hol_term* arg1,
-		const simple_hol_term_distribution<ConstantDistribution>& prior,
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (function->type != hol_term_type::CONSTANT)
-		return std::numeric_limits<double>::infinity();
+		return -std::numeric_limits<double>::infinity();
 
 	constants.add_predicate(function->constant);
 	if (Quantified && arg1->type == hol_term_type::VARIABLE) {
@@ -478,18 +518,18 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 		constants.add_constant(arg1->constant);
 		return prior.log_unary_probability;
 	} else {
-		return std::numeric_limits<double>::infinity();
+		return -std::numeric_limits<double>::infinity();
 	}	
 }
 
-template<bool Quantified, typename ConstantDistribution>
+template<bool Quantified, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_atom(
 		const hol_term* function, const hol_term* arg1, const hol_term* arg2,
-		const simple_hol_term_distribution<ConstantDistribution>& prior,
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (function->type != hol_term_type::CONSTANT)
-		return std::numeric_limits<double>::infinity();
+		return -std::numeric_limits<double>::infinity();
 
 	constants.add_predicate(function->constant);
 	if (arg1->type == hol_term_type::VARIABLE) {
@@ -499,23 +539,23 @@ double log_probability_atom(
 			constants.add_constant(arg2->constant);
 			return prior.log_binary_probability - log_cache<double>::instance().get(3);
 		} else {
-			return std::numeric_limits<double>::infinity();
+			return -std::numeric_limits<double>::infinity();
 		}
 	} else if (arg1->type == hol_term_type::CONSTANT) {
 		constants.add_constant(arg1->constant);
 		if (arg2->type == hol_term_type::VARIABLE) {
 			return prior.log_binary_probability - log_cache<double>::instance().get(3);
 		} else { /* both `arg1` and `arg2` can't be constants */
-			return std::numeric_limits<double>::infinity();
+			return -std::numeric_limits<double>::infinity();
 		}
 	} else {
-		return std::numeric_limits<double>::infinity();
+		return -std::numeric_limits<double>::infinity();
 	}
 }
 
-template<bool Quantified, typename ConstantDistribution>
+template<bool Quantified, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_literal(const hol_term* literal,
-		const simple_hol_term_distribution<ConstantDistribution>& prior,
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (literal->type == hol_term_type::UNARY_APPLICATION) {
@@ -527,23 +567,30 @@ double log_probability_literal(const hol_term* literal,
 	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::BINARY_APPLICATION) {
 		return prior.log_negation_probability + log_probability_atom<Quantified>(literal->unary.operand->ternary.first, literal->unary.operand->ternary.second, literal->unary.operand->ternary.third, prior, constants);
 	} else {
-		return std::numeric_limits<double>::infinity();
+		return -std::numeric_limits<double>::infinity();
 	}
 }
 
-template<typename ConstantDistribution>
+inline bool is_literal(const hol_term* term) {
+	if (term->type == hol_term_type::UNARY_APPLICATION || term->type == hol_term_type::BINARY_APPLICATION)
+		return true;
+	if (term->type == hol_term_type::NOT && is_literal(term->unary.operand))
+		return true;
+	return false;
+}
+
+template<bool Quantified = false, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_helper(const hol_term* term,
-		const simple_hol_term_distribution<ConstantDistribution>& prior,
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
+	if (is_literal(term))
+		return prior.log_ground_literal_probability + log_probability_literal<Quantified>(term, prior, constants);
+
 	double value;
 	const hol_term* antecedent;
 	const hol_term* consequent;
 	switch (term->type) {
-	case hol_term_type::UNARY_APPLICATION:
-	case hol_term_type::BINARY_APPLICATION:
-	case hol_term_type::NOT:
-		return prior.log_ground_literal_probability + log_probability_literal<false>(term, prior, constants);
 	case hol_term_type::FOR_ALL:
 		value = prior.log_universal_probability;
 		if (term->quantifier.operand->type == hol_term_type::IF_THEN) {
@@ -552,31 +599,70 @@ double log_probability_helper(const hol_term* term,
 			if (antecedent->type == hol_term_type::AND) {
 				value = (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < antecedent->array.length; i++)
-					value += log_probability_literal<true>(antecedent->array.operands[i], prior, constants);
+					value += log_probability_helper<true>(antecedent->array.operands[i], prior, constants);
 			} else {
-				value = prior.log_antecedent_stop_probability + log_probability_literal<true>(antecedent, prior, constants);
+				value = prior.log_antecedent_stop_probability + log_probability_helper<true>(antecedent, prior, constants);
 			}
 
 			if (consequent->type == hol_term_type::AND) {
 				value = (consequent->array.length - 1) * prior.log_consequent_continue_probability + prior.log_consequent_stop_probability;
 				for (unsigned int i = 0; i < consequent->array.length; i++)
-					value += log_probability_literal<true>(consequent->array.operands[i], prior, constants);
+					value += log_probability_helper<true>(consequent->array.operands[i], prior, constants);
 			} else {
-				value = prior.log_consequent_stop_probability + log_probability_literal<true>(consequent, prior, constants);
+				value = prior.log_consequent_stop_probability + log_probability_helper<true>(consequent, prior, constants);
 			}
 			return value;
 		} else {
 			return -std::numeric_limits<double>::infinity();
 		}
 	case hol_term_type::EQUALS:
-		value = prior.log_equals_probability;
-		/* TODO: implement this */
+		if (term->binary.left->type == hol_term_type::UNARY_APPLICATION
+		 && term->binary.left->binary.left->type == hol_term_type::CONSTANT
+		 && term->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+		 && term->binary.left->binary.right->type == hol_term_type::LAMBDA
+		 && term->binary.right->type == hol_term_type::INTEGER)
+		{
+			value = prior.log_set_size_axiom_probability;
+			hol_term* operand = term->binary.left->binary.right->quantifier.operand;
+			if (operand->type == hol_term_type::AND) {
+				value = (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+				for (unsigned int i = 0; i < operand->array.length; i++)
+					value += log_probability_helper<true>(operand->array.operands[i], prior, constants);
+			} else {
+				value = prior.log_antecedent_stop_probability + log_probability_helper<true>(operand, prior, constants);
+			}
+			value += log_probability(term->binary.right->integer, prior.set_size_distribution);
+			return value;
+		} else {
+			// TODO: implement this (we also have definition axioms for constants)
+			return prior.log_set_size_axiom_probability;
+			/*fprintf(stderr, "log_probability_helper WARNING: Found equality term that is not a set size axiom: ");
+			print(*term, stderr); print('\n', stderr);
+			return -std::numeric_limits<double>::infinity();*/
+		}
+	case hol_term_type::EXISTS:
+		value = prior.log_existential_probability;
+		if (term->quantifier.operand->type == hol_term_type::AND) {
+			hol_term* operand = term->quantifier.operand;
+			value += (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+			for (unsigned int i = 0; i < operand->array.length; i++)
+				value += log_probability_helper<true>(operand->array.operands[i], prior, constants);
+		} else {
+			value += prior.log_antecedent_stop_probability + log_probability_helper<true>(term->quantifier.operand, prior, constants);
+		}
 		return value;
-	case hol_term_type::AND:
 	case hol_term_type::OR:
+		value = prior.log_disjunction_probability;
+		value += (term->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+		for (unsigned int i = 0; i < term->array.length; i++)
+			value += log_probability_helper<true>(term->array.operands[i], prior, constants);
+		return value;
+	case hol_term_type::UNARY_APPLICATION:
+	case hol_term_type::BINARY_APPLICATION:
+	case hol_term_type::NOT:
+	case hol_term_type::AND:
 	case hol_term_type::IF_THEN:
 	case hol_term_type::IFF:
-	case hol_term_type::EXISTS:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 	case hol_term_type::LAMBDA:
@@ -601,13 +687,25 @@ double log_probability_helper(const hol_term* term,
 }
 
 template<typename ConstantDistribution,
-	template<typename> class ObservationCollection,
+	typename SetSizeDistribution,
+	template<typename> class Collection>
+double log_probability(const Collection<hol_term*>& clusters,
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior)
+{
+	double value = 0.0;
+	typename ConstantDistribution::ObservationCollection constants;
+	for (hol_term* formula : clusters)
+		value += log_probability_helper(formula, prior, constants);
+	return value + log_probability(constants, prior.constant_distribution);
+}
+
+template<typename ConstantDistribution,
+	typename SetSizeDistribution,
 	template<typename> class Collection>
 double log_probability_ratio(
-		const ObservationCollection<hol_term*>& observations,
-		const simple_hol_term_distribution<ConstantDistribution>& prior,
 		const Collection<hol_term*>& old_clusters,
-		const Collection<hol_term*>& new_clusters)
+		const Collection<hol_term*>& new_clusters,
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior)
 {
 	double value = 0.0;
 	typename ConstantDistribution::ObservationCollection old_constants, new_constants;
@@ -841,39 +939,6 @@ bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, cons
 	}
 }
 
-template<typename Parser>
-inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<string, unsigned int>& names)
-{
-	typedef sentence<rooted_syntax_node<flagged_logical_form<hol_term>>> sentence_type;
-
-	sentence_type sentence;
-	if (!tokenize(input_sentence, sentence, names))
-		return false;
-
-	constexpr unsigned int max_parse_count = 4;
-	hol_term* logical_forms[max_parse_count];
-	double log_probabilities[max_parse_count];
-	unsigned int parse_count;
-	array<sentence_token> unrecognized(4);
-	if (parser.invert_name_map(names)) {
-		string_map_scribe terminal_printer = { parser.reverse_name_map, names.table.size + 1 };
-		if (parser.template parse<max_parse_count>(sentence, logical_forms, log_probabilities, parse_count, nullptr, unrecognized)) {
-			for (unsigned int i = 0; i < parse_count; i++) {
-				print(*logical_forms[i], stderr, terminal_printer); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
-				free(*logical_forms[i]);
-				if (logical_forms[i]->reference_count == 0)
-					free(logical_forms[i]);
-			}
-		} else {
-			fprintf(stderr, "ERROR: Parsing failed.\n");
-		}
-	} else {
-		fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
-	}
-	free(sentence);
-	return true;
-}
-
 template<typename Stream>
 unsigned int read_line(array<char>& line, Stream& input)
 {
@@ -909,8 +974,9 @@ unsigned int read_line(array<char>& line, Stream& input)
 }
 
 template<typename Stream, typename Parser>
-void run_console(Stream& input, const char* prompt,
-		Parser& parser, hash_map<string, unsigned int>& names)
+void run_console(
+		Stream& input, const char* prompt, Parser& parser, hash_map<string, unsigned int>& names,
+		array<array_map<typename Parser::SentenceType, flagged_logical_form<hol_term>>>& training_set)
 {
 	array<char> line = array<char>(256);
 	while (true) {
@@ -927,9 +993,17 @@ void run_console(Stream& input, const char* prompt,
 			if (!line.ensure_capacity(line.length + 1))
 				break;
 			line[line.length++] = '\0';
-			parse_sentence(parser, line.data, names);
+			parse_sentence(parser, line.data, names, training_set);
 		}
 	}
+}
+
+template<typename Stream, typename Parser>
+inline void run_console(Stream& input, const char* prompt,
+		Parser& parser, hash_map<string, unsigned int>& names)
+{
+	array<array_map<typename Parser::SentenceType, flagged_logical_form<hol_term>>> dummy_training_set(1);
+	run_console(input, prompt, parser, names, dummy_training_set);
 }
 
 
@@ -944,6 +1018,8 @@ int main(int argc, const char** argv)
 {
 	setlocale(LC_ALL, "en_US.UTF-8");
 	log_cache<double>::instance().ensure_size(1024);
+set_seed(0);
+	fprintf(stdout, "(seed = %u)\n", get_seed());
 
 	hash_map<string, unsigned int> names(256);
 	if (!add_constants_to_string_map(names)) {
@@ -953,7 +1029,7 @@ int main(int argc, const char** argv)
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "english.morph", "english.gram");
+			names, "english.morph.short", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");
@@ -1010,17 +1086,70 @@ int main(int argc, const char** argv)
 		return EXIT_FAILURE;
 	}
 
+	/* set the named entities in the seed training set to be "known", so we don't go looking for their definitions later */
+	hash_set<unsigned int> seed_entities(64);
+	for (const array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+		for (const auto& entry : paragraph) {
+			array<string> named_entities(16);
+			if (!get_named_entities(*entry.value.root, named_entities)
+			 || !seed_entities.check_size(seed_entities.size + named_entities.length))
+			{
+				for (auto entry : names) free(entry.key);
+				for (string& entity : named_entities) free(entity);
+				for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+					for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+					free(paragraph);
+				}
+				return EXIT_FAILURE;
+			}
+
+			/* if the logical form is a string, add it as a known entity */
+			if (entry.value.root->type == hol_term_type::STRING) {
+				if (!init(named_entities[named_entities.length], entry.value.root->str)) {
+					for (auto entry : names) free(entry.key);
+					for (string& entity : named_entities) free(entity);
+					for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+						for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+						free(paragraph);
+					}
+					return EXIT_FAILURE;
+				}
+				named_entities.length++;
+			}
+
+			for (const string& named_entity : named_entities) {
+				unsigned int id;
+				if (!get_token(named_entity, id, names)
+				 || !seed_entities.add(id))
+				{
+					for (auto entry : names) free(entry.key);
+					for (string& entity : named_entities) free(entity);
+					for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+						for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+						free(paragraph);
+					}
+					return EXIT_FAILURE;
+				}
+			}
+			for (string& entity : named_entities) free(entity);
+		}
+	}
+
+/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+	free(paragraph);
+}
+for (auto entry : names) free(entry.key);
+return EXIT_SUCCESS;*/
+
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 		free(paragraph);
 	}
 
-run_console(stdin, "\nEnter sentence to parse: ", parser, names);
-for (auto entry : names) free(entry.key);
-return EXIT_SUCCESS;
-
 	/* read the articles */
-	in = fopen("simple_set_reasoning_articles.txt", "r");
+	in = fopen("geoquery.txt", "r");
 	if (in == NULL) {
 		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
 		for (auto entry : names) free(entry.key);
@@ -1077,7 +1206,7 @@ return EXIT_SUCCESS;
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
-	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, 0.01, 0.9, 0.09, 0.3, 0.4, 0.2, 0.4);
+	auto theory_element_prior = make_simple_hol_term_distribution(constant_prior, geometric_distribution(0.2), 0.01, 0.45, 0.35, 0.1, 0.09, 0.3, 0.4, 0.2, 0.4);
 	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
@@ -1085,24 +1214,24 @@ return EXIT_SUCCESS;
 	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
 			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(5.0));
-	auto theory_prior = make_theory_prior(proof_prior, geometric_distribution(0.2));
 	const string** reverse_name_map = invert(names);
 	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
 
-	bool success = true;
-	success &= read_article(names.get("Nemo"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Dory"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("red"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("blue"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("red_or_blue"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("red_and_blue"), corpus, parser, T, theory_prior, printer);
-	/*success &= read_article(names.get("Bob"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Kate"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Sam"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Byron"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Alex"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Lee"), corpus, parser, T, theory_prior, printer);
-	success &= read_article(names.get("Amy"), corpus, parser, T, theory_prior, printer);*/
+	/*read_article(names.get("Des Moines"), corpus, parser, T, names, seed_entities, proof_prior, printer);
+free(reverse_name_map);
+for (auto entry : names) free(entry.key);
+return EXIT_SUCCESS;*/
+
+	array<string> answers(4);
+	if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, printer)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	} /*if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, printer)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	}*/
+for (string& str : answers) free(str);
+free(reverse_name_map);
+for (auto entry : names) free(entry.key);
+return EXIT_SUCCESS;
 
 	array_map<hol_term*, unsigned int> tracked_logical_forms(2);
 	/*tracked_logical_forms.put(
@@ -1120,16 +1249,18 @@ return EXIT_SUCCESS;
 			)
 		), 0);*/
 
-	unsigned int iterations = (success ? 120000 : 0);
+	unsigned int iterations = 120000;
 	timer stopwatch;
 	auto scribe = parser.get_printer(printer);
 array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
 T.check_proof_axioms();
+T.check_disjunction_introductions();
 T.sets.are_elements_unique();
 T.sets.check_freeable_sets();
 T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
+T.sets.check_set_ids();
 		if (stopwatch.milliseconds() > 1000) {
 			print("[iteration ", stdout); print(t, stdout); print("]\n", stdout);
 			for (const auto& entry : tracked_logical_forms) {
@@ -1141,7 +1272,8 @@ fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribut
 		}
 /*if (t == 21)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
-		do_mh_step(T, theory_prior);
+		null_collector collector;
+		do_mh_step(T, proof_prior, collector);
 
 		for (auto entry : tracked_logical_forms)
 			if (contains_axiom(T, entry.key)) entry.value++;

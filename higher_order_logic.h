@@ -29,13 +29,14 @@ enum class hol_term_type : uint_fast8_t {
 	CONSTANT,
 	PARAMETER,
 
+	EQUALS,
+
 	UNARY_APPLICATION,
 	BINARY_APPLICATION,
 
 	AND,
 	OR,
 	IF_THEN,
-	EQUALS,
 	IFF, /* this is only used in canonicalization */
 	NOT,
 
@@ -1649,6 +1650,29 @@ inline bool compute_indices(const hol_term& src,
 	return visit(src, visitor);
 }
 
+struct term_accessor {
+	const unsigned int target_index;
+	unsigned int current_index;
+	hol_term* term;
+};
+
+template<hol_term_type Type>
+inline bool visit(hol_term& term, term_accessor& visitor) {
+	if (visitor.current_index == visitor.target_index) {
+		visitor.term = &term;
+		return false;
+	}
+	visitor.current_index++;
+	return true;
+}
+
+inline hol_term* get_term_at_index(hol_term& src, unsigned int index)
+{
+	term_accessor visitor = {index, 0, nullptr};
+	visit(src, visitor);
+	return visitor.term;
+}
+
 struct constant_collector {
 	array_multiset<unsigned int>& constants;
 };
@@ -2562,7 +2586,26 @@ inline hol_term* apply(hol_term* src, scope_mapper<MapVariablePreimages>& mapper
 		unsigned int new_variable; bool contains;
 		new_variable = mapper.scope_map.get(src, contains);
 		if (!contains) {
-			return default_apply<Type>(src, mapper);
+			new_variable = mapper.variable_map.get(src->quantifier.variable, contains);
+			if (!contains)
+				return default_apply<Type>(src, mapper);
+
+			hol_term* new_operand = apply(src->quantifier.operand, mapper);
+			if (new_operand == nullptr)
+				return nullptr;
+
+			hol_term* new_quantifier;
+			if (!new_hol_term(new_quantifier)) {
+				if (new_operand != src->quantifier.operand) { free(*new_operand); if (new_operand->reference_count == 0) free(new_operand); }
+				return nullptr;
+			}
+			new_quantifier->type = Type;
+			new_quantifier->reference_count = 1;
+			new_quantifier->quantifier.variable_type = src->quantifier.variable_type;
+			new_quantifier->quantifier.variable = new_variable;
+			new_quantifier->quantifier.operand = new_operand;
+			if (new_operand == src->quantifier.operand) new_operand->reference_count++;
+			return new_quantifier;
 		} else {
 			if (!mapper.variable_map.put(src->quantifier.variable, new_variable))
 				return nullptr;
@@ -2581,7 +2624,7 @@ inline hol_term* apply(hol_term* src, scope_mapper<MapVariablePreimages>& mapper
 
 			hol_term* new_quantifier;
 			if (!new_hol_term(new_quantifier)) {
-				free(*new_operand); if (new_operand->reference_count == 0) free(new_operand);
+				if (new_operand != src->quantifier.operand) { free(*new_operand); if (new_operand->reference_count == 0) free(new_operand); }
 				return nullptr;
 			}
 			new_quantifier->type = Type;
@@ -2589,6 +2632,7 @@ inline hol_term* apply(hol_term* src, scope_mapper<MapVariablePreimages>& mapper
 			new_quantifier->quantifier.variable_type = src->quantifier.variable_type;
 			new_quantifier->quantifier.variable = new_variable;
 			new_quantifier->quantifier.operand = new_operand;
+			if (new_operand == src->quantifier.operand) new_operand->reference_count++;
 			return new_quantifier;
 		}
 	} else {
@@ -2653,14 +2697,17 @@ inline hol_term* apply(hol_term* src, variable_relabeler& relabeler) {
 	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
 		unsigned int index = relabeler.variable_map.index_of(src->quantifier.variable);
 		unsigned int variable;
+		bool variable_exists = false;
 		if (index < relabeler.variable_map.size) {
 			variable = relabeler.variable_map.values[index];
+			variable_exists = true;
 		} else if (!new_variable(src->quantifier.variable, variable, relabeler.variable_map)) {
 			return nullptr;
 		}
 
 		hol_term* new_operand = apply(src->quantifier.operand, relabeler);
-		relabeler.variable_map.remove_at(relabeler.variable_map.index_of(src->quantifier.variable));
+		if (!variable_exists)
+			relabeler.variable_map.remove_at(relabeler.variable_map.index_of(src->quantifier.variable));
 
 		if (new_operand == nullptr)
 			return nullptr;
@@ -3541,14 +3588,42 @@ hol_term* hol_term::new_any_quantifier(hol_quantifier_type quantifier_type, hol_
 
 
 /* forward declarations */
-struct hol_type;
-bool unify(const hol_type&, const hol_type&, hol_type&, array<hol_type>&);
-template<bool Root> bool flatten_type_variable(hol_type&,
-		array<pair<unsigned int, bool>>&, array<hol_type>&);
+template<typename BaseType> struct hol_type;
+template<typename BaseType> bool unify(const hol_type<BaseType>&, const hol_type<BaseType>&, hol_type<BaseType>&, array<hol_type<BaseType>>&);
+template<bool Root, typename BaseType> bool flatten_type_variable(hol_type<BaseType>&, array<pair<unsigned int, bool>>&, array<hol_type<BaseType>>&);
 
+
+enum class simple_type {
+	BOOLEAN,
+	INDIVIDUAL
+};
+
+template<typename Stream>
+inline bool print(const simple_type& base, Stream& out) {
+	switch (base) {
+	case simple_type::BOOLEAN:
+		return print("𝝄", out);
+	case simple_type::INDIVIDUAL:
+		return print("𝜾", out);
+	}
+	fprintf(stderr, "print ERROR: Unrecognized simple_type.\n");
+	return false;
+}
+
+inline bool interpret_base_type(simple_type& base_type, const string& identifier)
+{
+	if (identifier == "o" || identifier == "𝝄") {
+		base_type = simple_type::BOOLEAN;
+		return true;
+	} else if (identifier == "i" || identifier == "𝜾") {
+		base_type = simple_type::INDIVIDUAL;
+		return true;
+	}
+	return false;
+}
 
 enum class hol_type_kind {
-	CONSTANT,
+	BASE,
 	FUNCTION,
 	VARIABLE,
 	ANY,
@@ -3557,19 +3632,23 @@ enum class hol_type_kind {
 
 enum class hol_constant_type {
 	BOOLEAN,
+	STRING,
+	INTEGER,
 	INDIVIDUAL
 };
 
+template<typename BaseType>
 struct hol_function_type {
-	hol_type* left;
-	hol_type* right;
+	hol_type<BaseType>* left;
+	hol_type<BaseType>* right;
 };
 
+template<typename BaseType>
 struct hol_type {
 	hol_type_kind kind;
 	union {
-		hol_constant_type constant;
-		hol_function_type function;
+		BaseType base;
+		hol_function_type<BaseType> function;
 		unsigned int variable;
 	};
 
@@ -3577,15 +3656,15 @@ struct hol_type {
 
 	explicit hol_type(hol_type_kind kind) : kind(kind) { }
 
-	explicit hol_type(hol_constant_type constant) : kind(hol_type_kind::CONSTANT), constant(constant) { }
+	explicit hol_type(BaseType base) : kind(hol_type_kind::BASE), base(base) { }
 
 	explicit hol_type(unsigned int variable) : kind(hol_type_kind::VARIABLE), variable(variable) { }
 
-	explicit hol_type(const hol_type& type) {
+	hol_type(const hol_type<BaseType>& type) {
 		if (!init_helper(type)) exit(EXIT_FAILURE);
 	}
 
-	explicit hol_type(const hol_type& left, const hol_type& right) : kind(hol_type_kind::FUNCTION) {
+	explicit hol_type(const hol_type<BaseType>& left, const hol_type<BaseType>& right) : kind(hol_type_kind::FUNCTION) {
 		if (!init_helper(left, right)) exit(EXIT_FAILURE);
 	}
 
@@ -3595,11 +3674,11 @@ struct hol_type {
 		init_helper(src);
 	}
 
-	static inline void move(const hol_type& src, hol_type& dst) {
+	static inline void move(const hol_type<BaseType>& src, hol_type<BaseType>& dst) {
 		dst.kind = src.kind;
 		switch (src.kind) {
-		case hol_type_kind::CONSTANT:
-			dst.constant = src.constant; return;
+		case hol_type_kind::BASE:
+			dst.base = src.base; return;
 		case hol_type_kind::VARIABLE:
 			dst.variable = src.variable; return;
 		case hol_type_kind::FUNCTION:
@@ -3613,23 +3692,23 @@ struct hol_type {
 		fprintf(stderr, "hol_type.move ERROR: Unrecognized hol_type_kind.\n");
 	}
 
-	static inline void swap(hol_type& first, hol_type& second) {
+	static inline void swap(hol_type<BaseType>& first, hol_type<BaseType>& second) {
 		char* first_data = (char*) &first;
 		char* second_data = (char*) &second;
-		for (unsigned int i = 0; i < sizeof(hol_type); i++)
+		for (unsigned int i = 0; i < sizeof(hol_type<BaseType>); i++)
 			core::swap(first_data[i], second_data[i]);
 	}
 
-	static inline void free(hol_type& type) {
+	static inline void free(hol_type<BaseType>& type) {
 		type.free_helper();
 	}
 
 private:
-	inline bool init_helper(const hol_type& src) {
+	inline bool init_helper(const hol_type<BaseType>& src) {
 		kind = src.kind;
 		switch (src.kind) {
-		case hol_type_kind::CONSTANT:
-			constant = src.constant; return true;
+		case hol_type_kind::BASE:
+			base = src.base; return true;
 		case hol_type_kind::VARIABLE:
 			variable = src.variable; return true;
 		case hol_type_kind::FUNCTION:
@@ -3642,13 +3721,13 @@ private:
 		return false;
 	}
 
-	inline bool init_helper(const hol_type& left, const hol_type& right) {
-		function.left = (hol_type*) malloc(sizeof(hol_type));
+	inline bool init_helper(const hol_type<BaseType>& left, const hol_type<BaseType>& right) {
+		function.left = (hol_type<BaseType>*) malloc(sizeof(hol_type<BaseType>));
 		if (function.left == NULL) {
 			fprintf(stderr, "hol_type.init_helper ERROR: Insufficient memory for `function.left`.\n");
 			return false;
 		}
-		function.right = (hol_type*) malloc(sizeof(hol_type));
+		function.right = (hol_type<BaseType>*) malloc(sizeof(hol_type<BaseType>));
 		if (function.right == NULL) {
 			fprintf(stderr, "hol_type.init_helper ERROR: Insufficient memory for `function.right`.\n");
 			core::free(function.left); return false;
@@ -3664,7 +3743,7 @@ private:
 
 	inline void free_helper() {
 		switch (kind) {
-		case hol_type_kind::CONSTANT:
+		case hol_type_kind::BASE:
 		case hol_type_kind::VARIABLE:
 		case hol_type_kind::ANY:
 		case hol_type_kind::NONE:
@@ -3677,49 +3756,50 @@ private:
 		fprintf(stderr, "hol_type.free_helper ERROR: Unrecognized hol_type_kind.\n");
 	}
 
-	friend bool init(hol_type&, const hol_type&);
-	friend bool init(hol_type&, const hol_type&, const hol_type&);
+	template<typename A> friend bool init(hol_type<A>&, const hol_type<A>&);
+	template<typename A> friend bool init(hol_type<A>&, const hol_type<A>&, const hol_type<A>&);
 };
 
-inline bool init(hol_type& type, hol_type_kind kind) {
+template<typename BaseType>
+inline bool init(hol_type<BaseType>& type, hol_type_kind kind) {
 	type.kind = kind;
 	return true;
 }
 
-inline bool init(hol_type& type, const hol_type& src) {
+template<typename BaseType>
+inline bool init(hol_type<BaseType>& type, const hol_type<BaseType>& src) {
 	return type.init_helper(src);
 }
 
-inline bool init(hol_type& type, const hol_type& left, const hol_type& right) {
+template<typename BaseType>
+inline bool init(hol_type<BaseType>& type, const hol_type<BaseType>& left, const hol_type<BaseType>& right) {
 	type.kind = hol_type_kind::FUNCTION;
 	return type.init_helper(left, right);
 }
 
-inline bool init(hol_type& type, hol_constant_type constant) {
-	type.kind = hol_type_kind::CONSTANT;
-	type.constant = constant;
+template<typename BaseType>
+inline bool init(hol_type<BaseType>& type, BaseType base) {
+	type.kind = hol_type_kind::BASE;
+	type.base = base;
 	return true;
 }
 
-inline bool init(hol_type& type, unsigned int variable) {
+template<typename BaseType>
+inline bool init(hol_type<BaseType>& type, unsigned int variable) {
 	type.kind = hol_type_kind::VARIABLE;
 	type.variable = variable;
 	return true;
 }
 
-const hol_type HOL_BOOLEAN_TYPE(hol_constant_type::BOOLEAN);
-const hol_type HOL_INTEGER_TYPE(hol_constant_type::INDIVIDUAL);
-const hol_type HOL_STRING_TYPE(hol_constant_type::INDIVIDUAL);
-const hol_type HOL_UINT_LIST_TYPE(hol_constant_type::INDIVIDUAL);
-
-inline bool operator == (const hol_type& first, const hol_type& second) {
+template<typename BaseType>
+inline bool operator == (const hol_type<BaseType>& first, const hol_type<BaseType>& second) {
 	if (first.kind != second.kind) return false;
 	switch (first.kind) {
 	case hol_type_kind::ANY:
 	case hol_type_kind::NONE:
 		return true;
-	case hol_type_kind::CONSTANT:
-		return first.constant == second.constant;
+	case hol_type_kind::BASE:
+		return first.base == second.base;
 	case hol_type_kind::VARIABLE:
 		return first.variable == second.variable;
 	case hol_type_kind::FUNCTION:
@@ -3730,20 +3810,9 @@ inline bool operator == (const hol_type& first, const hol_type& second) {
 	return false;
 }
 
-inline bool operator != (const hol_type& first, const hol_type& second) {
+template<typename BaseType>
+inline bool operator != (const hol_type<BaseType>& first, const hol_type<BaseType>& second) {
 	return !(first == second);
-}
-
-template<typename Stream>
-inline bool print(const hol_constant_type& constant, Stream& out) {
-	switch (constant) {
-	case hol_constant_type::BOOLEAN:
-		return print("𝝄", out);
-	case hol_constant_type::INDIVIDUAL:
-		return print("𝜾", out);
-	}
-	fprintf(stderr, "print ERROR: Unrecognized hol_constant_type.\n");
-	return false;
 }
 
 template<typename Stream>
@@ -3757,12 +3826,12 @@ inline bool print_variable(unsigned int variable, Stream& out, array<unsigned in
 		&& (type_variables.contains(variable) || type_variables.add(variable));
 }
 
-template<typename Stream, typename... Printer>
-bool print(const hol_type& type, Stream& out, Printer&&... variable_printer)
+template<typename BaseType, typename Stream, typename... Printer>
+bool print(const hol_type<BaseType>& type, Stream& out, Printer&&... variable_printer)
 {
 	switch (type.kind) {
-	case hol_type_kind::CONSTANT:
-		return print(type.constant, out);
+	case hol_type_kind::BASE:
+		return print(type.base, out);
 	case hol_type_kind::FUNCTION:
 		return print('(', out) && print(*type.function.left, out, std::forward<Printer>(variable_printer)...)
 			&& print(" → ", out) && print(*type.function.right, out, std::forward<Printer>(variable_printer)...)
@@ -3778,9 +3847,9 @@ bool print(const hol_type& type, Stream& out, Printer&&... variable_printer)
 	return false;
 }
 
-template<typename Stream>
-bool print_type(const hol_type& type, Stream& out,
-		const array<hol_type>& type_variables)
+template<typename BaseType, typename Stream>
+bool print_type(const hol_type<BaseType>& type, Stream& out,
+		const array<hol_type<BaseType>>& type_variables)
 {
 	array<unsigned int> variables(8);
 	if (!print(type, out, variables)) return false;
@@ -3800,16 +3869,47 @@ bool print_type(const hol_type& type, Stream& out,
 	return true;
 }
 
-inline bool unify_constant(
-		hol_constant_type first, const hol_type& second,
-		hol_type& out, array<hol_type>& type_variables)
+template<typename BaseType>
+struct base_types { };
+
+template<>
+struct base_types<simple_type> {
+	static const hol_type<simple_type> BOOLEAN;
+	static const hol_type<simple_type> STRING;
+	static const hol_type<simple_type> INTEGER;
+	static const hol_type<simple_type> UINT_LIST;
+	static const hol_type<simple_type> INDIVIDUAL;
+};
+
+const hol_type<simple_type> base_types<simple_type>::BOOLEAN(simple_type::BOOLEAN);
+const hol_type<simple_type> base_types<simple_type>::STRING(simple_type::INDIVIDUAL);
+const hol_type<simple_type> base_types<simple_type>::INTEGER(simple_type::INDIVIDUAL);
+const hol_type<simple_type> base_types<simple_type>::UINT_LIST(simple_type::INDIVIDUAL);
+const hol_type<simple_type> base_types<simple_type>::INDIVIDUAL(simple_type::INDIVIDUAL);
+
+inline bool intersect(simple_type& out, simple_type first, simple_type second) {
+	if (first == second) {
+		out = first;
+		return true;
+	} else {
+		return false;
+	}
+}
+
+template<typename BaseType>
+inline bool unify_base_type(
+		BaseType first, const hol_type<BaseType>& second,
+		hol_type<BaseType>& out, array<hol_type<BaseType>>& type_variables)
 {
 	if (second.kind == hol_type_kind::ANY) {
 		return init(out, first);
-	} else if (second.kind == hol_type_kind::CONSTANT && second.constant == first) {
-		return init(out, first);
+	} else if (second.kind == hol_type_kind::BASE) {
+		BaseType intersection;
+		if (!intersect(intersection, first, second.base))
+			return init(out, hol_type_kind::NONE);
+		else return init(out, intersection);
 	} else if (second.kind == hol_type_kind::VARIABLE) {
-		if (!unify_constant(first, type_variables[second.variable], out, type_variables))
+		if (!unify_base_type(first, type_variables[second.variable], out, type_variables))
 			return false;
 		if (out.kind != hol_type_kind::NONE) {
 			free(type_variables[second.variable]);
@@ -3820,9 +3920,10 @@ inline bool unify_constant(
 	return init(out, hol_type_kind::NONE);
 }
 
+template<typename BaseType>
 inline bool unify_function(
-		const hol_function_type& first, const hol_type& second,
-		hol_type& out, array<hol_type>& type_variables)
+		const hol_function_type<BaseType>& first, const hol_type<BaseType>& second,
+		hol_type<BaseType>& out, array<hol_type<BaseType>>& type_variables)
 {
 	if (second.kind == hol_type_kind::ANY) {
 		return init(out, *first.left, *first.right);
@@ -3836,12 +3937,12 @@ inline bool unify_function(
 		return init(out, hol_type_kind::NONE);
 	}
 
-	out.function.left = (hol_type*) malloc(sizeof(hol_type));
+	out.function.left = (hol_type<BaseType>*) malloc(sizeof(hol_type<BaseType>));
 	if (out.function.left == NULL) {
 		fprintf(stderr, "unify ERROR: Insufficient memory for `out.function.left`.\n");
 		return false;
 	}
-	out.function.right = (hol_type*) malloc(sizeof(hol_type));
+	out.function.right = (hol_type<BaseType>*) malloc(sizeof(hol_type<BaseType>));
 	if (out.function.right == NULL) {
 		fprintf(stderr, "unify ERROR: Insufficient memory for `out.function.right`.\n");
 		free(out.function.left); return false;
@@ -3868,9 +3969,10 @@ inline bool unify_function(
 	return true;
 }
 
+template<typename BaseType>
 inline bool unify_variable(
-		unsigned int first, const hol_type& second,
-		hol_type& out, array<hol_type>& type_variables)
+		unsigned int first, const hol_type<BaseType>& second,
+		hol_type<BaseType>& out, array<hol_type<BaseType>>& type_variables)
 {
 	unsigned int var;
 	switch (second.kind) {
@@ -3878,8 +3980,8 @@ inline bool unify_variable(
 		return init(out, first);
 	case hol_type_kind::NONE:
 		return init(out, hol_type_kind::NONE);
-	case hol_type_kind::CONSTANT:
-		if (!unify_constant(second.constant, type_variables[first], out, type_variables))
+	case hol_type_kind::BASE:
+		if (!unify_base_type(second.base, type_variables[first], out, type_variables))
 			return false;
 		if (out.kind == hol_type_kind::NONE)
 			return init(out, hol_type_kind::NONE);
@@ -3912,16 +4014,17 @@ inline bool unify_variable(
 	return false;
 }
 
-bool unify(const hol_type& first, const hol_type& second,
-		hol_type& out, array<hol_type>& type_variables)
+template<typename BaseType>
+bool unify(const hol_type<BaseType>& first, const hol_type<BaseType>& second,
+		hol_type<BaseType>& out, array<hol_type<BaseType>>& type_variables)
 {
 	switch (first.kind) {
 	case hol_type_kind::ANY:
 		return init(out, second);
 	case hol_type_kind::NONE:
 		return init(out, hol_type_kind::NONE);
-	case hol_type_kind::CONSTANT:
-		return unify_constant(first.constant, second, out, type_variables);
+	case hol_type_kind::BASE:
+		return unify_base_type(first.base, second, out, type_variables);
 	case hol_type_kind::FUNCTION:
 		return unify_function(first.function, second, out, type_variables);
 	case hol_type_kind::VARIABLE:
@@ -3931,30 +4034,33 @@ bool unify(const hol_type& first, const hol_type& second,
 	return false;
 }
 
+template<bool Quiet = false, typename BaseType>
 inline bool expect_type(
-		const hol_type& actual_type,
-		hol_type& expected_type,
-		array<hol_type>& type_variables)
+		const hol_type<BaseType>& actual_type,
+		hol_type<BaseType>& expected_type,
+		array<hol_type<BaseType>>& type_variables)
 {
-	hol_type& temp = *((hol_type*) alloca(sizeof(hol_type)));
+	hol_type<BaseType>& temp = *((hol_type<BaseType>*) alloca(sizeof(hol_type<BaseType>)));
 	if (!unify(actual_type, expected_type, temp, type_variables))
 		return false;
 	swap(expected_type, temp); free(temp);
 	if (expected_type.kind == hol_type_kind::NONE) {
-		print("ERROR: Term is not well-typed.\n", stderr);
-		print("  Computed type: ", stderr); print_type(actual_type, stderr, type_variables); print('\n', stderr);
-		print("  Expected type: ", stderr); print_type(expected_type, stderr, type_variables); print('\n', stderr);
+		if (!Quiet) {
+			print("ERROR: Term is not well-typed.\n", stderr);
+			print("  Computed type: ", stderr); print_type(actual_type, stderr, type_variables); print('\n', stderr);
+			print("  Expected type: ", stderr); print_type(expected_type, stderr, type_variables); print('\n', stderr);
+		}
 		return false;
 	}
 	return true;
 }
 
-template<hol_term_type Type, typename ComputedTypes>
+template<hol_term_type Type, typename BaseType, typename ComputedTypes>
 inline bool compute_type(
 		unsigned int symbol, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& symbol_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& symbol_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	static_assert(Type == hol_term_type::CONSTANT
 			   || Type == hol_term_type::VARIABLE
@@ -3967,7 +4073,7 @@ inline bool compute_type(
 
 	unsigned int index = symbol_types.index_of(symbol);
 	if (index < symbol_types.size) {
-		hol_type& new_type = *((hol_type*) alloca(sizeof(hol_type)));
+		hol_type<BaseType>& new_type = *((hol_type<BaseType>*) alloca(sizeof(hol_type<BaseType>)));
 		if (!unify(expected_type, symbol_types.values[index], new_type, type_variables))
 			return false;
 		if (new_type.kind == hol_type_kind::NONE) {
@@ -3995,13 +4101,13 @@ inline bool compute_type(
 	}
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_array_type(const hol_array_term& array_term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	for (unsigned int i = 0; i < array_term.length; i++) {
 		if (!compute_type<PolymorphicEquality>(*array_term.operands[i], types, expected_type,
@@ -4013,24 +4119,24 @@ inline bool compute_array_type(const hol_array_term& array_term,
 	return true;
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_equals_type(
 		const hol_binary_term& equals, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	unsigned int type_variable = type_variables.length;
 	if (!types.template push<hol_term_type::EQUALS>(term)
-		|| !expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+		|| !expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 		|| !type_variables.ensure_capacity(type_variables.length + 1)
 		|| !init(type_variables[type_variable], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
 
-	hol_type first_type(type_variable);
+	hol_type<BaseType> first_type(type_variable);
 	if (!compute_type<PolymorphicEquality>(*equals.left, types,
 			first_type, constant_types, variable_types, parameter_types, type_variables))
 		return false;
@@ -4042,20 +4148,20 @@ inline bool compute_equals_type(
 		type_variables.length++;
 	}
 
-	hol_type second_type(type_variable);
+	hol_type<BaseType> second_type(type_variable);
 	return compute_type<PolymorphicEquality>(*equals.right, types,
 			second_type, constant_types, variable_types, parameter_types, type_variables)
-		&& types.template add<hol_term_type::EQUALS>(term, HOL_BOOLEAN_TYPE, first_type, second_type);
+		&& types.template add<hol_term_type::EQUALS>(term, base_types<BaseType>::BOOLEAN, first_type, second_type);
 }
 
-template<hol_term_type Type, bool PolymorphicEquality, typename ComputedTypes>
+template<hol_term_type Type, bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_type(
 		const hol_quantifier& quantifier, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	static_assert(Type == hol_term_type::FOR_ALL
 			   || Type == hol_term_type::EXISTS,
@@ -4069,7 +4175,7 @@ inline bool compute_type(
 	if (!types.template push<Type>(term)
 	 || !variable_types.ensure_capacity(variable_types.size + 1)
 	 || !type_variables.ensure_capacity(type_variables.length + 1)
-	 || !expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables))
+	 || !expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables))
 	{
 		return false;
 	}
@@ -4099,7 +4205,7 @@ inline bool compute_type(
 	if (index == variable_types.size)
 		fprintf(stderr, "compute_type WARNING: Quantified term is not well-formed.\n");
 #endif
-	if (!types.template add<Type>(term, HOL_BOOLEAN_TYPE, variable_types.values[index])) {
+	if (!types.template add<Type>(term, base_types<BaseType>::BOOLEAN, variable_types.values[index])) {
 		free(variable_types.values[index]);
 		variable_types.remove_at(index);
 		return false;
@@ -4109,8 +4215,10 @@ inline bool compute_type(
 	return true;
 }
 
+template<typename BaseType>
 inline bool get_function_child_types(unsigned int type_variable,
-		array<hol_type>& type_variables, hol_type& left, hol_type& right)
+		array<hol_type<BaseType>>& type_variables,
+		hol_type<BaseType>& left, hol_type<BaseType>& right)
 {
 	switch (type_variables[type_variable].kind) {
 	case hol_type_kind::ANY:
@@ -4141,7 +4249,7 @@ inline bool get_function_child_types(unsigned int type_variable,
 		}
 		return true;
 	case hol_type_kind::NONE:
-	case hol_type_kind::CONSTANT:
+	case hol_type_kind::BASE:
 		left.kind = hol_type_kind::NONE;
 		return true;
 	}
@@ -4149,8 +4257,10 @@ inline bool get_function_child_types(unsigned int type_variable,
 	return false;
 }
 
-inline bool get_function_child_types(const hol_type& type,
-		array<hol_type>& type_variables, hol_type& left, hol_type& right)
+template<typename BaseType>
+inline bool get_function_child_types(const hol_type<BaseType>& type,
+		array<hol_type<BaseType>>& type_variables,
+		hol_type<BaseType>& left, hol_type<BaseType>& right)
 {
 	switch (type.kind) {
 	case hol_type_kind::ANY:
@@ -4163,7 +4273,7 @@ inline bool get_function_child_types(const hol_type& type,
 	case hol_type_kind::VARIABLE:
 		return get_function_child_types(type.variable, type_variables, left, right);
 	case hol_type_kind::NONE:
-	case hol_type_kind::CONSTANT:
+	case hol_type_kind::BASE:
 		left.kind = hol_type_kind::NONE;
 		return true;
 	}
@@ -4171,20 +4281,20 @@ inline bool get_function_child_types(const hol_type& type,
 	return false;
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_lambda_type(
 		const hol_quantifier& quantifier, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	if (!types.template push<hol_term_type::LAMBDA>(term)
 	 || !variable_types.ensure_capacity(variable_types.size + 1)) return false;
 
-	hol_type& left_type = *((hol_type*) alloca(sizeof(hol_type)));
-	hol_type& right_type = *((hol_type*) alloca(sizeof(hol_type)));
+	hol_type<BaseType>& left_type = *((hol_type<BaseType>*) alloca(sizeof(hol_type<BaseType>)));
+	hol_type<BaseType>& right_type = *((hol_type<BaseType>*) alloca(sizeof(hol_type<BaseType>)));
 	if (!get_function_child_types(expected_type, type_variables, left_type, right_type))
 		return false;
 	if (left_type.kind == hol_type_kind::NONE) {
@@ -4221,20 +4331,20 @@ inline bool compute_lambda_type(
 	return types.template add<hol_term_type::LAMBDA>(term, expected_type);
 }
 
-template<bool PolymorphicEquality, hol_term_type AnyType, typename Any, typename ComputedTypes>
+template<bool PolymorphicEquality, hol_term_type AnyType, typename Any, typename BaseType, typename ComputedTypes>
 inline bool compute_any_type(
 		const Any& any, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	if (!types.template push<AnyType>(term))
 		return false;
 
 	if (any.included != nullptr) {
-		hol_type included_type(hol_type_kind::ANY);
+		hol_type<BaseType> included_type(hol_type_kind::ANY);
 		if (!compute_type<PolymorphicEquality>(*any.included, types, included_type, constant_types, variable_types, parameter_types, type_variables))
 			return false;
 	}
@@ -4242,42 +4352,42 @@ inline bool compute_any_type(
 	return types.template add<AnyType>(term, expected_type);
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_apply_type(
 		const hol_binary_term& apply, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	if (!types.template push<hol_term_type::UNARY_APPLICATION>(term)
 	 || !type_variables.ensure_capacity(type_variables.length + 1)
 	 || !init(type_variables[type_variables.length], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
-	hol_type type(hol_type(type_variables.length - 1), expected_type);
+	hol_type<BaseType> type(hol_type<BaseType>(type_variables.length - 1), expected_type);
 	if (!compute_type<PolymorphicEquality>(*apply.left, types, type,
 			constant_types, variable_types, parameter_types, type_variables))
 	{
 		return false;
 	}
 
-	hol_type& arg_type = *type.function.left;
+	hol_type<BaseType>& arg_type = *type.function.left;
 	swap(expected_type, *type.function.right);
 
 	return compute_type<PolymorphicEquality>(*apply.right, types, arg_type, constant_types, variable_types, parameter_types, type_variables)
 		&& types.template add<hol_term_type::UNARY_APPLICATION>(term, expected_type);
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_apply_type(
 		const hol_ternary_term& apply, const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	if (!types.template push<hol_term_type::BINARY_APPLICATION>(term)
 	 || !type_variables.ensure_capacity(type_variables.length + 2)
@@ -4287,15 +4397,15 @@ inline bool compute_apply_type(
 	if (!init(type_variables[type_variables.length], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
-	hol_type type(hol_type(type_variables.length - 1), hol_type(hol_type(type_variables.length - 2), expected_type));
+	hol_type<BaseType> type(hol_type<BaseType>(type_variables.length - 1), hol_type<BaseType>(hol_type<BaseType>(type_variables.length - 2), expected_type));
 	if (!compute_type<PolymorphicEquality>(*apply.first, types, type,
 			constant_types, variable_types, parameter_types, type_variables))
 	{
 		return false;
 	}
 
-	hol_type& arg1_type = *type.function.left;
-	hol_type& arg2_type = *type.function.right->function.left;
+	hol_type<BaseType>& arg1_type = *type.function.left;
+	hol_type<BaseType>& arg2_type = *type.function.right->function.left;
 	swap(expected_type, *type.function.right->function.right);
 
 	return compute_type<PolymorphicEquality>(*apply.second, types, arg1_type, constant_types, variable_types, parameter_types, type_variables)
@@ -4303,13 +4413,13 @@ inline bool compute_apply_type(
 		&& types.template add<hol_term_type::BINARY_APPLICATION>(term, expected_type);
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 bool compute_type(const hol_term& term,
-		ComputedTypes& types, hol_type& expected_type,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types,
-		array<hol_type>& type_variables)
+		ComputedTypes& types, hol_type<BaseType>& expected_type,
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types,
+		array<hol_type<BaseType>>& type_variables)
 {
 	switch (term.type) {
 	case hol_term_type::CONSTANT:
@@ -4323,16 +4433,16 @@ bool compute_type(const hol_term& term,
 		return compute_type<hol_term_type::PARAMETER>(term.parameter, term, types, expected_type, parameter_types, type_variables);
 	case hol_term_type::INTEGER:
 		return types.template push<hol_term_type::INTEGER>(term)
-			&& expect_type(HOL_INTEGER_TYPE, expected_type, type_variables)
-			&& types.template add<hol_term_type::INTEGER>(term, HOL_INTEGER_TYPE);
+			&& expect_type(base_types<BaseType>::INTEGER, expected_type, type_variables)
+			&& types.template add<hol_term_type::INTEGER>(term, base_types<BaseType>::INTEGER);
 	case hol_term_type::STRING:
 		return types.template push<hol_term_type::STRING>(term)
-			&& expect_type(HOL_STRING_TYPE, expected_type, type_variables)
-			&& types.template add<hol_term_type::STRING>(term, HOL_STRING_TYPE);
+			&& expect_type(base_types<BaseType>::STRING, expected_type, type_variables)
+			&& types.template add<hol_term_type::STRING>(term, base_types<BaseType>::STRING);
 	case hol_term_type::UINT_LIST:
 		return types.template push<hol_term_type::UINT_LIST>(term)
-			&& expect_type(HOL_UINT_LIST_TYPE, expected_type, type_variables)
-			&& types.template add<hol_term_type::UINT_LIST>(term, HOL_UINT_LIST_TYPE);
+			&& expect_type(base_types<BaseType>::UINT_LIST, expected_type, type_variables)
+			&& types.template add<hol_term_type::UINT_LIST>(term, base_types<BaseType>::UINT_LIST);
 	case hol_term_type::UNARY_APPLICATION:
 		return compute_apply_type<PolymorphicEquality>(term.binary, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
@@ -4341,36 +4451,36 @@ bool compute_type(const hol_term& term,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::NOT:
 		return types.template push<hol_term_type::NOT>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.unary.operand, types,
 					expected_type, constant_types, variable_types, parameter_types, type_variables)
-			&& types.template add<hol_term_type::NOT>(term, HOL_BOOLEAN_TYPE);
+			&& types.template add<hol_term_type::NOT>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::IF_THEN:
 		return types.template push<hol_term_type::IF_THEN>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.binary.left, types,
 					expected_type, constant_types, variable_types, parameter_types, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.binary.right, types,
 					expected_type, constant_types, variable_types, parameter_types, type_variables)
-			&& types.template add<hol_term_type::IF_THEN>(term, HOL_BOOLEAN_TYPE);
+			&& types.template add<hol_term_type::IF_THEN>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::EQUALS:
 		return compute_equals_type<PolymorphicEquality>(term.binary, term, types,
 					expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::AND:
 		return types.template push<hol_term_type::AND>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 			&& compute_array_type<PolymorphicEquality>(term.array, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
-			&& types.template add<hol_term_type::AND>(term, HOL_BOOLEAN_TYPE);
+			&& types.template add<hol_term_type::AND>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::OR:
 		return types.template push<hol_term_type::OR>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 			&& compute_array_type<PolymorphicEquality>(term.array, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
-			&& types.template add<hol_term_type::OR>(term, HOL_BOOLEAN_TYPE);
+			&& types.template add<hol_term_type::OR>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::IFF:
 		return types.template push<hol_term_type::IFF>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 			&& compute_array_type<PolymorphicEquality>(term.array, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
-			&& types.template add<hol_term_type::IFF>(term, HOL_BOOLEAN_TYPE);
+			&& types.template add<hol_term_type::IFF>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::FOR_ALL:
 		return compute_type<hol_term_type::FOR_ALL, PolymorphicEquality>(term.quantifier, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
@@ -4382,12 +4492,12 @@ bool compute_type(const hol_term& term,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::TRUE:
 		return types.template push<hol_term_type::TRUE>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
-			&& types.template add<hol_term_type::TRUE>(term, HOL_BOOLEAN_TYPE);
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
+			&& types.template add<hol_term_type::TRUE>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::FALSE:
 		return types.template push<hol_term_type::FALSE>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
-			&& types.template add<hol_term_type::FALSE>(term, HOL_BOOLEAN_TYPE);
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
+			&& types.template add<hol_term_type::FALSE>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::ANY:
 		return compute_any_type<PolymorphicEquality, hol_term_type::ANY>(term.any, term, types,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
@@ -4399,13 +4509,13 @@ bool compute_type(const hol_term& term,
 				expected_type, constant_types, variable_types, parameter_types, type_variables);
 	case hol_term_type::ANY_ARRAY:
 		return types.template push<hol_term_type::ANY_ARRAY>(term)
-			&& expect_type(HOL_BOOLEAN_TYPE, expected_type, type_variables)
+			&& expect_type(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
 			&& compute_type<PolymorphicEquality>(*term.any_array.all,
 					types, expected_type, constant_types, variable_types, parameter_types, type_variables)
 			&& compute_array_type<PolymorphicEquality>(term.any_array.any, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
 			&& compute_array_type<PolymorphicEquality>(term.any_array.left, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
 			&& compute_array_type<PolymorphicEquality>(term.any_array.right, types, expected_type, constant_types, variable_types, parameter_types, type_variables)
-			&& types.template add<hol_term_type::ANY_ARRAY>(term, HOL_BOOLEAN_TYPE);
+			&& types.template add<hol_term_type::ANY_ARRAY>(term, base_types<BaseType>::BOOLEAN);
 	case hol_term_type::ANY_CONSTANT:
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 	case hol_term_type::ANY_QUANTIFIER:
@@ -4416,11 +4526,11 @@ bool compute_type(const hol_term& term,
 	return false;
 }
 
-template<bool Root>
+template<bool Root, typename BaseType>
 inline bool flatten_type_variable(
-		hol_type& type_variable, unsigned int variable,
+		hol_type<BaseType>& type_variable, unsigned int variable,
 		array<pair<unsigned int, bool>>& visited_variables,
-		array<hol_type>& type_variables)
+		array<hol_type<BaseType>>& type_variables)
 {
 	bool is_trivial_alias = Root;
 	for (unsigned int i = visited_variables.length; i > 0; i--) {
@@ -4462,15 +4572,15 @@ inline bool flatten_type_variable(
 	return init(type_variable, type_variables[variable]);
 }
 
-template<bool Root>
-bool flatten_type_variable(hol_type& type_variable,
+template<bool Root, typename BaseType>
+bool flatten_type_variable(hol_type<BaseType>& type_variable,
 		array<pair<unsigned int, bool>>& visited_variables,
-		array<hol_type>& type_variables)
+		array<hol_type<BaseType>>& type_variables)
 {
 	switch (type_variable.kind) {
 	case hol_type_kind::ANY:
 	case hol_type_kind::NONE:
-	case hol_type_kind::CONSTANT:
+	case hol_type_kind::BASE:
 		return true;
 	case hol_type_kind::FUNCTION:
 		return flatten_type_variable<false>(*type_variable.function.left, visited_variables, type_variables)
@@ -4488,22 +4598,22 @@ inline void free_elements(array<T>& list) {
 		free(element);
 }
 
-template<bool PolymorphicEquality, typename ComputedTypes>
+template<bool PolymorphicEquality, typename BaseType, typename ComputedTypes>
 inline bool compute_type(
 		const hol_term& term, ComputedTypes& types,
-		array_map<unsigned int, hol_type>& constant_types,
-		array_map<unsigned int, hol_type>& variable_types,
-		array_map<unsigned int, hol_type>& parameter_types)
+		array_map<unsigned int, hol_type<BaseType>>& constant_types,
+		array_map<unsigned int, hol_type<BaseType>>& variable_types,
+		array_map<unsigned int, hol_type<BaseType>>& parameter_types)
 {
-	array<hol_type> type_variables(8);
+	array<hol_type<BaseType>> type_variables(8);
 	if (!init(type_variables[0], hol_type_kind::ANY)) return false;
 	type_variables.length++;
-	hol_type type(0);
+	hol_type<BaseType> type(0);
 	if (!compute_type<PolymorphicEquality>(term, types, type, constant_types, variable_types, parameter_types, type_variables))
 		return false;
 
 	array<pair<unsigned int, bool>> visited_variables(8);
-	if (!types.apply([&](hol_type& type){ return flatten_type_variable<true>(type, visited_variables, type_variables); })) {
+	if (!types.apply([&](hol_type<BaseType>& type){ return flatten_type_variable<true>(type, visited_variables, type_variables); })) {
 		free_elements(type_variables); return false;
 	}
 	for (auto entry : constant_types) {
@@ -4527,9 +4637,11 @@ template<bool PolymorphicEquality, typename ComputedTypes>
 inline bool compute_type(
 		const hol_term& term, ComputedTypes& types)
 {
-	array_map<unsigned int, hol_type> constant_types(8);
-	array_map<unsigned int, hol_type> variable_types(8);
-	array_map<unsigned int, hol_type> parameter_types(8);
+	typedef typename ComputedTypes::Base BaseType;
+
+	array_map<unsigned int, hol_type<BaseType>> constant_types(8);
+	array_map<unsigned int, hol_type<BaseType>> variable_types(8);
+	array_map<unsigned int, hol_type<BaseType>> parameter_types(8);
 	bool success = compute_type<PolymorphicEquality>(term, types, constant_types, variable_types, parameter_types);
 	for (unsigned int j = 0; j < constant_types.size; j++) free(constant_types.values[j]);
 	for (unsigned int j = 0; j < variable_types.size; j++) free(variable_types.values[j]);
@@ -4537,8 +4649,11 @@ inline bool compute_type(
 	return success;
 }
 
+template<typename BaseType>
 struct type_map {
-	array_map<const hol_term*, hol_type> types;
+	typedef BaseType Base;
+
+	array_map<const hol_term*, hol_type<BaseType>> types;
 
 	type_map(unsigned int initial_capacity) : types(initial_capacity) { }
 
@@ -4550,7 +4665,7 @@ struct type_map {
 	constexpr bool push(const hol_term& term) const { return true; }
 
 	template<hol_term_type Type, typename... Args>
-	inline bool add(const hol_term& term, const hol_type& type, Args&&... extra_types) {
+	inline bool add(const hol_term& term, const hol_type<BaseType>& type, Args&&... extra_types) {
 		return types.put(&term, type);
 	}
 
@@ -4567,8 +4682,11 @@ struct type_map {
 	}
 };
 
+template<typename BaseType>
 struct equals_arg_types {
-	array_map<const hol_term*, pair<hol_type, hol_type>> types;
+	typedef BaseType Base;
+
+	array_map<const hol_term*, pair<hol_type<BaseType>, hol_type<BaseType>>> types;
 
 	equals_arg_types(unsigned int initial_capacity) : types(initial_capacity) { }
 
@@ -4579,19 +4697,19 @@ struct equals_arg_types {
 
 	template<hol_term_type Type, typename... Args,
 		typename std::enable_if<Type != hol_term_type::EQUALS>::type* = nullptr>
-	constexpr bool add(const hol_term& term, const hol_type& type, Args&&... extra_types) const {
+	constexpr bool add(const hol_term& term, const hol_type<BaseType>& type, Args&&... extra_types) const {
 		return true;
 	}
 
 	template<hol_term_type Type,
 		typename std::enable_if<Type == hol_term_type::EQUALS>::type* = nullptr>
-	inline bool add(const hol_term& term, const hol_type& type,
-			const hol_type& first_arg_type, const hol_type& second_arg_type)
+	inline bool add(const hol_term& term, const hol_type<BaseType>& type,
+			const hol_type<BaseType>& first_arg_type, const hol_type<BaseType>& second_arg_type)
 	{
 		if (!types.ensure_capacity(types.size + 1)) return false;
 
 		unsigned int index;
-		pair<hol_type, hol_type>& arg_types = types.get(&term, index);
+		pair<hol_type<BaseType>, hol_type<BaseType>>& arg_types = types.get(&term, index);
 		if (index == types.size) {
 			if (!init(arg_types.key, first_arg_type)) {
 				return false;
@@ -4868,7 +4986,7 @@ int_fast8_t compare(const hol_scope&, const hol_scope&);
 void shift_variables(hol_scope&, unsigned int);
 
 template<bool AllConstantsDistinct>
-bool canonicalize_scope(const hol_term&, hol_scope&, array_map<unsigned int, unsigned int>&, const equals_arg_types&);
+bool canonicalize_scope(const hol_term&, hol_scope&, array_map<unsigned int, unsigned int>&, const equals_arg_types<simple_type>&);
 
 
 template<unsigned int Arity>
@@ -6327,7 +6445,7 @@ template<hol_term_type Operator, bool AllConstantsDistinct>
 bool canonicalize_commutative_scope(
 		const hol_array_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	static_assert(Operator == hol_term_type::AND
 			   || Operator == hol_term_type::OR
@@ -6418,7 +6536,7 @@ template<bool AllConstantsDistinct>
 bool canonicalize_conditional_scope(
 		const hol_binary_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	hol_scope& left = *((hol_scope*) alloca(sizeof(hol_scope)));
 	if (!canonicalize_scope<AllConstantsDistinct>(*src.left, left, variable_map, types)) return false;
@@ -6902,7 +7020,7 @@ template<hol_term_type QuantifierType, bool AllConstantsDistinct>
 bool canonicalize_quantifier_scope(
 		const hol_quantifier& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	static_assert(QuantifierType == hol_term_type::FOR_ALL
 			   || QuantifierType == hol_term_type::EXISTS
@@ -6947,7 +7065,7 @@ template<bool AllConstantsDistinct>
 inline bool canonicalize_negation_scope(
 		const hol_unary_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	if (!canonicalize_scope<AllConstantsDistinct>(*src.operand, out, variable_map, types))
 		return false;
@@ -6961,7 +7079,7 @@ template<hol_term_type Type, bool AllConstantsDistinct>
 bool canonicalize_nary_scope(
 		const hol_binary_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	hol_scope* left = (hol_scope*) malloc(sizeof(hol_scope));
 	if (left == NULL) {
@@ -6995,7 +7113,7 @@ template<hol_term_type Type, bool AllConstantsDistinct>
 bool canonicalize_nary_scope(
 		const hol_ternary_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	hol_scope* first = (hol_scope*) malloc(sizeof(hol_scope));
 	if (first == NULL) {
@@ -7042,7 +7160,7 @@ template<bool AllConstantsDistinct>
 bool canonicalize_equals_scope(
 		const hol_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	hol_scope* left = (hol_scope*) malloc(sizeof(hol_scope));
 	if (left == NULL) {
@@ -7052,9 +7170,9 @@ bool canonicalize_equals_scope(
 		free(left); return false;
 	}
 
-	const pair<hol_type, hol_type>& arg_types = types.types.get(&src);
-	bool is_left_boolean = (arg_types.key.kind == hol_type_kind::CONSTANT && arg_types.key.constant == hol_constant_type::BOOLEAN);
-	bool is_right_boolean = (arg_types.value.kind == hol_type_kind::CONSTANT && arg_types.value.constant == hol_constant_type::BOOLEAN);
+	const pair<hol_type<simple_type>, hol_type<simple_type>>& arg_types = types.types.get(&src);
+	bool is_left_boolean = (arg_types.key.kind == hol_type_kind::BASE && arg_types.key.base == simple_type::BOOLEAN);
+	bool is_right_boolean = (arg_types.value.kind == hol_type_kind::BASE && arg_types.value.base == simple_type::BOOLEAN);
 	if (is_right_boolean && left->type == hol_term_type::FALSE) {
 		free(*left); free(left);
 		if (!canonicalize_scope<AllConstantsDistinct>(*src.binary.right, out, variable_map, types))
@@ -7211,7 +7329,7 @@ bool canonicalize_equals_scope(
 template<bool AllConstantsDistinct>
 bool canonicalize_scope(const hol_term& src, hol_scope& out,
 		array_map<unsigned int, unsigned int>& variable_map,
-		const equals_arg_types& types)
+		const equals_arg_types<simple_type>& types)
 {
 	unsigned int index;
 	switch (src.type) {
@@ -7304,7 +7422,7 @@ template<bool AllConstantsDistinct, bool PolymorphicEquality>
 struct standard_canonicalizer {
 	static inline hol_term* canonicalize(const hol_term& src)
 	{
-		equals_arg_types types(16);
+		equals_arg_types<simple_type> types(16);
 		if (!compute_type<PolymorphicEquality>(src, types))
 			return NULL;
 
@@ -7586,6 +7704,9 @@ struct variable_set {
 		variable_array any;
 	};
 
+	explicit variable_set(unsigned int singleton_variable) :
+			type(variable_set_type::SINGLETON), variable(singleton_variable) { }
+
 	static inline void move(const variable_set& src, variable_set& dst) {
 		dst.type = src.type;
 		switch (src.type) {
@@ -7605,7 +7726,7 @@ struct variable_set {
 	static inline void swap(variable_set& first, variable_set& second) {
 		char* first_data = (char*) &first;
 		char* second_data = (char*) &second;
-		for (unsigned int i = 0; i < sizeof(hol_type); i++)
+		for (unsigned int i = 0; i < sizeof(variable_set); i++)
 			core::swap(first_data[i], second_data[i]);
 	}
 
@@ -7774,6 +7895,17 @@ inline bool intersect(
 	return true;
 }
 
+inline bool has_intersection(
+		const variable_set& first,
+		const variable_set& second)
+{
+	variable_set& dst = *((variable_set*) alloca(sizeof(variable_set)));
+	bool result = intersect(dst, first, second);
+	if (!result) return false;
+	free(dst);
+	return true;
+}
+
 inline bool subtract(
 		variable_set& dst,
 		const variable_set& first,
@@ -7784,7 +7916,7 @@ inline bool subtract(
 			dst.type = variable_set_type::ANY;
 			dst.any.array = (unsigned int*) malloc(sizeof(unsigned int) * second.any.length);
 			if (dst.any.array == nullptr) {
-				fprintf(stderr, "intersect ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
 				return false;
 			}
 			dst.any.length = 0;
@@ -7802,19 +7934,19 @@ inline bool subtract(
 			dst.type = variable_set_type::ANY_EXCEPT;
 			dst.any.array = (unsigned int*) malloc(sizeof(unsigned int) * (first.any.length + second.any.length));
 			if (dst.any.array == nullptr) {
-				fprintf(stderr, "intersect ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
 				return false;
 			}
 			dst.any.length = 0;
 			set_union(dst.any.array, dst.any.length, first.any.array, first.any.length, second.any.array, second.any.length);
 		} else {
 #if !defined(NDEBUG)
-			if (second.type != variable_set_type::SINGLETON) { fprintf(stderr, "intersect ERROR: Unrecognized variable_set_type.\n"); return false; }
+			if (second.type != variable_set_type::SINGLETON) { fprintf(stderr, "subtract ERROR: Unrecognized variable_set_type.\n"); return false; }
 #endif
 			dst.type = variable_set_type::ANY_EXCEPT;
 			dst.any.array = (unsigned int*) malloc(sizeof(unsigned int) * (first.any.length + 1));
 			if (dst.any.array == nullptr) {
-				fprintf(stderr, "intersect ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
 				return false;
 			}
 			dst.any.length = 0;
@@ -7825,7 +7957,7 @@ inline bool subtract(
 			dst.type = variable_set_type::ANY;
 			dst.any.array = (unsigned int*) malloc(sizeof(unsigned int) * min(first.any.length, second.any.length));
 			if (dst.any.array == nullptr) {
-				fprintf(stderr, "intersect ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
 				return false;
 			}
 			dst.any.length = 0;
@@ -7843,7 +7975,7 @@ inline bool subtract(
 			dst.type = variable_set_type::ANY;
 			dst.any.array = (unsigned int*) malloc(sizeof(unsigned int) * first.any.length);
 			if (dst.any.array == nullptr) {
-				fprintf(stderr, "intersect ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
 				return false;
 			}
 			dst.any.length = 0;
@@ -7859,12 +7991,12 @@ inline bool subtract(
 			}
 		} else {
 #if !defined(NDEBUG)
-			if (second.type != variable_set_type::SINGLETON) { fprintf(stderr, "intersect ERROR: Unrecognized variable_set_type.\n"); return false; }
+			if (second.type != variable_set_type::SINGLETON) { fprintf(stderr, "subtract ERROR: Unrecognized variable_set_type.\n"); return false; }
 #endif
 			dst.type = variable_set_type::ANY;
 			dst.any.array = (unsigned int*) malloc(sizeof(unsigned int) * first.any.length);
 			if (dst.any.array == nullptr) {
-				fprintf(stderr, "intersect ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
+				fprintf(stderr, "subtract ERROR: Insufficient memory for `any.array` in `variable_set`.\n");
 				return false;
 			}
 			dst.any.length = 0;
@@ -7878,7 +8010,7 @@ inline bool subtract(
 		}
 	} else {
 #if !defined(NDEBUG)
-		if (first.type != variable_set_type::SINGLETON) { fprintf(stderr, "intersect ERROR: Unrecognized variable_set_type.\n"); return false; }
+		if (first.type != variable_set_type::SINGLETON) { fprintf(stderr, "subtract ERROR: Unrecognized variable_set_type.\n"); return false; }
 #endif
 		if (second.type == variable_set_type::ANY_EXCEPT) {
 			if (index_of(first.variable, second.any.array, second.any.length) == second.any.length)
@@ -7892,7 +8024,7 @@ inline bool subtract(
 			dst.variable = first.variable;
 		} else {
 #if !defined(NDEBUG)
-			if (second.type != variable_set_type::SINGLETON) { fprintf(stderr, "intersect ERROR: Unrecognized variable_set_type.\n"); return false; }
+			if (second.type != variable_set_type::SINGLETON) { fprintf(stderr, "subtract ERROR: Unrecognized variable_set_type.\n"); return false; }
 #endif
 			if (first.variable == second.variable)
 				return false;
@@ -9021,6 +9153,28 @@ inline bool set_uint_list(hol_term& exp,
 	return true;
 }
 
+inline bool any_string(const hol_term& src) {
+	return src.type == hol_term_type::ANY || src.type == hol_term_type::ANY_RIGHT;
+}
+
+/* NOTE: this function assumes src is not ANY */
+inline bool get_string(const hol_term& src, string& value) {
+	if (src.type != hol_term_type::STRING)
+		return false;
+	return init(value, src.str);
+}
+
+inline bool set_string(hol_term& exp,
+		const hol_term& set, const string& value)
+{
+	if (set.type != hol_term_type::ANY && set.type != hol_term_type::ANY_RIGHT && set.type != hol_term_type::STRING)
+		return false;
+	exp.type = hol_term_type::STRING;
+	exp.str = value;
+	exp.reference_count = 1;
+	return true;
+}
+
 inline bool is_reduceable(
 		hol_array_term& first_src,
 		hol_array_term& second_src,
@@ -9351,6 +9505,7 @@ inline hol_term* apply(hol_term* src, reducer& r) {
 		new_node->any.included = src->any.included;
 		if (new_node->any.included != nullptr)
 			new_node->any.included->reference_count++;
+		r.prefix_index++;
 		return new_node;
 	}
 
@@ -11339,7 +11494,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 		return (dst.length > old_dst_length);
 
-	} else if (first->type == hol_term_type::ANY) {
+	} else if ((first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) && second->type != hol_term_type::ANY_RIGHT && second->type != hol_term_type::ANY_RIGHT_ONLY) {
 		if (relabels_variables<LogicalFormSet>::value && first->any.excluded_tree_count != 0) {
 			fprintf(stderr, "subtract ERROR: Not implemented.\n");
 			return false;
@@ -11420,7 +11575,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			free(excluded_trees);
 			return false;
 		}
-		new_term->type = hol_term_type::ANY;
+		new_term->type = first->type;
 		new_term->reference_count = 1;
 		new_term->any.included = first->any.included;
 		if (first->any.included != nullptr)
@@ -11437,14 +11592,6 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		if (second->any.included != nullptr)
 			return subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(dst, first, second);
 		else return false;
-
-	} else if (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
-		if (!has_intersection<BuiltInPredicates>(first, second)) {
-			return add<false, false>(dst, first);
-		} else {
-			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
-			return false;
-		}
 
 	} else if (first->type == hol_term_type::ANY_ARRAY) {
 		if (second->type == hol_term_type::ANY_ARRAY) {
@@ -11559,12 +11706,14 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
 			return false;
 		} else if (second->type == hol_term_type::AND || second->type == hol_term_type::OR || second->type == hol_term_type::IFF) {
-			if (first->any_array.oper != hol_term_type::ANY_ARRAY && first->any_array.oper != second->type) {
+			if (first->any_array.oper != hol_term_type::ANY_ARRAY && first->any_array.oper != second->type)
 				return add<false, MapSecondVariablesToFirst>(dst, first);
-			}
 			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
 			return false;
 		} else {
+			if (first->any_array.left.length > 1 || first->any_array.right.length > 1 || first->any_array.any.length > 1
+			 || !has_intersection<BuiltInPredicates>(first->any_array.all, second))
+				return add<false, MapSecondVariablesToFirst>(dst, first);
 			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
 			return false;
 		}
@@ -11668,9 +11817,6 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			if (new_length == first->any_constant.length) {
 				free(new_constants);
 				return emplace(dst, first);
-			} else if (new_length == second->any_constant.length) {
-				free(new_constants);
-				return emplace(dst, second);
 			}
 
 			hol_term* new_term;
@@ -11786,41 +11932,58 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 
 		hol_quantifier_type quantifier;
-		if (!subtract(quantifier, first->any_quantifier.quantifier, second_quantifier))
-			return false;
-		array<LogicalFormSet> differences(8);
-		if (!subtract<BuiltInPredicates, MapSecondVariablesToFirst>(differences, first->any_quantifier.operand, second_operand))
-			return false;
-		if (!dst.ensure_capacity(dst.length + differences.length)) {
-			free_all(differences);
-			return false;
-		} else if (differences.length == 1 && quantifier == first->any_quantifier.quantifier && get_term(differences[0]) == first->any_quantifier.operand) {
-			if (!emplace(dst, first, get_variable_map(differences[0]))) {
-				free_all(differences);
-				return false;
-			}
-			free_all(differences);
-			return true;
-		}
+		if (subtract(quantifier, first->any_quantifier.quantifier, second_quantifier)) {
+			if (quantifier == first->any_quantifier.quantifier)
+				return emplace(dst, first);
 
-		for (LogicalFormSet& difference : differences) {
 			hol_term* new_term;
-			if (!new_hol_term(new_term)) {
-				free_all(differences);
+			if (!new_hol_term(new_term))
 				return false;
-			}
 			new_term->type = hol_term_type::ANY_QUANTIFIER;
 			new_term->reference_count = 1;
 			new_term->any_quantifier.quantifier = quantifier;
-			new_term->any_quantifier.operand = get_term(difference);
+			new_term->any_quantifier.operand = get_term(first->any_quantifier.operand);
 			new_term->any_quantifier.operand->reference_count++;
-			if (!emplace<true>(dst, new_term, get_variable_map(difference))) {
-				free_all(differences);
+			if (!emplace<true>(dst, new_term)) {
 				free(*new_term); free(new_term);
 				return false;
 			}
 		}
-		free_all(differences);
+
+		if (intersect(quantifier, first->any_quantifier.quantifier, second_quantifier)) {
+			array<LogicalFormSet> differences(8);
+			subtract<BuiltInPredicates, MapSecondVariablesToFirst>(differences, first->any_quantifier.operand, second_operand);
+			if (!dst.ensure_capacity(dst.length + differences.length)) {
+				free_all(differences);
+				return false;
+			} else if (differences.length == 1 && quantifier == first->any_quantifier.quantifier && get_term(differences[0]) == first->any_quantifier.operand) {
+				if (!emplace(dst, first, get_variable_map(differences[0]))) {
+					free_all(differences);
+					return false;
+				}
+				free_all(differences);
+				return true;
+			}
+
+			for (LogicalFormSet& difference : differences) {
+				hol_term* new_term;
+				if (!new_hol_term(new_term)) {
+					free_all(differences);
+					return false;
+				}
+				new_term->type = hol_term_type::ANY_QUANTIFIER;
+				new_term->reference_count = 1;
+				new_term->any_quantifier.quantifier = quantifier;
+				new_term->any_quantifier.operand = get_term(difference);
+				new_term->any_quantifier.operand->reference_count++;
+				if (!emplace<true>(dst, new_term, get_variable_map(difference))) {
+					free_all(differences);
+					free(*new_term); free(new_term);
+					return false;
+				}
+			}
+			free_all(differences);
+		}
 		return true;
 
 	} else if (second->type == hol_term_type::ANY_QUANTIFIER) {
@@ -14108,7 +14271,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 		second_any = second;
 		second->reference_count++;
 	} else {
-		second_any = hol_term::new_any_right(second->any.included);
+		second_any = (second->type == hol_term_type::ANY_RIGHT_ONLY ? hol_term::new_any_right_only(second->any.included) : hol_term::new_any_right(second->any.included));
 		if (second_any == nullptr) {
 			free_all(differences);
 			return false;
@@ -14516,55 +14679,58 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 				}
 			}
 			free_all(first_intersection);
+			first_intersection.clear();
 
-			array<LogicalFormSet> first_differences(8);
-			subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(root)->array.operands[get_term(root)->array.length - 1], second_any);
-			for (unsigned int i = 0; i < first_differences.length; i++)
-				if (!intersect_variable_map(first_differences[i], get_variable_map(root))) remove(first_differences, i--);
-			if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
-				free_all(differences); free_all(first_differences);
-				free(*second_any); if (second_any->reference_count == 0) free(second_any);
-				return false;
-			}
-			for (LogicalFormSet& first_difference : first_differences) {
-				hol_term* term;
-				if (get_term(first_difference) == get_term(root)->array.operands[get_term(root)->array.length - 1]) {
-					term = get_term(root);
-					term->reference_count++;
-				} else {
-					if (!new_hol_term(term)) {
-						free_all(differences); free_all(first_differences);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						return false;
-					}
-					term->type = first->type;
-					term->reference_count = 1;
-					term->array.length = get_term(root)->array.length;
-					term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * get_term(root)->array.length);
-					if (term->array.operands == nullptr) {
-						free_all(differences); free_all(first_differences);
-						free(*second_any); if (second_any->reference_count == 0) free(second_any);
-						free(term); return false;
-					}
-					for (unsigned int i = 0; i + 1 < get_term(root)->array.length; i++) {
-						term->array.operands[i] = get_term(root)->array.operands[i];
-						term->array.operands[i]->reference_count++;
-					}
-					term->array.operands[get_term(root)->array.length - 1] = get_term(first_difference);
-					term->array.operands[get_term(root)->array.length - 1]->reference_count++;
-				}
-				unsigned int old_length = dst.length;
-				intersection_not_empty = intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(dst, term, second->any.included);
-				free(*term); if (term->reference_count == 0) free(term);
-				for (unsigned int i = old_length; i < dst.length; i++)
-					if (!intersect_variable_map(dst[i], get_variable_map(first_difference))) remove(dst, i--);
-				if (!ComputeIntersection && intersection_not_empty) {
-					free_all(differences); free_all(first_differences);
+			intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, get_term(root), second->any.included);
+			for (unsigned int i = 0; i < first_intersection.length; i++)
+				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			for (LogicalFormSet& first_child : first_intersection) {
+				array<LogicalFormSet> first_differences(8);
+				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(first_child)->array.operands[get_term(first_child)->array.length - 1], second_any);
+				if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
+					free_all(differences); free_all(first_intersection); free_all(first_differences);
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
-					return true;
+					return false;
 				}
+				for (LogicalFormSet& first_difference : first_differences) {
+					if (get_term(first_difference) == get_term(first_child)->array.operands[get_term(first_child)->array.length - 1]) {
+						if (!emplace<false>(dst, get_term(first_child), get_variable_map(first_child))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					} else {
+						hol_term* term;
+						if (!new_hol_term(term)) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+						term->type = get_term(first_child)->type;
+						term->reference_count = 1;
+						term->array.length = get_term(first_child)->array.length;
+						term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * get_term(first_child)->array.length);
+						if (term->array.operands == nullptr) {
+							fprintf(stderr, "intersect_with_any_right ERROR: Out of memory.\n");
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							free(term); return false;
+						}
+						for (unsigned int i = 0; i + 1 < term->array.length; i++)
+							term->array.operands[i] = get_term(first_child)->array.operands[i];
+						term->array.operands[term->array.length - 1] = get_term(first_difference);
+						for (unsigned int i = 0; i < term->array.length; i++)
+							term->array.operands[i]->reference_count++;
+						if (!emplace<true>(dst, term, get_variable_map(first_child), get_variable_map(first_difference))) {
+							free_all(differences); free_all(first_intersection); free_all(first_differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							free(*term); free(term); return false;
+						}
+					}
+				}
+				free_all(first_differences);
 			}
-			free_all(first_differences);
+			free_all(first_intersection);
 		}
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -15603,28 +15769,27 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 								if (first->any_array.any.operands[i] != get_term(any_intersections[i][any_indices[i]])) same = false;
 							if (same) {
 								if (!MapSecondVariablesToFirst) {
-									return add<true, false>(dst, first);
+									if (!add<false, false>(dst, first)) return false;
 								} else {
-									if (!emplace<false>(dst, first))
-										return false;
-									for (unsigned int i = 0; i < any_length; i++) {
-										if (!intersect_variable_map(dst.last(), get_variable_map(any_intersections[i][any_indices[i]]))) {
-											remove(dst, dst.length - 1);
-											return true;
-										}
-									} for (unsigned int i = 0; i < new_left_length; i++) {
-										if (!intersect_variable_map(dst.last(), get_variable_map(new_left_intersections[i][left_indices[i]]))) {
-											remove(dst, dst.length - 1);
-											return true;
-										}
-									} for (unsigned int i = 0; i < new_right_length; i++) {
-										if (!intersect_variable_map(dst.last(), get_variable_map(new_right_intersections[i][right_indices[i]]))) {
-											remove(dst, dst.length - 1);
-											return true;
-										}
-									}
-									return true;
+									if (!emplace<false>(dst, first)) return false;
 								}
+								for (unsigned int i = 0; i < any_length; i++) {
+									if (!intersect_variable_map(dst.last(), get_variable_map(any_intersections[i][any_indices[i]]))) {
+										remove(dst, dst.length - 1);
+										return true;
+									}
+								} for (unsigned int i = 0; i < new_left_length; i++) {
+									if (!intersect_variable_map(dst.last(), get_variable_map(new_left_intersections[i][left_indices[i]]))) {
+										remove(dst, dst.length - 1);
+										return true;
+									}
+								} for (unsigned int i = 0; i < new_right_length; i++) {
+									if (!intersect_variable_map(dst.last(), get_variable_map(new_right_intersections[i][right_indices[i]]))) {
+										remove(dst, dst.length - 1);
+										return true;
+									}
+								}
+								return true;
 							}
 						} if (MapSecondVariablesToFirst && same_as_second) {
 							bool same = (get_term(all) == second->any_array.all);
@@ -15636,28 +15801,47 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 								if (second->any_array.any.operands[i] != get_term(any_intersections[i][any_indices[i]])) same = false;
 							if (same) {
 								if (MapSecondVariablesToFirst) {
-									return add<true, false>(dst, second);
+									if (!add<false, false>(dst, second)) return false;
 								} else {
-									if (!emplace<false>(dst, second))
-										return false;
-									for (unsigned int i = 0; i < any_length; i++) {
-										if (!intersect_variable_map(dst.last(), get_variable_map(any_intersections[i][any_indices[i]]))) {
-											remove(dst, dst.length - 1);
-											return true;
-										}
-									} for (unsigned int i = 0; i < new_left_length; i++) {
-										if (!intersect_variable_map(dst.last(), get_variable_map(new_left_intersections[i][left_indices[i]]))) {
-											remove(dst, dst.length - 1);
-											return true;
-										}
-									} for (unsigned int i = 0; i < new_right_length; i++) {
-										if (!intersect_variable_map(dst.last(), get_variable_map(new_right_intersections[i][right_indices[i]]))) {
-											remove(dst, dst.length - 1);
-											return true;
-										}
-									}
-									return true;
+									if (!emplace<false>(dst, second)) return false;
 								}
+								for (unsigned int i = 0; i < any_length; i++) {
+									if (!intersect_variable_map(dst.last(), get_variable_map(any_intersections[i][any_indices[i]]))) {
+										remove(dst, dst.length - 1);
+										return true;
+									}
+								} for (unsigned int i = 0; i < new_left_length; i++) {
+									if (!intersect_variable_map(dst.last(), get_variable_map(new_left_intersections[i][left_indices[i]]))) {
+										remove(dst, dst.length - 1);
+										return true;
+									}
+								} for (unsigned int i = 0; i < new_right_length; i++) {
+									if (!intersect_variable_map(dst.last(), get_variable_map(new_right_intersections[i][right_indices[i]]))) {
+										remove(dst, dst.length - 1);
+										return true;
+									}
+								}
+								return true;
+							}
+						}
+
+						/* check if `any` is part of `left` or `right` */
+						unsigned int new_any_length = any_length;
+						for (unsigned int i = 0; i < new_left_length - any_length + 1; i++) {
+							bool is_subset_at_i = true;
+							for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
+								is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_left_intersections[i + j][left_indices[i + j]]));
+							if (is_subset_at_i) {
+								new_any_length = 0;
+								break;
+							}
+						} for (unsigned int i = 0; i < new_right_length - any_length + 1; i++) {
+							bool is_subset_at_i = true;
+							for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
+								is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_right_intersections[i + j][right_indices[i + j]]));
+							if (is_subset_at_i) {
+								new_any_length = 0;
+								break;
 							}
 						}
 
@@ -15676,16 +15860,16 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 						new_term->any_array.right.length = 0;
 						new_term->any_array.right.operands = nullptr;
 
-						new_term->any_array.any.length = any_length;
-						if (any_length == 0) {
+						new_term->any_array.any.length = new_any_length;
+						if (new_any_length == 0) {
 							new_term->any_array.any.operands = nullptr;
 						} else {
-							new_term->any_array.any.operands = (hol_term**) malloc(sizeof(hol_term*) * any_length);
+							new_term->any_array.any.operands = (hol_term**) malloc(sizeof(hol_term*) * new_any_length);
 							if (new_term->any_array.any.operands == nullptr) {
 								fprintf(stderr, "intersect_with_any_array ERROR: Out of memory.\n");
 								free(new_term); return false;
 							}
-							for (unsigned int i = 0; i < any_length; i++) {
+							for (unsigned int i = 0; i < new_any_length; i++) {
 								new_term->any_array.any.operands[i] = get_term(any_intersections[i][any_indices[i]]);
 								new_term->any_array.any.operands[i]->reference_count++;
 							}
@@ -15719,7 +15903,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 							}
 						}
 
-						if (!emplace<true>(dst, new_term)) {
+						if (!dst.ensure_capacity(dst.length + 1) || !emplace<true>(dst, new_term)) {
 							free(*new_term); free(new_term);
 							return false;
 						}
@@ -15942,6 +16126,23 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 						free(*new_term); free(new_term);
 						return false;
 					}
+					for (unsigned int j = 0; j < i; j++) {
+						if (!intersect_variable_map(differences.last(), get_variable_map(terms[j][index_array[j]]))) {
+							free_all(differences);
+							return true;
+						}
+					} for (unsigned int k = 0; k < second->any_array.any.length; k++) {
+						if (!intersect_variable_map(differences.last(), get_variable_map(child_intersections[k][inner_index_array[k]]))) {
+							free_all(differences);
+							return true;
+						}
+					} for (unsigned int j = i + second->any_array.any.length; j < first->array.length; j++) {
+						if (!intersect_variable_map(differences.last(), get_variable_map(terms[j][index_array[j]]))) {
+							free_all(differences);
+							return true;
+						}
+					}
+
 					unsigned int old_length = dst.length;
 					for (unsigned int j = 0; j < old_length && differences.length > 0; j++) {
 						array<LogicalFormSet> new_differences(8);
@@ -16994,7 +17195,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
 					return false;
 				state = tptp_lexer_state::QUOTE;
-				tokens.clear(); shift = {0};
+				token.clear(); shift = {0};
 				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
@@ -17034,7 +17235,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 					return false;
 			} else if (next == '"') {
 				state = tptp_lexer_state::QUOTE;
-				tokens.clear(); shift = {0};
+				token.clear(); shift = {0};
 				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
@@ -17074,9 +17275,10 @@ bool tptp_interpret(
 	unsigned int&, hol_term&,
 	hash_map<string, unsigned int>&,
 	array_map<string, unsigned int>&);
+template<typename BaseType>
 bool tptp_interpret_type(
 	const array<tptp_token>&,
-	unsigned int&, hol_type&,
+	unsigned int&, hol_type<BaseType>&,
 	hash_map<string, unsigned int>&,
 	array_map<string, unsigned int>&);
 
@@ -17470,9 +17672,10 @@ inline bool parse(Stream& in, hol_term& term,
 	return true;
 }
 
+template<typename BaseType>
 bool tptp_interpret_unary_type(
 	const array<tptp_token>& tokens,
-	unsigned int& index, hol_type& type,
+	unsigned int& index, hol_type<BaseType>& type,
 	hash_map<string, unsigned int>& names,
 	array_map<string, unsigned int>& variables)
 {
@@ -17486,12 +17689,10 @@ bool tptp_interpret_unary_type(
 			return false;
 		index++;
 	} else if (tokens[index].type == tptp_token_type::IDENTIFIER) {
-		if (tokens[index].text == "o" || tokens[index].text == "𝝄") {
+		BaseType base_type;
+		if (interpret_base_type(base_type, tokens[index].text)) {
 			index++;
-			if (!init(type, hol_constant_type::BOOLEAN)) return false;
-		} else if (tokens[index].text == "i" || tokens[index].text == "𝜾") {
-			index++;
-			if (!init(type, hol_constant_type::INDIVIDUAL)) return false;
+			if (!init(type, base_type)) return false;
 		} else if (tokens[index].text == "*") {
 			index++;
 			if (!init(type, hol_type_kind::ANY)) return false;
@@ -17503,18 +17704,19 @@ bool tptp_interpret_unary_type(
 	return true;
 }
 
+template<typename BaseType>
 bool tptp_interpret_type(
 	const array<tptp_token>& tokens,
-	unsigned int& index, hol_type& type,
+	unsigned int& index, hol_type<BaseType>& type,
 	hash_map<string, unsigned int>& names,
 	array_map<string, unsigned int>& variables)
 {
-	array<hol_type> types(8);
+	array<hol_type<BaseType>> types(8);
 	while (true) {
 		if (!types.ensure_capacity(types.length + 1)
 		 || !tptp_interpret_unary_type(tokens, index, types[types.length], names, variables))
 		{
-			for (hol_type& type : types) free(type);
+			for (hol_type<BaseType>& type : types) free(type);
 			return false;
 		}
 		types.length++;
@@ -17533,21 +17735,22 @@ bool tptp_interpret_type(
 	}
 
 	if (!init(type, types.last())) {
-		for (hol_type& type : types) free(type);
+		for (hol_type<BaseType>& type : types) free(type);
 		return false;
 	}
 	for (unsigned int i = types.length - 1; i > 0; i--) {
-		hol_type new_type(types[i - 1], type);
+		hol_type<BaseType> new_type(types[i - 1], type);
 		swap(new_type, type);
 	}
-	for (hol_type& type : types) free(type);
+	for (hol_type<BaseType>& type : types) free(type);
 	return true;
 }
 
+template<typename BaseType>
 inline bool tptp_interpret(
 	const array<tptp_token>& tokens,
 	unsigned int& index,
-	hol_term& term, hol_type& type,
+	hol_term& term, hol_type<BaseType>& type,
 	hash_map<string, unsigned int>& names,
 	array_map<string, unsigned int>& variables)
 {

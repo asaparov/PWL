@@ -87,6 +87,12 @@ inline bool init_string_id_array(
 	return true;
 }
 
+enum class properness {
+	IMPROPER,
+	PROPER,
+	BOTH
+};
+
 enum class countability {
 	COUNTABLE,
 	UNCOUNTABLE,
@@ -98,6 +104,7 @@ enum class countability {
 
 struct noun_root {
 	countability count;
+	properness is_proper;
 	sequence* plural;
 	unsigned int plural_count;
 
@@ -150,11 +157,26 @@ struct noun_root {
 			break;
 		}
 
+		/* first merge properness */
+		switch (is_proper) {
+		case properness::BOTH:
+			break;
+		case properness::IMPROPER:
+			if (src.is_proper == properness::PROPER)
+				is_proper = properness::BOTH;
+			break;
+		case properness::PROPER:
+			if (src.is_proper == properness::IMPROPER)
+				is_proper = properness::BOTH;
+			break;
+		}
+
 		return merge_arrays(plural, plural_count, src.plural, src.plural_count);
 	}
 
 	static inline void move(const noun_root& src, noun_root& dst) {
 		dst.count = src.count;
+		dst.is_proper = src.is_proper;
 		core::move(src.plural, dst.plural);
 		dst.plural_count = src.plural_count;
 	}
@@ -168,11 +190,12 @@ struct noun_root {
 	}
 };
 
-inline bool init(noun_root& root, countability count,
+inline bool init(noun_root& root, bool is_proper, countability count,
 		const string* plural_forms, unsigned int plural_form_count,
 		hash_map<string, unsigned int>& names)
 {
 	root.count = count;
+	root.is_proper = (is_proper ? properness::PROPER : properness::IMPROPER);
 	return init_string_id_array(root.plural, root.plural_count, plural_forms, plural_form_count, names);
 }
 
@@ -416,7 +439,9 @@ enum class grammatical_num : uint_fast8_t {
 	SINGULAR,
 	PLURAL,
 
-	ANY
+	ANY,
+	SINGULAR_OR_NONE,
+	PLURAL_OR_NONE
 };
 
 enum class grammatical_mood : uint_fast8_t {
@@ -498,8 +523,58 @@ inline bool has_intersection(grammatical_person first, grammatical_person second
 	return intersect(dummy, first, second);
 }
 
+static inline bool intersect(grammatical_num& out, grammatical_num first, grammatical_num second)
+{
+	if (first == grammatical_num::ANY) {
+		out = second;
+		return true;
+	} else if (second == grammatical_num::ANY) {
+		out = first;
+		return true;
+	} else if (first == grammatical_num::SINGULAR_OR_NONE) {
+		if (second == grammatical_num::PLURAL) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == grammatical_num::SINGULAR_OR_NONE) {
+		if (first == grammatical_num::PLURAL) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == grammatical_num::PLURAL_OR_NONE) {
+		if (second == grammatical_num::SINGULAR) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == grammatical_num::PLURAL_OR_NONE) {
+		if (first == grammatical_num::SINGULAR) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == second) {
+		out = first;
+		return true;
+	} else {
+		return false;
+	}
+}
+
+static inline bool has_intersection(grammatical_num first, grammatical_num second) {
+	grammatical_num dummy;
+	return intersect(dummy, first, second);
+}
+
 struct inflected_noun {
 	sequence root;
+	properness is_proper;
 	grammatical_num number;
 
 	static inline void free(inflected_noun& key) {
@@ -677,26 +752,34 @@ struct morphology_en {
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_noun_root(const sequence& root_id, noun_root& root) {
-		return add_inflected_forms(inflected_nouns, root_id, root)
-			&& add_root(nouns, root_id, root);
+		return add_root(nouns, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_adjective_root(const sequence& root_id, adjective_root& root) {
-		return add_inflected_forms(inflected_adjectives, root_id, root)
-			&& add_root(adjectives, root_id, root);
+		return add_root(adjectives, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_adverb_root(const sequence& root_id, adverb_root& root) {
-		return add_inflected_forms(inflected_adverbs, root_id, root)
-			&& add_root(adverbs, root_id, root);
+		return add_root(adverbs, root_id, root);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
 	bool add_verb_root(const sequence& root_id, verb_root& root) {
-		return add_inflected_forms(inflected_verbs, root_id, root)
-			&& add_root(verbs, root_id, root);
+		return add_root(verbs, root_id, root);
+	}
+
+	bool add_all_inflected_forms() {
+		for (auto entry : nouns)
+			if (!add_inflected_forms(inflected_nouns, entry.key, entry.value)) return false;
+		for (auto entry : adjectives)
+			if (!add_inflected_forms(inflected_adjectives, entry.key, entry.value)) return false;
+		for (auto entry : adverbs)
+			if (!add_inflected_forms(inflected_adverbs, entry.key, entry.value)) return false;
+		for (auto entry : verbs)
+			if (!add_inflected_forms(inflected_verbs, entry.key, entry.value)) return false;
+		return true;
 	}
 
 private:
@@ -754,13 +837,13 @@ private:
 
 		/* first add the singular form */
 		if (root.count != countability::PLURAL_ONLY) {
-			if (!add_inflected_form(inflected_form_map, root_id, {root_id, grammatical_num::SINGULAR}))
+			if (!add_inflected_form(inflected_form_map, root_id, {root_id, root.is_proper, grammatical_num::SINGULAR}))
 				return false;
 		}
 
 		/* add the plural forms */
 		for (unsigned int i = 0; i < root.plural_count; i++) {
-			if (!add_inflected_form(inflected_form_map, root.plural[i], {root_id, grammatical_num::PLURAL}))
+			if (!add_inflected_form(inflected_form_map, root.plural[i], {root_id, root.is_proper, grammatical_num::PLURAL}))
 				return false;
 		}
 		return true;
@@ -1268,10 +1351,13 @@ inline bool emit_entry(
 			plural += "s";
 
 			noun_root new_root;
-			if (!init(new_root, countability::COUNTABLE, &plural, 1, names))
+			if (!init(new_root, false, countability::COUNTABLE, &plural, 1, names))
 				return false;
 			return m.add_noun_root(root_ids, new_root);
 		} else {
+			static constexpr const char* rare_str = "rare";
+			static unsigned int rare_str_length = strlen(rare_str);
+
 			array<string> plural_forms(entry.entries.length - 1);
 			countability count = countability::COUNTABLE;
 			for (unsigned int i = 1; i < entry.entries.length; i++) {
@@ -1300,7 +1386,14 @@ inline bool emit_entry(
 					for (string& str : plural_forms) free(str);
 					return true;
 				} else {
-					if (entry.entries[i].index_of('=') < entry.entries[i].length || entry.entries[i].index_of('[') < entry.entries[i].length) {
+					unsigned int qualifier_index; const char* qualifier; unsigned int qualifier_length;
+					if (get_parameter(entry.entries[i], "pl", "qual=", qualifier_index, qualifier, qualifier_length)) {
+						if (!string_compare(qualifier, qualifier_length, rare_str, rare_str_length)) {
+							for (string& str : plural_forms) free(str);
+							return true;
+						}
+						continue;
+					} else if (entry.entries[i].index_of('=') < entry.entries[i].length || entry.entries[i].index_of('[') < entry.entries[i].length) {
 						for (string& str : plural_forms) free(str);
 						return true;
 					}
@@ -1309,7 +1402,7 @@ inline bool emit_entry(
 			}
 
 			noun_root new_root;
-			if (!init(new_root, count, plural_forms.data, plural_forms.length, names))
+			if (!init(new_root, false, count, plural_forms.data, plural_forms.length, names))
 				return false;
 			for (string& str : plural_forms) free(str);
 			return m.add_noun_root(root_ids, new_root);
@@ -1346,7 +1439,7 @@ inline bool emit_entry(
 		}
 
 		noun_root new_root;
-		if (!init(new_root, count, plural_forms.data, plural_forms.length, names))
+		if (!init(new_root, true, count, plural_forms.data, plural_forms.length, names))
 			return false;
 		for (string& str : plural_forms) free(str);
 		return m.add_noun_root(root_ids, new_root);
@@ -1764,7 +1857,7 @@ bool morphology_read(morphology_en& m,
 		}
 	}
 	for (auto& entry : adv_entries) free(entry);
-	return true;
+	return m.add_all_inflected_forms();
 }
 
 inline bool morphology_read(morphology_en& m,
