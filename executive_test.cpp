@@ -39,6 +39,13 @@ unsigned int sample(const geometric_distribution& prior, unsigned int min, unsig
 }
 
 template<typename T>
+struct dummy_array {
+	dummy_array() { }
+
+	inline constexpr bool add(const T& item) const { return true; }
+};
+
+template<typename T>
 struct default_array {
 	array<T> a;
 
@@ -70,6 +77,25 @@ struct default_array_multiset {
 
 	inline bool add(const T& item) {
 		return a.add(item);
+	}
+};
+
+template<typename T>
+struct default_hash_multiset {
+	hash_multiset<T, false> a;
+
+	default_hash_multiset() : a(16) { }
+
+	inline bool add(const T& item) {
+		return a.add(item);
+	}
+
+	inline bool add(const default_array_multiset<T>& changes) {
+		return a.add(changes.a);
+	}
+
+	inline void subtract(const default_array_multiset<T>& changes) {
+		a.template subtract<true>(changes.a);
 	}
 };
 
@@ -117,6 +143,8 @@ template<typename T>
 struct chinese_restaurant_process
 {
 	typedef default_array_multiset<T> ObservationCollection;
+	typedef default_hash_multiset<T> PriorState;
+	typedef default_array_multiset<T> PriorStateChanges;
 
 	double alpha, log_alpha;
 
@@ -155,26 +183,6 @@ double log_probability(
 		value += prior.log_alpha + lgamma(get_value(observations, i));
 	}
 	return value + lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
-}
-
-template<typename MultisetType, typename T>
-inline double log_probability_ratio(
-		const MultisetType& old_observations,
-		const MultisetType& new_observations,
-		const chinese_restaurant_process<T>& prior)
-{
-	return log_probability(new_observations, prior) - log_probability(old_observations, prior);
-}
-
-template<typename MultisetType,
-	template<typename> class Collection, typename T>
-inline double log_probability_ratio(
-		const MultisetType& old_observations,
-		const MultisetType& new_observations,
-		const chinese_restaurant_process<T>& prior,
-		Collection<T>& old_clusters, Collection<T>& new_clusters)
-{
-	return log_probability(new_observations, prior, new_clusters) - log_probability(old_observations, prior, old_clusters);
 }
 
 template<bool AutomaticallyFree, typename T, template<typename> class Collection>
@@ -274,20 +282,59 @@ double log_probability_ratio(
 		 - lgamma(prior.alpha + tables.sum - sum(old_observations) + sum(new_observations));
 }
 
-template<typename MultisetType, typename T>
+template<typename T, bool AutomaticallyFree, typename MultisetType>
 inline double log_probability_ratio(
-		const hash_multiset<T>& tables,
+		const hash_multiset<T, AutomaticallyFree>& tables,
 		const MultisetType& old_observations,
 		const MultisetType& new_observations,
 		const chinese_restaurant_process<T>& prior)
 {
-	return log_probability_ratio(tables, old_observations, new_observations, prior);
+	dummy_array<T> dummy;
+	return log_probability_ratio(tables, old_observations, new_observations, prior, dummy, dummy);
+}
+
+template<typename T, typename MultisetType>
+inline double log_probability_ratio(
+		const default_hash_multiset<T>& tables,
+		const MultisetType& old_observations,
+		const MultisetType& new_observations,
+		const chinese_restaurant_process<T>& prior)
+{
+	return log_probability_ratio(tables.a, old_observations, new_observations, prior);
 }
 
 template<typename BaseDistribution>
 struct dirichlet_process
 {
+	struct prior_state {
+		typename BaseDistribution::PriorState base_prior_state;
+
+		inline bool add(const typename BaseDistribution::PriorStateChanges& changes) {
+			return base_prior_state.add(changes);
+		}
+
+		inline bool add(
+				const typename BaseDistribution::ObservationType& observation,
+				const dirichlet_process<BaseDistribution>& prior)
+		{
+			return base_prior_state.add(observation, prior.base_distribution);
+		}
+
+		inline void subtract(const typename BaseDistribution::PriorStateChanges& changes) {
+			base_prior_state.subtract(changes);
+		}
+
+		inline void subtract(
+				const typename BaseDistribution::ObservationType& observation,
+				const dirichlet_process<BaseDistribution>& prior)
+		{
+			base_prior_state.subtract(observation, prior.base_distribution);
+		}
+	};
+
 	typedef typename BaseDistribution::ObservationType ObservationType;
+	typedef prior_state PriorState;
+	typedef typename BaseDistribution::PriorStateChanges PriorStateChanges;
 
 	chinese_restaurant_process<ObservationType> restaurant;
 	BaseDistribution base_distribution;
@@ -325,23 +372,24 @@ double log_probability_ratio(
 		const MultisetType& restaurant_tables,
 		const array_multiset<T, AutomaticallyFree>& old_observations,
 		const array_multiset<T, AutomaticallyFree>& new_observations,
-		const dirichlet_process<BaseDistribution>& prior)
+		const dirichlet_process<BaseDistribution>& prior,
+		const typename dirichlet_process<BaseDistribution>::prior_state& prior_state,
+		typename BaseDistribution::PriorStateChanges& old_prior_changes,
+		typename BaseDistribution::PriorStateChanges& new_prior_changes)
 {
 	typedef typename BaseDistribution::ObservationCollection Clusters;
 
 	Clusters old_clusters, new_clusters;
 	return log_probability_ratio(restaurant_tables, old_observations, new_observations, prior.restaurant, old_clusters, new_clusters)
-		 + log_probability_ratio(old_clusters, new_clusters, prior.base_distribution);
+		 + log_probability_ratio(old_clusters, new_clusters, prior.base_distribution, prior_state.base_prior_state, old_prior_changes, new_prior_changes);
 }
 
 template<typename ConstantDistribution, typename PredicateDistribution>
 struct simple_constant_distribution
 {
-	struct constant_array {
-		array_multiset<unsigned int, false> constants;
-		array_multiset<unsigned int, false> predicates;
-
-		constant_array() : constants(8), predicates(8) { }
+	struct prior_state_changes {
+		typename ConstantDistribution::PriorStateChanges constants;
+		typename PredicateDistribution::PriorStateChanges predicates;
 
 		inline bool add_constant(unsigned int constant) {
 			return constants.add(constant);
@@ -352,7 +400,41 @@ struct simple_constant_distribution
 		}
 	};
 
-	typedef constant_array ObservationCollection;
+	struct prior_state {
+		typename ConstantDistribution::PriorState constants;
+		typename PredicateDistribution::PriorState predicates;
+
+		inline bool add(const prior_state_changes& changes) {
+			if (!constants.add(changes.constants)) {
+				return false;
+			} else if (!predicates.add(changes.predicates)) {
+				constants.subtract(changes.constants);
+				return false;
+			}
+			return true;
+		}
+
+		inline bool add(const prior_state_changes& changes,
+				const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+		{
+			return add(changes);
+		}
+
+		inline void subtract(const prior_state_changes& changes) {
+			constants.subtract(changes.constants);
+			predicates.subtract(changes.predicates);
+		}
+
+		inline void subtract(const prior_state_changes& changes,
+				const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+		{
+			subtract(changes);
+		}
+	};
+
+	typedef prior_state PriorState;
+	typedef prior_state_changes PriorStateChanges;
+	typedef prior_state_changes ObservationCollection;
 
 	ConstantDistribution constant_distribution;
 	PredicateDistribution predicate_distribution;
@@ -402,20 +484,51 @@ inline double log_probability(const ConstantCollection& constants,
 		 + log_probability(constants.predicates, prior.predicate_distribution);
 }
 
-template<typename ConstantCollection, typename ConstantDistribution, typename PredicateDistribution>
-inline double log_probability_ratio(
+template<typename ObservationCollection, typename ConstantCollection,
+	typename ConstantDistribution, typename PredicateDistribution>
+inline double log_probability_ratio(const ObservationCollection& existing_constants,
 		const ConstantCollection& old_constants, const ConstantCollection& new_constants,
 		const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
 {
-	return log_probability_ratio(old_constants.constants, new_constants.constants, prior.constant_distribution)
-		 + log_probability_ratio(old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
+	return log_probability_ratio(existing_constants.constants, old_constants.constants, new_constants.constants, prior.constant_distribution)
+		 + log_probability_ratio(existing_constants.predicates, old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
 }
 
 template<typename ConstantDistribution, typename SetSizeDistribution>
 struct simple_hol_term_distribution
 {
+	struct prior_state {
+		typename ConstantDistribution::PriorState constant_prior_state;
+
+		inline bool add(const typename ConstantDistribution::PriorStateChanges& changes) {
+			return constant_prior_state.add(changes);
+		}
+
+		inline bool add(const hol_term* observation,
+				const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior)
+		{
+			typename ConstantDistribution::ObservationCollection constants;
+			log_probability_helper(observation, prior, constants);
+			return constant_prior_state.add(constants, prior.constant_distribution);
+		}
+
+		inline void subtract(const typename ConstantDistribution::PriorStateChanges& changes) {
+			constant_prior_state.subtract(changes);
+		}
+
+		inline void subtract(const hol_term* observation,
+				const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior)
+		{
+			typename ConstantDistribution::ObservationCollection constants;
+			log_probability_helper(observation, prior, constants);
+			constant_prior_state.subtract(constants, prior.constant_distribution);
+		}
+	};
+
 	typedef hol_term* ObservationType;
 	typedef default_array<hol_term*> ObservationCollection;
+	typedef prior_state PriorState;
+	typedef typename ConstantDistribution::PriorStateChanges PriorStateChanges;
 
 	double log_ground_literal_probability;
 	double log_universal_probability;
@@ -705,15 +818,17 @@ template<typename ConstantDistribution,
 double log_probability_ratio(
 		const Collection<hol_term*>& old_clusters,
 		const Collection<hol_term*>& new_clusters,
-		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior)
+		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior,
+		const typename simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>::prior_state& prior_state,
+		typename ConstantDistribution::PriorStateChanges& old_prior_changes,
+		typename ConstantDistribution::PriorStateChanges& new_prior_changes)
 {
 	double value = 0.0;
-	typename ConstantDistribution::ObservationCollection old_constants, new_constants;
 	for (hol_term* formula : new_clusters)
-		value += log_probability_helper(formula, prior, new_constants);
+		value += log_probability_helper(formula, prior, new_prior_changes);
 	for (hol_term* formula : old_clusters)
-		value -= log_probability_helper(formula, prior, old_constants);
-	return value + log_probability_ratio(old_constants, new_constants, prior.constant_distribution);
+		value -= log_probability_helper(formula, prior, old_prior_changes);
+	return value + log_probability_ratio(prior_state.constant_prior_state, old_prior_changes, new_prior_changes, prior.constant_distribution);
 }
 
 template<typename T>
@@ -1214,6 +1329,7 @@ return EXIT_SUCCESS;*/
 	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
 			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(5.0));
+	decltype(proof_prior)::PriorState proof_axioms;
 	const string** reverse_name_map = invert(names);
 	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
 
@@ -1223,7 +1339,7 @@ for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/
 
 	array<string> answers(4);
-	if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, printer)) {
+	if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms, printer)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} /*if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, printer)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
@@ -1254,7 +1370,7 @@ return EXIT_SUCCESS;
 	auto scribe = parser.get_printer(printer);
 array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
-T.check_proof_axioms();
+proof_axioms.check_proof_axioms(T);
 T.check_disjunction_introductions();
 T.sets.are_elements_unique();
 T.sets.check_freeable_sets();
@@ -1273,7 +1389,7 @@ fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribut
 /*if (t == 21)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
 		null_collector collector;
-		do_mh_step(T, proof_prior, collector);
+		do_mh_step(T, proof_prior, proof_axioms, collector);
 
 		for (auto entry : tracked_logical_forms)
 			if (contains_axiom(T, entry.key)) entry.value++;

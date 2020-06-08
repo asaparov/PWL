@@ -5,6 +5,10 @@
 #include <math/multiset.h>
 #include <stdexcept>
 
+#if !defined(NDEBUG)
+#include <functional>
+#endif
+
 #include "array_view.h"
 #include "set_reasoning.h"
 
@@ -272,6 +276,40 @@ struct concept
 		return true;
 	}
 
+	bool check_axioms() const {
+		bool success = true;
+		for (auto entry : types) {
+			if (entry.value->reference_count <= 1) {
+				print("concept.check_axioms WARNING: Found axiom '", stderr);
+				print(*entry.value->formula, stderr);
+				print("' with reference count less than 2.\n", stderr);
+				success = false;
+			}
+		} for (auto entry : negated_types) {
+			if (entry.value->reference_count <= 1) {
+				print("concept.check_axioms WARNING: Found axiom '", stderr);
+				print(*entry.value->formula, stderr);
+				print("' with reference count less than 2.\n", stderr);
+				success = false;
+			}
+		} for (auto entry : relations) {
+			if (entry.value->reference_count <= 1) {
+				print("concept.check_axioms WARNING: Found axiom '", stderr);
+				print(*entry.value->formula, stderr);
+				print("' with reference count less than 2.\n", stderr);
+				success = false;
+			}
+		} for (auto entry : negated_relations) {
+			if (entry.value->reference_count <= 1) {
+				print("concept.check_axioms WARNING: Found axiom '", stderr);
+				print(*entry.value->formula, stderr);
+				print("' with reference count less than 2.\n", stderr);
+				success = false;
+			}
+		}
+		return success;
+	}
+
 	static inline void move(const concept<ProofCalculus>& src, concept<ProofCalculus>& dst) {
 		core::move(src.types, dst.types);
 		core::move(src.negated_types, dst.negated_types);
@@ -400,7 +438,6 @@ struct theory
 	unsigned int ground_axiom_count;
 
 	hash_set<Proof*> observations;
-	hash_multiset<Formula*, false> proof_axioms;
 	set_reasoning<built_in_predicates, Formula, ProofCalculus> sets;
 
 	array<pair<Formula*, Proof*>> disjunction_intro_nodes;
@@ -412,7 +449,7 @@ struct theory
 
 	theory(unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), types(64), relations(64),
-			ground_concept_capacity(64), ground_axiom_count(0), observations(64), proof_axioms(64),
+			ground_concept_capacity(64), ground_axiom_count(0), observations(64),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
 			implication_intro_nodes(16), existential_intro_nodes(16)
 	{
@@ -590,79 +627,12 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			free_proof(new_proof);
 			return nullptr;
 		}
-
-		/* add the axioms in the new proof to `proof_axioms` */
-		if (!get_axioms(new_proof, proof_axioms)) {
-			observations.remove(new_proof);
-			free_proof(new_proof);
-			return nullptr;
-		}
 		return new_proof;
 	}
 
 	void remove_formula(Proof* proof) {
 		observations.remove(proof);
 		free_proof(proof);
-	}
-
-	bool check_proof_axioms() const
-	{
-		bool success = true;
-		array<const Proof*> axiom_collection(64);
-		array_multiset<Formula*, false> computed_axioms(64);
-		for (const Proof* proof : observations) {
-			array_multiset<const Proof*, false> axioms(16);
-			if (!get_proof_steps<ProofType::AXIOM>(proof, axioms)) {
-				fprintf(stderr, "theory.check_proof_axioms ERROR: `get_proof_steps` failed.\n");
-				return false;
-			}
-
-			for (const auto& entry : axioms.counts) {
-				bool contains;
-				unsigned int count = proof_axioms.counts.get(entry.key->formula, contains);
-				if (!contains || count == 0) {
-					print("theory.check_proof_axioms WARNING: Found axiom of a proof in"
-							" `observations` that is not in `proof_axioms`.\n", stderr);
-					print("  Axiom: ", stderr); print(*entry.key->formula, stderr); print('\n', stderr);
-					success = false;
-				}
-
-				if (!computed_axioms.add(entry.key->formula, entry.value)
-				 || !axiom_collection.add(entry.key)) return false;
-			}
-		}
-
-		for (const auto& entry : proof_axioms.counts) {
-			bool contains;
-			unsigned int count = computed_axioms.counts.get(entry.key, contains);
-			if (!contains) {
-				print("theory.check_proof_axioms WARNING: `proof_axioms` contains an "
-						"axiom that does not belong to a proof in `observations`.\n", stderr);
-				print("  Axiom: ", stderr); print(*entry.key, stderr); print('\n', stderr);
-				success = false;
-			} else if (entry.value != count) {
-				print("theory.check_proof_axioms WARNING: The axiom '", stderr);
-				print(*entry.key, stderr); print("' has expected frequency ", stderr);
-				print(count, stderr); print(" but has computed frequency ", stderr);
-				print(entry.value, stderr); print('\n', stderr);
-				success = false;
-			}
-		}
-
-		/* check that definition axioms are correctly stored in the appropriate `definitions` array */
-		for (const Proof* axiom : axiom_collection) {
-			if (axiom->formula->type == TermType::EQUALS && axiom->formula->binary.left->type == TermType::CONSTANT) {
-				unsigned int constant = axiom->formula->binary.left->constant;
-				if (constant < new_constant_offset) continue;
-				if (!ground_concepts[constant - new_constant_offset].definitions.contains(axiom)) {
-					print("theory.check_proof_axioms WARNING: The axiom '", stderr);
-					print(*axiom->formula, stderr);
-					print("' does not exist in the appropriate `definitions` array.\n", stderr);
-					success = false;
-				}
-			}
-		}
-		return success;
 	}
 
 	template<ProofType Type>
@@ -714,6 +684,15 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return check_disjunction_introductions<ProofType::DISJUNCTION_INTRODUCTION>(disjunction_intro_nodes)
 			&& check_disjunction_introductions<ProofType::EXISTENTIAL_INTRODUCTION>(existential_intro_nodes)
 			&& check_disjunction_introductions<ProofType::IMPLICATION_INTRODUCTION>(implication_intro_nodes);
+	}
+
+	inline bool check_concept_axioms() const {
+		bool success = true;
+		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
+			if (ground_concepts[i].types.keys == NULL) continue;
+			success &= ground_concepts[i].check_axioms();
+		}
+		return success;
 	}
 
 	template<bool Negated, bool ResolveInconsistencies, typename... Args>
@@ -2614,16 +2593,18 @@ private:
 
 						/* the atomic formula unifies with `set_formula` of this set */
 						for (auto entry : sets.extensional_graph.vertices[i].children) {
-							if (entry.value->type == ProofType::UNIVERSAL_ELIMINATION
-							 && entry.value->operands[1]->type == ProofType::TERM_PARAMETER
-							 && entry.value->operands[1]->term->type == TermType::CONSTANT
-							 && entry.value->operands[1]->term->constant == expected_constant_eliminator)
-							{
-								for (Proof* grandchild : entry.value->children) {
-									if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
-										/* we found a proof of the atomic formula */
-										grandchild->reference_count++;
-										return grandchild;
+							for (Proof* child : entry.value->children) {
+								if (child->type == ProofType::UNIVERSAL_ELIMINATION
+								 && child->operands[1]->type == ProofType::TERM_PARAMETER
+								 && child->operands[1]->term->type == TermType::CONSTANT
+								 && child->operands[1]->term->constant == expected_constant_eliminator)
+								{
+									for (Proof* grandchild : child->children) {
+										if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
+											/* we found a proof of the atomic formula */
+											grandchild->reference_count++;
+											return grandchild;
+										}
 									}
 								}
 							}
@@ -2711,16 +2692,18 @@ private:
 
 						/* the atomic formula unifies with `set_formula` of this set */
 						for (auto entry : sets.extensional_graph.vertices[i].children) {
-							if (entry.value->type == ProofType::UNIVERSAL_ELIMINATION
-							 && entry.value->operands[1]->type == ProofType::TERM_PARAMETER
-							 && entry.value->operands[1]->term->type == TermType::CONSTANT
-							 && entry.value->operands[1]->term->constant == expected_constant_eliminator)
-							{
-								for (Proof* grandchild : entry.value->children) {
-									if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
-										/* we found a proof of the atomic formula */
-										grandchild->reference_count++;
-										return grandchild;
+							for (Proof* child : entry.value->children) {
+								if (child->type == ProofType::UNIVERSAL_ELIMINATION
+								 && child->operands[1]->type == ProofType::TERM_PARAMETER
+								 && child->operands[1]->term->type == TermType::CONSTANT
+								 && child->operands[1]->term->constant == expected_constant_eliminator)
+								{
+									for (Proof* grandchild : child->children) {
+										if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
+											/* we found a proof of the atomic formula */
+											grandchild->reference_count++;
+											return grandchild;
+										}
 									}
 								}
 							}
@@ -3129,6 +3112,10 @@ struct theory_sample {
 	Proof** proofs;
 	unsigned int count;
 	double log_probability;
+#if !defined(NDEBUG)
+	/* a unique identifier for debugging */
+	unsigned int id;
+#endif
 
 	static inline unsigned int hash(const theory_sample<Proof>& key) {
 		unsigned int hash_value = 0;
@@ -3145,6 +3132,9 @@ struct theory_sample {
 		dst.proofs = src.proofs;
 		dst.count = src.count;
 		dst.log_probability = src.log_probability;
+#if !defined(NDEBUG)
+		dst.id = src.id;
+#endif
 	}
 
 	static inline void free(theory_sample<Proof>& sample) { sample.free(); }
@@ -3263,6 +3253,9 @@ struct model_evidence_collector
 		if (!init(new_sample, T.observations, current_log_probability))
 			throw std::runtime_error("Failed to initialize first theory_sample.");
 
+#if !defined(NDEBUG)
+		new_sample.id = samples.size;
+#endif
 		unsigned int bucket = samples.index_of(new_sample);
 		move(new_sample, samples.keys[bucket]);
 		samples.size++;
@@ -3301,6 +3294,9 @@ struct model_evidence_collector
 		}
 
 		/* we've never seen this sample before */
+#if !defined(NDEBUG)
+		new_sample.id = samples.size;
+#endif
 		move(new_sample, samples.keys[bucket]);
 		samples.size++;
 		return true;
@@ -3381,6 +3377,10 @@ struct lambda_provability_collector
 	Proof* test_proof;
 	Term* current_term;
 
+#if !defined(NDEBUG)
+	std::function<double(void)> compute_current_log_probability;
+#endif
+
 	template<typename ProofPrior>
 	lambda_provability_collector(const theory<Formula, ProofCalculus, Canonicalizer>& T, ProofPrior& proof_prior, Proof* test_proof) :
 		lambda_provability_collector(T, proof_prior, test_proof, *this)
@@ -3402,6 +3402,9 @@ struct lambda_provability_collector
 
 		/* initialize `current_log_probability` */
 		current_log_probability = log_probability(T.observations, proof_prior, sample_collector);
+#if !defined(NDEBUG)
+		compute_current_log_probability = [&]() { return log_probability(T.observations, proof_prior, sample_collector); };
+#endif
 
 		/* add the first sample */
 		theory_sample<Proof>& new_sample = *((theory_sample<Proof>*) alloca(sizeof(theory_sample<Proof>)));
@@ -3419,6 +3422,9 @@ struct lambda_provability_collector
 		}
 		samples.table.size++;
 
+#if !defined(NDEBUG)
+		new_sample.id = inner_samples.size;
+#endif
 		bucket = inner_samples.index_of(new_sample);
 		move(new_sample, inner_samples.keys[bucket]);
 		inner_samples.size++;
@@ -3468,6 +3474,15 @@ struct lambda_provability_collector
 		}
 
 		/* we've never seen this sample before */
+#if !defined(NDEBUG)
+		new_sample.id = inner_samples.size;
+		double expected_log_probability = compute_current_log_probability();
+		if (fabs(expected_log_probability - new_sample.log_probability) > 1.0e-9) {
+			fprintf(stderr, "lambda_provability_collector WARNING: The computed"
+					" log probability of the sample (%lf) differs from the expected log probability (%lf).\n",
+					new_sample.log_probability, expected_log_probability);
+		}
+#endif
 		move(new_sample, inner_samples.keys[bucket]);
 		inner_samples.size++;
 		return true;
@@ -3551,20 +3566,25 @@ template<typename Formula,
 	typename ProofPrior>
 double log_joint_probability_of_observation(
 		theory<Formula, ProofCalculus, Canonicalizer>& T,
-		ProofPrior& proof_prior, Formula* logical_form,
-		unsigned int num_samples)
+		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
+		Formula* logical_form, unsigned int num_samples)
 {
 	typedef typename ProofCalculus::Proof Proof;
 
 	unsigned int new_constant;
 	Proof* new_proof = T.add_formula(logical_form, new_constant);
-	if (new_proof == nullptr)
+	if (new_proof == nullptr) {
 		return -std::numeric_limits<double>::infinity();
+	} else if (!add(new_proof, proof_prior, proof_axioms)) {
+		T.remove_formula(new_proof);
+		return -std::numeric_limits<double>::infinity();
+	}
 
 	model_evidence_collector<Formula, ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	for (unsigned int t = 0; t < num_samples; t++)
 		do_mh_step(T, proof_prior, collector);
 
+	subtract(collector.test_proof, proof_prior, proof_axioms);
 	T.remove_formula(collector.test_proof);
 	return collector.total_log_probability();
 }
@@ -3575,20 +3595,25 @@ template<typename Formula,
 	typename ProofPrior>
 double log_joint_probability_of_truth(
 		theory<Formula, ProofCalculus, Canonicalizer>& T,
-		ProofPrior& proof_prior, Formula* logical_form,
-		unsigned int num_samples)
+		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
+		Formula* logical_form, unsigned int num_samples)
 {
 	typedef typename ProofCalculus::Proof Proof;
 
 	unsigned int new_constant;
 	Proof* new_proof = T.add_formula(logical_form, new_constant);
-	if (new_proof == nullptr)
+	if (new_proof == nullptr) {
 		return -std::numeric_limits<double>::infinity();
+	} else if (!add(new_proof, proof_prior, proof_axioms)) {
+		T.remove_formula(new_proof);
+		return -std::numeric_limits<double>::infinity();
+	}
 
 	provability_collector<Formula, ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	for (unsigned int t = 0; t < num_samples; t++)
 		do_mh_step(T, proof_prior, collector);
 
+	subtract(collector.internal_collector.test_proof, proof_prior, proof_axioms);
 	T.remove_formula(collector.internal_collector.test_proof);
 	return collector.total_log_probability();
 }
@@ -3599,7 +3624,8 @@ template<typename Formula,
 	typename ProofPrior>
 bool log_joint_probability_of_lambda(
 		theory<Formula, ProofCalculus, Canonicalizer>& T,
-		ProofPrior& proof_prior, Formula* logical_form, unsigned int num_samples,
+		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
+		Formula* logical_form, unsigned int num_samples,
 		array_map<typename Formula::Term, double>& log_probabilities)
 {
 	typedef typename ProofCalculus::Proof Proof;
@@ -3618,14 +3644,20 @@ bool log_joint_probability_of_lambda(
 	unsigned int new_constant;
 	Proof* new_proof = T.add_formula(existential, new_constant);
 	free(*existential); if (existential->reference_count == 0) free(existential);
-	if (new_proof == nullptr)
+	if (new_proof == nullptr) {
 		return false;
+	} else if (!proof_axioms.template add<false>(new_proof, proof_prior)) {
+		T.remove_formula(new_proof);
+		return -std::numeric_limits<double>::infinity();
+	}
 
 	lambda_provability_collector<Formula, ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	for (unsigned int t = 0; t < num_samples; t++)
 {
 fprintf(stderr, "DEBUG: t = %u\n", t);
-T.check_proof_axioms();
+proof_axioms.check_proof_axioms(T);
+proof_axioms.check_universal_eliminations(T, collector);
+T.check_concept_axioms();
 T.check_disjunction_introductions();
 T.sets.are_elements_unique();
 T.sets.check_freeable_sets();
@@ -3634,11 +3666,12 @@ T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 if (!T.observations.contains(collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `lambda_provability_collector.test_proof` is not an observation in the theory.\n");
-/*if (t == 5791)
+/*if (t == 167)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
-		do_mh_step(T, proof_prior, collector);
+		do_mh_step(T, proof_prior, proof_axioms, collector);
 }
 
+	proof_axioms.template subtract<false>(collector.test_proof, proof_prior);
 	T.remove_formula(collector.test_proof);
 	return collector.total_log_probability(log_probabilities);
 }

@@ -399,9 +399,7 @@ inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets)
 { }
 
-template<typename Formula>
-inline bool compute_new_set_size(
-		const Formula* set_formula, unsigned int& out,
+inline bool compute_new_set_size(unsigned int& out,
 		unsigned int min_set_size, unsigned int max_set_size)
 {
 	out = (max_set_size == UINT_MAX) ? (min_set_size + 20) : ((min_set_size + max_set_size + 1) / 2);
@@ -643,7 +641,7 @@ struct set_reasoning
 		/* compute the upper bound and lower bound on the size of this new set */
 		unsigned int min_set_size, max_set_size, initial_set_size;
 		if (!set_size_bounds(set_id, min_set_size, max_set_size)
-		 || !compute_new_set_size(set_formula, initial_set_size, min_set_size, max_set_size, std::forward<Args>(visitor)...))
+		 || !compute_new_set_size(initial_set_size, min_set_size, max_set_size, std::forward<Args>(visitor)...))
 		{
 			free_set(set_id); return false;
 		}

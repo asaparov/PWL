@@ -44,7 +44,8 @@ bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const typename Parser::SentenceType& s,
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int article_name, const hash_map<string, unsigned int>& names,
-		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior, Printer& printer)
+		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior,
+		typename TheoryPrior::PriorState& proof_axioms, Printer& printer)
 {
 	unsigned int parse_count, new_constant;
 	Formula* logical_forms[2];
@@ -99,9 +100,20 @@ bool read_sentence(
 			break;
 		} else if (parse_count > 0 && unrecognized_concatenated.length == 1 && unrecognized_concatenated[0] == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			bool success = (T.add_formula(logical_forms[0], new_constant) != nullptr)
-						&& parser.add_definition(s, logical_forms[0], new_constant);
-			if (!success) {
+			auto* new_proof = T.add_formula(logical_forms[0], new_constant);
+			if (new_proof != nullptr) {
+				if (proof_axioms.add(new_proof, theory_prior)) {
+					if (!parser.add_definition(s, logical_forms[0], new_constant)) {
+						proof_axioms.subtract(new_proof, theory_prior);
+						T.remove_formula(new_proof);
+						new_proof = nullptr;
+					}
+				} else {
+					T.remove_formula(new_proof);
+					new_proof = nullptr;
+				}
+			}
+			if (new_proof == nullptr) {
 				print("read_sentence ERROR: Unable to add definition to theory.\n", stderr);
 				print("  Sentence:     '", stderr); print(s, stderr, printer); print("'\n", stderr);
 				print("  Logical form: ", stderr); print(*logical_forms[0], stderr, printer); print("\n", stderr);
@@ -125,7 +137,7 @@ bool read_sentence(
 			}
 			next_article = unrecognized_concatenated[1];
 		}
-		read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, printer);
+		read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms, printer);
 		free_logical_forms(logical_forms, parse_count);
 	}
 
@@ -139,7 +151,12 @@ bool read_sentence(
 	}
 
 	/* add the most probable logical form to the theory */
-	if (T.add_formula(logical_forms[0], new_constant) == nullptr) {
+	auto* new_proof = T.add_formula(logical_forms[0], new_constant);
+	if (new_proof != nullptr && !proof_axioms.add(new_proof, theory_prior)) {
+		T.remove_formula(new_proof);
+		new_proof = nullptr;
+	}
+	if (new_proof == nullptr) {
 		print("read_sentence ERROR: Unable to add logical form to theory.\n", stderr);
 		print("  Sentence:     '", stderr); print(s, stderr, printer); print("'\n", stderr);
 		print("  Logical form: ", stderr); print(*logical_forms[0], stderr, printer); print("\n", stderr);
@@ -160,7 +177,7 @@ bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
 		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
 		const hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
-		TheoryPrior& theory_prior, Printer& printer)
+		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms, Printer& printer)
 {
 	print("Reading article: '", stdout); print(article_name, stdout, printer); print("'\n", stdout);
 
@@ -174,7 +191,7 @@ bool read_article(
 	}
 
 	for (unsigned int i = 0; i < doc.sentence_count; i++) {
-		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, names, visited_articles, theory_prior, printer))
+		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, names, visited_articles, theory_prior, proof_axioms, printer))
 			return false;
 	}
 	return true;
@@ -317,7 +334,9 @@ inline bool answer_question(array<string>& answers,
 		theory<Formula, ProofCalculus, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles,
-		TheoryPrior& theory_prior, Printer& printer)
+		TheoryPrior& theory_prior,
+		typename TheoryPrior::PriorState& proof_axioms,
+		Printer& printer)
 {
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
@@ -388,7 +407,7 @@ inline bool answer_question(array<string>& answers,
 
 			/* find an article in order to learn about the unrecognized word */
 			unsigned int next_article = unrecognized_concatenated[0];
-			read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, printer);
+			read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms, printer);
 		} else {
 			for (array<sentence_token>& tokens : unrecognized) free(tokens);
 			break;
@@ -397,7 +416,7 @@ inline bool answer_question(array<string>& answers,
 	free(sentence);
 
 	array_map<Term, double> log_probabilities(1024);
-	if (!log_joint_probability_of_lambda(T, theory_prior, logical_forms[0], num_samples, log_probabilities)) {
+	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, log_probabilities)) {
 		fprintf(stderr, "ERROR: Failed to answer question.\n");
 		free_logical_forms(logical_forms, parse_count);
 		return false;

@@ -1301,24 +1301,6 @@ bool visit(const nd_step<Formula>* proof, Visitor& visitor)
 	return true;
 }
 
-template<typename Collection>
-struct axiom_collector {
-	Collection& axioms;
-};
-
-template<typename Formula, typename Collection>
-inline bool visit_node(const nd_step<Formula>* proof, axiom_collector<Collection>& collector) {
-	if (proof->type == nd_step_type::AXIOM)
-		return collector.axioms.add(proof->formula);
-	return true;
-}
-
-template<typename Formula, typename Collection>
-inline bool get_axioms(const nd_step<Formula>* proof, Collection& axioms) {
-	axiom_collector<Collection> collector = {axioms};
-	return visit<true>(proof, collector);
-}
-
 template<nd_step_type Type, typename Collection>
 struct proof_step_collector {
 	Collection& steps;
@@ -2009,6 +1991,23 @@ double log_probability(
 	exit(EXIT_FAILURE);
 }
 
+template<typename Formula>
+struct changes_collector {
+	typedef typename Formula::Term Term;
+
+	array_multiset<Formula*, false>& axioms;
+	array_multiset<Term, true>& universal_eliminations;
+};
+
+template<typename Formula>
+inline bool visit_node(const nd_step<Formula>* proof, changes_collector<Formula>& collector) {
+	if (proof->type == nd_step_type::AXIOM)
+		return collector.axioms.add(proof->formula);
+	else if (proof->type == nd_step_type::UNIVERSAL_ELIMINATION)
+		return collector.universal_eliminations.add(*proof->operands[1]->term);
+	return true;
+}
+
 template<typename AxiomPrior,
 	typename ConjunctionIntroductionPrior,
 	typename UniversalIntroductionPrior,
@@ -2017,6 +2016,223 @@ template<typename AxiomPrior,
 	typename ProofLengthPrior>
 struct canonicalized_proof_prior
 {
+	typedef typename std::remove_pointer<typename AxiomPrior::ObservationType>::type Formula;
+	typedef typename Formula::Term Term;
+
+	struct prior_state_changes {
+		array_multiset<Formula*, false> proof_axioms;
+		array_multiset<Term, true> universal_eliminations;
+		typename AxiomPrior::PriorStateChanges axiom_prior_state;
+
+		prior_state_changes() : proof_axioms(16), universal_eliminations(8) { }
+	};
+
+	struct prior_state {
+		hash_multiset<Formula*, false> proof_axioms;
+		hash_multiset<Term, true> universal_eliminations;
+		typename AxiomPrior::PriorState axiom_prior_state;
+
+		prior_state() : proof_axioms(64), universal_eliminations(16) { }
+
+		inline bool add(const prior_state_changes& changes)
+		{
+			if (!proof_axioms.add(changes.proof_axioms)) {
+				return false;
+			} else if (!universal_eliminations.add(changes.universal_eliminations)) {
+				proof_axioms.template subtract<true>(changes.proof_axioms);
+				return false;
+			} else if (!axiom_prior_state.add(changes.axiom_prior_state)) {
+				proof_axioms.template subtract<true>(changes.proof_axioms);
+				universal_eliminations.template subtract<true>(changes.universal_eliminations);
+				return false;
+			}
+			return true;
+		}
+
+		template<bool HasPrior = true>
+		inline bool add(const nd_step<Formula>* proof,
+				const canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior)
+		{
+			array_multiset<Formula*, false> proof_axiom_changes(16);
+			array_multiset<Term, true> universal_elimination_changes(8);
+			changes_collector<Formula> collector = {proof_axiom_changes, universal_elimination_changes};
+			if (!visit<true>(proof, collector)
+			 || !proof_axioms.counts.check_size(proof_axioms.counts.table.size + proof_axiom_changes.counts.size)
+			 || (HasPrior && !universal_eliminations.add(universal_elimination_changes)))
+				return false;
+			array<Formula*> new_axioms(max((size_t) 1, proof_axiom_changes.counts.size));
+			for (const auto& pair : proof_axiom_changes.counts) {
+				bool contains; unsigned int bucket;
+				unsigned int& count = proof_axioms.counts.get(pair.key, contains, bucket);
+				if (!contains) {
+					proof_axioms.counts.table.keys[bucket] = pair.key;
+					proof_axioms.counts.values[bucket] = pair.value;
+					proof_axioms.counts.table.size++;
+					new_axioms.add(pair.key);
+				} else {
+					count += pair.value;
+				}
+			}
+			proof_axioms.sum += proof_axiom_changes.sum;
+
+			for (unsigned int i = 0; i < new_axioms.length; i++) {
+				if (!axiom_prior_state.add(new_axioms[i], prior.axiom_prior)) {
+					for (unsigned int j = 0; j < i; j++)
+						axiom_prior_state.subtract(new_axioms[j], prior.axiom_prior);
+					if (HasPrior) universal_eliminations.template subtract<true>(universal_elimination_changes);
+					proof_axioms.template subtract<true>(proof_axiom_changes);
+					return false;
+				}
+			}
+			return true;
+		}
+
+		inline void subtract(const prior_state_changes& changes) {
+			proof_axioms.template subtract<true>(changes.proof_axioms);
+			universal_eliminations.template subtract<true>(changes.universal_eliminations);
+			axiom_prior_state.subtract(changes.axiom_prior_state);
+		}
+
+		template<bool HasPrior = true>
+		inline void subtract(const nd_step<Formula>* proof,
+				const canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior)
+		{
+			array_multiset<Formula*, false> proof_axiom_changes(16);
+			array_multiset<Term, true> universal_elimination_changes(8);
+			changes_collector<Formula> collector = {proof_axiom_changes, universal_elimination_changes};
+			if (!visit<true>(proof, collector)) {
+				fprintf(stderr, "canonicalized_proof_prior.prior_state.subtract ERROR: Unable to collect proof changes.\n");
+				return;
+			}
+			array<Formula*> old_axioms(max((size_t) 1, proof_axiom_changes.counts.size));
+			for (const auto& pair : proof_axiom_changes.counts) {
+				bool contains; unsigned int bucket;
+				unsigned int& count = proof_axioms.counts.get(pair.key, contains, bucket);
+#if !defined(NDEBUG)
+				if (!contains || count < pair.value)
+					fprintf(stderr, "canonicalized_proof_prior.prior_state.subtract WARNING:"
+							" Attempted to remove more items from a bin than it contains.\n");
+#endif
+				count -= pair.value;
+				if (count == 0) {
+					old_axioms.add(pair.key);
+					proof_axioms.counts.remove_at(bucket);
+				}
+			}
+			proof_axioms.sum -= proof_axiom_changes.sum;
+
+			for (unsigned int i = 0; i < old_axioms.length; i++)
+				axiom_prior_state.subtract(old_axioms[i], prior.axiom_prior);
+			if (HasPrior)
+				universal_eliminations.template subtract<true>(universal_elimination_changes);
+		}
+
+		template<typename Theory>
+		bool check_proof_axioms(const Theory& T) const
+		{
+			typedef typename Formula::TermType TermType;
+
+			bool success = true;
+			array<const nd_step<Formula>*> axiom_collection(64);
+			array_multiset<Formula*, false> computed_axioms(64);
+			for (const nd_step<Formula>* proof : T.observations) {
+				array_multiset<const nd_step<Formula>*, false> axioms(16);
+				if (!get_proof_steps<nd_step_type::AXIOM>(proof, axioms)) {
+					fprintf(stderr, "canonicalized_proof_prior.prior_state.check_proof_axioms ERROR: `get_proof_steps` failed.\n");
+					return false;
+				}
+
+				for (const auto& entry : axioms.counts) {
+					bool contains;
+					unsigned int count = proof_axioms.counts.get(entry.key->formula, contains);
+					if (!contains || count == 0) {
+						print("canonicalized_proof_prior.prior_state.check_proof_axioms WARNING: "
+								"Found axiom of a proof in `observations` that is not in `proof_axioms`.\n", stderr);
+						print("  Axiom: ", stderr); print(*entry.key->formula, stderr); print('\n', stderr);
+						success = false;
+					}
+
+					if (!computed_axioms.add(entry.key->formula, entry.value)
+					 || !axiom_collection.add(entry.key)) return false;
+				}
+			}
+
+			for (const auto& entry : proof_axioms.counts) {
+				bool contains;
+				unsigned int count = computed_axioms.counts.get(entry.key, contains);
+				if (!contains) {
+					print("canonicalized_proof_prior.prior_state.check_proof_axioms WARNING: "
+							"`proof_axioms` contains an axiom that does not belong to a proof"
+							" in `observations`.\n", stderr);
+					print("  Axiom: ", stderr); print(*entry.key, stderr); print('\n', stderr);
+					success = false;
+				} else if (entry.value != count) {
+					print("canonicalized_proof_prior.prior_state.check_proof_axioms WARNING: The axiom '", stderr);
+					print(*entry.key, stderr); print("' has expected frequency ", stderr);
+					print(count, stderr); print(" but has computed frequency ", stderr);
+					print(entry.value, stderr); print('\n', stderr);
+					success = false;
+				}
+			}
+
+			/* check that definition axioms are correctly stored in the appropriate `definitions` array */
+			for (const nd_step<Formula>* axiom : axiom_collection) {
+				if (axiom->formula->type == TermType::EQUALS && axiom->formula->binary.left->type == TermType::CONSTANT) {
+					unsigned int constant = axiom->formula->binary.left->constant;
+					if (constant < T.new_constant_offset) continue;
+					if (!T.ground_concepts[constant - T.new_constant_offset].definitions.contains(axiom)) {
+						print("canonicalized_proof_prior.prior_state.check_proof_axioms WARNING: The axiom '", stderr);
+						print(*axiom->formula, stderr);
+						print("' does not exist in the appropriate `definitions` array.\n", stderr);
+						success = false;
+					}
+				}
+			}
+			return success;
+		}
+
+		template<typename Theory, typename TheorySampleCollector>
+		bool check_universal_eliminations(const Theory& T, TheorySampleCollector& theory_sample_collector) const
+		{
+			array_multiset<Formula*, false> proof_axiom_changes(16);
+			array_multiset<Term, true> universal_elimination_changes(8);
+			changes_collector<Formula> collector = {proof_axiom_changes, universal_elimination_changes};
+			for (const nd_step<Formula>* proof : T.observations) {
+				if (!theory_sample_collector.has_prior(proof)) continue;
+				if (!visit<true>(proof, collector))
+					return false;
+			}
+
+			bool success = true;
+			for (const auto& entry : universal_elimination_changes.counts) {
+				bool contains;
+				unsigned int count = universal_eliminations.counts.get(entry.key, contains);
+				if (!contains) {
+					print("canonicalized_proof_prior.prior_state.check_universal_eliminations WARNING:"
+							" The observation's proofs contain the term '", stderr);
+					print(entry.key, stderr); print("' but `universal_eliminations` does not.\n", stderr);
+					success = false;
+				} else if (count != entry.value) {
+					fprintf(stderr, "canonicalized_proof_prior.prior_state.check_universal_eliminations WARNING:"
+							" The observation's proofs contain %u instances of the term '", entry.value);
+					print(entry.key, stderr); fprintf(stderr, "' but `universal_eliminations` contains %u.\n", count);
+					success = false;
+				}
+			} for (const auto& entry : universal_eliminations.counts) {
+				if (!universal_eliminations.counts.table.contains(entry.key)) {
+					print("canonicalized_proof_prior.prior_state.check_universal_eliminations WARNING:"
+							" `universal_eliminations` contains the term '", stderr);
+					print(entry.key, stderr); print("' but the observation's proofs do not.\n", stderr);
+					success = false;
+				}
+			}
+			return success;
+		}
+	};
+
+	typedef prior_state PriorState;
+	typedef prior_state_changes PriorStateChanges;
+
 	AxiomPrior axiom_prior;
 	ConjunctionIntroductionPrior conjunction_introduction_prior;
 	UniversalIntroductionPrior universal_introduction_prior;
@@ -2039,7 +2255,7 @@ struct canonicalized_proof_prior
 		proof_length_prior(proof_length_prior)
 	{ }
 
-	canonicalized_proof_prior(const canonicalized_proof_prior& src) :
+	canonicalized_proof_prior(const canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& src) :
 		axiom_prior(src.axiom_prior),
 		conjunction_introduction_prior(src.conjunction_introduction_prior),
 		universal_introduction_prior(src.universal_introduction_prior),
@@ -2229,21 +2445,17 @@ template<
 	typename UniversalEliminationPrior,
 	typename TermIndicesPrior,
 	typename ProofLengthPrior,
-	typename MultisetType,
-	typename TheorySampleCollector,
-	typename... AxiomPriorParameters>
+	typename PriorState,
+	typename PriorStateChanges,
+	typename TheorySampleCollector>
 double log_probability_ratio(
 		const array_map<nd_step<Formula>*, proof_substitution<Formula>>& proofs,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
-		const MultisetType& proof_axioms,
-		array_multiset<Formula*, false>& old_axioms,
-		array_multiset<Formula*, false>& new_axioms,
-		TheorySampleCollector& theory_sample_collector,
-		AxiomPriorParameters&&... axiom_prior_parameters)
+		const PriorState& prior_state, PriorStateChanges& old_axioms, PriorStateChanges& new_axioms,
+		TheorySampleCollector& theory_sample_collector)
 {
 	typedef typename ConjunctionIntroductionPrior::ObservationCollection ConjunctionIntroductions;
 	typedef typename UniversalIntroductionPrior::ObservationCollection UniversalIntroductions;
-	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
 	typedef typename TermIndicesPrior::ObservationCollection TermIndices;
 
 	double value = 0.0;
@@ -2251,30 +2463,30 @@ double log_probability_ratio(
 		if (theory_sample_collector.has_prior(entry.key)) {
 			ConjunctionIntroductions old_conjunction_introductions, new_conjunction_introductions;
 			UniversalIntroductions old_universal_introductions, new_universal_introductions;
-			UniversalEliminations old_universal_eliminations, new_universal_eliminations;
 			TermIndices old_term_indices, new_term_indices;
-			value -= log_probability_helper(*entry.key, old_axioms, old_conjunction_introductions,
-					old_universal_introductions, old_universal_eliminations, old_term_indices, prior.proof_length_prior);
-			value += log_probability_helper(*entry.key, new_axioms, new_conjunction_introductions,
-					new_universal_introductions, new_universal_eliminations, new_term_indices, prior.proof_length_prior, entry.value);
+			value -= log_probability_helper(*entry.key, old_axioms.proof_axioms, old_conjunction_introductions,
+					old_universal_introductions, old_axioms.universal_eliminations, old_term_indices, prior.proof_length_prior);
+			value += log_probability_helper(*entry.key, new_axioms.proof_axioms, new_conjunction_introductions,
+					new_universal_introductions, new_axioms.universal_eliminations, new_term_indices, prior.proof_length_prior, entry.value);
 
 			value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
 			value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
-			value += log_probability_ratio(old_universal_eliminations, new_universal_eliminations, prior.universal_elimination_prior);
 			value += log_probability_ratio(old_term_indices, new_term_indices, prior.term_indices_prior);
 		} else {
-			if (!count_axioms(*entry.key, old_axioms)
-			 || !count_axioms(*entry.key, new_axioms, entry.value))
+			if (!count_axioms(*entry.key, old_axioms.proof_axioms)
+			 || !count_axioms(*entry.key, new_axioms.proof_axioms, entry.value))
 				exit(EXIT_FAILURE);
 		}
 	}
 
-	if (old_axioms.counts.size > 1)
-		sort(old_axioms.counts.keys, old_axioms.counts.values, old_axioms.counts.size);
-	if (new_axioms.counts.size > 1)
-		sort(new_axioms.counts.keys, new_axioms.counts.values, new_axioms.counts.size);
-	return value + log_probability_ratio(proof_axioms, old_axioms, new_axioms,
-			prior.axiom_prior, std::forward<AxiomPriorParameters>(axiom_prior_parameters)...);
+	value += log_probability_ratio(prior_state.universal_eliminations, old_axioms.universal_eliminations, new_axioms.universal_eliminations, prior.universal_elimination_prior);
+
+	if (old_axioms.proof_axioms.counts.size > 1)
+		sort(old_axioms.proof_axioms.counts.keys, old_axioms.proof_axioms.counts.values, old_axioms.proof_axioms.counts.size);
+	if (new_axioms.proof_axioms.counts.size > 1)
+		sort(new_axioms.proof_axioms.counts.keys, new_axioms.proof_axioms.counts.values, new_axioms.proof_axioms.counts.size);
+	return value + log_probability_ratio(prior_state.proof_axioms, old_axioms.proof_axioms, new_axioms.proof_axioms,
+			prior.axiom_prior, prior_state.axiom_prior_state, old_axioms.axiom_prior_state, new_axioms.axiom_prior_state);
 }
 
 #endif /* NATURAL_DEDUCTION_H_ */
