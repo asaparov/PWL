@@ -2092,7 +2092,7 @@ N_ADJUNCT -> ADJP_R:try_remove_correlated,select_right_arg2_of_without_head
 #  -> (COMMA) (THAT) S' {?[g1]:(...) & ... & ?[gn]:(...)} (COMMA)
 # e.g. "the book (that) I gave Kim"
 #N_ADJUNCT -> S' # TODO: remove grammatical features from S'
-#N_ADJUNCT -> S':add_that,add_nullable_subject # TODO: remove grammatical features from S'
+N_ADJUNCT -> S':select_right_arg1_of_without_head,add_that,add_nullable_subject
 #N_ADJUNCT -> COMMA S':add_that,add_nullable_subject COMMA # TODO: remove grammatical features from S'
 
 # N_ADJUNCT {... & ?[x]:(p(x) & ?[y]:(g(y) & arg1/arg2(x)=y))}

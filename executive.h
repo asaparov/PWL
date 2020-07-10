@@ -298,7 +298,26 @@ debug_terminal_printer = &parser.get_printer();
 			if (parse_count == 0) {
 				fprintf(stderr, "parse_sentence WARNING: Unable to parse sentence '%s' despite being in the training data.\n", input_sentence);
 				break;
-			} if (*logical_forms[0] != *entry.value.root) {
+			}
+
+			hol_term* first_logical_form = relabel_variables(logical_forms[0]);
+			hol_term* second_logical_form = relabel_variables(entry.value.root);
+			if (first_logical_form == nullptr) {
+				if (first_logical_form != nullptr) {
+					free(*first_logical_form);
+					if (first_logical_form->reference_count == 0)
+						free(first_logical_form);
+				}
+				for (unsigned int i = 0; i < parse_count; i++) {
+					free(*logical_forms[i]);
+					if (logical_forms[i]->reference_count == 0)
+						free(logical_forms[i]);
+				}
+				free(sentence);
+				return false;
+			}
+
+			if (first_logical_form != second_logical_form && *first_logical_form != *second_logical_form) {
 				fprintf(stderr, "parse_sentence WARNING: The parsed logical form does not match the label logical form in the training data:\n");
 				fprintf(stderr, "  Sentence: '%s'\n", input_sentence);
 				print("  Parsed logical form:   ", stderr); print(*logical_forms[0], stderr, parser.get_printer()); print('\n', stderr);
@@ -308,6 +327,8 @@ debug_terminal_printer = &parser.get_printer();
 					print("  with log probability ", stderr); print(expected_log_probability, stderr); print('\n', stderr);
 				}
 			}
+			if (first_logical_form != nullptr) { free(*first_logical_form); if (first_logical_form->reference_count == 0) free(first_logical_form); }
+			if (second_logical_form != nullptr) { free(*second_logical_form); if (second_logical_form->reference_count == 0) free(second_logical_form); }
 			break;
 		}
 		if (found_training_sentence) break;

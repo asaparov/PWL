@@ -30101,8 +30101,11 @@ bool get_set_predicate(hol_term* src, unsigned int& value,
 	if (head == nullptr)
 		return false;
 
-	if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
+	bool any = false;
+	if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr) {
+		any = true;
 		head = head->any.included;
+	}
 
 	unsigned int set_variable;
 	if (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) {
@@ -30110,9 +30113,15 @@ bool get_set_predicate(hol_term* src, unsigned int& value,
 		excluded_count = 0;
 		return true;
 	} else if (head->type == hol_term_type::UNARY_APPLICATION) {
-		value = (unsigned int) built_in_predicates::ZERO;
-		excluded_count = 0;
-		return true;
+		if (any && head->binary.left->type == hol_term_type::VARIABLE && head->binary.left->variable == lambda_variable && head->binary.right->type == hol_term_type::VARIABLE) {
+			value = IMPLICIT_NODE;
+			excluded_count = 0;
+			return true;
+		} else {
+			value = (unsigned int) built_in_predicates::ZERO;
+			excluded_count = 0;
+			return true;
+		}
 	} else {
 #if !defined(NDEBUG)
 		if (head->type != hol_term_type::EXISTS) {
