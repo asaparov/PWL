@@ -26,7 +26,7 @@ CPP=g++
 cc-option = $(shell $(CPP) -Werror $(1) -c -x c /dev/null -o /dev/null 2>/dev/null; echo $$?)
 
 LIBRARY_PKG_LIBS=
-PKG_LIBS=-pthread
+PKG_LIBS=-pthread -lssl -lcrypto
 NO_AS_NEEDED=-Wl,--no-as-needed
 ifeq ($(call cc-option, $(NO_AS_NEEDED)),0)
 	PKG_LIBS += $(NO_AS_NEEDED)

@@ -10,7 +10,7 @@
 
 #include <core/lex.h>
 #include <math/multiset.h>
-#include <cstdint>
+#include <cinttypes>
 
 #include "array_view.h"
 
@@ -222,7 +222,7 @@ struct hol_term
 		unsigned int variable;
 		unsigned int constant;
 		unsigned int parameter;
-		int integer;
+		int64_t integer;
 		string str;
 		sequence uint_list;
 		hol_unary_term unary;
@@ -1564,6 +1564,24 @@ inline bool get_free_variables(const hol_term& src, array<unsigned int>& variabl
 	return visit(src, visitor);
 }
 
+struct bound_variable_collector {
+	array<unsigned int>& bound_variables;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, bound_variable_collector& visitor) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		if (!visitor.bound_variables.contains(term.quantifier.variable))
+			return visitor.bound_variables.add(term.quantifier.variable);
+	}
+	return true;
+}
+
+inline bool get_bound_variables(const hol_term& src, array<unsigned int>& bound_variables) {
+	bound_variable_collector visitor = {bound_variables};
+	return visit(src, visitor);
+}
+
 struct max_bound_variable_collector {
 	bool has_variable;
 	unsigned int variable;
@@ -1752,7 +1770,7 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return true;
 }
 
-inline bool clone_integer(int src_integer, int& dst_integer) {
+inline bool clone_integer(int64_t src_integer, int64_t& dst_integer) {
 	dst_integer = src_integer;
 	return true;
 }
@@ -2001,7 +2019,7 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return clone_parameter(src_parameter, dst_parameter);
 }
 
-inline bool clone_integer(int src_integer, int& dst_integer, constant_relabeler& relabeler) {
+inline bool clone_integer(int64_t src_integer, int64_t& dst_integer, constant_relabeler& relabeler) {
 	return clone_integer(src_integer, dst_integer);
 }
 
@@ -2467,7 +2485,7 @@ inline hol_term* apply(hol_term* src, bound_variable_shifter& shifter) {
 		if (!shifter.bound_variables.add(src->quantifier.variable)) return NULL;
 		hol_term* operand = apply(src->quantifier.operand, shifter);
 		if (operand == NULL) return NULL;
-		else if (operand == src) operand->reference_count++;
+		else if (operand == src->quantifier.operand) operand->reference_count++;
 
 		unsigned int new_variable = src->quantifier.variable + shifter.shift;
 		hol_term* dst;
@@ -9113,7 +9131,7 @@ inline bool any_number(const hol_term& src) {
 }
 
 /* NOTE: this function assumes src is not ANY */
-inline bool get_number(const hol_term& src, int& value) {
+inline bool get_number(const hol_term& src, int64_t& value) {
 	if (src.type != hol_term_type::INTEGER)
 		return false;
 	value = src.integer;
@@ -9121,7 +9139,7 @@ inline bool get_number(const hol_term& src, int& value) {
 }
 
 inline bool set_number(hol_term& exp,
-		const hol_term& set, int value)
+		const hol_term& set, int64_t value)
 {
 	if (set.type != hol_term_type::ANY && set.type != hol_term_type::ANY_RIGHT && set.type != hol_term_type::INTEGER)
 		return false;
@@ -15827,21 +15845,25 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 
 						/* check if `any` is part of `left` or `right` */
 						unsigned int new_any_length = any_length;
-						for (unsigned int i = 0; i < new_left_length - any_length + 1; i++) {
-							bool is_subset_at_i = true;
-							for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
-								is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_left_intersections[i + j][left_indices[i + j]]));
-							if (is_subset_at_i) {
-								new_any_length = 0;
-								break;
+						if (new_left_length >= any_length) {
+							for (unsigned int i = 0; i < new_left_length - any_length + 1; i++) {
+								bool is_subset_at_i = true;
+								for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
+									is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_left_intersections[i + j][left_indices[i + j]]));
+								if (is_subset_at_i) {
+									new_any_length = 0;
+									break;
+								}
 							}
-						} for (unsigned int i = 0; i < new_right_length - any_length + 1; i++) {
-							bool is_subset_at_i = true;
-							for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
-								is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_right_intersections[i + j][right_indices[i + j]]));
-							if (is_subset_at_i) {
-								new_any_length = 0;
-								break;
+						} if (new_right_length >= any_length) {
+							for (unsigned int i = 0; i < new_right_length - any_length + 1; i++) {
+								bool is_subset_at_i = true;
+								for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
+									is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_right_intersections[i + j][right_indices[i + j]]));
+								if (is_subset_at_i) {
+									new_any_length = 0;
+									break;
+								}
 							}
 						}
 
@@ -17455,7 +17477,7 @@ bool tptp_interpret_unary_term(
 		index++;
 
 	} else if (tokens[index].type == tptp_token_type::IDENTIFIER) {
-		int integer;
+		long integer;
 		if (tokens[index].text == "T") {
 			/* this the constant true */
 			term.type = hol_term_type::TRUE;
@@ -17466,7 +17488,7 @@ bool tptp_interpret_unary_term(
 			term.type = hol_term_type::FALSE;
 			term.reference_count = 1;
 			index++;
-		} else if (parse_int(tokens[index].text, integer)) {
+		} else if (parse_long(tokens[index].text, integer)) {
 			/* this is an integer */
 			term.integer = integer;
 			term.type = hol_term_type::INTEGER;

@@ -1206,9 +1206,13 @@ bool check_proof(proof_state<Formula>& out,
 		if (out.formula == NULL) return false;
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::EXISTENTIAL_INTRODUCTION:
-		if (operand_count != 2) return false;
+		if (operand_count != 3) return false;
 		second_operand = map_const(proof.operands[1], std::forward<ProofMap>(proof_map)...);
-		if (second_operand->type == nd_step_type::ARRAY_PARAMETER) {
+		if (second_operand->type == nd_step_type::ARRAY_PARAMETER && proof.operands[2]->type == nd_step_type::TERM_PARAMETER) {
+			Term* replaced_term = get_term_at_index(*operand_states[0]->formula, second_operand->parameters.data[0]);
+			if (*replaced_term != *proof.operands[2]->term)
+				return false;
+
 			Formula* temp = shift_bound_variables(operand_states[0]->formula, 1);
 			if (temp == NULL) return false;
 
@@ -1501,6 +1505,7 @@ bool new_nd_step(nd_step<Formula>*& step, nd_step_type type)
 template<typename Formula, typename Canonicalizer = identity_canonicalizer>
 struct natural_deduction
 {
+	typedef Formula Language;
 	typedef nd_step<Formula> Proof;
 	typedef nd_step_type ProofType;
 	typedef typename Formula::Term Term;
@@ -1607,8 +1612,8 @@ struct natural_deduction
 		return new_binary_step<nd_step_type::UNIVERSAL_ELIMINATION>(proof, new_term_parameter(term));
 	}
 
-	static inline Proof* new_existential_intro(Proof* proof, unsigned int* term_indices, unsigned int term_index_count) {
-		return new_binary_step<nd_step_type::EXISTENTIAL_INTRODUCTION>(proof, new_array_parameter(make_array_view(term_indices, term_index_count)));
+	static inline Proof* new_existential_intro(Proof* proof, unsigned int* term_indices, unsigned int term_index_count, Term* term) {
+		return new_ternary_step<nd_step_type::EXISTENTIAL_INTRODUCTION>(proof, new_array_parameter(make_array_view(term_indices, term_index_count)), new_term_parameter(term));
 	}
 
 	static inline Proof* new_existential_elim(Proof* existential, Proof* proof) {
@@ -2415,22 +2420,24 @@ double log_probability(
 	double value = 0.0;
 	array_multiset<Formula*, false> axioms(16);
 	for (nd_step<Formula>* entry : proofs) {
+		double proof_log_probability = 0.0;
 		if (theory_sample_collector.has_prior(entry)) {
 			ConjunctionIntroductions conjunction_introductions;
 			UniversalIntroductions universal_introductions;
 			UniversalEliminations universal_eliminations;
 			TermIndices term_indices;
-			value += log_probability_helper(*entry, axioms, conjunction_introductions,
+			proof_log_probability += log_probability_helper(*entry, axioms, conjunction_introductions,
 					universal_introductions, universal_eliminations, term_indices, prior.proof_length_prior);
 
-			value += log_probability(conjunction_introductions, prior.conjunction_introduction_prior);
-			value += log_probability(universal_introductions, prior.universal_introduction_prior);
-			value += log_probability(universal_eliminations, prior.universal_elimination_prior);
-			value += log_probability(term_indices, prior.term_indices_prior);
+			proof_log_probability += log_probability(conjunction_introductions, prior.conjunction_introduction_prior);
+			proof_log_probability += log_probability(universal_introductions, prior.universal_introduction_prior);
+			proof_log_probability += log_probability(universal_eliminations, prior.universal_elimination_prior);
+			proof_log_probability += log_probability(term_indices, prior.term_indices_prior);
 		} else {
 			if (!count_axioms(*entry, axioms))
 				exit(EXIT_FAILURE);
 		}
+		value += proof_log_probability;
 	}
 
 	if (axioms.counts.size > 1)

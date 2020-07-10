@@ -572,6 +572,111 @@ static inline bool has_intersection(grammatical_num first, grammatical_num secon
 	return intersect(dummy, first, second);
 }
 
+inline bool intersect(grammatical_mood& out, grammatical_mood first, grammatical_mood second)
+{
+	if (first == grammatical_mood::ANY) {
+		out = second;
+		return true;
+	} else if (second == grammatical_mood::ANY) {
+		out = first;
+		return true;
+	} else if (first == grammatical_mood::NOT_TO_INFINITIVE) {
+		if (second == grammatical_mood::TO_INFINITIVE) {
+			return false;
+		} else if (second == grammatical_mood::NOT_SUBJUNCTIVE) {
+			out = grammatical_mood::NOT_TO_INF_OR_SUBJ;
+		} else {
+			out = second;
+		}
+		return true;
+	} else if (second == grammatical_mood::NOT_TO_INFINITIVE) {
+		if (first == grammatical_mood::TO_INFINITIVE) {
+			return false;
+		} else if (first == grammatical_mood::NOT_SUBJUNCTIVE) {
+			out = grammatical_mood::NOT_TO_INF_OR_SUBJ;
+		} else {
+			out = first;
+		}
+		return true;
+	} else if (first == grammatical_mood::NOT_SUBJUNCTIVE) {
+		if (second == grammatical_mood::SUBJUNCTIVE) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == grammatical_mood::NOT_SUBJUNCTIVE) {
+		if (first == grammatical_mood::SUBJUNCTIVE) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == grammatical_mood::NOT_TO_INF_OR_SUBJ) {
+		if (second == grammatical_mood::TO_INFINITIVE || second == grammatical_mood::SUBJUNCTIVE) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == grammatical_mood::NOT_TO_INF_OR_SUBJ) {
+		if (first == grammatical_mood::TO_INFINITIVE || first == grammatical_mood::SUBJUNCTIVE) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first != second) {
+		return false;
+	} else {
+		out = first;
+		return true;
+	}
+}
+
+inline bool has_intersection(grammatical_mood first, grammatical_mood second) {
+	grammatical_mood dummy;
+	return intersect(dummy, first, second);
+}
+
+inline bool intersect(grammatical_comparison& out, grammatical_comparison first, grammatical_comparison second)
+{
+	if (first == grammatical_comparison::ANY) {
+		out = second;
+	} else if (second == grammatical_comparison::ANY) {
+		out = first;
+	} else if (first == second) {
+		out = first;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+inline bool has_intersection(grammatical_comparison first, grammatical_comparison second) {
+	grammatical_comparison dummy;
+	return intersect(dummy, first, second);
+}
+
+inline bool intersect(grammatical_tense& out, grammatical_tense first, grammatical_tense second)
+{
+	if (first == grammatical_tense::ANY) {
+		out = second;
+	} else if (second == grammatical_tense::ANY) {
+		out = first;
+	} else if (first == second) {
+		out = first;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+inline bool has_intersection(grammatical_tense first, grammatical_tense second) {
+	grammatical_tense dummy;
+	return intersect(dummy, first, second);
+}
+
 struct inflected_noun {
 	sequence root;
 	properness is_proper;
@@ -634,21 +739,29 @@ struct morphology_en {
 	hash_map<sequence, array<inflected_adverb>> inflected_adverbs;
 	hash_map<sequence, array<inflected_verb>> inflected_verbs;
 
+	hash_map<unsigned int, unsigned int> capitalization_map;
 	hash_map<unsigned int, unsigned int> decapitalization_map;
+
+	hash_map<sequence, array<sequence>> adjective_adverb_map;
 
 	unsigned int MORE_COMPARATIVE_ID;
 	unsigned int MOST_SUPERLATIVE_ID;
 	unsigned int FURTHER_COMPARATIVE_ID;
 	unsigned int FURTHEST_SUPERLATIVE_ID;
 
+	sequence BE_SEQ, AM_SEQ, ARE_SEQ, IS_SEQ, WAS_SEQ, WERE_SEQ, BEING_SEQ, BEEN_SEQ;
+
 	static string MORE_COMPARATIVE_STRING;
 	static string MOST_SUPERLATIVE_STRING;
 	static string FURTHER_COMPARATIVE_STRING;
 	static string FURTHEST_SUPERLATIVE_STRING;
 
-	morphology_en() : nouns(1024), adjectives(1024), adverbs(1024), verbs(1024),
-		inflected_nouns(2048), inflected_adjectives(2048), inflected_adverbs(2048),
-		inflected_verbs(2048), decapitalization_map(2048)
+	morphology_en() :
+		nouns(1024), adjectives(1024), adverbs(1024), verbs(1024), inflected_nouns(2048),
+		inflected_adjectives(2048), inflected_adverbs(2048), inflected_verbs(2048),
+		capitalization_map(2048), decapitalization_map(2048), adjective_adverb_map(1024),
+		BE_SEQ(nullptr, 0), AM_SEQ(nullptr, 0), ARE_SEQ(nullptr, 0), IS_SEQ(nullptr, 0),
+		WAS_SEQ(nullptr, 0), WERE_SEQ(nullptr, 0), BEING_SEQ(nullptr, 0), BEEN_SEQ(nullptr, 0)
 	{ }
 
 	~morphology_en() {
@@ -684,7 +797,19 @@ struct morphology_en {
 				free(element);
 			free(entry.value);
 			free(entry.key);
+		} for (auto entry : adjective_adverb_map) {
+			for (auto& element : entry.value) free(element);
+			free(entry.value);
+			free(entry.key);
 		}
+		if (BE_SEQ.tokens != nullptr) free(BE_SEQ);
+		if (AM_SEQ.tokens != nullptr) free(AM_SEQ);
+		if (ARE_SEQ.tokens != nullptr) free(ARE_SEQ);
+		if (IS_SEQ.tokens != nullptr) free(IS_SEQ);
+		if (WAS_SEQ.tokens != nullptr) free(WAS_SEQ);
+		if (WERE_SEQ.tokens != nullptr) free(WERE_SEQ);
+		if (BEING_SEQ.tokens != nullptr) free(BEING_SEQ);
+		if (BEEN_SEQ.tokens != nullptr) free(BEEN_SEQ);
 	}
 
 	inline bool initialize(hash_map<string, unsigned int>& names) {
@@ -697,47 +822,279 @@ struct morphology_en {
 		 || !get_token("was", was, names)
 		 || !get_token("were", were, names)
 		 || !get_token("being", being, names)
-		 || !get_token("been", been, names))
+		 || !get_token("been", been, names)
+		 || !init(BE_SEQ, sequence(&be, 1))
+		 || !init(AM_SEQ, sequence(&am, 1))
+		 || !init(ARE_SEQ, sequence(&are, 1))
+		 || !init(IS_SEQ, sequence(&is, 1))
+		 || !init(WAS_SEQ, sequence(&was, 1))
+		 || !init(WERE_SEQ, sequence(&were, 1))
+		 || !init(BEING_SEQ, sequence(&being, 1))
+		 || !init(BEEN_SEQ, sequence(&been, 1)))
 			return false;
 
-		sequence be_seq(&be, 1);
-		sequence am_seq(&am, 1);
-		sequence are_seq(&are, 1);
-		sequence is_seq(&is, 1);
-		sequence was_seq(&was, 1);
-		sequence were_seq(&were, 1);
-		sequence being_seq(&being, 1);
-		sequence been_seq(&been, 1);
-
 		/* add the infinitive form */
-		if (!add_inflected_form(inflected_verbs, be_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::BARE_INFINITIVE, grammatical_tense::ANY}))
+		if (!add_inflected_form(inflected_verbs, BE_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::BARE_INFINITIVE, grammatical_tense::ANY}))
 			return false;
 
 		/* add the subjunctive forms */
-		if (!add_inflected_form(inflected_verbs, be_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, were_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PAST}))
+		if (!add_inflected_form(inflected_verbs, BE_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, WERE_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::SUBJUNCTIVE, grammatical_tense::PAST}))
 			return false;
 
 		/* add the indicative verb forms */
-		if (!add_inflected_form(inflected_verbs, am_seq, {be_seq, grammatical_person::FIRST, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, are_seq, {be_seq, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, is_seq, {be_seq, grammatical_person::THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, was_seq, {be_seq, grammatical_person::FIRST_OR_THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
-		 || !add_inflected_form(inflected_verbs, were_seq, {be_seq, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
-		 || !add_inflected_form(inflected_verbs, are_seq, {be_seq, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
-		 || !add_inflected_form(inflected_verbs, were_seq, {be_seq, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PAST}))
+		if (!add_inflected_form(inflected_verbs, AM_SEQ, {BE_SEQ, grammatical_person::FIRST, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, ARE_SEQ, {BE_SEQ, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, IS_SEQ, {BE_SEQ, grammatical_person::THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, WAS_SEQ, {BE_SEQ, grammatical_person::FIRST_OR_THIRD, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
+		 || !add_inflected_form(inflected_verbs, WERE_SEQ, {BE_SEQ, grammatical_person::SECOND, grammatical_num::SINGULAR, grammatical_mood::INDICATIVE, grammatical_tense::PAST})
+		 || !add_inflected_form(inflected_verbs, ARE_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PRESENT})
+		 || !add_inflected_form(inflected_verbs, WERE_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::PLURAL, grammatical_mood::INDICATIVE, grammatical_tense::PAST}))
 			return false;
 
 		/* add the participle forms */
-		if (!add_inflected_form(inflected_verbs, being_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PRESENT_PARTICIPLE, grammatical_tense::ANY})
-		 || !add_inflected_form(inflected_verbs, been_seq, {be_seq, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PAST_PARTICIPLE, grammatical_tense::ANY}))
+		if (!add_inflected_form(inflected_verbs, BEING_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PRESENT_PARTICIPLE, grammatical_tense::ANY})
+		 || !add_inflected_form(inflected_verbs, BEEN_SEQ, {BE_SEQ, grammatical_person::ANY, grammatical_num::ANY, grammatical_mood::PAST_PARTICIPLE, grammatical_tense::ANY}))
 			return false;
 
 		return true;
 	}
 
+	inline bool inflect_verb(const inflected_verb& verb, array<sequence>& inflections) const
+	{
+		if (verb.root == BE_SEQ) {
+			/* handle the highly irregular verb "be" */
+			if (has_intersection(verb.mood, grammatical_mood::BARE_INFINITIVE) || has_intersection(verb.mood, grammatical_mood::SUBJUNCTIVE)) {
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], BE_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if ((has_intersection(verb.mood, grammatical_mood::SUBJUNCTIVE) && has_intersection(verb.tense, grammatical_tense::PAST))
+			 || (has_intersection(verb.person, grammatical_person::SECOND) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PAST))
+			 || (has_intersection(verb.number, grammatical_num::PLURAL) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PAST)))
+			{
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], WERE_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if (has_intersection(verb.person, grammatical_person::FIRST) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT)) {
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], AM_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if ((has_intersection(verb.person, grammatical_person::SECOND) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT))
+			 || (has_intersection(verb.number, grammatical_num::PLURAL) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT)))
+			{
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], ARE_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if (has_intersection(verb.person, grammatical_person::THIRD) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT)) {
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], IS_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if (has_intersection(verb.person, grammatical_person::FIRST_OR_THIRD) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PAST)) {
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], WAS_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if (has_intersection(verb.mood, grammatical_mood::PRESENT_PARTICIPLE)) {
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], BEING_SEQ))
+					return false;
+				inflections.length++;
+			}
+
+			if (has_intersection(verb.mood, grammatical_mood::PAST_PARTICIPLE)) {
+				if (!inflections.ensure_capacity(inflections.length + 1)
+				 || !init(inflections[inflections.length], BEEN_SEQ))
+					return false;
+				inflections.length++;
+			}
+			return true;
+		}
+
+		/* handle (mostly) regular verbs */
+		bool contains;
+		const verb_root& root = verbs.get(verb.root, contains);
+		if (!contains) return false;
+		if (has_intersection(verb.mood, grammatical_mood::BARE_INFINITIVE) || has_intersection(verb.mood, grammatical_mood::SUBJUNCTIVE)
+		 || (has_intersection(verb.person, grammatical_person::FIRST_OR_SECOND) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT))
+		 || (has_intersection(verb.number, grammatical_num::PLURAL) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT)))
+		{
+			if (!inflections.ensure_capacity(inflections.length + 1)
+			 || !init(inflections[inflections.length], verb.root))
+				return false;
+			inflections.length++;
+		}
+
+		if (has_intersection(verb.person, grammatical_person::THIRD) && has_intersection(verb.number, grammatical_num::SINGULAR) && has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PRESENT))
+		{
+			if (!inflections.ensure_capacity(inflections.length + root.present_3sg_count))
+				return false;
+			for (unsigned int i = 0; i < root.present_3sg_count; i++) {
+				if (!init(inflections[inflections.length], root.present_3sg[i]))
+					return false;
+				inflections.length++;
+			}
+		}
+
+		if (has_intersection(verb.mood, grammatical_mood::INDICATIVE) && has_intersection(verb.tense, grammatical_tense::PAST))
+		{
+			if (!inflections.ensure_capacity(inflections.length + root.simple_past_count))
+				return false;
+			for (unsigned int i = 0; i < root.simple_past_count; i++) {
+				if (!init(inflections[inflections.length], root.simple_past[i]))
+					return false;
+				inflections.length++;
+			}
+		}
+
+		if (has_intersection(verb.mood, grammatical_mood::PRESENT_PARTICIPLE))
+		{
+			if (!inflections.ensure_capacity(inflections.length + root.present_participle_count))
+				return false;
+			for (unsigned int i = 0; i < root.present_participle_count; i++) {
+				if (!init(inflections[inflections.length], root.present_participle[i]))
+					return false;
+				inflections.length++;
+			}
+		}
+
+		if (has_intersection(verb.mood, grammatical_mood::PRESENT_PARTICIPLE))
+		{
+			if (!inflections.ensure_capacity(inflections.length + root.past_participle_count))
+				return false;
+			for (unsigned int i = 0; i < root.past_participle_count; i++) {
+				if (!init(inflections[inflections.length], root.past_participle[i]))
+					return false;
+				inflections.length++;
+			}
+		}
+		return true;
+	}
+
+	inline bool inflect_noun(const inflected_noun& noun, array<sequence>& inflections) const
+	{
+		bool contains;
+		const noun_root& root = nouns.get(noun.root, contains);
+		if (!contains) return false;
+
+		if (has_intersection(noun.number, grammatical_num::SINGULAR)) {
+			if (!inflections.ensure_capacity(inflections.length + 1)
+			 || !init(inflections[inflections.length], noun.root))
+				return false;
+			inflections.length++;
+		}
+
+		if (has_intersection(noun.number, grammatical_num::PLURAL)) {
+			if (!inflections.ensure_capacity(inflections.length + root.plural_count))
+				return false;
+			for (unsigned int i = 0; i < root.plural_count; i++) {
+				if (!init(inflections[inflections.length], root.plural[i]))
+					return false;
+				inflections.length++;
+			}
+		}
+		return true;
+	}
+
+	inline bool inflect_adjective(const inflected_adjective& adjective, array<sequence>& inflections) const
+	{
+		bool contains;
+		const adjective_root& root = adjectives.get(adjective.root, contains);
+		if (!contains) return false;
+
+		if (has_intersection(adjective.comp, grammatical_comparison::NONE)) {
+			if (!inflections.ensure_capacity(inflections.length + 1)
+			 || !init(inflections[inflections.length], adjective.root))
+				return false;
+			inflections.length++;
+		}
+
+		if (has_intersection(adjective.comp, grammatical_comparison::COMPARATIVE)) {
+			if (!inflections.ensure_capacity(inflections.length + root.inflected_form_count))
+				return false;
+			for (unsigned int i = 0; i < root.inflected_form_count; i++) {
+				if (root.inflected_forms[i].key.tokens == nullptr) continue;
+				if (!init(inflections[inflections.length], root.inflected_forms[i].key))
+					return false;
+				inflections.length++;
+			}
+		}
+
+		if (has_intersection(adjective.comp, grammatical_comparison::SUPERLATIVE)) {
+			if (!inflections.ensure_capacity(inflections.length + root.inflected_form_count))
+				return false;
+			for (unsigned int i = 0; i < root.inflected_form_count; i++) {
+				if (root.inflected_forms[i].value.tokens == nullptr) continue;
+				if (!init(inflections[inflections.length], root.inflected_forms[i].value))
+					return false;
+				inflections.length++;
+			}
+		}
+		return true;
+	}
+
+	inline bool inflect_adverb(const inflected_adverb& adverb, array<sequence>& inflections) const
+	{
+		bool contains;
+		const adverb_root& root = adverbs.get(adverb.root, contains);
+		if (!contains) return false;
+
+		if (has_intersection(adverb.comp, grammatical_comparison::NONE)) {
+			if (!inflections.ensure_capacity(inflections.length + 1)
+			 || !init(inflections[inflections.length], adverb.root))
+				return false;
+			inflections.length++;
+		}
+
+		if (has_intersection(adverb.comp, grammatical_comparison::COMPARATIVE)) {
+			if (!inflections.ensure_capacity(inflections.length + root.inflected_form_count))
+				return false;
+			for (unsigned int i = 0; i < root.inflected_form_count; i++) {
+				if (root.inflected_forms[i].key.tokens == nullptr) continue;
+				if (!init(inflections[inflections.length], root.inflected_forms[i].key))
+					return false;
+				inflections.length++;
+			}
+		}
+
+		if (has_intersection(adverb.comp, grammatical_comparison::SUPERLATIVE)) {
+			if (!inflections.ensure_capacity(inflections.length + root.inflected_form_count))
+				return false;
+			for (unsigned int i = 0; i < root.inflected_form_count; i++) {
+				if (root.inflected_forms[i].value.tokens == nullptr) continue;
+				if (!init(inflections[inflections.length], root.inflected_forms[i].value))
+					return false;
+				inflections.length++;
+			}
+		}
+		return true;
+	}
+
 	inline bool add_capitalized_form(unsigned int decapitalized, unsigned int capitalized) {
-		return decapitalization_map.put(capitalized, decapitalized);
+		return capitalization_map.put(decapitalized, capitalized)
+			&& decapitalization_map.put(capitalized, decapitalized);
+	}
+
+	inline bool capitalize(unsigned int word_id, unsigned int& capitalized_word_id) const {
+		bool contains;
+		capitalized_word_id = capitalization_map.get(word_id, contains);
+		return contains;
 	}
 
 	inline bool decapitalize(unsigned int word_id, unsigned int& decapitalized_word_id) const {
@@ -748,6 +1105,10 @@ struct morphology_en {
 
 	inline bool is_capitalized(unsigned int word_id) const {
 		return decapitalization_map.table.contains(word_id);
+	}
+
+	inline bool is_decapitalized(unsigned int word_id) const {
+		return capitalization_map.table.contains(word_id);
 	}
 
 	/* NOTE: this function takes ownership of the memory of `root` */
@@ -775,9 +1136,28 @@ struct morphology_en {
 			if (!add_inflected_forms(inflected_nouns, entry.key, entry.value)) return false;
 		for (auto entry : adjectives)
 			if (!add_inflected_forms(inflected_adjectives, entry.key, entry.value)) return false;
-		for (auto entry : adverbs)
+		for (auto entry : adverbs) {
+			if (entry.value.adj_root.length != 0) {
+				if (!adjective_adverb_map.check_size()) return false;
+				bool contains; unsigned int bucket;
+				array<sequence>& adj_roots = adjective_adverb_map.get(entry.value.adj_root, contains, bucket);
+				if (!contains) {
+					if (!array_init(adj_roots, 2)) {
+						return false;
+					} else if (!init(adjective_adverb_map.table.keys[bucket], entry.value.adj_root)) {
+						free(adj_roots);
+						return false;
+					}
+					adjective_adverb_map.table.size++;
+				}
+				if (!adj_roots.ensure_capacity(adj_roots.length + 1)
+				 || !init(adj_roots[adj_roots.length], entry.key))
+					return false;
+				adj_roots.length++;
+			}
+
 			if (!add_inflected_forms(inflected_adverbs, entry.key, entry.value)) return false;
-		for (auto entry : verbs)
+		} for (auto entry : verbs)
 			if (!add_inflected_forms(inflected_verbs, entry.key, entry.value)) return false;
 		return true;
 	}

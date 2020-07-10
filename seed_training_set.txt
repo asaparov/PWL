@@ -21,7 +21,7 @@
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
 					(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
-						(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_wide_scope
+						(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_wide_scope,require_no_string_or_number_or_name_in_set
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_L:identity_predicative
 									(N:require_no_correlator_predicative,select_predicate_in_set "mammal"/"mammals")
@@ -612,6 +612,26 @@
 {(ADJ "central"/"central")}
 	{?[x]:central(x)};
 
+: # population
+{(N "population"/"population")}
+	{population[index:sg,arg2]};
+
+: # area
+{(N "area"/"area")}
+	{area[index:sg,arg2]};
+
+: # capital
+{(N "capital"/"capital")}
+	{capital[index:sg,arg2]};
+
+: # mountain
+{(N "mountain"/"mountain")}
+	{mountain[index:sg]};
+
+: # river
+{(N "river"/"river")}
+	{river[index:sg]};
+
 : # Mercury is a planet and Neptune is a planet.
 {(S
 	(S':require_no_lambda,mark_wide_scope
@@ -923,7 +943,7 @@
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_or_number_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
 								(STRING:require_no_correlator_predicative,require_predicative_existential,select_string_in_set,require_capitalized "Saturn")
@@ -1079,7 +1099,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(PP:remove_wide_scope,add_is_adjunct,select_right_arg1_of_without_head
+					(PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg1_of_without_head
 						(P:require_no_preposition,remove_right_conjunct "in")
 						(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
@@ -1169,7 +1189,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(PP:remove_wide_scope,add_is_adjunct,select_right_arg1_of_without_head
+					(PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg1_of_without_head
 						(P:require_no_preposition,remove_right_conjunct "in")
 						(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(WHAT:require_no_wh_minus "what")
@@ -1271,6 +1291,63 @@
 	(PERIOD ".")
 )}
 	{?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Solar System")) & ?[x]:(?[P]:((P=^[p]:(?[o]:(outer(o) & (arg1_of(p)=o)) & planet(p) & ?[l]:(location(l) & (arg2(l)=y) & (arg1_of(p)=l)))) & ?[n]:(name(n) & (arg1(n)=P) & (arg2_of(x)=n))) & ?[s]:((arg1(s)="Outer Solar System") & same(s) & present(s) & (arg2(s)=x))))};
+
+: # The population of the Earth is 7594000000.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+						(THE "the")
+						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+							(NOMINAL_R:identity_predicative
+								(NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set,try_add_has_arg2
+									(NOMINAL_L:identity_predicative
+										(N:require_no_correlator_predicative,select_predicate_in_set "population"/"population")
+									)
+								)
+								(OF_FOR "of")
+								(NP:try_remove_correlated,try_remove_wh_minus,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,has_arg2_in_set
+									(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+										(THE:empty "the")
+										(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+											(NOMINAL_R:identity_predicative
+												(NOMINAL_L:identity_predicative
+													(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Earth")
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_or_number_in_set
+							(NOMINAL_R:identity_predicative
+								(NOMINAL_L:identity_predicative
+									(NUMBER:require_no_correlator_predicative,require_predicative_existential,select_number_in_set "7594000000")
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[x]:(?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[p]:(population(p) & (arg1(p)=e) & (arg2_of(x)=p))) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=7594000000)))};
 
 #: # How heavy is Mars?
 #{(S
@@ -1423,7 +1500,7 @@
 								(THE "the")
 								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
 									(NOMINAL_R:identity_predicative
-										(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
+										(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set,require_right_predicate_in_set
 											(NOMINAL_L:identity_predicative
 												(N:require_no_correlator_predicative,select_predicate_in_set "month"/"month")
 											)
@@ -1450,6 +1527,79 @@
 	(PERIOD ".")
 )}
 	{?[f]:(?[n]:(name(n) & (arg1_of(f)=n) & (arg2(n)="Fair Trade Day")) & ?[m]:(month(m) & ?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="May")) & ?[l]:((arg1(l)=f) & location(l) & present(l) & (arg2(l)=m))))};
+
+: # Titan is the largest moon orbiting Saturn.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity_predicative
+							(NOMINAL_L:identity_predicative
+								(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Titan")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2	# ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:(X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o))) & ?[y]:(?[g]:(greatest(volume)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:(same(z) & present(z) & (arg2(z)=y)))))
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number	# ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:(X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o))) & ?[y]:(?[g]:(greatest(volume)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:(same(z) & (arg2(z)=y)))))
+					(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set	# ^[P]:?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:(X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o))) & ^[Y]:(Y=^[y]:?[g]:(greatest(volume)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[y]:(Y(y) & P(y)))))
+						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+							(THE "the")
+							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+								(NOMINAL_R:identity_predicative
+									(NOMINAL_L:identity_predicative # ^[P]:^[Y]:(Y=^[g]:(greatest(volume)(g)) & ?[y]:(Y(y) & P(y)))
+										(ADJP_R:try_remove_genitive,try_remove_wh_minus,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest	# ?[g]:greatest(volume)(g)
+											(ADJP_L:try_remove_is_adjunct
+												(ADJ:require_no_correlator,remove_greatest,add_superlative "large"/"largest")
+											)
+										)
+										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential,has_arg2_in_set	# ^[P]:?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:(X=^[x]:(moon(x) & ?[o]:(orbit(o) & present(o) & (arg2(o)=s) & (arg1_of(x)=o))) & ?[x]:(X(x) & P(x))))
+											(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set	# ^[P]:?[X]:(X=^[x]:moon(x) & ?[x]:(X(x) & P(x)))
+												(NOMINAL_L:identity_predicative
+													(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
+												)
+											)
+											(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,select_right_conjunct_in_set,remove_wide_scope,try_remove_number	# ^[P]:?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o))))
+												(VP_R:select_right_arg1_of_without_head,require_no_future,require_no_perfect,remove_present_progressive,add_present_participle,require_no_predicate_empty,has_arg2	# ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s)))
+													(VP_R:remove_right_conjunct
+														(VP_L:identity
+															(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "orbit"/"orbiting")
+														)
+													)
+													(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+														(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+															(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+																(NOMINAL_R:identity_predicative
+																	(NOMINAL_L:identity_predicative
+																		(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Saturn")
+																	)
+																)
+															)
+														)
+													)
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[y]:(?[g]:(greatest(volume)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

@@ -2,7 +2,7 @@
 # Author: asaparov
 #
 # Examples of sentences as well as broad strokes of the grammar were found in:
-#   Huddleston, R. D. & Pullum, G. K. (2002). The Cambridge Grammar of the English Language Cambridge University Press.
+#   Huddleston, R. D. & Pullum, G. K. (2002). The Cambridge Grammar of the English Language. Cambridge University Press.
 #
 # We use neo-Davidsonian/event semantics to represent meaning in logical form.
 # Thus, all verbs, nouns, adjectives, adverbs, etc are expressed as quantified
@@ -1068,14 +1068,14 @@ V_ADJUNCT nonterminal {} {0.1} {10.0} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg1_of_without_head # for arg1
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,select_right_arg2_of_without_head # for arg2
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
 
 # predicative complements
 # V_ADJUNCT {A} -> PP/ADJP_R/ADVP_R {A}
@@ -1398,7 +1398,7 @@ VP_L -> NEITHER VP_L:require_no_req_subject,remove_neither,add_negative
 
 
 # TODO: should this nonterminal change the universal/existential quantifiers into a single kind of quantifier, to improve generalization for the NP nonterminal and further downstream?
-NP nonterminal {} {100.0} {0.1} {} 10 1.0 {}
+NP nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
 # NP {A} -> A NP' {A}
 NP -> A NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
@@ -1409,7 +1409,7 @@ NP -> NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,requir
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & W(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x)))))
 #    or A = ^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ... & W(... & ?[x]:(X(x) & P(x)))))
-NP -> NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_wide_scope
+NP -> NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_wide_scope,require_no_string_or_number_or_name_in_set
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:?[n]:(name(n) & arg1_of(x)=n & arg2(n)=s)) & ... & ?[x]:(X(x) & P(x))))
@@ -1417,7 +1417,8 @@ NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,requ
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:(x=s)) & ... & ?[x]:(X(x) & P(x))))
-NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_in_set
+NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_or_number_in_set
+# TODO: we need a plural rule for this, i think; or just split the rules into two: one for strings and one for numbers, and remove "try_add_singular" for the number rule
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X) & size(X)=1 & ... & ?[x]:(X(x) & P(x))))
@@ -1850,7 +1851,7 @@ NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_witho
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ?[x]:(S(x) & P(x))))}
 #     OF
 #     NP {^[P]:(... & ?[S]:(S=^[x]:?[n]:(name(n) & arg1_of(x)=n & arg2(n)=s) & ?[x]:(S(x) & P(x))))}
-NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:try_remove_correlated,try_remove_wh_minus,select_only_right_conjunct_in_set_predicative,require_name_in_set,try_remove_number
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set,require_right_predicate_in_set OF NP:try_remove_correlated,try_remove_wh_minus,select_only_right_conjunct_in_set_predicative,require_name_in_set,try_remove_number
 
 # comparative constructions
 # NOMINAL_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
@@ -2051,7 +2052,7 @@ N_ADJUNCT nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # N_ADJUNCT {A} -> PP {A}
 #  e.g. "destruction of the barn(s)", "destruction of the barn(s) by the termites"
-N_ADJUNCT -> PP
+#N_ADJUNCT -> PP
 
 # N_ADJUNCT  {... & ?[x]:(p(x) & g(x))}
 #  -> ADJP_R/PP {... & g'}
@@ -2135,7 +2136,7 @@ N_ADJUNCT -> ADJP_R:try_remove_correlated,select_right_arg2_of_without_head
 # N_ADJUNCT {... & ?[x]:(p(x) & (?[g1]:(... & arg1(g1)=x) & ... & ?[gn]:(... & arg1(gn)=x)))}
 #  -> VP_R {?[g1]:(...) & ... & ?[gn]:(...)}
 # e.g. "the cat sleeping on the bed"
-#N_ADJUNCT -> VP_R:require_present_participle,require_no_predicate_empty,has_arg2
+N_ADJUNCT -> VP_R:select_right_arg1_of_without_head,require_no_future,require_no_perfect,remove_present_progressive,add_present_participle,require_no_predicate_empty,has_arg2
 
 # N_ADJUNCT {... & ?[x]:(p(x) & ?[g1]:(p1(g1) & ... & arg2(g1)=x) & ... & ?[gn]:(pn(gn) & ... & arg2(gn)=x))}
 #  -> VP_R {?[g1]:(inverse(p1)(g1) & ...) & ... & ?[gn]:(inverse(pn)(gn) & ...)}
@@ -2277,6 +2278,9 @@ NOMINAL_L -> STRING:require_no_correlator_predicative,require_predicative_existe
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & x=s) & ?[x]:(X(x) & P(x)))} -> STRING {s}
 NOMINAL_L -> STRING:require_no_correlator_predicative,require_predicative_existential,select_string_in_set,require_capitalized
 
+# NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & x=n) & ?[x]:(X(x) & P(x)))} -> NUMBER {n}
+NOMINAL_L -> NUMBER:require_no_correlator_predicative,require_predicative_existential,select_number_in_set
+
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:T & size(X)=n & ...)} -> NUMBER {n}
 NOMINAL_L -> NUMBER:require_no_correlator_predicative,set_size
 
@@ -2309,11 +2313,12 @@ NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,select_left_conjunct
 # NOTE: This rule also works if X is existentially-quantified or used collectively.
 #NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus NOMINAL_L:try_remove_correlated
 
-# NOMINAL_L {^[P]:(... & ?[X]:(F(X) & ?[g1]:(... & P(arg1(g1)) & ... & greatest/least(f)(g1) & ... & arg2(g1)=X) & ... & ?[gn]:(... & P(arg1(gn)) & ... & greatest/least(f)(gn) & ... & arg2(gn)=X)))}
-#  -> ADJP_R {?[g1]:greatest/least(f)(g1) & ... & ?[gn]:greatest/least(f)(gn)}
-#     NOMINAL_L {^[P]:(... & ?[X]:(F(X) & ?[x]:(X(x) & P(x))))}
+# NOMINAL_L {^[P]:(... & ?[X]:(F(X) & ... & ?[Y]:(Y=^[y]:?[g]:(greatest/least(f)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ...)))}
+#  -> ADJP_R {^[P]:(... & ?[g]:(greatest/least(f)(g)))}
+#     NOMINAL_L {^[P]:(... & ?[X]:(F(X) & ...))}
 # e.g. "closest and brightest star"
-#NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus NOMINAL_L:try_remove_correlated
+NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
+NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest NOMINAL_R:try_add_plural,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,has_arg2_in_set
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(arg2(s)=a & ... & arg1(s)=x) & U(0,x)))) & ...)}
 #  -> NOMINAL_L {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
@@ -2668,7 +2673,7 @@ ADJP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 ADJP_L -> ADJ:require_no_correlator
 
 # ADJP_L {?[g]:(U(0,g) & greatest/least(p)(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
-#ADJP_L -> ADJ:require_no_correlator,add_superlative
+ADJP_L -> ADJ:require_no_correlator,remove_greatest,add_superlative
 
 # ADJP_L {?[g]:(U(0,g) & greatest/least(p)(g))} -> ADJP_L {?[g]:(U(0,g) & p(g))}
 #ADJP_L -> MOST ADJP_L:try_remove_correlated # for `greatest` only
@@ -2888,6 +2893,7 @@ P -> "as"
 P -> "near"
 P -> "onto"
 P -> "behind"
+P -> "around"
 
 ALL preterminal {} {1.0} {1.0} {} 10 1.0 {}
 ALL -> "all"

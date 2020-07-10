@@ -203,6 +203,13 @@ struct extensional_set_graph
 	}
 
 	template<typename Formula>
+	inline Proof* get_existing_edge(unsigned int parent, unsigned int child,
+			Formula* parent_formula, Formula* child_formula) const
+	{
+		return vertices[parent].children.get(child);
+	}
+
+	template<typename Formula>
 	inline Proof* get_edge(unsigned int parent, unsigned int child,
 			Formula* parent_formula, Formula* child_formula, bool& new_edge)
 	{
@@ -477,18 +484,33 @@ struct set_reasoning
 		return capacity;
 	}
 
-	bool is_freeable(unsigned int set_id) const {
+	template<typename... Args>
+	bool is_freeable(unsigned int set_id, array<Proof*>& freeable_axioms, Args&&... visitor) const {
+		return set_id > 1
+			&& (freeable_axioms.contains(sets[set_id].size_axiom) || sets[set_id].size_axiom->reference_count == 1)
+			&& sets[set_id].elements.length == 0
+			&& extensional_graph.vertices[set_id].children.size == 0
+			&& extensional_graph.vertices[set_id].parents.size == 0;
+	}
+
+	template<typename... Args>
+	bool is_freeable(unsigned int set_id, Args&&... visitor) const {
 		return set_id > 1 && sets[set_id].size_axiom->reference_count == 1
 			&& sets[set_id].elements.length == 0
 			&& extensional_graph.vertices[set_id].children.size == 0
 			&& extensional_graph.vertices[set_id].parents.size == 0;
 	}
 
-	inline void try_free_set(Formula* set_formula, unsigned int set_id) {
-		if (is_freeable(set_id)) free_set(set_formula, set_id);
+	template<typename... Args>
+	inline void try_free_set(Formula* set_formula, unsigned int set_id, Args&&... visitor) {
+		if (is_freeable(set_id, std::forward<Args>(visitor)...)) {
+			on_free_set(set_id, *this, std::forward<Args>(visitor)...);
+			free_set(set_formula, set_id);
+		}
 	}
 
-	inline void try_free_set(Formula* set_formula) {
+	template<typename... Args>
+	inline void try_free_set(Formula* set_formula, Args&&... visitor) {
 #if !defined(NDEBUG)
 		bool contains;
 		unsigned int set_id = set_ids.get(*set_formula, contains);
@@ -497,7 +519,7 @@ struct set_reasoning
 #else
 		unsigned int set_id = set_ids.get(*set_formula);
 #endif
-		try_free_set(set_formula, set_id);
+		try_free_set(set_formula, set_id, std::forward<Args>(visitor)...);
 	}
 
 	inline bool new_set(unsigned int& set_id)
@@ -1224,7 +1246,8 @@ struct set_reasoning
 	}
 
 	/* NOTE: this function does not check for consistency */
-	bool add_subset_axiom(Proof* axiom)
+	template<typename... Args>
+	bool add_subset_axiom(Proof* axiom, Args&&... visitor)
 	{
 		Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
 		Formula* consequent = axiom->formula->quantifier.operand->binary.right;
@@ -1233,9 +1256,9 @@ struct set_reasoning
 
 		unsigned int antecedent_set, consequent_set;
 		bool is_antecedent_new, is_consequent_new;
-		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new)) {
+		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
 			return false;
-		} else if (!get_set_id(consequent, consequent_set, is_consequent_new)) {
+		} else if (!get_set_id(consequent, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
 			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
 			return false;
 		}
@@ -1247,11 +1270,40 @@ struct set_reasoning
 
 		if (!extensional_graph.add_edge(consequent_set, antecedent_set, axiom)) {
 			/* if either the antecedent or consequent sets have no references, free them */
-			if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+			if (is_freeable(consequent_set)) {
+				on_free_set(consequent_set, *this);
+				free_set(consequent, consequent_set);
+			} if (is_freeable(antecedent_set)) {
+				on_free_set(antecedent_set, *this);
+				free_set(antecedent, antecedent_set);
+			}
 			return false;
 		}
 		return true;
+	}
+
+	template<bool ResolveInconsistencies, typename... Args>
+	Proof* get_existing_subset_axiom(Formula* antecedent, Formula* consequent, Args&&... visitor) const
+	{
+#if !defined(NDEBUG)
+		bool contains;
+		unsigned int antecedent_set = set_ids.get(*antecedent, contains);
+		if (!contains)
+			fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given antecedent.\n");
+		unsigned int consequent_set = set_ids.get(*consequent, contains);
+		if (!contains)
+			fprintf(stderr, "set_reasoning.try_free_subset_axiom WARNING: No such set for given consequent.\n");
+#else
+		unsigned int antecedent_set = set_ids.get(*antecedent);
+		unsigned int consequent_set = set_ids.get(*consequent);
+#endif
+
+#if !defined(NDEBUG)
+		if (consequent_set == antecedent_set)
+			fprintf(stderr, "set_reasoning.get_subset_axiom WARNING: `consequent` and `antecedent` are the same set.\n");
+#endif
+
+		return extensional_graph.get_existing_edge(consequent_set, antecedent_set, consequent, antecedent);
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
@@ -1264,7 +1316,7 @@ struct set_reasoning
 		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
 			return NULL;
 		} else if (!get_set_id(consequent, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
-			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+			try_free_set(antecedent, antecedent_set);
 			return NULL;
 		}
 
@@ -1277,14 +1329,72 @@ struct set_reasoning
 		Proof* axiom = extensional_graph.get_edge(consequent_set, antecedent_set, consequent, antecedent, new_edge);
 		if (axiom == NULL) {
 			/* if either the antecedent or consequent sets have no references, free them */
-			if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+			try_free_set(consequent, consequent_set);
+			try_free_set(antecedent, antecedent_set);
 			return NULL;
 		}
 
 		if (!new_edge) return axiom;
 
 		/* check that the new edge does not create any inconsistencies */
+		hash_set<unsigned int> provable_elements(16);
+		if (!get_provable_elements(antecedent_set, provable_elements)) {
+			extensional_graph.remove_edge(consequent_set, antecedent_set);
+			try_free_set(consequent, consequent_set);
+			try_free_set(antecedent, antecedent_set);
+			return NULL;
+		}
+		array<unsigned int> ancestors_stack(8);
+		hash_set<unsigned int> visited(16);
+		ancestors_stack[ancestors_stack.length++] = consequent_set;
+		visited.add(consequent_set);
+		while (ancestors_stack.length > 0) {
+			unsigned int current = ancestors_stack.pop();
+			hash_set<unsigned int> current_provable_elements(16);
+			if (!get_provable_elements(current, current_provable_elements)
+			 || !current_provable_elements.add_all(provable_elements))
+			{
+				extensional_graph.remove_edge(consequent_set, antecedent_set);
+				try_free_set(consequent, consequent_set);
+				try_free_set(antecedent, antecedent_set);
+				return NULL;
+			}
+			while (current_provable_elements.size > sets[current].set_size) {
+				if (ResolveInconsistencies) {
+					bool graph_changed;
+					array<unsigned int> stack(8);
+					if (!increase_set_size(current, current_provable_elements.size, stack, graph_changed) || !graph_changed) {
+						extensional_graph.remove_edge(consequent_set, antecedent_set);
+						try_free_set(consequent, consequent_set);
+						try_free_set(antecedent, antecedent_set);
+						return NULL;
+					}
+				} else {
+					extensional_graph.remove_edge(consequent_set, antecedent_set);
+					try_free_set(consequent, consequent_set);
+					try_free_set(antecedent, antecedent_set);
+					return NULL;
+				}
+			}
+
+			for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (visited.contains(entry.key)) continue;
+				if (!ancestors_stack.add(entry.key) || !visited.add(entry.key)) {
+					extensional_graph.remove_edge(consequent_set, antecedent_set);
+					try_free_set(consequent, consequent_set);
+					try_free_set(antecedent, antecedent_set);
+					return NULL;
+				}
+			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!ancestors_stack.add(parent) || !visited.add(parent)) {
+					extensional_graph.remove_edge(consequent_set, antecedent_set);
+					try_free_set(consequent, consequent_set);
+					try_free_set(antecedent, antecedent_set);
+					return NULL;
+				}
+			}
+		}
 		for (unsigned int descendant : sets[antecedent_set].descendants) {
 			if (sets[descendant].set_size > 0 && are_disjoint(consequent_set, descendant)) {
 				if (ResolveInconsistencies) {
@@ -1293,21 +1403,21 @@ struct set_reasoning
 						array<unsigned int> stack(8);
 						if (!decrease_set_size(descendant, 0, stack, graph_changed)) {
 							extensional_graph.remove_edge(consequent_set, antecedent_set);
-							if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-							if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+							try_free_set(consequent, consequent_set);
+							try_free_set(antecedent, antecedent_set);
 							return NULL;
 						} else if (graph_changed) continue;
 
 						/* we were unable to change the graph, so it cannot be made consistent (as far as we can tell) */
 						extensional_graph.remove_edge(consequent_set, antecedent_set);
-						if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-						if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+						try_free_set(consequent, consequent_set);
+						try_free_set(antecedent, antecedent_set);
 						return NULL;
 					}
 				} else {
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
-					if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-					if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+					try_free_set(consequent, consequent_set);
+					try_free_set(antecedent, antecedent_set);
 					return NULL;
 				}
 			}
@@ -1321,49 +1431,50 @@ struct set_reasoning
 				array<unsigned int> stack(8);
 				if (!decrease_set_size(antecedent_set, 0, stack, graph_changed)) {
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
-					if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-					if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+					try_free_set(consequent, consequent_set);
+					try_free_set(antecedent, antecedent_set);
 					return NULL;
 				} else if (graph_changed) continue;
 
 				/* we were unable to change the graph, so it cannot be made consistent (as far as we can tell) */
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
-				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+				try_free_set(consequent, consequent_set);
+				try_free_set(antecedent, antecedent_set);
 				return NULL;
-			} else if (!find_largest_disjoint_clique_with_set(*this, antecedent_set, consequent_set, clique, clique_count, ancestor_of_clique, 1)) {
+			} else if (!find_largest_disjoint_clique_with_set(*this, antecedent_set, consequent_set, clique, clique_count, ancestor_of_clique, 1))
+			{
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
-				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+				try_free_set(consequent, consequent_set);
+				try_free_set(antecedent, antecedent_set);
 			}
 
 			if (clique == NULL) break;
 
 			if (ResolveInconsistencies) {
 				/* try increasing the size of the ancestor */
-				unsigned int clique_size = 0;
+				unsigned int requested_size = 0;
 				for (unsigned int i = 0; i < clique_count; i++)
-					clique_size += sets[clique[i]].set_size;
+					requested_size += sets[clique[i]].set_size;
 
 				bool graph_changed;
 				array<unsigned int> stack(8);
-				if (!increase_set_size(ancestor_of_clique, clique_size, stack, graph_changed)) {
+				if (!increase_set_size(ancestor_of_clique, requested_size, stack, graph_changed)) {
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
-					if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-					if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+					try_free_set(consequent, consequent_set);
+					try_free_set(antecedent, antecedent_set);
 					free(clique); return NULL;
 				} else if (graph_changed) { free(clique); continue; }
 
 				for (unsigned int i = 0; i < clique_count; i++) {
-					unsigned int requested_size;
-					if (sets[ancestor_of_clique].set_size > clique_size - sets[clique[i]].set_size)
-						requested_size = sets[ancestor_of_clique].set_size - (clique_size - sets[clique[i]].set_size);
-					else requested_size = 0;
+					unsigned int new_requested_size;
+					if (sets[ancestor_of_clique].set_size > requested_size - sets[clique[i]].set_size)
+						new_requested_size = sets[ancestor_of_clique].set_size - (requested_size - sets[clique[i]].set_size);
+					else new_requested_size = 0;
 
-					if (!decrease_set_size(clique[i], requested_size, stack, graph_changed)) {
+					if (!decrease_set_size(clique[i], new_requested_size, stack, graph_changed)) {
 						extensional_graph.remove_edge(consequent_set, antecedent_set);
-						if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-						if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+						try_free_set(consequent, consequent_set);
+						try_free_set(antecedent, antecedent_set);
 						free(clique); return NULL;
 					} else if (graph_changed) break;
 				}
@@ -1372,13 +1483,13 @@ struct set_reasoning
 
 				/* we were unable to change the graph, so it cannot be made consistent (as far as we can tell) */
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
-				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+				try_free_set(consequent, consequent_set);
+				try_free_set(antecedent, antecedent_set);
 				free(clique); return NULL;
 			} else {
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
-				if (is_freeable(consequent_set)) free_set(consequent, consequent_set);
-				if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
+				try_free_set(consequent, consequent_set);
+				try_free_set(antecedent, antecedent_set);
 				free(clique); return NULL;
 			}
 		}
@@ -1410,9 +1521,10 @@ struct set_reasoning
 		return axiom;
 	}
 
+	template<typename... Args>
 	bool remove_subset_relation(
 			unsigned int antecedent_set, unsigned int consequent_set,
-			Formula* antecedent, Formula* consequent)
+			Formula* antecedent, Formula* consequent, Args&&... visitor)
 	{
 #if !defined(NDEBUG)
 		if (consequent_set == antecedent_set)
@@ -1421,13 +1533,28 @@ struct set_reasoning
 
 		extensional_graph.remove_edge(consequent_set, antecedent_set);
 
+		/* we need to recompute the descendants of all ancestor nodes; first clear them all */
 		array<unsigned int> stack(8);
+		hash_set<unsigned int> visited(16);
+		stack[stack.length++] = consequent_set;
+		visited.add(consequent_set);
+		while (stack.length > 0) {
+			unsigned int current = stack.pop();
+			sets[current].descendants.clear();
+			sets[current].descendants.add(current);
+			for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (visited.contains(entry.key)) continue;
+				if (!stack.add(entry.key) || !visited.add(entry.key)) return false;
+			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!stack.add(parent) || !visited.add(parent)) return false;
+			}
+		}
+
 		stack[stack.length++] = consequent_set;
 		while (stack.length > 0) {
 			unsigned int current = stack.pop();
 			unsigned int old_size = sets[current].descendants.size;
-			sets[current].descendants.clear();
-			sets[current].descendants.add(current);
 			for (unsigned int child : intensional_graph.vertices[current].children)
 				if (!sets[current].descendants.add_all(sets[child].descendants)) return false;
 			for (const auto& entry : extensional_graph.vertices[current].children)
@@ -1443,12 +1570,18 @@ struct set_reasoning
 		}
 
 		/* if either the antecedent or consequent sets have no references, free them */
-		if (is_freeable(consequent_set) && !free_set(consequent, consequent_set)) return false;
-		if (is_freeable(antecedent_set) && !free_set(antecedent, antecedent_set)) return false;
+		if (is_freeable(consequent_set, std::forward<Args>(visitor)...)) {
+			on_free_set(consequent_set, *this, std::forward<Args>(visitor)...);
+			if (!free_set(consequent, consequent_set)) return false;
+		} if (is_freeable(antecedent_set, std::forward<Args>(visitor)...)) {
+			on_free_set(antecedent_set, *this, std::forward<Args>(visitor)...);
+			if (!free_set(antecedent, antecedent_set)) return false;
+		}
 		return true;
 	}
 
-	bool free_subset_axiom(Formula* antecedent, Formula* consequent)
+	template<typename... Args>
+	bool free_subset_axiom(Formula* antecedent, Formula* consequent, Args&&... visitor)
 	{
 		antecedent->reference_count++;
 		consequent->reference_count++;
@@ -1466,17 +1599,18 @@ struct set_reasoning
 		unsigned int consequent_set = set_ids.get(*consequent);
 #endif
 
-		bool success = remove_subset_relation(antecedent_set, consequent_set, antecedent, consequent);
+		bool success = remove_subset_relation(antecedent_set, consequent_set, antecedent, consequent, std::forward<Args>(visitor)...);
 		free(*antecedent); if (antecedent->reference_count == 0) free(antecedent);
 		free(*consequent); if (consequent->reference_count == 0) free(consequent);
 		return success;
 	}
 
-	inline bool free_subset_axiom(Proof* subset_axiom)
+	template<typename... Args>
+	inline bool free_subset_axiom(Proof* subset_axiom, Args&&... visitor)
 	{
 		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
 		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
-		return free_subset_axiom(antecedent, consequent);
+		return free_subset_axiom(antecedent, consequent, std::forward<Args>(visitor)...);
 	}
 
 	template<bool ResolveInconsistencies>
@@ -1533,10 +1667,10 @@ struct set_reasoning
 		return sets[set_id].size_axiom;
 	}
 
-	template<bool ResolveInconsistencies>
-	inline Proof* get_size_axiom(Formula* formula, unsigned int new_size) {
+	template<bool ResolveInconsistencies, typename... Args>
+	inline Proof* get_size_axiom(Formula* formula, unsigned int new_size, Args&&... visitor) {
 		unsigned int set_id;
-		if (!get_set_id(formula, set_id))
+		if (!get_set_id(formula, set_id, std::forward<Args>(visitor)...))
 			return NULL;
 		return get_size_axiom<ResolveInconsistencies>(set_id, new_size);
 	}
@@ -1801,7 +1935,7 @@ struct set_reasoning
 			element_map.table.size++;
 		}
 		element_map.values[bucket] = new_set_id;
-		if (is_freeable(old_set_id)) {
+		if (is_freeable(old_set_id, std::forward<Args>(visitor)...)) {
 			on_free_set(old_set_id, *this, std::forward<Args>(visitor)...);
 			free_set(sets[old_set_id].set_formula(), old_set_id);
 		}
@@ -1853,7 +1987,7 @@ struct set_reasoning
 
 		/* `old_set_id` may now be freeable */
 		element_map.values[bucket] = new_set_id;
-		if (is_freeable(old_set_id)) {
+		if (is_freeable(old_set_id, std::forward<Args>(visitor)...)) {
 			on_free_set(old_set_id, *this, std::forward<Args>(visitor)...);
 			free_set(sets[old_set_id].set_formula(), old_set_id);
 		}
@@ -1883,7 +2017,7 @@ struct set_reasoning
 
 		/* `set_id` may now be freeable */
 		element_map.remove_at(bucket);
-		if (is_freeable(set_id)) {
+		if (is_freeable(set_id, std::forward<Args>(visitor)...)) {
 			on_free_set(set_id, *this, std::forward<Args>(visitor)...);
 			free_set(sets[set_id].set_formula(), set_id);
 		}
@@ -2018,12 +2152,15 @@ struct set_reasoning
 	bool print_axioms(Stream& out, Printer&&... printer) const {
 		for (unsigned int i = 1; i < set_count + 1; i++) {
 			if (sets[i].size_axiom == NULL) continue;
-			if (!print(*sets[i].size_axiom->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
+			if (!print("Set ID ", out) || !print(i, out) || !print(" has set size axiom ", out)
+			 || !print(*sets[i].size_axiom->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
 				return false;
 			for (const auto& entry : extensional_graph.vertices[i].children) {
-				if (!print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
+				if (!print("  ", out) || !print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
 					return false;
 			}
+			if (!print("  Elements: ", out) || !print<unsigned int, left_curly_brace, right_curly_brace>(sets[i].elements, out, std::forward<Printer>(printer)...) || !print('\n', out))
+				return false;
 		}
 		return true;
 	}

@@ -1,6 +1,6 @@
 #include "higher_order_logic.h"
-#include "executive.h"
 #include "hdp_parser.h"
+#include "executive.h"
 
 #include <boost/math/special_functions/gamma.hpp>
 
@@ -991,10 +991,11 @@ const string* get_name(const hash_map<string, unsigned int>& names, unsigned int
 	return NULL;
 }
 
-template<typename Formula, typename ProofCalculus, typename Canonicalizer>
+template<typename ProofCalculus, typename Canonicalizer>
 inline bool contains_subset_axiom(
-		const theory<Formula, ProofCalculus, Canonicalizer>& T,
-		const Formula* antecedent, const Formula* consequent)
+		const theory<ProofCalculus, Canonicalizer>& T,
+		const typename ProofCalculus::Language* antecedent,
+		const typename ProofCalculus::Language* consequent)
 {
 	bool contains;
 	unsigned int antecedent_set = T.sets.set_ids.get(*antecedent, contains);
@@ -1006,9 +1007,12 @@ inline bool contains_subset_axiom(
 		|| T.sets.intensional_graph.vertices[antecedent_set].parents.contains(consequent_set);
 }
 
-template<typename Formula, typename ProofCalculus, typename Canonicalizer>
-bool contains_axiom(const theory<Formula, ProofCalculus, Canonicalizer>& T, const Formula* formula)
+template<typename ProofCalculus, typename Canonicalizer>
+bool contains_axiom(
+		const theory<ProofCalculus, Canonicalizer>& T,
+		const typename ProofCalculus::Language* formula)
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
 
@@ -1133,7 +1137,6 @@ int main(int argc, const char** argv)
 {
 	setlocale(LC_ALL, "en_US.UTF-8");
 	log_cache<double>::instance().ensure_size(1024);
-set_seed(0);
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 
 	hash_map<string, unsigned int> names(256);
@@ -1250,13 +1253,14 @@ set_seed(0);
 		}
 	}
 
-/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
 }
 for (auto entry : names) free(entry.key);
-return EXIT_SUCCESS;*/
+if (seed_training_set.length > 0)
+return EXIT_SUCCESS;
 
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
@@ -1317,7 +1321,7 @@ return EXIT_SUCCESS;*/
 	}
 
 	/* read the articles */
-	theory<hol_term, natural_deduction<hol_term>, standard_canonicalizer<true, false>> T(names.table.size + 1);
+	theory<natural_deduction<hol_term>, standard_canonicalizer<true, false>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
@@ -1330,22 +1334,24 @@ return EXIT_SUCCESS;*/
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
 			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(5.0));
 	decltype(proof_prior)::PriorState proof_axioms;
-	const string** reverse_name_map = invert(names);
-	string_map_scribe printer = { reverse_name_map, names.table.size + 1 };
+	if (!parser.invert_name_map(names)) {
+		for (auto entry : names) free(entry.key);
+		return EXIT_FAILURE;
+	}
 
-	/*read_article(names.get("Des Moines"), corpus, parser, T, names, seed_entities, proof_prior, printer);
-free(reverse_name_map);
+	/*read_article(names.get("Des Moines"), corpus, parser, T, names, seed_entities, proof_prior);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/
 
 	array<string> answers(4);
-	if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms, printer)) {
+	/*if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} /*if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, printer)) {
+	} if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/
+	}*/ if (answer_question<true>(answers, "The population of Arizona is what?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	}
 for (string& str : answers) free(str);
-free(reverse_name_map);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;
 
@@ -1367,7 +1373,7 @@ return EXIT_SUCCESS;
 
 	unsigned int iterations = 120000;
 	timer stopwatch;
-	auto scribe = parser.get_printer(printer);
+	auto scribe = parser.get_printer();
 array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
 proof_axioms.check_proof_axioms(T);
@@ -1415,7 +1421,6 @@ fprintf(stderr, "%u %lf\n", entry.key, (double) entry.value / set_size_distribut
 	for (auto entry : tracked_logical_forms) {
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
 	}
-	free(reverse_name_map);
 	for (auto entry : names) free(entry.key);
 	return EXIT_SUCCESS;
 }

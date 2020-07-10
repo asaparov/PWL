@@ -67,7 +67,7 @@ inline bool init(proof_transformations<Formula>& transformations) {
 
 template<typename Formula, typename Canonicalizer>
 bool propose_transformation(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		proof_transformations<Formula>& proposed_proofs,
 		array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		nd_step<Formula>* old_step, nd_step<Formula>* new_step)
@@ -116,7 +116,7 @@ bool propose_transformation(
 
 template<bool FirstSample, typename Formula, typename Canonicalizer>
 bool select_axiom(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const concept<natural_deduction<Formula>>& c,
 		array<pair<uint_fast8_t, unsigned int>>& axiom_indices,
 		array<unsigned int>& selected_types, array<unsigned int>& selected_negated_types,
@@ -225,7 +225,7 @@ inline Formula* new_lifted_atom(const atom<Negated, Arity> a) {
 
 template<bool Negated, typename Formula, typename Canonicalizer>
 inline const array<unsigned int>& get_concept_set(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> a)
 {
 	return (Negated ? T.types.get(a.predicate).value : T.types.get(a.predicate).key);
@@ -233,7 +233,7 @@ inline const array<unsigned int>& get_concept_set(
 
 template<bool Negated, typename Formula, typename Canonicalizer>
 const array<unsigned int>& get_concept_set(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> a)
 {
 	relation r = { a.predicate, a.args[0], a.args[1] };
@@ -276,7 +276,7 @@ nd_step<Formula>* get_proof(
 template<bool FirstSample, bool Negated,
 	typename Formula, typename Canonicalizer>
 inline void get_satisfying_concepts_helper(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T, unsigned int predicate,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T, unsigned int predicate,
 		const typename Formula::Term* arg1, const typename Formula::Term* arg2, array<unsigned int>& intersection)
 {
 	typedef typename Formula::TermType TermType;
@@ -301,7 +301,7 @@ inline void get_satisfying_concepts_helper(
 
 template<bool FirstSample, typename Formula, typename Canonicalizer>
 bool get_satisfying_concepts(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const Formula* formula, array<unsigned int>& intersection)
 {
 	typedef typename Formula::Type FormulaType;
@@ -525,10 +525,12 @@ bool intensional_element_of(
 		return !Negated;
 	case FormulaType::FALSE:
 		return Negated;
+	case FormulaType::EXISTS:
+		/* since the proposal that uses this function currently only supports conjunctions of atoms, we return false here */
+		return false;
 	case FormulaType::EQUALS:
 	case FormulaType::IFF:
 	case FormulaType::FOR_ALL:
-	case FormulaType::EXISTS:
 	case FormulaType::LAMBDA:
 		fprintf(stderr, "intensional_element_of ERROR: Not implemented.\n");
 		return false;
@@ -552,10 +554,10 @@ bool intensional_element_of(
 	return false;
 }
 
-template<typename Formula, typename ProofCalculus, typename Canonicalizer>
+template<typename ProofCalculus, typename Canonicalizer>
 inline bool is_satisfying_antecedent(
 		unsigned int concept_id, unsigned int antecedent_id,
-		const theory<Formula, ProofCalculus, Canonicalizer>& T)
+		const theory<ProofCalculus, Canonicalizer>& T)
 {
 	/* check if `concept_id` cannot belong to the set given by `antecedent_id` (if there is a contradiction) */
 	/* first check if we can prove that the entry belongs to any descendant of `antecedent_id` */
@@ -586,7 +588,7 @@ inline bool is_satisfying_antecedent(
 template<bool Negated, unsigned int Arity,
 	typename Formula, typename Canonicalizer>
 bool get_satisfying_extensional_edges(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, Arity> a,
 		unsigned int concept_id,
 		array<pair<unsigned int, unsigned int>>& satisfying_extensional_edges)
@@ -631,11 +633,17 @@ inline bool compute_new_set_size(unsigned int& out,
 	return true;
 }
 
+template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+inline void on_free_set(unsigned int set_id,
+		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const unfixed_set_counter& visitor)
+{ }
+
 template<bool Negated, unsigned int Arity,
 	typename Formula, typename Canonicalizer,
 	typename ProofPrior, typename TheorySampleCollector>
 bool propose_universal_intro(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, Arity> a,
 		unsigned int concept_id,
 		unsigned int old_axiom_count,
@@ -913,7 +921,7 @@ void free_proofs(nd_step<Formula>** proofs, unsigned int count) {
 
 template<typename Formula, typename Canonicalizer>
 inline nd_step<Formula>* make_grounded_conjunct(
-		const theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const concept<natural_deduction<Formula>>& c,
 		Formula* lifted_conjunct, unsigned int variable,
 		typename Formula::Term* constant)
@@ -1013,7 +1021,7 @@ inline universal_elim_proposal<Formula, Negated, Arity> make_universal_elim_prop
 template<typename Formula, typename Canonicalizer,
 	typename ProofPrior, typename TheorySampleCollector>
 bool propose_universal_elim(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const extensional_edge<Formula>& selected_edge,
 		unsigned int old_axiom_count,
 		double& log_proposal_probability_ratio,
@@ -1128,6 +1136,13 @@ bool propose_universal_elim(
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 		free(proposed_proofs); return false;
 	}
+	if (satisfying_extensional_edges.length == 0) {
+		/* this could happen if the antecedent is satisfied by another
+		   implication elimination (another extentional edge, for example), in
+		   which case, this transformation is not invertible */
+		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
+		free(proposed_proofs); return true;
+	}
 
 	unfixed_set_counter unfixed_set_count_change = {0};
 	if (selected_edge.axiom->reference_count == 3) {
@@ -1160,31 +1175,13 @@ bool propose_universal_elim(
 	/* determine if removing this edge will create a new set */
 	unsigned int old_set_id = T.sets.element_map.get(constant);
 	Formula* old_set_formula = T.sets.sets[old_set_id].set_formula();
-	Formula* variable = Formula::new_variable(1);
-	if (variable == NULL) {
-		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
-		free(proposed_proofs); return false;
-	}
-	Formula* constant_term = Formula::new_constant(constant);
-	if (constant_term == NULL) {
-		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
-		free(*variable); if (variable->reference_count == 0) free(variable);
-		free(proposed_proofs); return false;
-	}
-	Formula* grounded_literal = substitute<TermType::VARIABLE>(consequent, variable, constant_term);
-	free(*variable); if (variable->reference_count == 0) free(variable);
-	free(*constant_term); if (constant_term->reference_count == 0) free(constant_term);
-	if (grounded_literal == NULL) {
-		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
-		free(proposed_proofs); return false;
-	}
-	Formula* new_set_formula = Formula::new_and(old_set_formula, grounded_literal);
+	Formula* new_set_formula = Formula::new_and(old_set_formula, consequent);
 	if (new_set_formula == NULL) {
-		free(*grounded_literal); if (grounded_literal->reference_count == 0) free(grounded_literal);
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
 		free(proposed_proofs); return false;
 	}
 	old_set_formula->reference_count++;
+	consequent->reference_count++;
 	Formula* canonicalized_new_set_formula = Canonicalizer::canonicalize(*new_set_formula);
 	free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 	if (canonicalized_new_set_formula == NULL) {
@@ -1291,7 +1288,7 @@ bool propose_universal_elim(
 template<typename Formula, typename Canonicalizer,
 	typename SizePrior, typename TheorySampleCollector>
 bool propose_change_set_size(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int selected_set,
 		unsigned int axiom_count,
 		double& log_proposal_probability_ratio,
@@ -1450,8 +1447,27 @@ inline void on_subtract_changes(proof_sampler& visitor) {
 }
 
 template<typename Formula>
-inline bool filter_constants(const Formula* formula, array<unsigned int>& constants, proof_sampler& sampler)
+inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_sampler& sampler)
 {
+	if (!filter_operands(formula, indices))
+		return false;
+
+	if (!log_cache<double>::instance().ensure_size(indices.length + 1)) return false;
+	sampler.log_probability += -log_cache<double>::instance().get(indices.length);
+
+	indices.length = 1;
+	return true;
+}
+
+template<typename ProofCalculus, typename Canonicalizer>
+inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+		const typename ProofCalculus::Language* formula,
+		unsigned int variable, array<instance>& constants,
+		proof_sampler& sampler)
+{
+	if (!filter_constants(T, formula, variable, constants))
+		return false;
+
 	if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
 	sampler.log_probability += -log_cache<double>::instance().get(constants.length);
 
@@ -1482,12 +1498,10 @@ inline bool filter_constants(const Formula* formula, array<unsigned int>& consta
 }
 
 template<typename Formula>
-inline bool inconsistent_constant(const Formula* formula, unsigned int constant, proof_sampler& sampler) {
-	/*if (!sampler.all_descendants_inconsistent) return true;
-	sampler.all_descendants_inconsistent = true;
-	return sampler.inconsistencies.get(*formula).add(constant);*/
-	return true;
-}
+constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_sampler& sampler) { return true; }
+
+template<typename Formula>
+constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler& sampler) { return true; }
 
 template<typename Formula>
 inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler& sampler) {
@@ -1532,9 +1546,9 @@ inline void on_free_set(unsigned int set_id,
 
 template<typename Formula, typename Canonicalizer>
 bool undo_proof_changes(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
-		const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
-		const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
+		const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof,
 		const undo_remove_sets& old_sets, const undo_remove_sets& new_sets)
 {
@@ -1662,7 +1676,7 @@ inline void on_free_set(unsigned int set_id,
 template<typename Formula, typename Canonicalizer,
 	typename ProofPrior, typename TheorySampleCollector>
 bool propose_disjunction_intro(
-	theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*> selected_step,
 	double& log_proposal_probability_ratio,
 	ProofPrior& proof_prior,
@@ -1670,12 +1684,15 @@ bool propose_disjunction_intro(
 	TheorySampleCollector& sample_collector)
 {
 	typedef nd_step<Formula> Proof;
-	typedef theory<Formula, natural_deduction<Formula>, Canonicalizer> Theory;
+	typedef theory<natural_deduction<Formula>, Canonicalizer> Theory;
 
 	log_probability_computer computer;
 	inverse_set_size_log_probability set_size_log_probability;
-	typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes old_proof_changes;
+	typename theory<natural_deduction<Formula>, Canonicalizer>::changes old_proof_changes;
 	if (!T.get_theory_changes(*selected_step.value, old_proof_changes, computer)) return false;
+	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
+	for (const typename Theory::change& c : old_proof_changes.list)
+		if (c.type == Theory::change_type::SUBSET_AXIOM) return true;
 	T.subtract_changes(old_proof_changes, set_size_log_probability);
 
 	/* compute the number of concepts in T after removing the old proof */
@@ -1744,7 +1761,7 @@ bool propose_disjunction_intro(
 	log_proposal_probability_ratio += log_proposal_probability;
 	log_proposal_probability_ratio += set_size_log_probability.value;
 
-	typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes new_proof_changes;
+	typename theory<natural_deduction<Formula>, Canonicalizer>::changes new_proof_changes;
 	if (!T.get_theory_changes(*new_proof, new_proof_changes))
 		return false;
 
@@ -1908,7 +1925,7 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 
 template<bool Negated, typename Formula, typename Canonicalizer>
 inline bool remove_ground_axiom(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> consequent_atom, unsigned int constant)
 {
 	return T.template remove_unary_atom<Negated>(consequent_atom.predicate, constant);
@@ -1916,7 +1933,7 @@ inline bool remove_ground_axiom(
 
 template<bool Negated, typename Formula, typename Canonicalizer>
 inline bool remove_ground_axiom(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> consequent_atom, unsigned int constant)
 {
 	relation rel = { consequent_atom.predicate,
@@ -1929,7 +1946,7 @@ template<typename Formula, typename Canonicalizer,
 	bool Negated, unsigned int Arity,
 	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_intro(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
 		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_intro_proposal<Formula, Negated, Arity>& proposal,
@@ -1973,7 +1990,7 @@ bool do_mh_universal_intro(
 
 template<bool Negated, typename Formula, typename Canonicalizer>
 inline bool add_ground_axiom(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 1> consequent_atom,
 		unsigned int constant, nd_step<Formula>* axiom)
 {
@@ -1982,7 +1999,7 @@ inline bool add_ground_axiom(
 
 template<bool Negated, typename Formula, typename Canonicalizer>
 inline bool add_ground_axiom(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const atom<Negated, 2> consequent_atom,
 		unsigned int constant, nd_step<Formula>* axiom)
 {
@@ -1996,7 +2013,7 @@ template<typename Formula, typename Canonicalizer,
 	bool Negated, unsigned int Arity,
 	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_elim(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
 		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_elim_proposal<Formula, Negated, Arity>& proposal,
@@ -2040,12 +2057,12 @@ template<typename Formula, typename Canonicalizer,
 	typename PriorState, typename PriorStateChanges,
 	typename TheorySampleCollector>
 inline bool do_mh_disjunction_intro(
-	theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*>& selected_step,
 	nd_step<Formula>* proposed_proof,
 	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
-	const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
-	const typename theory<Formula, natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
+	const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
+	const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 	PriorState& proof_axioms,
 	const PriorStateChanges& old_axioms,
 	const PriorStateChanges& new_axioms,
@@ -2078,7 +2095,7 @@ inline bool do_mh_disjunction_intro(
 
 template<typename Formula, typename Canonicalizer>
 bool is_eliminable_extensional_edge(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		const nd_step<Formula>* axiom)
 {
 	typedef typename Formula::Type FormulaType;
@@ -2126,7 +2143,7 @@ bool is_eliminable_extensional_edge(
 
 template<typename Formula, typename Canonicalizer>
 bool get_eliminable_extensional_edges(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges)
 {
 	typedef typename Formula::Type FormulaType;
@@ -2163,7 +2180,7 @@ bool get_eliminable_extensional_edges(
 template<typename Formula, typename Canonicalizer,
 	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_step(
-		theory<Formula, natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		ProofPrior& proof_prior,
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector)

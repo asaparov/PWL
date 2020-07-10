@@ -877,4 +877,27 @@ inline bool tokenize(
 	return true;
 }
 
+/* a utility function for tokenizing individual sentences represented as a collection of tokens */
+template<typename TokenType, typename Derivation>
+inline bool tokenize(
+		const TokenType* input, unsigned int input_length,
+		sentence<Derivation>& out,
+		hash_map<string, unsigned int>& names)
+{
+	array<sentence_token>& sentence_tokens = *((array<sentence_token>*) alloca(sizeof(array<sentence_token>)));
+	if (!array_init(sentence_tokens, 16)) return false;
+	for (unsigned int i = 0; i < input_length; i++) {
+		unsigned int token_id;
+		if (!get_token(string(input[i].text, input[i].length), token_id, names) || !sentence_tokens.add({token_id})) {
+			free(sentence_tokens);
+			return false;
+		}
+	}
+
+	move(sentence_tokens.data, out.tokens);
+	out.length = sentence_tokens.length;
+	set_empty(out.derivation);
+	return true;
+}
+
 #endif /* ARTICLE_H_ */
