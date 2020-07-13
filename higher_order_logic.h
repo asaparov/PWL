@@ -13680,6 +13680,7 @@ if (MapSecondVariablesToFirst) {
 						}
 						new_term->type = first->type;
 						new_term->reference_count = 1;
+						new_term->array.length = first->array.length;
 						new_term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * first->array.length);
 						if (new_term->array.operands == nullptr) {
 							free_all(differences); free_all(child_intersection);

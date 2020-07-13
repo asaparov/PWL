@@ -300,24 +300,7 @@ debug_terminal_printer = &parser.get_printer();
 				break;
 			}
 
-			hol_term* first_logical_form = relabel_variables(logical_forms[0]);
-			hol_term* second_logical_form = relabel_variables(entry.value.root);
-			if (first_logical_form == nullptr) {
-				if (first_logical_form != nullptr) {
-					free(*first_logical_form);
-					if (first_logical_form->reference_count == 0)
-						free(first_logical_form);
-				}
-				for (unsigned int i = 0; i < parse_count; i++) {
-					free(*logical_forms[i]);
-					if (logical_forms[i]->reference_count == 0)
-						free(logical_forms[i]);
-				}
-				free(sentence);
-				return false;
-			}
-
-			if (first_logical_form != second_logical_form && *first_logical_form != *second_logical_form) {
+			if (!equivalent(logical_forms[0], entry.value.root)) {
 				fprintf(stderr, "parse_sentence WARNING: The parsed logical form does not match the label logical form in the training data:\n");
 				fprintf(stderr, "  Sentence: '%s'\n", input_sentence);
 				print("  Parsed logical form:   ", stderr); print(*logical_forms[0], stderr, parser.get_printer()); print('\n', stderr);
@@ -327,8 +310,6 @@ debug_terminal_printer = &parser.get_printer();
 					print("  with log probability ", stderr); print(expected_log_probability, stderr); print('\n', stderr);
 				}
 			}
-			if (first_logical_form != nullptr) { free(*first_logical_form); if (first_logical_form->reference_count == 0) free(first_logical_form); }
-			if (second_logical_form != nullptr) { free(*second_logical_form); if (second_logical_form->reference_count == 0) free(second_logical_form); }
 			break;
 		}
 		if (found_training_sentence) break;
@@ -680,7 +661,7 @@ template<bool UseSSL, typename FilterResponseHeader>
 bool get_http_page(const char* hostname, const char* query, const char* port,
 		array<char>& response, FilterResponseHeader filter_response_header)
 {
-	static constexpr unsigned int MAX_REQUEST_LEN = 1024;
+	static constexpr int MAX_REQUEST_LEN = 1024;
 	static char REQUEST_TEMPLATE[] =
 			"GET %s HTTP/1.1\r\n"
 			"Host: %s\r\n"
@@ -746,7 +727,7 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 
 		/* send HTTP request */
 		unsigned int total_written = 0;
-		while (total_written < request_length) {
+		while (total_written < (unsigned int) request_length) {
 			int written;
 			if (UseSSL)
 				written = SSL_write(ssl, request + total_written, request_length - total_written);
@@ -1125,13 +1106,6 @@ bool find_answer_in_website(const string& address,
 				unsigned int length = position - start + 1;
 
 				unsigned int start = 1;
-				bool is_close;
-				if (text[start] == '/') {
-					is_close = true;
-					start++;
-				} else {
-					is_close = false;
-				}
 
 				/* get the tag name */
 				unsigned int name_end = start;
@@ -1143,8 +1117,9 @@ bool find_answer_in_website(const string& address,
 				unsigned int tag_name_length = name_end - start;
 
 				/* ignore all <a>, </a>, <span>, and </span> tags */
-				if (!(tag_name_length == 1 && tag_name[0] == 'a')
-				 && !(tag_name_length == 4 && tag_name[0] == 's' && tag_name[1] == 'p' && tag_name[2] == 'a' && tag_name[3] == 'n'))
+				if (!(tag_name_length == 1 && tag_name[0] == 'a') && !(tag_name_length == 2 && tag_name[0] == '/' && tag_name[1] == 'a')
+				 && !(tag_name_length == 4 && tag_name[0] == 's' && tag_name[1] == 'p' && tag_name[2] == 'a' && tag_name[3] == 'n')
+				 && !(tag_name_length == 5 && tag_name[0] == '/' && tag_name[1] == 's' && tag_name[2] == 'p' && tag_name[3] == 'a' && tag_name[4] == 'n'))
 				{
 					/* emit the tag from response[start:position] */
 					if (!tokens.add({html_lexer_state::TAG, text, length})) return false;

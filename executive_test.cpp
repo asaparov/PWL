@@ -1137,6 +1137,7 @@ int main(int argc, const char** argv)
 {
 	setlocale(LC_ALL, "en_US.UTF-8");
 	log_cache<double>::instance().ensure_size(1024);
+set_seed(1167476606);
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 
 	hash_map<string, unsigned int> names(256);
@@ -1348,7 +1349,9 @@ return EXIT_SUCCESS;*/
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "The population of Arizona is what?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What is the population of Arizona?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	}*/ if (answer_question<true>(answers, "What is the largest state bordering Texas?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	}
 for (string& str : answers) free(str);

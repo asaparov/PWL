@@ -4,3 +4,4 @@ Des Moines: Des Moines is a city in Iowa.;
 Pennsylvania: Pennsylvania is one of the 50 states in the United States of America.;
 Pittsburgh: Pittsburgh (spelled as "Pittsburg" from 1891-1911), is a city in the American state of Pennsylvania.;
 Arizona: Arizona is a state in the United States of America.;
+Texas: Texas is the second largest state in the United States by both area and population.;
