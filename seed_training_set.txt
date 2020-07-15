@@ -254,7 +254,7 @@
 {(N "thing"/"thing")}
 	{object[index:sg]};
 
-: # There are four large planets.
+: # There are four gaseous planets.
 {(S
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
@@ -275,7 +275,7 @@
 								(NOMINAL_L:identity_predicative
 									(ADJP_R:try_remove_genitive,try_remove_wh_minus,select_left_conjunct_in_set,select_right_arg1_of_without_head
 										(ADJP_L:try_remove_is_adjunct
-											(ADJ:require_no_correlator "large"/"large")
+											(ADJ:require_no_correlator "gaseous"/"gaseous")
 										)
 									)
 									(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
@@ -291,7 +291,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[X]:((X=^[x]:(?[l]:(large(l) & (arg1_of(x)=l)) & planet(x))) & (size(X)=4) & ![x]:(X(x) => ?[e]:(exist(e) & present(e) & (arg1(e)=x))))};
+	{?[X]:((X=^[x]:(?[l]:(gaseous(l) & (arg1_of(x)=l)) & planet(x))) & (size(X)=4) & ![x]:(X(x) => ?[e]:(exist(e) & present(e) & (arg1(e)=x))))};
 
 : # Each cat is a mammal.
 {(S
@@ -420,7 +420,7 @@
 )}
 	{?[P]:(subset(P,^[p]:planet(p)) & (size(P)=1) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[x]:(P(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=e)))))};
 
-: # Jupiter is large.
+: # Jupiter is gaseous.
 {(S
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
@@ -444,7 +444,7 @@
 				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
 					(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition
 						(ADJP_L:try_remove_is_adjunct
-							(ADJ:require_no_correlator "large"/"large")
+							(ADJ:require_no_correlator "gaseous"/"gaseous")
 						)
 					)
 				)
@@ -453,7 +453,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ?[l]:((arg1(l)=j) & large(l) & present(l)))};
+	{?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ?[l]:((arg1(l)=j) & gaseous(l) & present(l)))};
 
 # TODO: add this is a training example; currently (as of Feb 7) our parser wants to parse this as ?[f]:(?[x]:(mammal(x) & (arg1(f)=x)) & female(f) & present(f)) | ?[m]:(?[x]:(mammal(x) & (arg1(m)=x)) & male(m) & present(m))
 #: # A mammal is female or male.
@@ -531,18 +531,6 @@
 : # major
 {(ADJ "major"/"major")}
 	{?[x]:major(x)};
-
-: # big
-{(ADJ "big"/"big")}
-	{?[x]:large(x)};
-
-: # small
-{(ADJ "small"/"small")}
-	{?[x]:small(x)};
-
-: # little
-{(ADJ "little"/"little")}
-	{?[x]:small(x)};
 
 : # north
 {(ADJ "north"/"north")}

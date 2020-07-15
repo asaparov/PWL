@@ -1137,6 +1137,7 @@ int main(int argc, const char** argv)
 {
 	setlocale(LC_ALL, "en_US.UTF-8");
 	log_cache<double>::instance().ensure_size(1024);
+set_seed(1356941742);
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 
 	hash_map<string, unsigned int> names(256);

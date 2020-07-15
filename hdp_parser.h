@@ -19498,6 +19498,22 @@ inline bool invert_remove_conjunct(
 
 				if (conjunct != nullptr && !can_have_free_variables(*conjunct)) {
 					dst_outer[dst_outer.length] = &HOL_ZERO;
+				} else if (old_second_head->type != hol_term_type::ANY
+						&& old_second_head->type != hol_term_type::ANY_RIGHT
+						&& second_head->type == hol_term_type::EXISTS && second_negations == 0)
+				{
+					/* we have to exclude negations in front of the head */
+					hol_term* excluded_quantifier = hol_term::new_not(hol_term::new_exists(second_head->quantifier.variable, &HOL_ANY));
+					if (excluded_quantifier == nullptr) {
+						free_all(dst);
+						return false;
+					}
+					HOL_ANY.reference_count++;
+					dst_outer[dst_outer.length] = hol_term::new_any_right(&HOL_ZERO, &excluded_quantifier, 1);
+					if (dst_outer[dst_outer.length] == nullptr) {
+						free(*excluded_quantifier); free(excluded_quantifier);
+						free_all(dst); return false;
+					}
 				} else {
 					dst_outer[dst_outer.length] = hol_term::new_any_right(&HOL_ZERO);
 					if (dst_outer[dst_outer.length] == nullptr) {
