@@ -1309,6 +1309,10 @@ inline bool parse_flag(
 		flags.concord_number = grammatical_num::ANY;
 	} else if (compare_strings("arg2", str, length)) {
 		flags.flags[(unsigned int) grammatical_flag::HAS_ARG2] = grammatical_flag_value::TRUE;
+	} else if (compare_strings("cmp", str, length)) {
+		flags.comp = grammatical_comparison::COMPARATIVE;
+	} else if (compare_strings("sup", str, length)) {
+		flags.comp = grammatical_comparison::SUPERLATIVE;
 	} else {
 		read_error("Unrecognized grammatical flag label", current);
 		return false;
@@ -19190,24 +19194,50 @@ inline bool invert_remove_conjunct(
 		free_all(intersection);
 
 		/* make sure the initial lambda variables are correctly mapped */
-		if (first_head_inverter.outer[0]->type == hol_term_type::LAMBDA && second_head_inverter.outer[0]->type == hol_term_type::LAMBDA) {
-			if (!second_variable_map.ensure_capacity(second_variable_map.size + 1)) {
-				for (auto entry : second_variable_map) free(entry.value);
-				return false;
-			}
+		if (first_head_inverter.outer[0]->type == hol_term_type::LAMBDA) {
+			if (second_head_inverter.outer[0]->type == hol_term_type::LAMBDA) {
+				if (!second_variable_map.ensure_capacity(second_variable_map.size + 1)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
 
-			unsigned int first_lambda_variable = first_head_inverter.outer[0]->quantifier.variable;
-			hol_term* second_lambda = second_head_inverter.outer[0];
-			unsigned int index = second_variable_map.index_of(second_lambda);
-			if (index < second_variable_map.size && first_lambda_variable == second_variable_map.values[index]) {
-				/* `second_variable_map` should map `var` to itself */
-				second_variable_map.remove_at(index);
+				unsigned int first_lambda_variable = first_head_inverter.outer[0]->quantifier.variable;
+				hol_term* second_lambda = second_head_inverter.outer[0];
+				unsigned int index = second_variable_map.index_of(second_lambda);
+				if (index < second_variable_map.size && first_lambda_variable == second_variable_map.values[index]) {
+					/* `second_variable_map` should map `var` to itself */
+					second_variable_map.remove_at(index);
+				} else {
+					/* `second_variable_map` should map `var` to `target_var` */
+					second_variable_map.values[index] = first_lambda_variable;
+					if (index == second_variable_map.size) {
+						second_variable_map.keys[index] = second_lambda;
+						second_variable_map.size++;
+					}
+				}
 			} else {
-				/* `second_variable_map` should map `var` to `target_var` */
-				second_variable_map.values[index] = first_lambda_variable;
-				if (index == second_variable_map.size) {
-					second_variable_map.keys[index] = second_lambda;
-					second_variable_map.size++;
+				/* the lambda is removed from `first` to `second` */
+				array<hol_term*> second_scopes(8);
+				if (!get_scopes(*second_head_inverter.outer[0], second_scopes)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+				unsigned int first_lambda_variable = first_head_inverter.outer[0]->quantifier.variable;
+				for (hol_term* scope : second_scopes) {
+					if (scope->quantifier.variable == first_lambda_variable) {
+						if (!second_variable_map.ensure_capacity(second_variable_map.size + 1)) {
+							for (auto entry : second_variable_map) free(entry.value);
+							return false;
+						}
+
+						unsigned int index = second_variable_map.index_of(scope);
+						if (index == second_variable_map.size || second_variable_map.values[index] == first_lambda_variable) {
+							second_variable_map.keys[index] = scope;
+							second_variable_map.values[index] = ++max_variable;
+							if (index == second_variable_map.size)
+								second_variable_map.size++;
+						}
+					}
 				}
 			}
 		}
