@@ -2847,19 +2847,16 @@ template<typename BuiltInPredicates>
 struct hol_non_head_constants {
 	static const unsigned int CONSTANTS[];
 
-	hol_term* constants[array_length(CONSTANTS)];
+	hol_term* constants;
 
 	hol_non_head_constants() {
-		for (unsigned int i = 0; i < array_length(CONSTANTS); i++)
-			constants[i] = hol_term::new_constant(CONSTANTS[i]);
+		constants = hol_term::new_any_constant(make_array_view(CONSTANTS, array_length(CONSTANTS)));
 	}
 
 	~hol_non_head_constants() {
-		for (unsigned int i = 0; i < array_length(constants); i++) {
-			free(*constants[i]);
-			if (constants[i]->reference_count == 0)
-				free(constants[i]);
-		}
+		free(*constants);
+		if (constants->reference_count == 0)
+			free(constants);
 	}
 
 	static inline hol_non_head_constants<BuiltInPredicates>& get() {
@@ -2868,16 +2865,15 @@ struct hol_non_head_constants {
 	}
 
 	static inline hol_term** get_terms() {
-		return get().constants;
+		return &get().constants;
 	}
 
 	static inline void increment_terms() {
-		for (unsigned int i = 0; i < array_length(get().constants); i++)
-			get().constants[i]->reference_count++;
+		get().constants->reference_count++;
 	}
 
-	static inline unsigned int count() {
-		return array_length(get().constants);
+	static inline constexpr unsigned int count() {
+		return 1;
 	}
 };
 
@@ -2891,7 +2887,6 @@ const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[] =  {
 	(unsigned int) BuiltInPredicates::ARG2_OF,
 	(unsigned int) BuiltInPredicates::ARG3_OF,
 	(unsigned int) BuiltInPredicates::SIZE,
-	(unsigned int) BuiltInPredicates::WIDE_SCOPE,
 	(unsigned int) BuiltInPredicates::PRESENT,
 	(unsigned int) BuiltInPredicates::PRESENT_PROGRESSIVE,
 	(unsigned int) BuiltInPredicates::PRESENT_PERFECT,
@@ -2903,7 +2898,8 @@ const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[] =  {
 	(unsigned int) BuiltInPredicates::FUTURE,
 	(unsigned int) BuiltInPredicates::FUTURE_PROGRESSIVE,
 	(unsigned int) BuiltInPredicates::FUTURE_PERFECT,
-	(unsigned int) BuiltInPredicates::FUTURE_PERFECT_PROGRESSIVE
+	(unsigned int) BuiltInPredicates::FUTURE_PERFECT_PROGRESSIVE,
+	(unsigned int) BuiltInPredicates::WIDE_SCOPE
 };
 
 template<typename BuiltInPredicates>
@@ -7453,7 +7449,7 @@ inline bool require_no_inverse(hol_term* src, hol_term*& dst)
 
 	hol_term* predicate = hol_term::new_apply(
 			hol_term::new_any(nullptr, excluded_constants, hol_non_head_constants<built_in_predicates>::count() + 1),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) {
 		free(*excluded_constants[hol_non_head_constants<built_in_predicates>::count()]);
 		if (excluded_constants[hol_non_head_constants<built_in_predicates>::count()]->reference_count == 0)
@@ -7462,6 +7458,7 @@ inline bool require_no_inverse(hol_term* src, hol_term*& dst)
 		return false;
 	}
 	hol_non_head_constants<built_in_predicates>::increment_terms();
+	hol_term::variables<0>::value.reference_count++;
 	free(excluded_constants);
 
 	bool result = require_predicate<INT_FAST8_MAX>(src, dst, predicate);
@@ -7486,7 +7483,7 @@ inline bool require_no_predicate_same(hol_term* src, hol_term*& dst)
 
 	hol_term* predicate = hol_term::new_apply(
 			hol_term::new_any(nullptr, excluded_constants, hol_non_head_constants<built_in_predicates>::count() + 1),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) {
 		free(*excluded_constants[hol_non_head_constants<built_in_predicates>::count()]);
 		if (excluded_constants[hol_non_head_constants<built_in_predicates>::count()]->reference_count == 0)
@@ -7495,6 +7492,7 @@ inline bool require_no_predicate_same(hol_term* src, hol_term*& dst)
 		return false;
 	}
 	hol_non_head_constants<built_in_predicates>::increment_terms();
+	hol_term::variables<0>::value.reference_count++;
 	free(excluded_constants);
 
 	bool result = require_predicate<INT_FAST8_MAX>(src, dst, predicate);
@@ -7508,9 +7506,10 @@ inline bool require_left_predicate_inverse(hol_term* src, hol_term*& dst)
 			hol_term::new_apply(
 				hol_term::new_constant((unsigned int) built_in_predicates::INVERSE),
 				hol_term::new_any(nullptr, hol_non_head_constants<built_in_predicates>::get_terms(), hol_non_head_constants<built_in_predicates>::count())),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
 	hol_non_head_constants<built_in_predicates>::increment_terms();
+	hol_term::variables<0>::value.reference_count++;
 
 	bool result = require_predicate<0>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -7523,8 +7522,9 @@ inline bool require_left_predicate_inverse_own(hol_term* src, hol_term*& dst)
 			hol_term::new_apply(
 				hol_term::new_constant((unsigned int) built_in_predicates::INVERSE),
 				hol_term::new_constant((unsigned int) built_in_predicates::OWN)),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
+	hol_term::variables<0>::value.reference_count++;
 
 	bool result = require_predicate<0>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -7535,8 +7535,9 @@ inline bool require_left_predicate_exist(hol_term* src, hol_term*& dst)
 {
 	hol_term* predicate = hol_term::new_apply(
 			hol_term::new_constant((unsigned int) built_in_predicates::EXIST),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
+	hol_term::variables<0>::value.reference_count++;
 
 	bool result = require_predicate<0>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -7549,9 +7550,10 @@ inline bool require_left_greatest(hol_term* src, hol_term*& dst)
 			hol_term::new_apply(
 				hol_term::new_constant((unsigned int) built_in_predicates::GREATEST),
 				hol_term::new_any(nullptr, hol_non_head_constants<built_in_predicates>::get_terms(), hol_non_head_constants<built_in_predicates>::count())),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
 	hol_non_head_constants<built_in_predicates>::increment_terms();
+	hol_term::variables<0>::value.reference_count++;
 
 	bool result = require_predicate<0>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -7563,8 +7565,9 @@ inline bool require_no_left_predicate_exist(hol_term* src, hol_term*& dst)
 	hol_term* hol_exist = &HOL_EXIST;
 	hol_term* predicate = hol_term::new_apply(
 			hol_term::new_any(nullptr, &hol_exist, 1),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
+	hol_term::variables<0>::value.reference_count++;
 	HOL_EXIST.reference_count++;
 
 	bool result = require_predicate<0>(src, dst, predicate);
@@ -7577,8 +7580,9 @@ inline bool require_no_predicate_empty(hol_term* src, hol_term*& dst)
 	hol_term* hol_empty = &HOL_EMPTY;
 	hol_term* predicate = hol_term::new_apply(
 			hol_term::new_any(nullptr, &hol_empty, 1),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
+	hol_term::variables<0>::value.reference_count++;
 	HOL_EMPTY.reference_count++;
 
 	bool result = require_predicate<INT_FAST8_MAX>(src, dst, predicate);
@@ -7948,8 +7952,10 @@ inline bool require_predicate_in_set(
 template<int_fast8_t ConjunctIndex>
 inline bool require_predicate_in_set(hol_term* src, hol_term*& dst)
 {
-	hol_term* predicate = hol_term::new_apply(&HOL_ANY, hol_term::new_variable(0));
+	hol_term* predicate = hol_term::new_apply(&HOL_ANY, &hol_term::variables<0>::value);
 	if (predicate == nullptr) return false;
+	hol_term::variables<0>::value.reference_count++;
+	HOL_ANY.reference_count++;
 
 	bool result = require_predicate_in_set<ConjunctIndex>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -10254,6 +10260,7 @@ inline bool map_tense_predicate(array<hol_term*>& out, hol_term* head,
 		cleanup();
 		if (!result) return false;
 	} else {
+		free(*input_conjunct); free(input_conjunct);
 		return false;
 	}
 	return true;
@@ -10485,9 +10492,10 @@ inline bool require_no_empty_ref(hol_term* src, hol_term*& dst)
 	hol_term* hol_empty_ptr = &HOL_EMPTY;
 	hol_term* predicate = hol_term::new_apply(
 			hol_term::new_any(nullptr, &hol_empty_ptr, 1),
-			hol_term::new_variable(0));
+			&hol_term::variables<0>::value);
 	if (predicate == nullptr) 
 		return false;
+	hol_term::variables<0>::value.reference_count++;
 	HOL_EMPTY.reference_count++;
 
 	bool result = require_predicate<INT_FAST8_MAX>(src, dst, predicate);
@@ -13331,11 +13339,12 @@ inline bool require_no_string_or_number_or_name_in_set(hol_term* src, hol_term*&
 	if (excluded_tree == nullptr)
 		return false;
 
-	hol_term* predicate = hol_term::new_apply(hol_term::new_any(nullptr, &excluded_tree, 1), hol_term::new_variable(0));
+	hol_term* predicate = hol_term::new_apply(hol_term::new_any(nullptr, &excluded_tree, 1), &hol_term::variables<0>::value);
 	if (predicate == nullptr) {
 		free(*excluded_tree); free(excluded_tree);
 		return false;
 	}
+	hol_term::variables<0>::value.reference_count++;
 
 	bool result = require_predicate_in_set<INT_FAST8_MAX>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -27641,11 +27650,40 @@ inline bool invert_select_conjuncts_without_head(
 					second_head->quantifier.operand->array.operands[i]->reference_count++;
 			}
 			dst[dst.length++] = new_head;
-			dst_outer[dst_outer.length] = hol_term::new_any_right(&HOL_ZERO);
-			if (dst_outer[dst_outer.length] == nullptr)
-				return false;
-			HOL_ZERO.reference_count++;
+
+			bool can_have_free_variable_references = false;
+			if (first_head->type != hol_term_type::EXISTS || first_head->quantifier.operand->type == hol_term_type::ANY_ARRAY) {
+				can_have_free_variable_references = true;
+			} else {
+				hol_term* operand = first_head->quantifier.operand;
+				if (operand->type == hol_term_type::AND) {
+					unsigned int index = (ConjunctIndex >= 0 ? ConjunctIndex : operand->array.length + ConjunctIndex);
+					for (unsigned int i = 0; !can_have_free_variable_references && i < operand->array.length; i++) {
+						if (i >= index && i < index + ConjunctCount) continue;
+						if (can_have_free_variables(*operand->array.operands[i]))
+							can_have_free_variable_references = true;
+					}
+				}
+
+				if (ConjunctCount == 1) {
+					if (can_have_free_variables(*second_head->quantifier.operand))
+						can_have_free_variable_references = true;
+				} else {
+					for (unsigned int i = 0; !can_have_free_variable_references && i < second_head->quantifier.operand->array.length; i++)
+						if (can_have_free_variables(*second_head->quantifier.operand->array.operands[i]))
+							can_have_free_variable_references = true;
+				}
+			}
+
+			if (can_have_free_variable_references) {
+				dst_outer[dst_outer.length] = hol_term::new_any_right(&HOL_ZERO);
+				if (dst_outer[dst_outer.length] == nullptr)
+					return false;
+			} else {
+				dst_outer[dst_outer.length] = &HOL_ZERO;
+			}
 			dst_outer.length++;
+			HOL_ZERO.reference_count++;
 			return true;
 		});
 }

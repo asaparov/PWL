@@ -1179,10 +1179,8 @@ bool check_proof(proof_state<Formula>& out,
 		}
 
 		parameter = Formula::new_parameter(second_operand->parameter);
-		variable = Formula::new_variable(1);
-		formula = substitute<TermType::PARAMETER, 1>(operand_states[0]->formula, parameter, variable);
+		formula = substitute<TermType::PARAMETER, 1>(operand_states[0]->formula, parameter, &Term::template variables<1>::value);
 		free(*parameter); if (parameter->reference_count == 0) free(parameter);
-		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (formula == NULL) return false;
 		out.formula = Formula::new_for_all(1, formula);
 		if (out.formula == NULL) {
@@ -1216,14 +1214,8 @@ bool check_proof(proof_state<Formula>& out,
 			Formula* temp = shift_bound_variables(operand_states[0]->formula, 1);
 			if (temp == NULL) return false;
 
-			variable = Formula::new_variable(1);
-			if (variable == NULL) {
-				free(*temp); if (temp->reference_count == 0) free(temp);
-				return false;
-			}
-			formula = substitute(temp, second_operand->parameters.data, second_operand->parameters.length, variable);
+			formula = substitute(temp, second_operand->parameters.data, second_operand->parameters.length, &Term::template variables<1>::value);
 			free(*temp); if (temp->reference_count == 0) free(temp);
-			free(*variable); if (variable->reference_count == 0) free(variable);
 		} else {
 			return false;
 		}

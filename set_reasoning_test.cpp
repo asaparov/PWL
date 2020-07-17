@@ -25,11 +25,12 @@ int main(int argc, const char** argv)
 {
 	set_reasoning<built_in_predicates, hol_term, natural_deduction<hol_term>> sets;
 	constexpr unsigned int RED = 1, BLUE = 2, FLUFFY = 3, CAT = 4;
-	hol_term* cats = hol_term::new_atom(CAT, hol_term::new_variable(1));
-	hol_term* red = hol_term::new_atom(RED, hol_term::new_variable(1));
-	hol_term* blue = hol_term::new_atom(BLUE, hol_term::new_variable(1));
-	hol_term* fluffy = hol_term::new_atom(FLUFFY, hol_term::new_variable(1));
+	hol_term* cats = hol_term::new_atom(CAT, &hol_term::variables<1>::value);
+	hol_term* red = hol_term::new_atom(RED, &hol_term::variables<1>::value);
+	hol_term* blue = hol_term::new_atom(BLUE, &hol_term::variables<1>::value);
+	hol_term* fluffy = hol_term::new_atom(FLUFFY, &hol_term::variables<1>::value);
 	hol_term* all = hol_term::new_true();
+	hol_term::variables<1>::value.reference_count += 4;
 	red->reference_count += 3;
 	blue->reference_count += 3;
 	cats->reference_count += 5;

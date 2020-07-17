@@ -413,10 +413,10 @@ struct throttler
 
 	inline unsigned long long get_next_request_time(const string& hostname) const
 	{
-		bool contains;
-		unsigned long long next_request_time = next_request_times.get(hostname, contains);
-		if (!contains) return 0;
-		return next_request_time;
+		unsigned int index = next_request_times.index_of(hostname);
+		if (index < next_request_times.size)
+			return next_request_times.values[index];
+		else return 0;
 	}
 
 	inline bool set_next_request_time(const string& hostname, unsigned long long next_request_time) {

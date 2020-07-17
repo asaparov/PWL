@@ -225,6 +225,7 @@ struct concept
 template<typename ProofCalculus>
 inline bool init(concept<ProofCalculus>& c, unsigned int constant) {
 	typedef typename ProofCalculus::Language Formula;
+	typedef typename Formula::Term Term;
 
 	if (!array_map_init(c.types, 8)) {
 		return false;
@@ -259,7 +260,7 @@ inline bool init(concept<ProofCalculus>& c, unsigned int constant) {
 		free(c.existential_intro_nodes); return false;
 	}
 	Formula* axiom = Formula::new_equals(constant_expr,
-			Formula::new_lambda(1, Formula::new_apply(constant_expr, Formula::new_variable(1))));
+			Formula::new_lambda(1, Formula::new_apply(constant_expr, &Term::template variables<1>::value)));
 	if (constant_expr == nullptr) {
 		free(c.relations); free(c.negated_types);
 		free(c.types); free(c.negated_relations);
@@ -267,6 +268,7 @@ inline bool init(concept<ProofCalculus>& c, unsigned int constant) {
 		free(*constant_expr); free(constant_expr);
 		free(c.existential_intro_nodes); return false;
 	}
+	Term::template variables<1>::value.reference_count++;
 	constant_expr->reference_count += 2 - 1;
 	c.definitions[0] = ProofCalculus::new_axiom(axiom);
 	if (c.definitions[0] == nullptr) {
@@ -368,7 +370,18 @@ struct theory
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
+	template<unsigned int Value> using Constants = typename Term::template constants<Value>;
+	template<unsigned int Value> using Variables = typename Term::template variables<Value>;
+
 	unsigned int new_constant_offset;
+
+	/* A map from `t` to two lists of constants `{y_1, ..., y_n}` and
+	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
+	   theory `[y_i/0]t` and for any `z_i` there is an axiom in the theory
+	   `~[z_i/0]t`. Note that this map is exhaustive, and there are no
+	   other constants `u` such that the axiom `[u/0]t` or `~[u/0]t`
+	   are in the theory. */
+	hash_map<Term, pair<array<unsigned int>, array<unsigned int>>> atoms;
 
 	/* A map from `x` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
@@ -401,7 +414,7 @@ struct theory
 	Proof* empty_set_axiom;
 
 	theory(unsigned int new_constant_offset) :
-			new_constant_offset(new_constant_offset), types(64), relations(64),
+			new_constant_offset(new_constant_offset), atoms(64), types(64), relations(64),
 			ground_concept_capacity(64), ground_axiom_count(0), observations(64),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
 			implication_intro_nodes(16), existential_intro_nodes(16)
@@ -415,13 +428,15 @@ struct theory
 			ground_concepts[i].types.keys = NULL; /* this is used to indicate that this concept is uninitialized */
 
 		Formula* empty_set_formula = Formula::new_for_all(1, Formula::new_equals(
-			Formula::new_equals(Formula::new_atom((unsigned int) built_in_predicates::SIZE, Formula::new_variable(1)), Formula::new_int(0)),
-			Formula::new_not(Formula::new_exists(2, Formula::new_apply(Formula::new_variable(1), Formula::new_variable(2))))
+			Formula::new_equals(Formula::new_atom((unsigned int) built_in_predicates::SIZE, &Variables<1>::value), Formula::new_int(0)),
+			Formula::new_not(Formula::new_exists(2, Formula::new_apply(&Variables<1>::value, &Variables<2>::value)))
 		));
 		if (empty_set_formula == NULL) {
 			core::free(ground_concepts);
 			exit(EXIT_FAILURE);
 		}
+		Variables<1>::value.reference_count += 2;
+		Variables<2>::value.reference_count++;
 		empty_set_axiom = ProofCalculus::new_axiom(empty_set_formula);
 		core::free(*empty_set_formula);
 		if (empty_set_formula->reference_count == 0)
@@ -431,7 +446,11 @@ struct theory
 	}
 
 	~theory() {
-		for (auto entry : types) {
+		for (auto entry : atoms) {
+			core::free(entry.key);
+			core::free(entry.value.key);
+			core::free(entry.value.value);
+		} for (auto entry : types) {
 			core::free(entry.value.key);
 			core::free(entry.value.value);
 		} for (auto entry : relations) {
@@ -666,19 +685,32 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		if (sets.set_ids.table.contains(*first_set_definition))
 			return true;
 
+		/*Term* atom = Term::new_apply(Term::new_constant(constant), &Variables<0>::value);
+		if (atom == nullptr)
+			return false;
+		Variables<0>::value.reference_count++;
+
+		bool contains;
+		pair<array<unsigned int>, array<unsigned int>>& type_instances = atoms.get(*atom, contains);
+		free(*atom); free(atom);
+		if (contains && type_instances.key.length != 0)
+			return true;
+		return false;*/
 		bool contains;
 		pair<array<unsigned int>, array<unsigned int>>& type_instances = types.get(constant, contains);
 		if (contains && type_instances.key.length != 0)
 			return true;
 		return false;
+
 	}
 
 	template<bool Negated, bool ResolveInconsistencies, typename... Args>
 	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom, Args&&... visitor)
 	{
 		Formula* lifted_literal;
-		Formula* lifted_atom = Formula::new_atom(predicate, Formula::new_variable(1));
+		Formula* lifted_atom = Formula::new_atom(predicate, &Variables<1>::value);
 		if (lifted_atom == NULL) return false;
+		Variables<1>::value.reference_count++;
 		if (Negated) {
 			lifted_literal = Formula::new_not(lifted_atom);
 			if (lifted_literal == NULL) {
@@ -730,10 +762,11 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		if (rel.arg1 == rel.arg2) {
 			Formula* lifted_literal;
 			Formula* lifted_atom = Formula::new_and(
-					Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_constant(rel.arg2)),
-					Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_variable(1)),
-					Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), Formula::new_variable(1)));
+					Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2)),
+					Formula::new_atom(rel.predicate, &Variables<1>::value, &Variables<1>::value),
+					Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value));
 			if (lifted_atom == NULL) return false;
+			Variables<1>::value.reference_count += 4;
 			if (Negated) {
 				lifted_literal = Formula::new_not(lifted_atom);
 				if (lifted_literal == NULL) {
@@ -750,8 +783,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 		} else {
 			Formula* lifted_literal;
-			Formula* lifted_atom = Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_constant(rel.arg2));
+			Formula* lifted_atom = Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2));
 			if (lifted_atom == NULL) return false;
+			Variables<1>::value.reference_count++;
 			if (Negated) {
 				lifted_literal = Formula::new_not(lifted_atom);
 				if (lifted_literal == NULL) {
@@ -766,8 +800,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			}
 			free(*lifted_literal); free(lifted_literal);
 
-			lifted_atom = Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), Formula::new_variable(1));
+			lifted_atom = Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value);
 			if (lifted_atom == NULL) return false;
+			Variables<1>::value.reference_count++;
 			if (Negated) {
 				lifted_literal = Formula::new_not(lifted_atom);
 				if (lifted_literal == NULL) {
@@ -879,8 +914,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	inline bool remove_unary_atom(unsigned int predicate, unsigned int arg, Args&&... visitor)
 	{
 		Formula* lifted_literal;
-		Formula* lifted_atom = Formula::new_atom(predicate, Formula::new_variable(1));
+		Formula* lifted_atom = Formula::new_atom(predicate, &Variables<1>::value);
 		if (lifted_atom == NULL) return false;
+		Variables<1>::value.reference_count++;
 		if (Negated) {
 			lifted_literal = Formula::new_not(lifted_atom);
 			if (lifted_literal == NULL) {
@@ -932,10 +968,11 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		if (rel.arg1 == rel.arg2) {
 			Formula* lifted_literal;
 			Formula* lifted_atom = Formula::new_and(
-					Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), Formula::new_variable(1)),
-					Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_variable(1)),
-					Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_constant(rel.arg2)));
+					Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value),
+					Formula::new_atom(rel.predicate, &Variables<1>::value, &Variables<1>::value),
+					Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2)));
 			if (lifted_atom == NULL) return false;
+			Variables<1>::value.reference_count += 4;
 			if (Negated) {
 				lifted_literal = Formula::new_not(lifted_atom);
 				if (lifted_literal == NULL) {
@@ -953,8 +990,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 		} else {
 			Formula* lifted_literal;
-			Formula* lifted_atom = Formula::new_atom(rel.predicate, Formula::new_variable(1), Formula::new_constant(rel.arg2));
+			Formula* lifted_atom = Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2));
 			if (lifted_atom == NULL) return false;
+			Variables<1>::value.reference_count++;
 			if (Negated) {
 				lifted_literal = Formula::new_not(lifted_atom);
 				if (lifted_literal == NULL) {
@@ -970,8 +1008,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			}
 			free(*lifted_literal); free(lifted_literal);
 
-			lifted_atom = Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), Formula::new_variable(1));
+			lifted_atom = Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value);
 			if (lifted_atom == NULL) return false;
+			Variables<1>::value.reference_count++;
 			if (Negated) {
 				lifted_literal = Formula::new_not(lifted_atom);
 				if (lifted_literal == NULL) {
@@ -1695,21 +1734,16 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 					Formula* src_var = Formula::new_variable(variable);
 					if (src_var == NULL) { free_concept_id(new_constant); return NULL; }
-					Formula* dst_var = Formula::new_variable(1);
-					if (dst_var == NULL) {
-						free(*src_var); free(src_var);
-						free_concept_id(new_constant); return NULL;
-					}
 
 					/* TODO: definitions of new concepts should be biconditionals */
-					Formula* new_left = Formula::new_atom(new_constant, dst_var);
+					Formula* new_left = Formula::new_atom(new_constant, &Variables<1>::value);
 					if (new_left == NULL) {
 						free(*src_var); free(src_var);
-						free(*dst_var); free(dst_var);
 						free_concept_id(new_constant); return NULL;
 					}
+					Variables<1>::value.reference_count++;
 
-					Formula* new_right = substitute(right, src_var, dst_var);
+					Formula* new_right = substitute(right, src_var, &Variables<1>::value);
 					if (new_right == NULL) {
 						free(*new_left); free(new_left);
 						free(*src_var); free(src_var);
@@ -1732,27 +1766,20 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 					Formula* src_var = Formula::new_variable(variable);
 					if (src_var == NULL) return NULL;
-					Formula* dst_var = Formula::new_variable(1);
-					if (dst_var == NULL) {
-						free(*src_var); free(src_var);
-						return NULL;
-					}
 
-					Formula* new_left = substitute(left, src_var, dst_var);
+					Formula* new_left = substitute(left, src_var, &Variables<1>::value);
 					if (new_left == NULL) {
 						free(*src_var); free(src_var);
-						free(*dst_var); free(dst_var);
 						return NULL;
 					}
 
-					Formula* new_right = substitute(right, src_var, dst_var);
+					Formula* new_right = substitute(right, src_var, &Variables<1>::value);
 					if (new_left == NULL) {
 						free(*new_left); if (new_left->reference_count == 0) free(new_left);
-						free(*src_var); free(src_var); free(*dst_var); free(dst_var);
+						free(*src_var); free(src_var);
 						return NULL;
 					}
 					free(*src_var); if (src_var->reference_count == 0) free(src_var);
-					free(*dst_var); if (dst_var->reference_count == 0) free(dst_var);
 
 					/* this is a formula of form `![x]:(t(x) => f(x))` */
 					new_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_left, new_right, std::forward<Args>(args)...);
@@ -2079,7 +2106,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					return NULL;
 				}
 
-				Formula* beta_left = Formula::new_not(Formula::new_exists(1, Formula::new_apply(lambda_formula, Formula::new_variable(1))));
+				Formula* beta_left = Formula::new_not(Formula::new_exists(1, Formula::new_apply(lambda_formula, &Variables<1>::value)));
 				Formula* beta_right = Formula::new_not(Formula::new_exists(1, set_formula));
 				if (beta_left == NULL || beta_right == NULL) {
 					if (beta_left != NULL) { free(*beta_left); if (beta_left->reference_count == 0) free(beta_left); }
@@ -2087,6 +2114,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
 					sets.try_free_set(set_formula, std::forward<Args>(args)...); return NULL;
 				}
+				Variables<1>::value.reference_count++;
 				set_formula->reference_count++;
 				Proof* proof = ProofCalculus::new_equality_elim(
 						ProofCalculus::new_beta(beta_left, beta_right),
@@ -3609,25 +3637,32 @@ template<typename ProofCalculus, typename Canonicalizer>
 typename ProofCalculus::Language* make_lifted_conjunction(unsigned int concept_id, const theory<ProofCalculus, Canonicalizer>& T)
 {
 	typedef typename ProofCalculus::Language Formula;
+	typedef typename Formula::Term Term;
 
 	const concept<ProofCalculus>& c = T.ground_concepts.get(concept_id);
 	array<Formula*> conjuncts(16);
 	for (const auto& entry : c.types) {
-		Formula* new_conjunct = Formula::new_atom(entry.key, Formula::new_variable(1));
+		Formula* new_conjunct = Formula::new_atom(entry.key, &Term::template variables<1>::value);
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+		Term::template variables<1>::value.reference_count++;
 	} for (const auto& entry : c.negated_types) {
-		Formula* new_conjunct = Formula::new_not(Formula::new_atom(entry.key, Formula::new_variable(1)));
+		Formula* new_conjunct = Formula::new_not(Formula::new_atom(entry.key, &Term::template variables<1>::value));
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+		Term::template variables<1>::value.reference_count++;
 	} for (const auto& entry : c.relations) {
 		Formula* new_conjunct = Formula::new_atom(entry.key.predicate,
-				(entry.key.arg1 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg1),
-				(entry.key.arg2 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg2));
+				(entry.key.arg1 == 0) ? &Term::template variables<1>::value : Formula::new_constant(entry.key.arg1),
+				(entry.key.arg2 == 0) ? &Term::template variables<1>::value : Formula::new_constant(entry.key.arg2));
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+		if (entry.key.arg1 == 0) Term::template variables<1>::value.reference_count++;
+		if (entry.key.arg2 == 0) Term::template variables<1>::value.reference_count++;
 	} for (const auto& entry : c.negated_relations) {
 		Formula* new_conjunct = Formula::new_not(Formula::new_atom(entry.key.predicate,
-				(entry.key.arg1 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg1),
-				(entry.key.arg2 == 0) ? Formula::new_variable(1) : Formula::new_constant(entry.key.arg2)));
+				(entry.key.arg1 == 0) ? &Term::template variables<1>::value : Formula::new_constant(entry.key.arg1),
+				(entry.key.arg2 == 0) ? &Term::template variables<1>::value : Formula::new_constant(entry.key.arg2)));
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+		if (entry.key.arg1 == 0) Term::template variables<1>::value.reference_count++;
+		if (entry.key.arg2 == 0) Term::template variables<1>::value.reference_count++;
 	}
 	Formula* conjunction = Formula::new_and(conjuncts);
 	return conjunction;

@@ -1254,14 +1254,14 @@ set_seed(1356941742);
 		}
 	}
 
-run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
 }
 for (auto entry : names) free(entry.key);
 if (seed_training_set.length > 0)
-return EXIT_SUCCESS;
+return EXIT_SUCCESS;*/
 
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
@@ -1349,11 +1349,11 @@ return EXIT_SUCCESS;*/
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} if (answer_question<true>(answers, "What is the population of Arizona?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	}*/ if (answer_question<true>(answers, "The population of Arizona is what?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "What is the largest state bordering Texas?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} /*if (answer_question<true>(answers, "What is the largest state bordering Texas?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}
+	}*/
 for (string& str : answers) free(str);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;
@@ -1362,17 +1362,19 @@ return EXIT_SUCCESS;
 	/*tracked_logical_forms.put(
 		hol_term::new_for_all(1,
 			hol_term::new_if_then(
-				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), hol_term::new_variable(1)),
-				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), hol_term::new_variable(1))
+				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), &hol_term::variables<1>::value),
+				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), &hol_term::variables<1>::value)
 			)
 		), 0);
+	hol_term::variables<1>::value.reference_count += 2;
 	tracked_logical_forms.put(
 		hol_term::new_for_all(1,
 			hol_term::new_if_then(
-				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), hol_term::new_variable(1)),
-				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), hol_term::new_variable(1))
+				hol_term::new_atom(parser.symbol_map.get(names.get("mammal")), &hol_term::variables<1>::value),
+				hol_term::new_atom(parser.symbol_map.get(names.get("cat")), &hol_term::variables<1>::value)
 			)
-		), 0);*/
+		), 0);
+	hol_term::variables<1>::value.reference_count += 2;*/
 
 	unsigned int iterations = 120000;
 	timer stopwatch;
@@ -1402,7 +1404,8 @@ fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
 
 		for (auto entry : tracked_logical_forms)
 			if (contains_axiom(T, entry.key)) entry.value++;
-hol_term* set_formula = hol_term::new_atom(names.get("fish"), hol_term::new_variable(1));
+hol_term* set_formula = hol_term::new_atom(names.get("fish"), &hol_term::variables<1>::value);
+hol_term::variables<1>::value.reference_count++;
 bool contains;
 unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
 if (contains) set_size_distribution.add(T.sets.sets[set_id].set_size);

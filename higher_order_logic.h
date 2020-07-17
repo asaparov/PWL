@@ -268,6 +268,21 @@ struct hol_term
 
 	~hol_term() { free_helper(); }
 
+	template<unsigned int Value>
+	struct constants {
+		static thread_local hol_term value;
+	};
+
+	template<unsigned int Value>
+	struct variables {
+		static thread_local hol_term value;
+	};
+
+	template<unsigned int Value>
+	struct parameters {
+		static thread_local hol_term value;
+	};
+
 	inline void operator = (const hol_term& src) {
 		type = src.type;
 		reference_count = 1;
@@ -445,6 +460,15 @@ private:
 thread_local hol_term HOL_TRUE(hol_term_type::TRUE);
 thread_local hol_term HOL_FALSE(hol_term_type::FALSE);
 thread_local hol_term HOL_ANY(hol_term_type::ANY);
+
+template<unsigned int Value>
+thread_local hol_term hol_term::constants<Value>::value(hol_term_type::CONSTANT, Value);
+
+template<unsigned int Value>
+thread_local hol_term hol_term::variables<Value>::value(hol_term_type::VARIABLE, Value);
+
+template<unsigned int Value>
+thread_local hol_term hol_term::parameters<Value>::value(hol_term_type::PARAMETER, Value);
 
 inline bool init(hol_term& term, const hol_term& src) {
 	term.type = src.type;

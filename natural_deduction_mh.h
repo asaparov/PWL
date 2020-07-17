@@ -214,8 +214,13 @@ inline Formula* new_lifted_atom_helper(const atom<Negated, Arity> a, Terms&&... 
 template<typename Formula, unsigned int Index, bool Negated, unsigned int Arity, typename... Terms,
 	typename std::enable_if<Index < Arity>::type* = nullptr>
 inline Formula* new_lifted_atom_helper(const atom<Negated, Arity> a, Terms&&... args) {
-	return new_lifted_atom_helper<Formula, Index + 1>(a,
-			(a.args[Index] == 0 ? Formula::new_variable(1) : Formula::new_constant(a.args[Index])), std::forward<Terms>(args)...);
+	typedef typename Formula::Term Term;
+
+	Formula* atom = new_lifted_atom_helper<Formula, Index + 1>(a,
+			(a.args[Index] == 0 ? &Term::template variables<1>::value : Term::new_constant(a.args[Index])), std::forward<Terms>(args)...);
+	if (atom == nullptr) return nullptr;
+	if (a.args[Index] == 0) Term::template variables<1>::value.reference_count++;
+	return atom;
 }
 
 template<typename Formula, bool Negated, unsigned int Arity>
@@ -743,32 +748,38 @@ bool propose_universal_intro(
 		   and now we need to transform all the relevant proofs */
 		array<Formula*> conjuncts(32);
 		for (unsigned int type : selected_types) {
-			Formula* conjunct = Formula::new_atom(type, Formula::new_variable(1));
+			Formula* conjunct = Formula::new_atom(type, &Term::template variables<1>::value);
 			if (conjunct == NULL || !conjuncts.add(conjunct)) {
 				free_formulas(conjuncts); free(proposed_proofs); return false;
 			}
+			Term::template variables<1>::value.reference_count++;
 		}
 		for (unsigned int type : selected_negated_types) {
-			Formula* conjunct = Formula::new_not(Formula::new_atom(type, Formula::new_variable(1)));
+			Formula* conjunct = Formula::new_not(Formula::new_atom(type, &Term::template variables<1>::value));
 			if (conjunct == NULL || !conjuncts.add(conjunct)) {
 				free_formulas(conjuncts); free(proposed_proofs); return false;
 			}
+			Term::template variables<1>::value.reference_count++;
 		}
 		for (const relation& r : selected_relations) {
 			Formula* conjunct = Formula::new_atom(r.predicate,
-					(r.arg1 == 0) ? Formula::new_variable(1) : Formula::new_constant(r.arg1),
-					(r.arg2 == 0) ? Formula::new_variable(1) : Formula::new_constant(r.arg2));
+					(r.arg1 == 0) ? &Term::template variables<1>::value : Formula::new_constant(r.arg1),
+					(r.arg2 == 0) ? &Term::template variables<1>::value : Formula::new_constant(r.arg2));
 			if (conjunct == NULL || !conjuncts.add(conjunct)) {
 				free_formulas(conjuncts); free(proposed_proofs); return false;
 			}
+			if (r.arg1 == 0) Term::template variables<1>::value.reference_count++;
+			if (r.arg2 == 0) Term::template variables<1>::value.reference_count++;
 		}
 		for (const relation& r : selected_negated_relations) {
 			Formula* conjunct = Formula::new_not(Formula::new_atom(r.predicate,
-					(r.arg1 == 0) ? Formula::new_variable(1) : Formula::new_constant(r.arg1),
-					(r.arg2 == 0) ? Formula::new_variable(1) : Formula::new_constant(r.arg2)));
+					(r.arg1 == 0) ? &Term::template variables<1>::value : Formula::new_constant(r.arg1),
+					(r.arg2 == 0) ? &Term::template variables<1>::value : Formula::new_constant(r.arg2)));
 			if (conjunct == NULL || !conjuncts.add(conjunct)) {
 				free_formulas(conjuncts); free(proposed_proofs); return false;
 			}
+			if (r.arg1 == 0) Term::template variables<1>::value.reference_count++;
+			if (r.arg2 == 0) Term::template variables<1>::value.reference_count++;
 		}
 
 		Formula* axiom;
