@@ -11,15 +11,15 @@ using namespace core;
 
 /* forward declarations */
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus> struct set_reasoning;
+template<typename BuiltInConstants, typename ProofCalculus> struct set_reasoning;
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>&,
+		const set_reasoning<BuiltInConstants, ProofCalculus>&,
 		unsigned int, unsigned int*&, unsigned int&, unsigned int&, int);
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>&,
+		const set_reasoning<BuiltInConstants, ProofCalculus>&,
 		unsigned int, unsigned int, unsigned int*&, unsigned int&, unsigned int&, int);
 
 template<typename T, typename Stream>
@@ -211,7 +211,8 @@ struct extensional_set_graph
 
 	template<typename Formula>
 	inline Proof* get_edge(unsigned int parent, unsigned int child,
-			Formula* parent_formula, Formula* child_formula, bool& new_edge)
+			Formula* parent_formula, Formula* child_formula,
+			unsigned int arity, bool& new_edge)
 	{
 		if (!vertices[parent].children.ensure_capacity(vertices[parent].children.size + 1)
 		 || !vertices[child].parents.ensure_capacity(vertices[child].parents.size + 1))
@@ -219,10 +220,18 @@ struct extensional_set_graph
 		unsigned int index = vertices[parent].children.index_of(child);
 		if (index == vertices[parent].children.size) {
 			new_edge = true;
-			Formula* formula = Formula::new_for_all(1, Formula::new_if_then(child_formula, parent_formula));
+			Formula* formula = Formula::new_for_all(arity, Formula::new_if_then(child_formula, parent_formula));
 			if (formula == NULL) return NULL;
+			for (unsigned int i = arity - 1; i > 0; i--) {
+				Formula* new_formula = Formula::new_for_all(i, formula);
+				if (new_formula == NULL) {
+					free(*formula); free(formula);
+					return NULL;
+				}
+				formula = new_formula;
+			}
 			Proof* new_axiom = ProofCalculus::new_axiom(formula);
-			free(*formula); if (formula->reference_count == 0) free(formula);
+			free(*formula); free(formula);
 			if (new_axiom == NULL) return NULL;
 			child_formula->reference_count++;
 			parent_formula->reference_count++;
@@ -330,10 +339,12 @@ bool get_descendants(
 	return true;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 struct set_info
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
+	typedef typename Formula::Type FormulaType;
 
 	unsigned int set_size;
 	Proof* size_axiom;
@@ -350,7 +361,10 @@ struct set_info
 	}
 
 	inline Formula* set_formula() {
-		return size_axiom->formula->binary.left->binary.right->quantifier.operand;
+		Formula* operand = size_axiom->formula->binary.left->binary.right->quantifier.operand;
+		while (operand->type == FormulaType::FOR_ALL)
+			operand = operand->quantifier.operand;
+		return operand;
 	}
 
 	/* NOTE: this function does not check the consistency of the new size */
@@ -377,11 +391,14 @@ struct set_info
 	}
 };
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool init(
-		set_info<BuiltInConstants, Formula, ProofCalculus>& info,
-		unsigned int set_size, Formula* set_formula)
+		set_info<BuiltInConstants, ProofCalculus>& info,
+		unsigned int set_size,
+		typename ProofCalculus::Language* set_formula)
 {
+	typedef typename ProofCalculus::Language Formula;
+
 	info.set_size = set_size;
 	Formula* size_axiom_formula = Formula::new_equals(Formula::new_atom(
 			(unsigned int) BuiltInConstants::SIZE, Formula::new_lambda(1, set_formula)), Formula::new_int(set_size));
@@ -401,9 +418,9 @@ inline bool init(
 	return true;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets)
+		set_reasoning<BuiltInConstants, ProofCalculus>& sets)
 { }
 
 inline bool compute_new_set_size(unsigned int& out,
@@ -413,10 +430,12 @@ inline bool compute_new_set_size(unsigned int& out,
 	return true;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 struct set_reasoning
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
+	typedef typename Formula::Type FormulaType;
 
 	struct changes {
 		array_map<unsigned int, unsigned int> removed_sets;
@@ -424,7 +443,7 @@ struct set_reasoning
 
 	extensional_set_graph<ProofCalculus> extensional_graph;
 	intensional_set_graph intensional_graph;
-	set_info<BuiltInConstants, Formula, ProofCalculus>* sets;
+	set_info<BuiltInConstants, ProofCalculus>* sets;
 
 	unsigned int capacity;
 	unsigned int set_count;
@@ -439,7 +458,7 @@ struct set_reasoning
 			capacity(1024), set_count(0), set_ids(2048),
 			element_map(2048), symbols_in_formulas(256)
 	{
-		sets = (set_info<BuiltInConstants, Formula, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, Formula, ProofCalculus>) * capacity);
+		sets = (set_info<BuiltInConstants, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, ProofCalculus>) * capacity);
 		if (sets == NULL) exit(EXIT_FAILURE);
 		for (unsigned int i = 1; i < capacity; i++)
 			sets[i].size_axiom = NULL;
@@ -816,12 +835,12 @@ struct set_reasoning
 	}
 
 	struct subgraph_formula_view {
-		set_info<BuiltInConstants, Formula, ProofCalculus>* sets;
+		set_info<BuiltInConstants, ProofCalculus>* sets;
 		unsigned int* indices;
 		unsigned int length;
 
 		subgraph_formula_view(
-				set_info<BuiltInConstants, Formula, ProofCalculus>* sets,
+				set_info<BuiltInConstants, ProofCalculus>* sets,
 				const hash_set<unsigned int>& vertices) : sets(sets), length(vertices.size)
 		{
 			indices = (unsigned int*) malloc(sizeof(unsigned int) * vertices.size);
@@ -1249,8 +1268,11 @@ struct set_reasoning
 	template<typename... Args>
 	bool add_subset_axiom(Proof* axiom, Args&&... visitor)
 	{
-		Formula* antecedent = axiom->formula->quantifier.operand->binary.left;
-		Formula* consequent = axiom->formula->quantifier.operand->binary.right;
+		Formula* operand = axiom->formula->quantifier.operand;
+		while (operand->type == FormulaType::FOR_ALL)
+			operand = operand->quantifier.operand;
+		Formula* antecedent = operand->binary.left;
+		Formula* consequent = operand->binary.right;
 
 		if (!set_ids.check_size(set_ids.table.size + 2)) return false;
 
@@ -1307,7 +1329,7 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
-	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, Args&&... visitor)
+	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, unsigned int arity, Args&&... visitor)
 	{
 		if (!set_ids.check_size(set_ids.table.size + 2)) return NULL;
 
@@ -1326,7 +1348,7 @@ struct set_reasoning
 #endif
 
 		bool new_edge;
-		Proof* axiom = extensional_graph.get_edge(consequent_set, antecedent_set, consequent, antecedent, new_edge);
+		Proof* axiom = extensional_graph.get_edge(consequent_set, antecedent_set, consequent, antecedent, arity, new_edge);
 		if (axiom == NULL) {
 			/* if either the antecedent or consequent sets have no references, free them */
 			try_free_set(consequent, consequent_set);
@@ -1608,8 +1630,11 @@ struct set_reasoning
 	template<typename... Args>
 	inline bool free_subset_axiom(Proof* subset_axiom, Args&&... visitor)
 	{
-		Formula* antecedent = subset_axiom->formula->quantifier.operand->binary.left;
-		Formula* consequent = subset_axiom->formula->quantifier.operand->binary.right;
+		Formula* operand = subset_axiom->formula->quantifier.operand;
+		while (operand->type == FormulaType::FOR_ALL)
+			operand = operand->quantifier.operand;
+		Formula* antecedent = operand->binary.left;
+		Formula* consequent = operand->binary.right;
 		return free_subset_axiom(antecedent, consequent, std::forward<Args>(visitor)...);
 	}
 
@@ -2277,9 +2302,9 @@ struct clique_search_state {
 	}
 };
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool init(clique_search_state& state,
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		const unsigned int* clique, unsigned int clique_count,
 		const unsigned int* neighborhood, unsigned int neighborhood_count,
 		const unsigned int* X, unsigned int X_count,
@@ -2338,9 +2363,9 @@ struct ancestor_clique_search_state {
 	}
 };
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool init(ancestor_clique_search_state& state,
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		const unsigned int* clique, unsigned int clique_count,
 		const unsigned int* neighborhood, unsigned int neighborhood_count,
 		const unsigned int* X, unsigned int X_count,
@@ -2419,17 +2444,17 @@ struct search_queue {
 	}
 };
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool has_descendant(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int root, unsigned int vertex)
 {
 	return sets.sets[root].descendants.contains(vertex);
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 bool expand_clique_search_state(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		array<unsigned int>& neighborhood,
 		const unsigned int* X, const unsigned int X_count,
 		hash_set<unsigned int>& visited,
@@ -2476,10 +2501,10 @@ bool expand_clique_search_state(
 }
 
 template<bool RecurseChildren, bool TestCompletion, bool ReturnOnCompletion,
-	typename StateData, typename BuiltInConstants, typename Formula, typename ProofCalculus, typename... StateArgs>
+	typename StateData, typename BuiltInConstants, typename ProofCalculus, typename... StateArgs>
 bool process_clique_search_state(
 		search_queue<StateData>& queue,
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		const clique_search_state& state,
 		unsigned int*& clique, unsigned int& clique_count,
 		int min_priority, StateArgs&&... state_args)
@@ -2596,9 +2621,9 @@ bool process_clique_search_state(
 }
 
 /* this is the Bron-Kerbosch algorithm */
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 bool find_largest_disjoint_subset_clique(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int root, unsigned int*& clique, unsigned int& clique_count,
 		int min_priority)
 {
@@ -2666,9 +2691,9 @@ inline bool add_non_ancestor_neighbor(
 	return true;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool add_non_ancestor_neighbors(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int node, bool& changed,
 		hash_map<unsigned int, array<unsigned int>>& non_ancestor_neighborhood)
 {
@@ -2681,8 +2706,8 @@ inline bool add_non_ancestor_neighbors(
 }
 
 struct default_parents {
-	template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename Function>
-	bool for_each_parent(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set, Function apply) const {
+	template<typename BuiltInConstants, typename ProofCalculus, typename Function>
+	bool for_each_parent(const set_reasoning<BuiltInConstants, ProofCalculus>& sets, unsigned int set, Function apply) const {
 		for (const auto& entry : sets.extensional_graph.vertices[set].parents)
 			if (!apply(entry.key)) return false;
 		for (unsigned int parent : sets.intensional_graph.vertices[set].parents)
@@ -2690,8 +2715,8 @@ struct default_parents {
 		return true;
 	}
 
-	template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
-	inline unsigned int count(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set) const {
+	template<typename BuiltInConstants, typename ProofCalculus>
+	inline unsigned int count(const set_reasoning<BuiltInConstants, ProofCalculus>& sets, unsigned int set) const {
 		return sets.extensional_graph.vertices[set].parents.size
 			 + sets.intensional_graph.vertices[set].parents.length;
 	}
@@ -2700,20 +2725,20 @@ struct default_parents {
 struct singleton_parent {
 	unsigned int parent;
 
-	template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename Function>
-	bool for_each_parent(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set, Function apply) const {
+	template<typename BuiltInConstants, typename ProofCalculus, typename Function>
+	bool for_each_parent(const set_reasoning<BuiltInConstants, ProofCalculus>& sets, unsigned int set, Function apply) const {
 		return apply(parent);
 	}
 
-	template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
-	constexpr unsigned int count(const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets, unsigned int set) const {
+	template<typename BuiltInConstants, typename ProofCalculus>
+	constexpr unsigned int count(const set_reasoning<BuiltInConstants, ProofCalculus>& sets, unsigned int set) const {
 		return 1;
 	}
 };
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename SetParents>
+template<typename BuiltInConstants, typename ProofCalculus, typename SetParents>
 bool get_non_ancestor_neighborhoods(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int set, const SetParents& set_parents,
 		hash_map<unsigned int, array<unsigned int>>& non_ancestor_neighborhood)
 {
@@ -2788,9 +2813,9 @@ bool get_non_ancestor_neighborhoods(
 	return true;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename SetParents>
+template<typename BuiltInConstants, typename ProofCalculus, typename SetParents>
 bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int set, const SetParents& set_parents,
 		unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique, int min_priority)
@@ -2869,9 +2894,9 @@ bool find_largest_disjoint_clique_with_set(
 	return success;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int set, unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique, int min_priority)
 {
@@ -2879,9 +2904,9 @@ inline bool find_largest_disjoint_clique_with_set(
 	return find_largest_disjoint_clique_with_set(sets, set, parents, clique, clique_count, ancestor_of_clique, min_priority);
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool find_largest_disjoint_clique_with_set(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int set, unsigned int parent,
 		unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique, int min_priority)
@@ -2890,9 +2915,9 @@ inline bool find_largest_disjoint_clique_with_set(
 	return find_largest_disjoint_clique_with_set(sets, set, set_parent, clique, clique_count, ancestor_of_clique, min_priority);
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename FirstSetParents, typename SecondSetParents>
+template<typename BuiltInConstants, typename ProofCalculus, typename FirstSetParents, typename SecondSetParents>
 bool find_largest_disjoint_clique_with_edge(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int first, unsigned int second,
 		const FirstSetParents& first_set_parents,
 		const SecondSetParents& second_set_parents,
@@ -3025,9 +3050,9 @@ bool find_largest_disjoint_clique_with_edge(
 	return success;
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus>
 inline bool find_largest_disjoint_clique_with_edge(
-		const set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		const set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		unsigned int first, unsigned int second,
 		unsigned int*& clique, unsigned int& clique_count,
 		unsigned int& ancestor_of_clique, int min_priority,

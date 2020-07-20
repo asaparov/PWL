@@ -19,8 +19,8 @@ using namespace core;
 template<typename Proof>
 inline void visit_node(const Proof& proof) { }
 
-template<bool Negated>
-constexpr bool visit_unary_atom(unsigned int predicate, unsigned int arg) { return true; }
+template<bool Negated, typename Term>
+constexpr bool visit_unary_atom(const Term* term) { return true; }
 
 template<bool Negated>
 constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2) { return true; }
@@ -110,10 +110,12 @@ inline bool operator != (const relation& first, const relation& second) {
 template<typename ProofCalculus>
 struct concept
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
+	typedef typename Formula::Term Term;
 
-	array_map<unsigned int, Proof*> types;
-	array_map<unsigned int, Proof*> negated_types;
+	array_map<Term, Proof*> types;
+	array_map<Term, Proof*> negated_types;
 	array_map<relation, Proof*> relations;
 	array_map<relation, Proof*> negated_relations;
 	array<Proof*> definitions;
@@ -188,10 +190,12 @@ struct concept
 		   will free definitions when their reference_count is 1 */
 		core::free(*c.definitions[0]);
 		for (auto entry : c.types) {
+			core::free(entry.key);
 			core::free(*entry.value);
 			if (entry.value->reference_count == 0)
 				core::free(entry.value);
 		} for (auto entry : c.negated_types) {
+			core::free(entry.key);
 			core::free(*entry.value);
 			if (entry.value->reference_count == 0)
 				core::free(entry.value);
@@ -351,9 +355,9 @@ inline bool compute_new_set_size(unsigned int& out,
 	return compute_new_set_size(out, min_set_size, max_set_size, std::forward<Args>(visitor)...);
 }
 
-template<typename BuiltInConstants, typename Formula, typename ProofCalculus, typename... Args>
+template<typename BuiltInConstants, typename ProofCalculus, typename... Args>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, Formula, ProofCalculus>& sets,
+		set_reasoning<BuiltInConstants, ProofCalculus>& sets,
 		const array<typename ProofCalculus::Proof*>& freeable_axioms,
 		Args&&... visitor)
 {
@@ -383,14 +387,6 @@ struct theory
 	   are in the theory. */
 	hash_map<Term, pair<array<unsigned int>, array<unsigned int>>> atoms;
 
-	/* A map from `x` to two lists of constants `{y_1, ..., y_n}` and
-	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
-	   theory `x(y_i)` and for any `z_i` there is an axiom in the theory
-	   `~x(z_i)`. Note that this map is exhaustive, and there are no
-	   other constants `u` such that the axiom `x(u)` or `~x(u)`
-	   are in the theory. */
-	hash_map<unsigned int, pair<array<unsigned int>, array<unsigned int>>> types;
-
 	/* A map from `R` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
 	   theory `[y_i/0]R` and for any `z_i` there is an axiom in the theory
@@ -404,7 +400,7 @@ struct theory
 	unsigned int ground_axiom_count;
 
 	hash_set<Proof*> observations;
-	set_reasoning<built_in_predicates, Formula, ProofCalculus> sets;
+	set_reasoning<built_in_predicates, ProofCalculus> sets;
 
 	array<pair<Formula*, Proof*>> disjunction_intro_nodes;
 	array<pair<Formula*, Proof*>> negated_conjunction_nodes;
@@ -414,7 +410,7 @@ struct theory
 	Proof* empty_set_axiom;
 
 	theory(unsigned int new_constant_offset) :
-			new_constant_offset(new_constant_offset), atoms(64), types(64), relations(64),
+			new_constant_offset(new_constant_offset), atoms(64), relations(64),
 			ground_concept_capacity(64), ground_axiom_count(0), observations(64),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
 			implication_intro_nodes(16), existential_intro_nodes(16)
@@ -448,9 +444,6 @@ struct theory
 	~theory() {
 		for (auto entry : atoms) {
 			core::free(entry.key);
-			core::free(entry.value.key);
-			core::free(entry.value.value);
-		} for (auto entry : types) {
 			core::free(entry.value.key);
 			core::free(entry.value.value);
 		} for (auto entry : relations) {
@@ -489,12 +482,12 @@ struct theory
 						Proof* other_definition = c.definitions[j];
 						if (other_definition->formula->binary.right->type != FormulaType::LAMBDA) continue;
 
-						Proof* axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, other_definition->formula->binary.right->quantifier.operand);
+						Proof* axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, other_definition->formula->binary.right->quantifier.operand, 1);
 						free(*axiom);
 						if (axiom->reference_count == 1)
 							sets.free_subset_axiom(definition->formula->binary.right->quantifier.operand, other_definition->formula->binary.right->quantifier.operand);
 
-						axiom = sets.template get_subset_axiom<false>(other_definition->formula->binary.right->quantifier.operand, definition->formula->binary.right->quantifier.operand);
+						axiom = sets.template get_subset_axiom<false>(other_definition->formula->binary.right->quantifier.operand, definition->formula->binary.right->quantifier.operand, 1);
 						free(*axiom);
 						if (axiom->reference_count == 1)
 							sets.free_subset_axiom(other_definition->formula->binary.right->quantifier.operand, definition->formula->binary.right->quantifier.operand);
@@ -685,36 +678,39 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		if (sets.set_ids.table.contains(*first_set_definition))
 			return true;
 
-		/*Term* atom = Term::new_apply(Term::new_constant(constant), &Variables<0>::value);
+		Term* atom = Term::new_apply(Term::new_constant(constant), &Variables<1>::value);
 		if (atom == nullptr)
 			return false;
-		Variables<0>::value.reference_count++;
+		Variables<1>::value.reference_count++;
 
 		bool contains;
 		pair<array<unsigned int>, array<unsigned int>>& type_instances = atoms.get(*atom, contains);
 		free(*atom); free(atom);
 		if (contains && type_instances.key.length != 0)
 			return true;
-		return false;*/
-		bool contains;
-		pair<array<unsigned int>, array<unsigned int>>& type_instances = types.get(constant, contains);
-		if (contains && type_instances.key.length != 0)
-			return true;
 		return false;
-
 	}
 
 	template<bool Negated, bool ResolveInconsistencies, typename... Args>
-	inline bool add_unary_atom(unsigned int predicate, unsigned int arg, Proof* axiom, Args&&... visitor)
+	inline bool add_unary_atom(const Term& atom, Proof* axiom, Args&&... visitor)
 	{
+#if !defined(NDEBUG)
+		if (atom.binary.right->type != TermType::CONSTANT)
+			fprintf(stderr, "add_unary_atom WARNING: The operand of this application is not constant.\n");
+#endif
+		unsigned int arg = atom.binary.right->constant;
+
 		Formula* lifted_literal;
-		Formula* lifted_atom = Formula::new_atom(predicate, &Variables<1>::value);
-		if (lifted_atom == NULL) return false;
+		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
+		if (lifted_atom == nullptr)
+			return false;
+		atom.binary.left->reference_count++;
 		Variables<1>::value.reference_count++;
 		if (Negated) {
 			lifted_literal = Formula::new_not(lifted_atom);
 			if (lifted_literal == NULL) {
-				free(*lifted_atom); free(lifted_atom); return false;
+				free(*lifted_atom); free(lifted_atom);
+				return false;
 			}
 		} else {
 			lifted_literal = lifted_atom;
@@ -723,35 +719,46 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			free(*lifted_literal); free(lifted_literal);
 			return false;
 		}
-		free(*lifted_literal); free(lifted_literal);
 
 #if !defined(NDEBUG)
 		if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
 			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the concept %u.\n", arg);
 #endif
 		bool contains; unsigned int bucket;
-		if (!types.check_size()) return false;
-		pair<array<unsigned int>, array<unsigned int>>& instance_pair = types.get(predicate, contains, bucket);
+		if (!atoms.check_size()) {
+			free(*lifted_literal); free(lifted_literal);
+			return false;
+		}
+
+		pair<array<unsigned int>, array<unsigned int>>& instance_pair = atoms.get(*lifted_literal, contains, bucket);
 		if (!contains) {
 			if (!array_init(instance_pair.key, 8)) {
+				free(*lifted_literal); free(lifted_literal);
 				return false;
 			} else if (!array_init(instance_pair.value, 8)) {
-				core::free(instance_pair.key); return false;
+				core::free(instance_pair.key);
+				free(*lifted_literal); free(lifted_literal);
+				return false;
 			}
-			types.table.keys[bucket] = predicate;
-			types.table.size++;
+			atoms.table.keys[bucket] = *lifted_literal;
+			atoms.table.size++;
 		}
 
 		array<unsigned int>& instances = (Negated ? instance_pair.value : instance_pair.key);
-		array_map<unsigned int, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
+		array_map<Term, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
 		if (!instances.ensure_capacity(instances.length + 1)
-		 || !ground_types.ensure_capacity(ground_types.size + 1)) return false;
+		 || !ground_types.ensure_capacity(ground_types.size + 1))
+		{
+			free(*lifted_literal); free(lifted_literal);
+			return false;
+		}
 
 		add_sorted<false>(instances, arg);
-		ground_types.keys[ground_types.size] = predicate;
+		ground_types.keys[ground_types.size] = *lifted_literal;
 		ground_types.values[ground_types.size++] = axiom;
 		axiom->reference_count++;
 		ground_axiom_count++;
+		free(*lifted_literal); free(lifted_literal);
 		return true;
 	}
 
@@ -911,16 +918,25 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	}
 
 	template<bool Negated, typename... Args>
-	inline bool remove_unary_atom(unsigned int predicate, unsigned int arg, Args&&... visitor)
+	inline bool remove_unary_atom(const Term& atom, Args&&... visitor)
 	{
+#if !defined(NDEBUG)
+		if (atom.binary.right->type != TermType::CONSTANT)
+			fprintf(stderr, "remove_unary_atom WARNING: The operand of this application is not constant.\n");
+#endif
+		unsigned int arg = atom.binary.right->constant;
+
 		Formula* lifted_literal;
-		Formula* lifted_atom = Formula::new_atom(predicate, &Variables<1>::value);
-		if (lifted_atom == NULL) return false;
+		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
+		if (lifted_atom == nullptr)
+			return false;
+		atom.binary.left->reference_count++;
 		Variables<1>::value.reference_count++;
 		if (Negated) {
 			lifted_literal = Formula::new_not(lifted_atom);
 			if (lifted_literal == NULL) {
-				free(*lifted_atom); free(lifted_atom); return false;
+				free(*lifted_atom); free(lifted_atom);
+				return false;
 			}
 		} else {
 			lifted_literal = lifted_atom;
@@ -930,17 +946,17 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
 			return false;
 		}
-		free(*lifted_literal); free(lifted_literal);
 
 #if !defined(NDEBUG)
-		if (!types.table.contains(predicate))
-			fprintf(stderr, "theory.remove_unary_atom WARNING: `types` does not contain the key %u.\n", predicate);
-		if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
+		if (!atoms.table.contains(*lifted_literal)) {
+			print("theory.remove_unary_atom WARNING: `atoms` does not contain the key ", stderr);
+			print(*lifted_literal, stderr); print(".\n", stderr);
+		} if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
 #endif
 
-		array<unsigned int>& instances = (Negated ? types.get(predicate).value : types.get(predicate).key);
-		array_map<unsigned int, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
+		array<unsigned int>& instances = (Negated ? atoms.get(*lifted_literal).value : atoms.get(*lifted_literal).key);
+		array_map<Term, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
 
 		unsigned int index = instances.index_of(arg);
 #if !defined(NDEBUG)
@@ -950,15 +966,18 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		shift_left(instances.data + index, instances.length - index - 1);
 		instances.length--;
 
-		index = ground_types.index_of(predicate);
+		index = ground_types.index_of(*lifted_literal);
 #if !defined(NDEBUG)
-		if (index == ground_types.size)
-			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_types` does not contain %u.\n", predicate);
+		if (index == ground_types.size) {
+			print("theory.remove_unary_atom WARNING: `ground_types` does not contain ", stderr);
+			print(*lifted_literal, stderr); print(".\n", stderr);
+		}
 #endif
 		Proof* axiom = ground_types.values[index];
-		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
+		free(*axiom); if (axiom->reference_count == 0) free(axiom);
 		ground_types.remove_at(index);
 		ground_axiom_count--;
+		free(*lifted_literal); free(lifted_literal);
 		return true;
 	}
 
@@ -1149,7 +1168,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	struct change {
 		change_type type;
 		union {
-			pair<pair<unsigned int, unsigned int>, Proof*> unary_atom;
+			pair<Term, Proof*> unary_atom;
 			pair<relation, Proof*> binary_atom;
 			Proof* axiom;
 			pair<Formula*, Proof*> intro_node;
@@ -1159,6 +1178,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
 			case change_type::NEGATED_UNARY_ATOM:
+				core::free(c.unary_atom.key);
 				core::free(*c.unary_atom.value); if (c.unary_atom.value->reference_count == 0) core::free(c.unary_atom.value);
 				return;
 			case change_type::BINARY_ATOM:
@@ -1194,10 +1214,11 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				core::free(c);
 		}
 
-		inline bool add(change_type type, const pair<pair<unsigned int, unsigned int>, Proof*>& unary_atom) {
+		inline bool add(change_type type, const pair<Term, Proof*>& unary_atom) {
 			if (!list.ensure_capacity(list.length + 1)) return false;
 			list[list.length].type = type;
-			list[list.length++].unary_atom = unary_atom;
+			list[list.length].unary_atom.key = unary_atom.key;
+			list[list.length++].unary_atom.value = unary_atom.value;
 			unary_atom.value->reference_count++;
 			return true;
 		}
@@ -1232,14 +1253,19 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	bool add_changes(const theory::changes& changes, Args&&... visitor)
 	{
 		for (const change& c : changes.list) {
+			array_multiset<unsigned int> constants(8);
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
-				if (!try_init_concept(c.unary_atom.key.key) || !try_init_concept(c.unary_atom.key.value)
-				 || !add_unary_atom<false, false>(c.unary_atom.key.key, c.unary_atom.key.value, c.unary_atom.value, std::forward<Args>(visitor)...)) return false;
+				if (!get_constants(c.unary_atom.key, constants)) return false;
+				for (unsigned int i = 0; i < constants.counts.size; i++)
+					if (!try_init_concept(constants.counts.keys[i])) return false;
+				if (!add_unary_atom<false, false>(c.unary_atom.key, c.unary_atom.value, std::forward<Args>(visitor)...)) return false;
 				continue;
 			case change_type::NEGATED_UNARY_ATOM:
-				if (!try_init_concept(c.unary_atom.key.key) || !try_init_concept(c.unary_atom.key.value)
-				 || !add_unary_atom<true, false>(c.unary_atom.key.key, c.unary_atom.key.value, c.unary_atom.value, std::forward<Args>(visitor)...)) return false;
+				if (!get_constants(c.unary_atom.key, constants)) return false;
+				for (unsigned int i = 0; i < constants.counts.size; i++)
+					if (!try_init_concept(constants.counts.keys[i])) return false;
+				if (!add_unary_atom<true, false>(c.unary_atom.key, c.unary_atom.value, std::forward<Args>(visitor)...)) return false;
 				continue;
 			case change_type::BINARY_ATOM:
 				if (!try_init_concept(c.binary_atom.key.predicate)
@@ -1328,16 +1354,19 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		array<Proof*> freeable_set_size_axioms(8);
 		for (unsigned int i = changes.list.length; i > 0; i--) {
 			const change& c = changes.list[i - 1];
+			array_multiset<unsigned int> constants(8);
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
-				remove_unary_atom<false>(c.unary_atom.key.key, c.unary_atom.key.value, freeable_set_size_axioms, std::forward<Args>(visitor)...);
-				try_free_concept_id(c.unary_atom.key.key);
-				try_free_concept_id(c.unary_atom.key.value);
+				remove_unary_atom<false>(c.unary_atom.key, freeable_set_size_axioms, std::forward<Args>(visitor)...);
+				if (!get_constants(c.unary_atom.key, constants)) return false;
+				for (unsigned int i = 0; i < constants.counts.size; i++)
+					try_free_concept_id(constants.counts.keys[i]);
 				continue;
 			case change_type::NEGATED_UNARY_ATOM:
-				remove_unary_atom<true>(c.unary_atom.key.key, c.unary_atom.key.value, freeable_set_size_axioms, std::forward<Args>(visitor)...);
-				try_free_concept_id(c.unary_atom.key.key);
-				try_free_concept_id(c.unary_atom.key.value);
+				remove_unary_atom<true>(c.unary_atom.key, freeable_set_size_axioms, std::forward<Args>(visitor)...);
+				if (!get_constants(c.unary_atom.key, constants)) return false;
+				for (unsigned int i = 0; i < constants.counts.size; i++)
+					try_free_concept_id(constants.counts.keys[i]);
 				continue;
 			case change_type::BINARY_ATOM:
 				remove_binary_atom<false>(c.binary_atom.key, freeable_set_size_axioms, std::forward<Args>(visitor)...);
@@ -1447,8 +1476,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 		unsigned int old_discharged_axiom_count = discharged_axioms.length;
 
-		unsigned int predicate = 0;
 		Formula* formula = nullptr;
+		Term* predicate = nullptr;
 		Term* arg1 = nullptr;
 		Term* arg2 = nullptr;
 		switch (proof.type) {
@@ -1456,26 +1485,24 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			if (discharged_axioms.contains(&proof)) break;
 			if (is_atomic(*proof.formula, predicate, arg1, arg2)) {
 				if (reference_count != 1) return true;
-				if (arg1->type == TermType::CONSTANT && arg2 == NULL) {
-					if (!visit_unary_atom<false>(predicate, arg1->constant, std::forward<Visitor>(visitor)...)
-					 || !changes.add(change_type::UNARY_ATOM, {{predicate, arg1->constant}, &proof})) return false;
-				} else if (arg1->type == TermType::CONSTANT && arg2->type == TermType::CONSTANT) {
-					if (!visit_binary_atom<false>(predicate, arg1->constant, arg2->constant, std::forward<Visitor>(visitor)...)
-					 || !changes.add(change_type::BINARY_ATOM, {{predicate, arg1->constant, arg2->constant}, &proof})) return false;
+				if (arg2 == NULL) {
+					if (!visit_unary_atom<false>(proof.formula, std::forward<Visitor>(visitor)...)
+					 || !changes.add(change_type::UNARY_ATOM, {*proof.formula, &proof})) return false;
 				} else {
-					fprintf(stderr, "get_theory_changes WARNING: Found unexpected literal axiom.\n");
+					if (predicate->type != TermType::CONSTANT) return false;
+					if (!visit_binary_atom<false>(predicate->constant, arg1->constant, arg2->constant, std::forward<Visitor>(visitor)...)
+					 || !changes.add(change_type::BINARY_ATOM, {{predicate->constant, arg1->constant, arg2->constant}, &proof})) return false;
 				}
 			} else if (proof.formula->type == FormulaType::NOT) {
 				if (is_atomic(*proof.formula->unary.operand, predicate, arg1, arg2)) {
 					if (reference_count != 1) return true;
-					if (arg1->type == TermType::CONSTANT && arg2 == NULL) {
-						if (!visit_unary_atom<true>(predicate, arg1->constant, std::forward<Visitor>(visitor)...)
-						 || !changes.add(change_type::NEGATED_UNARY_ATOM, {{predicate, arg1->constant}, &proof})) return false;
-					} else if (arg1->type == TermType::CONSTANT && arg2->type == TermType::CONSTANT) {
-						if (!visit_binary_atom<true>(predicate, arg1->constant, arg2->constant, std::forward<Visitor>(visitor)...)
-						 || !changes.add(change_type::NEGATED_BINARY_ATOM, {{predicate, arg1->constant, arg2->constant}, &proof})) return false;
+					if (arg2 == NULL) {
+						if (!visit_unary_atom<true>(proof.formula->unary.operand, std::forward<Visitor>(visitor)...)
+						 || !changes.add(change_type::NEGATED_UNARY_ATOM, {*proof.formula->unary.operand, &proof})) return false;
 					} else {
-						fprintf(stderr, "get_theory_changes WARNING: Found unexpected literal axiom.\n");
+						if (predicate->type != TermType::CONSTANT) return false;
+						if (!visit_binary_atom<true>(predicate->constant, arg1->constant, arg2->constant, std::forward<Visitor>(visitor)...)
+						 || !changes.add(change_type::NEGATED_BINARY_ATOM, {{predicate->constant, arg1->constant, arg2->constant}, &proof})) return false;
 					}
 				} else {
 					fprintf(stderr, "get_theory_changes WARNING: Found unexpected axiom.\n");
@@ -1489,8 +1516,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				return changes.add(change_type::SUBSET_AXIOM, &proof);
 			} else if (proof.formula->type == FormulaType::EQUALS) {
 				bool atomic = is_atomic(*proof.formula->binary.left, predicate, arg1, arg2);
-				if (atomic
-				 && predicate == (unsigned int) built_in_predicates::SIZE
+				if (atomic && predicate->type == TermType::CONSTANT
+				 && predicate->constant == (unsigned int) built_in_predicates::SIZE
 				 && arg1->type == TermType::LAMBDA && arg2 == NULL
 				 && proof.formula->binary.right->type == TermType::INTEGER)
 				{
@@ -1654,9 +1681,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	template<bool Contradiction, bool DefinitionsAllowed, bool ResolveInconsistencies, typename... Args>
 	Proof* make_proof(Formula* canonicalized, unsigned int& new_constant, Args&&... args)
 	{
-		unsigned int predicate; Term* arg1; Term* arg2;
+		Term* predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
-			return make_atom_proof<DefinitionsAllowed, Contradiction, ResolveInconsistencies>(predicate, arg1, arg2, new_constant, std::forward<Args>(args)...);
+			return make_atom_proof<DefinitionsAllowed, Contradiction, ResolveInconsistencies>(canonicalized, new_constant, std::forward<Args>(args)...);
 
 		} else if (canonicalized->type == FormulaType::NOT) {
 			return make_proof<!Contradiction, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->unary.operand, new_constant, std::forward<Args>(args)...);
@@ -1705,19 +1732,46 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				return proof;
 			}
 
+			Formula* operand = canonicalized->quantifier.operand;
+			array_map<unsigned int, unsigned int> variable_map(8);
+			variable_map.keys[0] = canonicalized->quantifier.variable;
+			variable_map.values[0] = 1;
+			variable_map.size = 1;
+			while (operand->type == FormulaType::FOR_ALL) {
+				if (!variable_map.ensure_capacity(variable_map.size + 1))
+					return nullptr;
+				variable_map.keys[variable_map.size] = operand->quantifier.variable;
+				variable_map.values[variable_map.size] = variable_map.size + 1;
+				variable_map.size++;
+				operand = operand->quantifier.operand;
+			}
+
 			unsigned int variable = canonicalized->quantifier.variable;
 			if (canonicalized->quantifier.operand->type == FormulaType::IF_THEN) {
 				Proof* new_axiom;
 				Formula* left = canonicalized->quantifier.operand->binary.left;
 				Formula* right = canonicalized->quantifier.operand->binary.right;
-				Term const* arg1; Term const* arg2;
+
+				Formula* new_left = map_variables(left, variable_map);
+				if (new_left == nullptr) return nullptr;
+
+				Formula* new_right = map_variables(right, variable_map);
+				if (new_right == nullptr) {
+					free(*new_left); free(new_left);
+					return nullptr;
+				}
+
+				Term const* predicate; Term const* arg1; Term const* arg2;
 				bool atomic = is_atomic(*left, predicate, arg1, arg2);
-				if (atomic && arg1->type == TermType::VARIABLE
+				if (variable_map.size == 1 && atomic && arg1->type == TermType::VARIABLE
 				 && arg1->variable == variable && arg2 == NULL
-				 && predicate == (unsigned int) built_in_predicates::UNKNOWN)
+				 && predicate->type == TermType::CONSTANT
+				 && predicate->constant == (unsigned int) built_in_predicates::UNKNOWN)
 				{
 					if (!DefinitionsAllowed) {
 						fprintf(stderr, "theory.make_proof ERROR: Definitions are not allowed in this context.\n");
+						free(*new_left); free(new_left);
+						free(*new_right); free(new_right);
 						return NULL;
 					}
 
@@ -1725,33 +1779,17 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					/* check the right-hand side is a valid definition */
 					if (!valid_definition(right, variable)) {
 						fprintf(stderr, "theory.make_proof ERROR: This is not a valid type definition.\n");
+						free(*new_left); free(new_left);
+						free(*new_right); free(new_right);
 						return NULL;
 					}
 
 					new_constant = get_free_concept_id();
 
+					/* TODO: definitions of new concepts should be biconditionals */
 					if (!try_init_concept(new_constant)) return NULL;
 
-					Formula* src_var = Formula::new_variable(variable);
-					if (src_var == NULL) { free_concept_id(new_constant); return NULL; }
-
-					/* TODO: definitions of new concepts should be biconditionals */
-					Formula* new_left = Formula::new_atom(new_constant, &Variables<1>::value);
-					if (new_left == NULL) {
-						free(*src_var); free(src_var);
-						free_concept_id(new_constant); return NULL;
-					}
-					Variables<1>::value.reference_count++;
-
-					Formula* new_right = substitute(right, src_var, &Variables<1>::value);
-					if (new_right == NULL) {
-						free(*new_left); free(new_left);
-						free(*src_var); free(src_var);
-						free_concept_id(new_constant); return NULL;
-					}
-					free(*src_var); if (src_var->reference_count == 0) free(src_var);
-
-					new_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_left, new_right, std::forward<Args>(args)...);
+					new_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_left, new_right, variable_map.size, std::forward<Args>(args)...);
 					free(*new_left); if (new_left->reference_count == 0) free(new_left);
 					free(*new_right); if (new_right->reference_count == 0) free(new_right);
 					if (new_axiom == NULL) return NULL;
@@ -1761,28 +1799,13 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					if (contains_constant(*left, (unsigned int) built_in_predicates::UNKNOWN)
 					 || contains_constant(*right, (unsigned int) built_in_predicates::UNKNOWN)) {
 						fprintf(stderr, "theory.make_proof ERROR: Universally-quantified statement has unknown constants.\n");
+						free(*new_left); free(new_left);
+						free(*new_right); free(new_right);
 						return NULL;
 					}
-
-					Formula* src_var = Formula::new_variable(variable);
-					if (src_var == NULL) return NULL;
-
-					Formula* new_left = substitute(left, src_var, &Variables<1>::value);
-					if (new_left == NULL) {
-						free(*src_var); free(src_var);
-						return NULL;
-					}
-
-					Formula* new_right = substitute(right, src_var, &Variables<1>::value);
-					if (new_left == NULL) {
-						free(*new_left); if (new_left->reference_count == 0) free(new_left);
-						free(*src_var); free(src_var);
-						return NULL;
-					}
-					free(*src_var); if (src_var->reference_count == 0) free(src_var);
 
 					/* this is a formula of form `![x]:(t(x) => f(x))` */
-					new_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_left, new_right, std::forward<Args>(args)...);
+					new_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_left, new_right, variable_map.size, std::forward<Args>(args)...);
 					free(*new_left); if (new_left->reference_count == 0) free(new_left);
 					free(*new_right); if (new_right->reference_count == 0) free(new_right);
 					if (new_axiom == NULL) return NULL;
@@ -2172,8 +2195,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			Formula* right = canonicalized->binary.right;
 			Term* arg1; Term* arg2;
 			bool atomic = is_atomic(*left, predicate, arg1, arg2);
-			if (atomic
-			 && predicate == (unsigned int) built_in_predicates::SIZE
+			if (atomic && predicate->type == TermType::CONSTANT
+			 && predicate->constant == (unsigned int) built_in_predicates::SIZE
 			 && arg1->type == TermType::LAMBDA && arg2 == NULL
 			 && right->type == TermType::INTEGER)
 			{
@@ -2188,8 +2211,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				set_size_axiom->reference_count++;
 				return set_size_axiom;
 
-			} else if (atomic
-					&& predicate == (unsigned int) built_in_predicates::SIZE
+			} else if (atomic && predicate->type == TermType::CONSTANT
+					&& predicate->constant == (unsigned int) built_in_predicates::SIZE
 			 		&& arg1->type == TermType::CONSTANT && arg2 == NULL
 			 		&& right->type == TermType::INTEGER)
 			{
@@ -2439,18 +2462,18 @@ private:
 				Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[i];
 				if (definition->formula->binary.right->type == FormulaType::LAMBDA) {
 					required_set_size set_size_computer(set_size);
-					Proof* first_subset_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, set_size_computer, std::forward<Args>(args)...);
+					Proof* first_subset_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, 1, set_size_computer, std::forward<Args>(args)...);
 					if (first_subset_axiom == NULL) {
 						/* undo the changes we've made so far */
 						on_subtract_changes(std::forward<Args>(args)...);
 						for (unsigned int j = 0; j < i; j++) {
 							Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
-							Proof* axiom = sets.template get_subset_axiom<false>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
+							Proof* axiom = sets.template get_subset_axiom<false>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, 1, std::forward<Args>(args)...);
 							free(*axiom);
 							if (axiom->reference_count == 1)
 								sets.free_subset_axiom(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
 
-							axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
+							axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, 1, std::forward<Args>(args)...);
 							free(*axiom);
 							if (axiom->reference_count == 1)
 								sets.free_subset_axiom(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
@@ -2459,7 +2482,7 @@ private:
 					}
 					first_subset_axiom->reference_count++;
 
-					Proof* second_subset_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
+					Proof* second_subset_axiom = sets.template get_subset_axiom<ResolveInconsistencies>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, 1, std::forward<Args>(args)...);
 					if (second_subset_axiom == NULL) {
 						/* undo the changes we've made so far */
 						on_subtract_changes(std::forward<Args>(args)...);
@@ -2468,12 +2491,12 @@ private:
 							sets.free_subset_axiom(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
 						for (unsigned int j = 0; j < i; j++) {
 							Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
-							Proof* axiom = sets.template get_subset_axiom<false>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
+							Proof* axiom = sets.template get_subset_axiom<false>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, 1, std::forward<Args>(args)...);
 							free(*axiom);
 							if (axiom->reference_count == 1)
 								sets.free_subset_axiom(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
 
-							axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
+							axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, 1, std::forward<Args>(args)...);
 							free(*axiom);
 							if (axiom->reference_count == 1)
 								sets.free_subset_axiom(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
@@ -2490,12 +2513,12 @@ private:
 			on_subtract_changes(std::forward<Args>(args)...);
 			for (unsigned int j = 0; j < ground_concepts[constant->constant - new_constant_offset].definitions.length; j++) {
 				Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
-				Proof* axiom = sets.template get_subset_axiom<false>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
+				Proof* axiom = sets.template get_subset_axiom<false>(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, 1, std::forward<Args>(args)...);
 				free(*axiom);
 				if (axiom->reference_count == 1)
 					sets.free_subset_axiom(new_definition->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
 
-				axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
+				axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, 1, std::forward<Args>(args)...);
 				free(*axiom);
 				if (axiom->reference_count == 1)
 					sets.free_subset_axiom(definition->formula->binary.right->quantifier.operand, new_definition->quantifier.operand, std::forward<Args>(args)...);
@@ -2521,12 +2544,12 @@ private:
 			if (other_definition->formula->binary.right->type != FormulaType::LAMBDA)
 				continue;
 			if (definition->formula->binary.right->type == FormulaType::LAMBDA) {
-				Proof* axiom = sets.template get_subset_axiom<false>(other_definition->formula->binary.right->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
+				Proof* axiom = sets.template get_subset_axiom<false>(other_definition->formula->binary.right->quantifier.operand, definition->formula->binary.right->quantifier.operand, 1, std::forward<Args>(args)...);
 				free(*axiom);
 				if (axiom->reference_count == axiom->children.length + 1)
 					sets.free_subset_axiom(other_definition->formula->binary.right->quantifier.operand, definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
 
-				axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, other_definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
+				axiom = sets.template get_subset_axiom<false>(definition->formula->binary.right->quantifier.operand, other_definition->formula->binary.right->quantifier.operand, 1, std::forward<Args>(args)...);
 				free(*axiom);
 				if (axiom->reference_count == axiom->children.length + 1)
 					sets.free_subset_axiom(definition->formula->binary.right->quantifier.operand, other_definition->formula->binary.right->quantifier.operand, std::forward<Args>(args)...);
@@ -2714,18 +2737,18 @@ private:
 
 	template<bool DefinitionsAllowed, bool Negated, bool ResolveInconsistencies, typename... Args>
 	Proof* make_atom_proof(
-			unsigned int predicate,
-			Term* arg1, Term* arg2,
+			Term* atom,
 			unsigned int& new_constant,
 			Args&&... args)
 	{
-		if (arg1->type == TermType::CONSTANT && arg2 == NULL)
+		if (atom->type == TermType::UNARY_APPLICATION && atom->binary.right->type == TermType::CONSTANT)
 		{
 			/* this is a unary formula */
-			if (predicate != (unsigned int) built_in_predicates::UNKNOWN) {
+			Term* arg1 = atom->binary.right;
+			if (atom->binary.left->type != TermType::CONSTANT || atom->binary.left->constant != (unsigned int) built_in_predicates::UNKNOWN) {
 				if (arg1->constant == (unsigned int) built_in_predicates::UNKNOWN) {
 					/* make sure that `predicate` could be a set, and that `arg` could be not a set */
-					if (!Negated && is_provably_not_a_set(predicate))
+					if (!Negated && atom->binary.left->type == TermType::CONSTANT && is_provably_not_a_set(atom->binary.left->constant))
 						return NULL;
 
 					/* this is a definition of an object */
@@ -2736,9 +2759,10 @@ private:
 					new_constant = get_free_concept_id();
 
 					Formula* formula = Negated ?
-							Formula::new_not(Formula::new_atom(predicate, Formula::new_constant(new_constant))) :
-							Formula::new_atom(predicate, Formula::new_constant(new_constant));
+							Formula::new_not(Term::new_apply(atom->binary.left, Term::new_constant(new_constant))) :
+							Term::new_apply(atom->binary.left, Term::new_constant(new_constant));
 					if (formula == NULL) return NULL;
+					atom->binary.left->reference_count++;
 					Proof* new_axiom = ProofCalculus::new_axiom(formula);
 					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
@@ -2747,7 +2771,7 @@ private:
 					if (!try_init_concept(new_constant)) {
 						free(*new_axiom); free(new_axiom);
 						return NULL;
-					} if (!add_unary_atom<Negated, ResolveInconsistencies>(predicate, new_constant, new_axiom, std::forward<Args>(args)...)) {
+					} if (!add_unary_atom<Negated, ResolveInconsistencies>(Negated ? *formula->unary.operand : *formula, new_axiom, std::forward<Args>(args)...)) {
 						free(*new_axiom); free(new_axiom);
 						free_concept_id(new_constant); return NULL;
 					}
@@ -2756,11 +2780,11 @@ private:
 					/* this is a formula of form `t(c)` */
 
 					/* we do not allow sets to contain themselves */
-					if (!Negated && predicate == arg1->constant)
+					if (!Negated && *atom->binary.left == *arg1)
 						return NULL;
 
 					/* make sure that `predicate` could be a set, and that `arg` could be not a set */
-					if (!Negated && (is_provably_not_a_set(predicate) || is_provably_a_set(arg1->constant)))
+					if (!Negated && ((atom->binary.left->type == TermType::CONSTANT && is_provably_not_a_set(atom->binary.left->constant)) || is_provably_a_set(arg1->constant)))
 						return NULL;
 
 					/* first check if there is already an extensional edge that proves this formula (for this particular instantiation) */
@@ -2774,17 +2798,17 @@ private:
 						if (set_formula->type != FormulaType::UNARY_APPLICATION)
 							continue;
 
-						unsigned int expected_constant_eliminator = 0;
+						Term* expected_constant_eliminator = nullptr;
 						if (set_formula->binary.left->type == TermType::VARIABLE) {
-							expected_constant_eliminator = predicate;
-						} else if (set_formula->binary.left->type != TermType::CONSTANT || set_formula->binary.left->constant != predicate) {
+							expected_constant_eliminator = atom->binary.left;
+						} else if (set_formula->binary.left->type != TermType::CONSTANT || *set_formula->binary.left != *atom->binary.left) {
 							continue;
 						}
 
 						if (set_formula->binary.right->type == TermType::VARIABLE) {
-							if (expected_constant_eliminator == 0)
-								expected_constant_eliminator = arg1->constant;
-							else if (expected_constant_eliminator != arg1->constant)
+							if (expected_constant_eliminator == nullptr)
+								expected_constant_eliminator = arg1;
+							else if (*expected_constant_eliminator != *arg1)
 								continue;
 						} else if (*set_formula->binary.right != *arg1) {
 							continue;
@@ -2795,8 +2819,7 @@ private:
 							for (Proof* child : entry.value->children) {
 								if (child->type == ProofType::UNIVERSAL_ELIMINATION
 								 && child->operands[1]->type == ProofType::TERM_PARAMETER
-								 && child->operands[1]->term->type == TermType::CONSTANT
-								 && child->operands[1]->term->constant == expected_constant_eliminator)
+								 && *child->operands[1]->term == *expected_constant_eliminator)
 								{
 									for (Proof* grandchild : child->children) {
 										if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
@@ -2812,46 +2835,58 @@ private:
 
 					/* there is no extensional edge that proves this atomic formula,
 					  so check if the axiom already exists, and if not, create a new axiom */
+					Term* lifted_atom = Term::new_apply(atom->binary.left, &Variables<1>::value);
+					if (lifted_atom == nullptr) return nullptr;
+					atom->binary.left->reference_count++;
+					Variables<1>::value.reference_count++;
+
 					bool contains;
 					concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
 					Proof* axiom = (Negated ?
-							c.negated_types.get(predicate, contains) :
-							c.types.get(predicate, contains));
+							c.negated_types.get(*lifted_atom, contains) :
+							c.types.get(*lifted_atom, contains));
 					if (contains) {
 						axiom->reference_count++;
+						free(*lifted_atom); free(lifted_atom);
 						return axiom;
 					}
-					Formula* formula = Negated ?
-							Formula::new_not(Formula::new_atom(predicate, arg1)) :
-							Formula::new_atom(predicate, arg1);
+					free(*lifted_atom); free(lifted_atom);
+					Formula* formula = Negated ? Formula::new_not(atom) : atom;
 					if (formula == NULL) return NULL;
-					arg1->reference_count++;
+					atom->reference_count++;
 					Proof* new_axiom = ProofCalculus::new_axiom(formula);
 					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_unary_atom<Negated, ResolveInconsistencies>(predicate, arg1->constant, new_axiom, std::forward<Args>(args)...)) {
+					if (!add_unary_atom<Negated, ResolveInconsistencies>(*atom, new_axiom, std::forward<Args>(args)...)) {
 						free(*new_axiom); free(new_axiom); return NULL;
 					}
 					return new_axiom;
 				}
 			} else {
 				/* TODO: implement this */
-				fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+				fprintf(stderr, "theory.make_atom_proof ERROR: Not implemented.\n");
 				return NULL;
 			}
-		} else if (arg1->type == TermType::CONSTANT
-				&& arg2->type == TermType::CONSTANT)
+		} else if (atom->type == TermType::BINARY_APPLICATION
+				&& atom->ternary.second->type == TermType::CONSTANT
+				&& atom->ternary.third->type == TermType::CONSTANT)
 		{
 			/* this is a binary formula */
-			if (predicate != (unsigned int) built_in_predicates::UNKNOWN)
+			Term* arg1 = atom->ternary.second;
+			Term* arg2 = atom->ternary.third;
+			if (atom->ternary.first->type != TermType::CONSTANT || atom->ternary.first->constant != (unsigned int) built_in_predicates::UNKNOWN)
 			{
 				if (arg1->constant == (unsigned int) built_in_predicates::UNKNOWN
 				 || arg2->constant == (unsigned int) built_in_predicates::UNKNOWN) {
-					fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
+					fprintf(stderr, "theory.make_atom_proof ERROR: Unsupported formula type.\n");
 					return NULL;
 				} else {
 					/* this is a formula of form `r(c_1,c_2)` */
+					if (atom->ternary.first->type != TermType::CONSTANT) {
+						fprintf(stderr, "theory.make_atom_proof ERROR: Unsupported formula type.\n");
+						return nullptr;
+					}
 
 					/* first check if there is already an extensional edge that proves this formula (for this particular instantiation) */
 					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
@@ -2864,26 +2899,26 @@ private:
 						if (set_formula->type != FormulaType::BINARY_APPLICATION)
 							continue;
 
-						unsigned int expected_constant_eliminator = 0;
+						Term* expected_constant_eliminator = nullptr;
 						if (set_formula->ternary.first->type == TermType::VARIABLE) {
-							expected_constant_eliminator = predicate;
-						} else if (set_formula->ternary.first->type != TermType::CONSTANT || set_formula->ternary.first->constant != predicate) {
+							expected_constant_eliminator = atom->ternary.first;
+						} else if (set_formula->ternary.first->type != TermType::CONSTANT || *set_formula->ternary.first != *atom->ternary.first) {
 							continue;
 						}
 
 						if (set_formula->ternary.second->type == TermType::VARIABLE) {
-							if (expected_constant_eliminator == 0)
-								expected_constant_eliminator = arg1->constant;
-							else if (expected_constant_eliminator != arg1->constant)
+							if (expected_constant_eliminator == nullptr)
+								expected_constant_eliminator = arg1;
+							else if (*expected_constant_eliminator != *arg1)
 								continue;
 						} else if (*set_formula->ternary.second != *arg1) {
 							continue;
 						}
 
 						if (set_formula->ternary.third->type == TermType::VARIABLE) {
-							if (expected_constant_eliminator == 0)
-								expected_constant_eliminator = arg2->constant;
-							else if (expected_constant_eliminator != arg2->constant)
+							if (expected_constant_eliminator == nullptr)
+								expected_constant_eliminator = arg2;
+							else if (*expected_constant_eliminator != *arg2)
 								continue;
 						} else if (*set_formula->ternary.third != *arg2) {
 							continue;
@@ -2894,8 +2929,7 @@ private:
 							for (Proof* child : entry.value->children) {
 								if (child->type == ProofType::UNIVERSAL_ELIMINATION
 								 && child->operands[1]->type == ProofType::TERM_PARAMETER
-								 && child->operands[1]->term->type == TermType::CONSTANT
-								 && child->operands[1]->term->constant == expected_constant_eliminator)
+								 && *child->operands[1]->term == *expected_constant_eliminator)
 								{
 									for (Proof* grandchild : child->children) {
 										if (grandchild->type == ProofType::IMPLICATION_ELIMINATION) {
@@ -2914,33 +2948,31 @@ private:
 					bool contains;
 					concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
 					Proof* axiom = (Negated ?
-							c.negated_relations.get(relation(predicate, 0, arg2->constant), contains) :
-							c.relations.get(relation(predicate, 0, arg2->constant), contains));
+							c.negated_relations.get(relation(atom->ternary.first->constant, 0, arg2->constant), contains) :
+							c.relations.get(relation(atom->ternary.first->constant, 0, arg2->constant), contains));
 					if (contains) {
 						axiom->reference_count++;
 						return axiom;
 					}
-					Formula* formula = Negated ?
-							Formula::new_not(Formula::new_atom(predicate, arg1, arg2)) :
-							Formula::new_atom(predicate, arg1, arg2);
+					Formula* formula = Negated ? Formula::new_not(atom) : atom;
 					if (formula == NULL) return NULL;
-					arg1->reference_count++; arg2->reference_count++;
+					atom->reference_count++;
 					Proof* new_axiom = ProofCalculus::new_axiom(formula);
 					free(*formula); if (formula->reference_count == 0) free(formula);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
-					if (!add_binary_atom<Negated, ResolveInconsistencies>({predicate, arg1->constant, arg2->constant}, new_axiom, std::forward<Args>(args)...)) {
+					if (!add_binary_atom<Negated, ResolveInconsistencies>({atom->ternary.first->constant, arg1->constant, arg2->constant}, new_axiom, std::forward<Args>(args)...)) {
 						free(*new_axiom); free(new_axiom); return NULL;
 					}
 					return new_axiom;
 				}
 			} else {
 				/* TODO: implement this */
-				fprintf(stderr, "theory.make_proof ERROR: Not implemented.\n");
+				fprintf(stderr, "theory.make_atom_proof ERROR: Not implemented.\n");
 				return NULL;
 			}
 		} else {
-			fprintf(stderr, "theory.make_proof ERROR: Unsupported formula type.\n");
+			fprintf(stderr, "theory.make_atom_proof ERROR: Unsupported formula type.\n");
 			return NULL;
 		}
 	}
@@ -2978,7 +3010,11 @@ private:
 			bool contains;
 			if (arg2 == NULL) {
 				/* `constraint` is a unary literal */
-				proof = (Negated ? c.negated_types.get(predicate, contains) : c.types.get(predicate, contains));
+				Term* atom = Term::new_apply(Term::new_constant(predicate), &Variables<1>::value);
+				if (atom == nullptr) return false;
+				Variables<1>::value.reference_count++;
+				proof = (Negated ? c.negated_types.get(*atom, contains) : c.types.get(*atom, contains));
+				free(*atom); free(atom);
 				if (!contains) proof = NULL;
 				return true;
 			} else {
@@ -3642,12 +3678,14 @@ typename ProofCalculus::Language* make_lifted_conjunction(unsigned int concept_i
 	const concept<ProofCalculus>& c = T.ground_concepts.get(concept_id);
 	array<Formula*> conjuncts(16);
 	for (const auto& entry : c.types) {
-		Formula* new_conjunct = Formula::new_atom(entry.key, &Term::template variables<1>::value);
+		Formula* new_conjunct = Formula::new_apply(&entry.key, &Term::template variables<1>::value);
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+		entry.key.reference_count++;
 		Term::template variables<1>::value.reference_count++;
 	} for (const auto& entry : c.negated_types) {
-		Formula* new_conjunct = Formula::new_not(Formula::new_atom(entry.key, &Term::template variables<1>::value));
+		Formula* new_conjunct = Formula::new_not(Formula::new_apply(&entry.key, &Term::template variables<1>::value));
 		if (new_conjunct == NULL || !conjuncts.add(new_conjunct)) { free_formulas(conjuncts); return NULL; }
+		entry.key.reference_count++;
 		Term::template variables<1>::value.reference_count++;
 	} for (const auto& entry : c.relations) {
 		Formula* new_conjunct = Formula::new_atom(entry.key.predicate,
@@ -4106,8 +4144,17 @@ if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
 /*if (t == 34)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
-//T.print_axioms(stderr, *debug_terminal_printer);
+T.print_axioms(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector);
+		if (t % 10 == 0)
+		{
+			/* make sure we are sampling the query logical form with sufficient frequency */
+			unsigned int index;
+			for (index = 0; index < T.existential_intro_nodes.length; index++)
+				if (T.existential_intro_nodes[index].value == collector.internal_collector.test_proof) break;
+
+		}
+
 if (t % 1000 == 0)
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 }

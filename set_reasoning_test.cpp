@@ -71,19 +71,19 @@ sets.are_descendants_valid();
 	sets.get_size_axiom<true>(all, 15);
 sets.are_descendants_valid();
 
-	nd_step<hol_term>* axiom = sets.get_subset_axiom<true>(red_cats, cats);
+	nd_step<hol_term>* axiom = sets.get_subset_axiom<true>(red_cats, cats, 1);
 sets.are_descendants_valid();
 	print(*axiom->formula, stdout, printer); print('\n', stdout);
 
-	sets.get_subset_axiom<true>(cats, red);
+	sets.get_subset_axiom<true>(cats, red, 1);
 sets.are_descendants_valid();
-	sets.get_subset_axiom<true>(red, red_cats);
-sets.are_descendants_valid();
-print_set_sizes(sets, stdout, printer); print('\n', stdout);
-	sets.get_subset_axiom<true>(all, red_cats);
+	sets.get_subset_axiom<true>(red, red_cats, 1);
 sets.are_descendants_valid();
 print_set_sizes(sets, stdout, printer); print('\n', stdout);
-	sets.get_subset_axiom<true>(cats, no_cats);
+	sets.get_subset_axiom<true>(all, red_cats, 1);
+sets.are_descendants_valid();
+print_set_sizes(sets, stdout, printer); print('\n', stdout);
+	sets.get_subset_axiom<true>(cats, no_cats, 1);
 sets.are_descendants_valid();
 
 	print_set_sizes(sets, stdout, printer); print('\n', stdout);

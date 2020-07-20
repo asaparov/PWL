@@ -974,23 +974,33 @@ inline void hol_any_quantifier::free(hol_any_quantifier& term) {
 }
 
 inline bool is_atomic(
-		const hol_term& term, unsigned int& predicate,
+		const hol_term& term, hol_term const*& predicate,
 		hol_term const*& arg1, hol_term const*& arg2)
 {
 	if (term.type == hol_term_type::UNARY_APPLICATION) {
-		if (term.binary.left->type != hol_term_type::CONSTANT) return false;
-		predicate = term.binary.left->constant;
+		predicate = term.binary.left;
 		arg1 = term.binary.right;
 		arg2 = NULL;
 		return true;
 	} else if (term.type == hol_term_type::BINARY_APPLICATION) {
-		if (term.ternary.first->type != hol_term_type::CONSTANT) return false;
-		predicate = term.ternary.first->constant;
+		predicate = term.ternary.first;
 		arg1 = term.ternary.second;
 		arg2 = term.ternary.third;
 		return true;
 	}
 	return false;
+}
+
+inline bool is_atomic(
+		const hol_term& term, unsigned int& predicate,
+		hol_term const*& arg1, hol_term const*& arg2)
+{
+	hol_term const* pred;
+	if (!is_atomic(term, pred, arg1, arg2)
+	 || pred->type != hol_term_type::CONSTANT)
+		return false;
+	predicate = pred->constant;
+	return true;
 }
 
 inline bool is_atomic(const hol_term& term,
@@ -1007,23 +1017,33 @@ inline bool is_atomic(const hol_term& term) {
 }
 
 inline bool is_atomic(
-		hol_term& term, unsigned int& predicate,
+		hol_term& term, hol_term*& predicate,
 		hol_term*& arg1, hol_term*& arg2)
 {
 	if (term.type == hol_term_type::UNARY_APPLICATION) {
-		if (term.binary.left->type != hol_term_type::CONSTANT) return false;
-		predicate = term.binary.left->constant;
+		predicate = term.binary.left;
 		arg1 = term.binary.right;
 		arg2 = NULL;
 		return true;
 	} else if (term.type == hol_term_type::BINARY_APPLICATION) {
-		if (term.ternary.first->type != hol_term_type::CONSTANT) return false;
-		predicate = term.ternary.first->constant;
+		predicate = term.ternary.first;
 		arg1 = term.ternary.second;
 		arg2 = term.ternary.third;
 		return true;
 	}
 	return false;
+}
+
+inline bool is_atomic(
+		hol_term& term, unsigned int& predicate,
+		hol_term*& arg1, hol_term*& arg2)
+{
+	hol_term* pred;
+	if (!is_atomic(term, pred, arg1, arg2)
+	 || pred->type != hol_term_type::CONSTANT)
+	 	return false;
+	predicate = pred->constant;
+	return true;
 }
 
 inline bool is_atomic(hol_term& term,
@@ -4120,7 +4140,7 @@ inline bool compute_type(
 			return false;
 		if (new_type.kind == hol_type_kind::NONE) {
 			print("ERROR: Term is not well-typed. Symbol ", stderr); print(symbol, stderr);
-			print(" has conflicting types: ", stderr);
+			print(" has conflicting types:\n", stderr);
 			print("  Type computed from earlier instances of symbol: ", stderr);
 			print_type(symbol_types.values[index], stderr, type_variables); print('\n', stderr);
 			print("  Expected type: ", stderr); print_type(expected_type, stderr, type_variables); print('\n', stderr);

@@ -1030,7 +1030,11 @@ bool contains_axiom(
 	} else if (is_atomic(*formula, predicate, arg1, arg2)) {
 		if (arg2 == NULL) {
 			/* `formula` is an atom of form `f(a)` */
-			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(predicate, contains);
+			Term* atom = Term::new_apply(Term::new_constant(predicate), &Term::template variables<0>::value);
+			if (atom == nullptr) return false;
+			Term::template variables<0>::value.reference_count++;
+			const pair<array<unsigned int>, array<unsigned int>>& types = T.atoms.get(*atom, contains);
+			free(*atom); free(atom);
 			if (!contains) return false;
 			return types.key.contains(arg1->constant);
 		} else {
@@ -1043,7 +1047,11 @@ bool contains_axiom(
 	} else if (formula->type == FormulaType::NOT && is_atomic(*formula->unary.operand)) {
 		if (arg2 == NULL) {
 			/* `formula` is an atom of form `~f(a)` */
-			const pair<array<unsigned int>, array<unsigned int>>& types = T.types.get(predicate, contains);
+			Term* atom = Term::new_apply(Term::new_constant(predicate), &Term::template variables<0>::value);
+			if (atom == nullptr) return false;
+			Term::template variables<0>::value.reference_count++;
+			const pair<array<unsigned int>, array<unsigned int>>& types = T.atoms.get(*atom, contains);
+			free(*atom); free(atom);
 			if (!contains) return false;
 			return types.value.contains(arg1->constant);
 		} else {

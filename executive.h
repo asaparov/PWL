@@ -657,6 +657,9 @@ void print_openssl_error(SSL* ssl, int ret, bool& can_shutdown)
 	}
 }
 
+/* TODO: for debugging; delete this */
+unsigned int debug = 0;
+
 template<bool UseSSL, typename FilterResponseHeader>
 bool get_http_page(const char* hostname, const char* query, const char* port,
 		array<char>& response, FilterResponseHeader filter_response_header)
@@ -760,6 +763,15 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 	if (!GLOBAL_THROTTLER.set_next_request_time(string(hostname), milliseconds() + (THROTTLE_DURATION_MILLISECONDS / 2) + sample_uniform(THROTTLE_DURATION_MILLISECONDS))
 	 || !run_client(hostname, port, process_connection))
 		success = false;
+char out_filename[1024];
+snprintf(out_filename, 1024, "%u.txt", debug++);
+FILE* out = (FILE*) fopen(out_filename, "wb");
+fprintf(out, "Request:\n");
+fwrite(request, sizeof(char), request_length, out);
+fprintf(out, "Success: %s\n", success ? "true" : "false");
+fprintf(out, "Response:\n");
+fwrite(response.data, sizeof(char), response.length, out);
+fclose(out);
 	free(request);
 	return success;
 }
@@ -1362,8 +1374,15 @@ inline bool answer_question(array<string>& answers,
 	}
 	free(sentence);
 
+	Term* name_atom = Term::new_apply(Term::new_constant((unsigned int) built_in_predicates::NAME), &Term::template variables<1>::value);
+	if (name_atom == nullptr) {
+		free_logical_forms(logical_forms, parse_count);
+		return false;
+	}
+	Term::template variables<1>::value.reference_count++;
+
 	array_map<string, double> temp_answers(8);
-	auto on_new_proof_sample = [&T, &temp_answers](const Term* term, double log_probability)
+	auto on_new_proof_sample = [&T, &temp_answers, name_atom](const Term* term, double log_probability)
 	{
 		/* get the name of the term */
 		if (term->type == TermType::STRING) {
@@ -1406,7 +1425,7 @@ inline bool answer_question(array<string>& answers,
 					continue;
 
 				unsigned int event = definition->formula->binary.right->binary.right->constant;
-				if (!T.ground_concepts[event - T.new_constant_offset].types.contains((unsigned int) built_in_predicates::NAME))
+				if (!T.ground_concepts[event - T.new_constant_offset].types.contains(*name_atom))
 					continue;
 
 				Proof* function_value_axiom = T.ground_concepts[event - T.new_constant_offset].function_values.get((unsigned int) built_in_predicates::ARG2, contains);
@@ -1443,6 +1462,7 @@ debug_terminal_printer = &parser.get_printer();
 	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, on_new_proof_sample)) {
 		fprintf(stderr, "ERROR: Failed to answer question.\n");
 		free_logical_forms(logical_forms, parse_count);
+		free(*name_atom); free(name_atom);
 		for (auto entry : temp_answers) free(entry.key);
 		return false;
 	}
@@ -1465,6 +1485,7 @@ debug_terminal_printer = &parser.get_printer();
 		if (!parser.template generate<1>(&generated_derivation, generated_derivation_count, logical_forms[0], names) || generated_derivation_count == 0) {
 			fprintf(stderr, "ERROR: Failed to generate search query derivation.\n");
 			free_logical_forms(logical_forms, parse_count);
+			free(*name_atom); free(name_atom);
 			/* TODO: re-enable the production rules that govern wh-movement */
 			return false;
 		}
@@ -1474,6 +1495,7 @@ debug_terminal_printer = &parser.get_printer();
 		sequence search_query = sequence(NULL, 0);
 		if (!parser.yield_search_query(generated_derivation, logical_forms[0], search_query)) {
 			free_logical_forms(logical_forms, parse_count);
+			free(*name_atom); free(name_atom);
 			free(generated_derivation); return false;
 		}
 		free(generated_derivation);
@@ -1528,6 +1550,7 @@ debug_terminal_printer = &parser.get_printer();
 			 || !init(query[i], out.buffer, out.position))
 			{
 				free_logical_forms(logical_forms, parse_count);
+				free(*name_atom); free(name_atom);
 				for (unsigned int j = 0; j < i; j++) free(query[j]);
 				free(query); free(search_query); return false;
 			}
@@ -1537,10 +1560,12 @@ debug_terminal_printer = &parser.get_printer();
 
 		if (!search_google(query, search_query.length, process_search_result)) {
 			free_logical_forms(logical_forms, parse_count);
+			free(*name_atom); free(name_atom);
 			for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
 			free(query); free(search_query); return false;
 		}
 		free_logical_forms(logical_forms, parse_count);
+		free(*name_atom); free(name_atom);
 		for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
 		free(query); free(search_query);
 
@@ -1548,6 +1573,7 @@ debug_terminal_printer = &parser.get_printer();
 
 	} else {
 		free_logical_forms(logical_forms, parse_count);
+		free(*name_atom); free(name_atom);
 	}
 
 	/* keep only the answers with highest probability */
