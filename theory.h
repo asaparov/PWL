@@ -975,6 +975,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 #endif
 		Proof* axiom = ground_types.values[index];
 		free(*axiom); if (axiom->reference_count == 0) free(axiom);
+		free(ground_types.keys[index]);
 		ground_types.remove_at(index);
 		ground_axiom_count--;
 		free(*lifted_literal); free(lifted_literal);
@@ -4123,7 +4124,7 @@ T.print_axioms(stderr, *debug_terminal_printer);
 		return false;
 	} else if (!proof_axioms.template add<false>(new_proof, proof_prior)) {
 		T.remove_formula(new_proof);
-		return -std::numeric_limits<double>::infinity();
+		return false;
 	}
 
 	auto new_proof_sample_delegate = make_lambda_proof_sample_delegate<typename ProofCalculus::ProofCanonicalizer>(on_new_proof_sample);
@@ -4142,19 +4143,10 @@ T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
-/*if (t == 34)
+/*if (t == 10)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
 T.print_axioms(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector);
-		if (t % 10 == 0)
-		{
-			/* make sure we are sampling the query logical form with sufficient frequency */
-			unsigned int index;
-			for (index = 0; index < T.existential_intro_nodes.length; index++)
-				if (T.existential_intro_nodes[index].value == collector.internal_collector.test_proof) break;
-
-		}
-
 if (t % 1000 == 0)
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 }

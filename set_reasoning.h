@@ -231,7 +231,7 @@ struct extensional_set_graph
 				formula = new_formula;
 			}
 			Proof* new_axiom = ProofCalculus::new_axiom(formula);
-			free(*formula); free(formula);
+			free(*formula); if (formula->reference_count == 0) free(formula);
 			if (new_axiom == NULL) return NULL;
 			child_formula->reference_count++;
 			parent_formula->reference_count++;

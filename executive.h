@@ -657,9 +657,6 @@ void print_openssl_error(SSL* ssl, int ret, bool& can_shutdown)
 	}
 }
 
-/* TODO: for debugging; delete this */
-unsigned int debug = 0;
-
 template<bool UseSSL, typename FilterResponseHeader>
 bool get_http_page(const char* hostname, const char* query, const char* port,
 		array<char>& response, FilterResponseHeader filter_response_header)
@@ -763,15 +760,6 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 	if (!GLOBAL_THROTTLER.set_next_request_time(string(hostname), milliseconds() + (THROTTLE_DURATION_MILLISECONDS / 2) + sample_uniform(THROTTLE_DURATION_MILLISECONDS))
 	 || !run_client(hostname, port, process_connection))
 		success = false;
-char out_filename[1024];
-snprintf(out_filename, 1024, "%u.txt", debug++);
-FILE* out = (FILE*) fopen(out_filename, "wb");
-fprintf(out, "Request:\n");
-fwrite(request, sizeof(char), request_length, out);
-fprintf(out, "Success: %s\n", success ? "true" : "false");
-fprintf(out, "Response:\n");
-fwrite(response.data, sizeof(char), response.length, out);
-fclose(out);
 	free(request);
 	return success;
 }
