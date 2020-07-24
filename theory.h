@@ -549,7 +549,7 @@ struct theory
 		unsigned int count = sets.symbols_in_formulas.counts.get(id, contains);
 		if (contains && count > 0) return;
 
-		if (sets.element_map.table.contains(id)) return;
+		if (sets.element_map.table.contains({&id, 1})) return;
 
 		free_concept_id(id);
 	}
@@ -1296,9 +1296,13 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				continue;
 			case change_type::SET_SIZE_AXIOM:
 				{
-					unsigned int set_id;
+					unsigned int set_id, arity = 1;
 					Formula* set_formula = c.axiom->formula->binary.left->binary.right->quantifier.operand;
-					if (!sets.get_set_id(set_formula, set_id, std::forward<Args>(visitor)...)
+					while (set_formula->type == TermType::LAMBDA) {
+						set_formula = set_formula->quantifier.operand;
+						arity++;
+					}
+					if (!sets.get_set_id(set_formula, arity, set_id, std::forward<Args>(visitor)...)
 					 || !sets.sets[set_id].set_size_axiom(c.axiom)) return false;
 				}
 				continue;
@@ -1405,9 +1409,13 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				}
 			case change_type::SET_SIZE_AXIOM:
 				{
-					unsigned int set_id;
+					unsigned int set_id, arity = 1;
 					Formula* set_formula = c.axiom->formula->binary.left->binary.right->quantifier.operand;
-					if (!sets.get_set_id(set_formula, set_id)
+					while (set_formula->type == TermType::LAMBDA) {
+						set_formula = set_formula->quantifier.operand;
+						arity++;
+					}
+					if (!sets.get_set_id(set_formula, arity, set_id)
 					 || !freeable_set_size_axioms.add(c.axiom)) return false;
 					unsigned int old_ref_count = c.axiom->reference_count;
 					c.axiom->reference_count = 1;
@@ -1677,6 +1685,178 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		reference_counts.values[0] = proof.reference_count - 1;
 		reference_counts.size++;
 		return get_theory_changes(proof, discharged_axioms, reference_counts, changes, std::forward<Visitor>(visitor)...);
+	}
+
+	bool unify_atom(Term* term, Term* atom,
+			array<Formula*>& quantifiers,
+			array_map<Formula*, Term*>& unifications)
+	{
+		if (term->type == TermType::VARIABLE) {
+			if (!unifications.ensure_capacity(unifications.size + 1))
+				return false;
+			bool contains;
+			Term*& unification = unifications.get(quantifiers[term->variable], contains);
+			if (!contains) {
+				unification = atom;
+			} else {
+				if (unification != atom && *unification != *atom)
+					return false;
+			}
+		} else if (term->type != atom->type) {
+			return false;
+		}
+
+		switch (term->type) {
+		case FormulaType::TRUE:
+		case FormulaType::FALSE:
+			return true;
+		case FormulaType::CONSTANT:
+			return term->constant == atom->constant;
+		case FormulaType::VARIABLE:
+		case FormulaType::VARIABLE_PREIMAGE:
+			return term->variable == atom->variable;
+		case FormulaType::PARAMETER:
+			return term->parameter == atom->parameter;
+		case FormulaType::INTEGER:
+			return term->integer == atom->integer;
+		case FormulaType::STRING:
+			return term->str == atom->str;
+		case FormulaType::UINT_LIST:
+			return term->uint_list == atom->uint_list;
+		case FormulaType::EQUALS:
+		case FormulaType::UNARY_APPLICATION:
+			return unify_atom(term->binary.left, atom->binary.left, quantifiers, unifications)
+				&& unify_atom(term->binary.right, atom->binary.right, quantifiers, unifications);
+		case FormulaType::BINARY_APPLICATION:
+			return unify_atom(term->ternary.first, atom->ternary.first, quantifiers, unifications)
+				&& unify_atom(term->ternary.second, atom->ternary.second, quantifiers, unifications)
+				&& unify_atom(term->ternary.third, atom->ternary.third, quantifiers, unifications);
+		case TermType::NOT:
+			return unify_atom(term->unary.operand, atom->unary.operand, quantifiers, unifications);
+		case TermType::IF_THEN:
+		case TermType::AND:
+		case TermType::OR:
+		case TermType::IFF:
+		case TermType::FOR_ALL:
+		case TermType::EXISTS:
+		case TermType::LAMBDA:
+			return false;
+		case TermType::ANY:
+		case TermType::ANY_RIGHT:
+		case TermType::ANY_RIGHT_ONLY:
+		case TermType::ANY_ARRAY:
+		case TermType::ANY_CONSTANT:
+		case TermType::ANY_CONSTANT_EXCEPT:
+		case TermType::ANY_QUANTIFIER:
+			break;
+		}
+		fprintf(stderr, "theory.unify_atom ERROR: Unrecognized TermType.\n");
+		return false
+	}
+
+	bool get_unifying_atoms(
+			Formula* formula, Formula* atom,
+			array<Formula*>& quantifiers,
+			array<array_map<Formula*, Term*>>& unifications)
+	{
+		switch (formula->type) {
+		case FormulaType::CONSTANT:
+		case FormulaType::VARIABLE:
+		case FormulaType::VARIABLE_PREIMAGE:
+		case FormulaType::PARAMETER:
+		case FormulaType::INTEGER:
+		case FormulaType::STRING:
+		case FormulaType::UINT_LIST:
+		case FormulaType::TRUE:
+		case FormulaType::FALSE:
+		case FormulaType::EQUALS:
+		case FormulaType::UNARY_APPLICATION:
+		case FormulaType::BINARY_APPLICATION:
+			if (!unifications.ensure_capacity(unifications.length + 1)
+			 || !array_init(unifications[unifications.length], 2))
+				return false;
+			if (unify_atom(formula, atom, quantifiers, unifications[unifications.length]))  {
+				unifications.length++;
+			} else {
+				free(unifications[unifications.length--]);
+			}
+			return true;
+		case FormulaType::NOT:
+			if (!unifications.ensure_capacity(unifications.length + 2)
+			 || !array_init(unifications[unifications.length], 2))
+				return false;
+			if (unify_atom(formula, atom, quantifiers, unifications[unifications.length]))  {
+				unifications.length++;
+			} else {
+				free(unifications[unifications.length--]);
+			}
+
+			if (!array_init(unifications[unifications.length], 2))
+				return false;
+			if (unify_atom(formula->unary.operand, atom, quantifiers, unifications[unifications.length]))  {
+				unifications.length++;
+			} else {
+				free(unifications[unifications.length--]);
+			}
+			return get_unifying_atoms(formuls->unary.operand, atom, quantifiers);
+
+		case FormulaType::IF_THEN:
+			return get_unifying_atoms(formula->binary.left, atom, quantifiers)
+				&& get_unifying_atoms(formula->binary.right, atom, quantifiers);
+		case FormulaType::AND:
+		case FormulaType::OR:
+		case FormulaType::IFF:
+			for (unsigned int i = 0; i < formula->array.length; i++)
+				if (!get_unifying_atoms(formula->array.operands[i], atom, quantifiers)) return false;
+			return true;
+		case FormulaType::FOR_ALL:
+		case FormulaType::EXISTS:
+		case FormulaType::LAMBDA:
+			if (!quantifier.add(formula)) return false;
+			if (!get_unifying_atoms(formula->quantifier.operand, atom, quantifiers)) {
+				quantifier.length--;
+				return false;
+			} else {
+				quantifier.length--;
+				return true;
+			}
+		case FormulaType::ANY:
+		case FormulaType::ANY_RIGHT:
+		case FormulaType::ANY_RIGHT_ONLY:
+		case FormulaType::ANY_ARRAY:
+		case FormulaType::ANY_CONSTANT:
+		case FormulaType::ANY_CONSTANT_EXCEPT:
+		case FormulaType::ANY_QUANTIFIER:
+			break;
+		}
+		fprintf(stderr, "theory.get_unifying_atoms ERROR: Unrecognized FormulaType.\n");
+		return false;
+	}
+
+	bool is_consistent_with_extensional_edges(Formula* new_atom) {
+		/* We first need to find all pairs of tuples and sets such that, with
+		   the addition of `new_atom` as an axiom, the tuple must necessarily
+		   belong to the set (and is not the case otherwise without
+		   `new_atom`). To do this, find all sets that contain an atom that
+		   unifies with `new_atom`. */
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == NULL) continue;
+			const Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+
+			array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
+			for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+				quantifiers[quantifiers.length++] = set_formula;
+				set_formula = set_formula->quantifier.operand;
+			}
+			array<array_map<Formula*, Term*>> unifications(4);
+			if (!get_unifying_atoms(set_formula, new_atom, quantifiers, unifications))
+				return false;
+
+			for (const array_map<Formula*, Term>& unification : unifications) {
+				/* given `unification`, find the values of the quantified variables that make `set_formula` necessarily true */
+				
+			}
+		}
 	}
 
 	template<bool Contradiction, bool DefinitionsAllowed, bool ResolveInconsistencies, typename... Args>
@@ -2124,7 +2304,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				Formula* lambda_formula = Formula::new_lambda(1, set_formula);
 				if (lambda_formula == NULL) return NULL;
 				set_formula->reference_count++;
-				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(set_formula, 0, std::forward<Args>(args)...);
+				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(set_formula, 1, 0, std::forward<Args>(args)...);
 				if (set_size_axiom == NULL) {
 					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
 					return NULL;
@@ -2207,7 +2387,14 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					return NULL;
 				}
 
-				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(arg1->quantifier.operand, right->integer, std::forward<Args>(args)...);
+				unsigned int arity = 1;
+				Term* operand = arg1->quantifier.operand;
+				while (operand->type == TermType::LAMBDA) {
+					operand = operand->quantifier.operand;
+					arity++;
+				}
+
+				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(arg1->quantifier.operand, arity, right->integer, std::forward<Args>(args)...);
 				if (set_size_axiom == nullptr) return nullptr;
 				set_size_axiom->reference_count++;
 				return set_size_axiom;
@@ -2235,7 +2422,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				 || definition->formula->binary.right->quantifier.operand->binary.right->variable != definition->formula->binary.right->quantifier.variable)
 					fprintf(stderr, "theory.make_proof ERROR: Expected a set definition of the form c=λx.c(x).\n");
 #endif
-				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(definition->formula->binary.right->quantifier.operand, right->integer, std::forward<Args>(args)...);
+				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(definition->formula->binary.right->quantifier.operand, 1, right->integer, std::forward<Args>(args)...);
 				Proof* proof = ProofCalculus::new_equality_elim(definition, set_size_axiom, make_repeated_array_view(3u, 1));
 				if (proof == NULL)
 					return NULL;
@@ -3062,7 +3249,7 @@ private:
 	bool move_element_to_subset(unsigned int element, Formula* lifted_literal, Args&&... visitor)
 	{
 		Formula* new_set_formula; bool contains;
-		unsigned int old_set_id = sets.element_map.get(element, contains);
+		unsigned int old_set_id = sets.element_map.get({&element, 1}, contains);
 		Formula* old_set_formula = (contains ? sets.sets[old_set_id].set_formula() : NULL);
 		if (old_set_formula == NULL) {
 			/* there are no other atomic formulas for this concept */
@@ -3079,7 +3266,7 @@ private:
 		free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		if (canonicalized == NULL)
 			return false;
-		if (!sets.template move_element_to_set<ResolveInconsistencies>(element, canonicalized, std::forward<Args>(visitor)...)) {
+		if (!sets.template move_element_to_set<ResolveInconsistencies>({&element, 1}, canonicalized, std::forward<Args>(visitor)...)) {
 			free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 			return false;
 		}
@@ -3093,16 +3280,16 @@ private:
 			Formula* set_formula = sets.sets[i].set_formula();
 			Formula* negated_set_formula = Formula::new_not(set_formula);
 			if (negated_set_formula == NULL) {
-				if (old_set_formula == NULL) sets.remove_element(element);
-				else sets.move_element_to_superset(element, old_set_formula);
+				if (old_set_formula == NULL) sets.remove_element({&element, 1});
+				else sets.move_element_to_superset({&element, 1}, old_set_formula);
 				return false;
 			}
 			set_formula->reference_count++;
 			bool contradiction = is_subset(lifted_literal, negated_set_formula) && sets.sets[i].descendants.contains(new_set_id);
 			free(*negated_set_formula); free(negated_set_formula);
 			if (contradiction) {
-				if (old_set_formula == NULL) sets.remove_element(element);
-				else sets.move_element_to_superset(element, old_set_formula);
+				if (old_set_formula == NULL) sets.remove_element({&element, 1});
+				else sets.move_element_to_superset({&element, 1}, old_set_formula);
 				return false;
 			}
 		}
@@ -3138,7 +3325,7 @@ private:
 	template<typename... Args>
 	bool move_element_to_superset(unsigned int element, Formula* lifted_literal, Args&&... visitor)
 	{
-		Formula* old_set_formula = sets.sets[sets.element_map.get(element)].set_formula();
+		Formula* old_set_formula = sets.sets[sets.element_map.get({&element, 1})].set_formula();
 
 		Formula* canonicalized = Canonicalizer::canonicalize(*lifted_literal);
 		array<Formula*> difference(8);
@@ -3179,10 +3366,10 @@ private:
 
 		bool success;
 		if (new_set_formula == NULL) {
-			sets.remove_element(element, std::forward<Args>(visitor)...);
+			sets.remove_element({&element, 1}, std::forward<Args>(visitor)...);
 			success = true;
 		} else {
-			success = sets.move_element_to_superset(element, new_set_formula, std::forward<Args>(visitor)...);
+			success = sets.move_element_to_superset({&element, 1}, new_set_formula, std::forward<Args>(visitor)...);
 			free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		}
 		return success;

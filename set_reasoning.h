@@ -339,6 +339,104 @@ bool get_descendants(
 	return true;
 }
 
+struct tuple {
+	unsigned int* elements;
+	unsigned int length;
+
+	inline bool operator = (const tuple& src) {
+		return init_helper(src);
+	}
+
+	inline unsigned int& operator [] (unsigned int i) {
+		return elements[i];
+	}
+
+	inline const unsigned int& operator [] (unsigned int i) const {
+		return elements[i];
+	}
+
+	static inline bool is_empty(const tuple& src) {
+		return src.elements == nullptr;
+	}
+
+	static inline void set_empty(tuple& key) {
+		key.elements = nullptr;
+	}
+
+	static inline void move(const tuple& src, tuple& dst) {
+		dst.elements = src.elements;
+		dst.length = src.length;
+	}
+
+	static inline unsigned int hash(const tuple& key) {
+		unsigned int value = 0;
+		for (unsigned int i = 0; i < key.length; i++)
+			value ^= default_hash(key.elements[i]);
+		return value;
+	}
+
+	static inline void free(tuple& tup) {
+		core::free(tup.elements);
+	}
+
+private:
+	inline bool init_helper(const tuple& src) {
+		length = src.length;
+		elements = (unsigned int*) malloc(sizeof(unsigned int) * length);
+		if (elements == nullptr) {
+			fprintf(stderr, "tuple.init_helper ERROR: Out of memory.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.length; i++)
+			elements[i] = src.elements[i];
+		return true;
+	}
+
+	friend bool init(tuple&, const tuple&);
+};
+
+inline bool init(tuple& new_tuple, const tuple& src) {
+	return new_tuple.init_helper(src);
+}
+
+inline bool operator == (const tuple& first, const tuple& second) {
+	if (first.length != second.length)
+		return false;
+	/* `first` may be uninitialized */
+	if (first.elements == nullptr)
+		return false;
+	for (unsigned int i = 0; i < first.length; i++)
+		if (first.elements[i] != second.elements[i]) return false;
+	return true;
+}
+
+inline bool operator != (const tuple& first, const tuple& second) {
+	if (first.length != second.length)
+		return true;
+	/* `first` may be uninitialized */
+	if (first.elements == nullptr)
+		return true;
+	for (unsigned int i = 0; i < first.length; i++)
+		if (first.elements[i] != second.elements[i]) return true;
+	return false;
+}
+
+template<typename Stream, typename... Printer>
+bool print(const tuple& tup, Stream& out, Printer&&... printer) {
+	if (tup.length == 0)
+		return print("()", out);
+	if (tup.length == 1)
+		return print(tup[0], out, std::forward<Printer>(printer)...);
+
+	if (!print('(', out) || !print(tup[0], out, std::forward<Printer>(printer)...))
+		return false;
+	for (unsigned int i = 1; i < tup.length; i++) {
+		if (!print(", ", out) || !print(tup[i], out, std::forward<Printer>(printer)...))
+			return false;
+	}
+	return print(')', out);
+}
+
 template<typename BuiltInConstants, typename ProofCalculus>
 struct set_info
 {
@@ -346,10 +444,47 @@ struct set_info
 	typedef typename ProofCalculus::Proof Proof;
 	typedef typename Formula::Type FormulaType;
 
+	unsigned int arity;
 	unsigned int set_size;
 	Proof* size_axiom;
 	hash_set<unsigned int> descendants;
 	array<unsigned int> elements; /* NOTE: this does not contain the elements of the descendants of this set */
+
+	inline unsigned int element_count() const {
+		return elements.length / arity;
+	}
+
+	inline bool add_element(const tuple& element) {
+		if (!elements.ensure_capacity(elements.length + arity))
+			return false;
+		for (unsigned int j = 0; j < arity; j++)
+			elements[elements.length + j] = element[j];
+		elements.length += arity;
+		return true;
+	}
+
+	inline unsigned int index_of_element(const tuple& element) const {
+		unsigned int num_elements = element_count();
+		if (element.length != arity) return num_elements;
+		for (unsigned int i = 0; i < num_elements; i++) {
+			bool equivalent = true;
+			for (unsigned int j = 0; equivalent && j < arity; j++)
+				if (elements[i * arity + j] != element[j]) equivalent = false;
+			if (equivalent) return i;
+		}
+		return num_elements;
+	}
+
+	inline void remove_element_at(unsigned int i) {
+		unsigned int last = element_count() - 1;
+		for (unsigned int j = 0; j < arity; j++)
+			elements[i * arity + j] = elements[last * arity + j];
+		elements.length -= arity;
+	}
+
+	inline void remove_last_element() {
+		elements.length -= arity;
+	}
 
 	static inline void free(set_info& info) {
 		core::free(info.descendants);
@@ -394,16 +529,30 @@ struct set_info
 template<typename BuiltInConstants, typename ProofCalculus>
 inline bool init(
 		set_info<BuiltInConstants, ProofCalculus>& info,
-		unsigned int set_size,
+		unsigned int arity, unsigned int set_size,
 		typename ProofCalculus::Language* set_formula)
 {
 	typedef typename ProofCalculus::Language Formula;
 
+	info.arity = arity;
 	info.set_size = set_size;
-	Formula* size_axiom_formula = Formula::new_equals(Formula::new_atom(
-			(unsigned int) BuiltInConstants::SIZE, Formula::new_lambda(1, set_formula)), Formula::new_int(set_size));
-	if (size_axiom_formula == NULL) return false;
+	Formula* set_definition = Formula::new_lambda(arity, set_formula);
+	if (set_definition == NULL) return false;
 	set_formula->reference_count++;
+	for (unsigned int i = arity - 1; i > 0; i--) {
+		Formula* temp = Formula::new_lambda(i, set_definition);
+		if (temp == NULL) {
+			free(*set_definition); free(set_definition);
+			return false;
+		}
+		set_definition = temp;
+	}
+	Formula* size_axiom_formula = Formula::new_equals(Formula::new_atom(
+			(unsigned int) BuiltInConstants::SIZE, set_definition), Formula::new_int(set_size));
+	if (size_axiom_formula == NULL) {
+		free(*set_definition); free(set_definition);
+		return false;
+	}
 	info.size_axiom = ProofCalculus::new_axiom(size_axiom_formula);
 	free(*size_axiom_formula); if (size_axiom_formula->reference_count == 0) free(size_axiom_formula);
 	if (info.size_axiom == NULL) return false;
@@ -449,7 +598,7 @@ struct set_reasoning
 	unsigned int set_count;
 
 	hash_map<Formula, unsigned int> set_ids;
-	hash_map<unsigned int, unsigned int> element_map;
+	hash_map<tuple, unsigned int> element_map;
 
 	hash_multiset<unsigned int> symbols_in_formulas;
 
@@ -465,8 +614,7 @@ struct set_reasoning
 
 		unsigned int empty_set_id;
 		Formula* empty = Formula::new_false();
-		if (empty == NULL
-		 || !get_set_id(empty, empty_set_id))
+		if (empty == NULL || !get_set_id(empty, 1, empty_set_id))
 			exit(EXIT_FAILURE);
 		free(*empty); if (empty->reference_count == 0) free(empty);
 		sets[empty_set_id].change_size(0);
@@ -480,6 +628,8 @@ struct set_reasoning
 				core::free(sets[i]);
 			}
 		} for (auto entry : set_ids)
+			core::free(entry.key);
+		for (auto entry : element_map)
 			core::free(entry.key);
 		core::free(sets);
 	}
@@ -556,7 +706,7 @@ struct set_reasoning
 	}
 
 	template<typename... Args>
-	bool new_set(Formula* set_formula, unsigned int& set_id, Args&&... visitor)
+	bool new_set(Formula* set_formula, unsigned int arity, unsigned int& set_id, Args&&... visitor)
 	{
 		if (!new_set(set_id)) return false;
 
@@ -634,7 +784,7 @@ struct set_reasoning
 		}
 
 		/* initialize the set_info structure and the set size */
-		if (!init(sets[set_id], 1, set_formula)) {
+		if (!init(sets[set_id], arity, 1, set_formula)) {
 			intensional_graph.template free_set<true>(set_id);
 			extensional_graph.template free_set<true>(set_id);
 			return false;
@@ -783,7 +933,7 @@ struct set_reasoning
 	}
 
 	template<typename... Args>
-	inline bool get_set_id(Formula* formula, unsigned int& set_id, bool& is_new, Args&&... visitor) {
+	inline bool get_set_id(Formula* formula, unsigned int arity, unsigned int& set_id, bool& is_new, Args&&... visitor) {
 		bool contains; unsigned int bucket;
 		if (!set_ids.check_size()) return false;
 		set_id = set_ids.get(*formula, contains, bucket);
@@ -794,7 +944,7 @@ struct set_reasoning
 
 			if (!init(set_ids.table.keys[bucket], *formula)) {
 				return false;
-			} else if (!new_set(formula, set_id, std::forward<Args>(visitor)...)) {
+			} else if (!new_set(formula, arity, set_id, std::forward<Args>(visitor)...)) {
 				core::free(set_ids.table.keys[bucket]);
 				core::set_empty(set_ids.table.keys[bucket]);
 				return false;
@@ -809,9 +959,9 @@ struct set_reasoning
 	}
 
 	template<typename... Args>
-	inline bool get_set_id(Formula* formula, unsigned int& set_id, Args&&... visitor) {
+	inline bool get_set_id(Formula* formula, unsigned int arity, unsigned int& set_id, Args&&... visitor) {
 		bool is_new;
-		return get_set_id(formula, set_id, is_new, std::forward<Args>(visitor)...);
+		return get_set_id(formula, arity, set_id, is_new, std::forward<Args>(visitor)...);
 	}
 
 	inline bool get_strongly_connected_component(
@@ -937,7 +1087,7 @@ struct set_reasoning
 		if (!new_set(contracted_set)) {
 			free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
 			return false;
-		} else if (!init(sets[contracted_set], sets[set].set_size, conjunction)) {
+		} else if (!init(sets[contracted_set], sets[set].arity, sets[set].set_size, conjunction)) {
 			free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
 			intensional_graph.template free_set<true>(contracted_set);
 			extensional_graph.template free_set<true>(contracted_set);
@@ -1269,8 +1419,11 @@ struct set_reasoning
 	bool add_subset_axiom(Proof* axiom, Args&&... visitor)
 	{
 		Formula* operand = axiom->formula->quantifier.operand;
-		while (operand->type == FormulaType::FOR_ALL)
+		unsigned int arity = 1;
+		while (operand->type == FormulaType::FOR_ALL) {
 			operand = operand->quantifier.operand;
+			arity++;
+		}
 		Formula* antecedent = operand->binary.left;
 		Formula* consequent = operand->binary.right;
 
@@ -1278,9 +1431,9 @@ struct set_reasoning
 
 		unsigned int antecedent_set, consequent_set;
 		bool is_antecedent_new, is_consequent_new;
-		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
+		if (!get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
 			return false;
-		} else if (!get_set_id(consequent, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
+		} else if (!get_set_id(consequent, arity, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
 			if (is_freeable(antecedent_set)) free_set(antecedent, antecedent_set);
 			return false;
 		}
@@ -1335,9 +1488,9 @@ struct set_reasoning
 
 		unsigned int antecedent_set, consequent_set;
 		bool is_antecedent_new, is_consequent_new;
-		if (!get_set_id(antecedent, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
+		if (!get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
 			return NULL;
-		} else if (!get_set_id(consequent, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
+		} else if (!get_set_id(consequent, arity, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
 			try_free_set(antecedent, antecedent_set);
 			return NULL;
 		}
@@ -1359,7 +1512,7 @@ struct set_reasoning
 		if (!new_edge) return axiom;
 
 		/* check that the new edge does not create any inconsistencies */
-		hash_set<unsigned int> provable_elements(16);
+		hash_set<tuple> provable_elements(16);
 		if (!get_provable_elements(antecedent_set, provable_elements)) {
 			extensional_graph.remove_edge(consequent_set, antecedent_set);
 			try_free_set(consequent, consequent_set);
@@ -1372,10 +1525,12 @@ struct set_reasoning
 		visited.add(consequent_set);
 		while (ancestors_stack.length > 0) {
 			unsigned int current = ancestors_stack.pop();
-			hash_set<unsigned int> current_provable_elements(16);
+			hash_set<tuple> current_provable_elements(16);
 			if (!get_provable_elements(current, current_provable_elements)
 			 || !current_provable_elements.add_all(provable_elements))
 			{
+				for (tuple& tup : provable_elements) core::free(tup);
+				for (tuple& tup : current_provable_elements) core::free(tup);
 				extensional_graph.remove_edge(consequent_set, antecedent_set);
 				try_free_set(consequent, consequent_set);
 				try_free_set(antecedent, antecedent_set);
@@ -1386,22 +1541,27 @@ struct set_reasoning
 					bool graph_changed;
 					array<unsigned int> stack(8);
 					if (!increase_set_size(current, current_provable_elements.size, stack, graph_changed) || !graph_changed) {
+						for (tuple& tup : provable_elements) core::free(tup);
 						extensional_graph.remove_edge(consequent_set, antecedent_set);
 						try_free_set(consequent, consequent_set);
 						try_free_set(antecedent, antecedent_set);
 						return NULL;
 					}
 				} else {
+					for (tuple& tup : provable_elements) core::free(tup);
+					for (tuple& tup : current_provable_elements) core::free(tup);
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
 					try_free_set(consequent, consequent_set);
 					try_free_set(antecedent, antecedent_set);
 					return NULL;
 				}
 			}
+			for (tuple& tup : current_provable_elements) core::free(tup);
 
 			for (const auto& entry : extensional_graph.vertices[current].parents) {
 				if (visited.contains(entry.key)) continue;
 				if (!ancestors_stack.add(entry.key) || !visited.add(entry.key)) {
+					for (tuple& tup : provable_elements) core::free(tup);
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
 					try_free_set(consequent, consequent_set);
 					try_free_set(antecedent, antecedent_set);
@@ -1410,6 +1570,7 @@ struct set_reasoning
 			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (visited.contains(parent)) continue;
 				if (!ancestors_stack.add(parent) || !visited.add(parent)) {
+					for (tuple& tup : provable_elements) core::free(tup);
 					extensional_graph.remove_edge(consequent_set, antecedent_set);
 					try_free_set(consequent, consequent_set);
 					try_free_set(antecedent, antecedent_set);
@@ -1417,6 +1578,7 @@ struct set_reasoning
 				}
 			}
 		}
+		for (tuple& tup : provable_elements) core::free(tup);
 		for (unsigned int descendant : sets[antecedent_set].descendants) {
 			if (sets[descendant].set_size > 0 && are_disjoint(consequent_set, descendant)) {
 				if (ResolveInconsistencies) {
@@ -1693,19 +1855,22 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
-	inline Proof* get_size_axiom(Formula* formula, unsigned int new_size, Args&&... visitor) {
+	inline Proof* get_size_axiom(Formula* formula, unsigned int arity, unsigned int new_size, Args&&... visitor) {
 		unsigned int set_id;
-		if (!get_set_id(formula, set_id, std::forward<Args>(visitor)...))
+		if (!get_set_id(formula, arity, set_id, std::forward<Args>(visitor)...))
 			return NULL;
 		return get_size_axiom<ResolveInconsistencies>(set_id, new_size);
 	}
 
 	inline bool get_provable_elements(unsigned int set_id,
-			hash_set<unsigned int>& provable_elements) const
+			hash_set<tuple>& provable_elements) const
 	{
 		for (unsigned int descendant : sets[set_id].descendants) {
-			for (unsigned int element : sets[descendant].elements)
-				if (!provable_elements.add(element)) return false;
+			unsigned int num_elements = sets[descendant].elements.length / sets[descendant].arity;
+			for (unsigned int i = 0; i < num_elements; i++) {
+				if (!provable_elements.add({sets[descendant].elements.data + i * sets[descendant].arity, sets[descendant].arity}))
+					return false;
+			}
 		}
 		return true;
 	}
@@ -1720,10 +1885,11 @@ struct set_reasoning
 #endif
 
 		/* first compute the number of elements that provably belong to this set */
-		hash_set<unsigned int> provable_elements(16);
+		hash_set<tuple> provable_elements(16);
 		if (!get_provable_elements(set_id, provable_elements))
 			return false;
 		lower_bound = provable_elements.size;
+		for (tuple& tup : provable_elements) core::free(tup);
 
 		/* next compute the maximal clique of subsets of this set
 		   (maximal in the sense of the size of their union) */
@@ -1823,7 +1989,7 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
-	bool move_element_to_set(unsigned int element, Formula* new_set_formula, Args&&... visitor)
+	bool move_element_to_set(const tuple& element, Formula* new_set_formula, Args&&... visitor)
 	{
 		if (!element_map.check_size()) return false;
 		bool contains; unsigned int bucket;
@@ -1840,32 +2006,31 @@ struct set_reasoning
 #endif
 
 		unsigned int new_set_id;
-		if (!get_set_id(new_set_formula, new_set_id, std::forward<Args>(visitor)...))
+		if (!get_set_id(new_set_formula, element.length, new_set_id, std::forward<Args>(visitor)...))
 			return false;
 		else if (new_set_id == old_set_id)
 			return true;
 
 		if (old_set_id != 0) {
-			unsigned int index = sets[old_set_id].elements.index_of(element);
+			unsigned int index = sets[old_set_id].index_of_element(element);
 #if !defined(NDEBUG)
-			if (index == sets[old_set_id].elements.length)
+			if (index == sets[old_set_id].element_count())
 				fprintf(stderr, "set_reasoning.move_element_to_set WARNING: The old set does not contain the given element.\n");
-			else sets[old_set_id].elements.remove(index);
+			else sets[old_set_id].remove_element_at(index);
 #else
-			sets[old_set_id].elements.remove(index);
+			sets[old_set_id].remove_element_at(index);
 #endif
 		}
 
-		if (!sets[new_set_id].elements.ensure_capacity(sets[new_set_id].elements.length + 1)) {
+#if !defined(NDEBUG)
+		unsigned int index = sets[new_set_id].index_of_element(element);
+		if (index < sets[new_set_id].element_count())
+			fprintf(stderr, "set_reasoning.move_element_to_set WARNING: The new set already contains the given element.\n");
+#endif
+		if (!sets[new_set_id].add_element(element)) {
 			if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 			return false;
 		}
-#if !defined(NDEBUG)
-		unsigned int index = sets[new_set_id].elements.index_of(element);
-		if (index < sets[new_set_id].elements.length)
-			fprintf(stderr, "set_reasoning.move_element_to_set WARNING: The new set already contains the given element.\n");
-#endif
-		sets[new_set_id].elements[sets[new_set_id].elements.length++] = element;
 
 		/* retrieve the ancestors of `old_set_id` */
 		array<unsigned int> stack(8);
@@ -1878,16 +2043,16 @@ struct set_reasoning
 				for (unsigned int parent : intensional_graph.vertices[current].parents) {
 					if (old_ancestors.contains(parent)) continue;
 					if (!old_ancestors.add(parent) || !stack.add(parent)) {
-						if (old_set_id != 0) sets[old_set_id].elements.add(element);
-						sets[new_set_id].elements.length--;
+						if (old_set_id != 0) sets[old_set_id].add_element(element);
+						sets[new_set_id].remove_last_element();
 						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 						return false;
 					}
 				} for (const auto& entry : extensional_graph.vertices[current].parents) {
 					if (old_ancestors.contains(entry.key)) continue;
 					if (!old_ancestors.add(entry.key) || !stack.add(entry.key)) {
-						if (old_set_id != 0) sets[old_set_id].elements.add(element);
-						sets[new_set_id].elements.length--;
+						if (old_set_id != 0) sets[old_set_id].add_element(element);
+						sets[new_set_id].remove_last_element();
 						if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 						return false;
 					}
@@ -1904,16 +2069,16 @@ struct set_reasoning
 			for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (old_ancestors.contains(parent) || new_ancestors.contains(parent)) continue;
 				if (!new_ancestors.add(parent) || !stack.add(parent)) {
-					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--;
+					if (old_set_id != 0) sets[old_set_id].add_element(element);
+					sets[new_set_id].remove_last_element();
 					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					return false;
 				}
 			} for (const auto& entry : extensional_graph.vertices[current].parents) {
 				if (old_ancestors.contains(entry.key) || new_ancestors.contains(entry.key)) continue;
 				if (!new_ancestors.add(entry.key) || !stack.add(entry.key)) {
-					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--;
+					if (old_set_id != 0) sets[old_set_id].add_element(element);
+					sets[new_set_id].remove_last_element();
 					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					return false;
 				}
@@ -1923,40 +2088,50 @@ struct set_reasoning
 		/* check the new ancestors of `new_set_id` to make sure the size of each
 		   set is at least as large as the number of provable elements of each set */
 		for (unsigned int new_ancestor : new_ancestors) {
-			hash_set<unsigned int> provable_elements(16);
+			hash_set<tuple> provable_elements(16);
 			if (!get_provable_elements(new_ancestor, provable_elements)) {
-				if (old_set_id != 0) sets[old_set_id].elements.add(element);
-				sets[new_set_id].elements.length--;
+				if (old_set_id != 0) sets[old_set_id].add_element(element);
+				sets[new_set_id].remove_last_element();
 				if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 				return false;
 			}
 
-			if (sets[new_ancestor].set_size >= provable_elements.size) continue;
+			if (sets[new_ancestor].set_size >= provable_elements.size) {
+				for (tuple& tup : provable_elements) core::free(tup);
+				continue;
+			}
 
 			while (true) {
 				/* compute the upper bound on the size of this set; if the new size
 					violates this bound, change the sizes of other sets to increase the bound */
 				array<unsigned int> stack(8); bool graph_changed;
 				if (!ResolveInconsistencies || !increase_set_size(new_ancestor, provable_elements.size, stack, graph_changed)) {
-					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--;
+					for (tuple& tup : provable_elements) core::free(tup);
+					if (old_set_id != 0) sets[old_set_id].add_element(element);
+					sets[new_set_id].remove_last_element();
 					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					return false;
 				}
 				if (sets[new_ancestor].set_size >= provable_elements.size)
 					break;
 				if (!graph_changed) {
-					if (old_set_id != 0) sets[old_set_id].elements.add(element);
-					sets[new_set_id].elements.length--;
+					for (tuple& tup : provable_elements) core::free(tup);
+					if (old_set_id != 0) sets[old_set_id].add_element(element);
+					sets[new_set_id].remove_last_element();
 					if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 					return false;
 				}
 			}
+			for (tuple& tup : provable_elements) core::free(tup);
 		}
 
 		/* the set `old_set_id` might be freeable now */
 		if (old_set_id == 0) {
-			element_map.table.keys[bucket] = element;
+			if (!init(element_map.table.keys[bucket], element)) {
+				sets[new_set_id].remove_last_element();
+				if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
+				return false;
+			}
 			element_map.table.size++;
 		}
 		element_map.values[bucket] = new_set_id;
@@ -1968,7 +2143,7 @@ struct set_reasoning
 	}
 
 	template<typename... Args>
-	bool move_element_to_superset(unsigned int element, Formula* new_set_formula, Args&&... visitor)
+	bool move_element_to_superset(const tuple& element, Formula* new_set_formula, Args&&... visitor)
 	{
 		bool contains; unsigned int bucket;
 		unsigned int old_set_id = element_map.get(element, contains, bucket);
@@ -1980,7 +2155,7 @@ struct set_reasoning
 #endif
 
 		unsigned int new_set_id;
-		if (!get_set_id(new_set_formula, new_set_id, std::forward<Args>(visitor)...))
+		if (!get_set_id(new_set_formula, element.length, new_set_id, std::forward<Args>(visitor)...))
 			return false;
 		else if (new_set_id == old_set_id)
 			return true;
@@ -1990,25 +2165,24 @@ struct set_reasoning
 			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The new set is not a superset of the old set.\n");
 #endif
 
-		unsigned int index = sets[old_set_id].elements.index_of(element);
+		unsigned int index = sets[old_set_id].index_of_element(element);
 #if !defined(NDEBUG)
-		if (index == sets[old_set_id].elements.length)
+		if (index == sets[old_set_id].element_count())
 			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The old set does not contain the given element.\n");
-		else sets[old_set_id].elements.remove(index);
+		else sets[old_set_id].remove_element_at(index);
 #else
-		sets[old_set_id].elements.remove(index);
+		sets[old_set_id].remove_element_at(index);
 #endif
 
-		if (!sets[new_set_id].elements.ensure_capacity(sets[new_set_id].elements.length + 1)) {
+#if !defined(NDEBUG)
+		index = sets[new_set_id].index_of_element(element);
+		if (index < sets[new_set_id].element_count())
+			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The new set already contains the given element.\n");
+#endif
+		if (!sets[new_set_id].add_element(element)) {
 			if (is_freeable(new_set_id)) free_set(new_set_formula, new_set_id);
 			return false;
 		}
-#if !defined(NDEBUG)
-		index = sets[new_set_id].elements.index_of(element);
-		if (index < sets[new_set_id].elements.length)
-			fprintf(stderr, "set_reasoning.move_element_to_superset WARNING: The new set already contains the given element.\n");
-#endif
-		sets[new_set_id].elements[sets[new_set_id].elements.length++] = element;
 
 		/* `old_set_id` may now be freeable */
 		element_map.values[bucket] = new_set_id;
@@ -2020,7 +2194,7 @@ struct set_reasoning
 	}
 
 	template<typename... Args>
-	void remove_element(unsigned int element, Args&&... visitor)
+	void remove_element(const tuple& element, Args&&... visitor)
 	{
 		bool contains; unsigned int bucket;
 		unsigned int set_id = element_map.get(element, contains, bucket);
@@ -2031,16 +2205,17 @@ struct set_reasoning
 		}
 #endif
 
-		unsigned int index = sets[set_id].elements.index_of(element);
+		unsigned int index = sets[set_id].index_of_element(element);
 #if !defined(NDEBUG)
-		if (index == sets[set_id].elements.length) {
+		if (index == sets[set_id].element_count()) {
 			fprintf(stderr, "set_reasoning.remove_element ERROR: The set does not contain the given element.\n");
 			return;
 		}
 #endif
-		sets[set_id].elements.remove(index);
+		sets[set_id].remove_element_at(index);
 
 		/* `set_id` may now be freeable */
+		core::free(element_map.table.keys[bucket]);
 		element_map.remove_at(bucket);
 		if (is_freeable(set_id, std::forward<Args>(visitor)...)) {
 			on_free_set(set_id, *this, std::forward<Args>(visitor)...);
@@ -2184,32 +2359,46 @@ struct set_reasoning
 				if (!print("  ", out) || !print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out))
 					return false;
 			}
-			if (!print("  Elements: ", out) || !print<unsigned int, left_curly_brace, right_curly_brace>(sets[i].elements, out, std::forward<Printer>(printer)...) || !print('\n', out))
-				return false;
+
+			if (!print("  Elements: {", out)) return false;
+			for (unsigned int k = 0; k < sets[i].element_count(); k++) {
+				if (k != 0 && !print(", ", out)) return false;
+				if (sets[i].arity > 1 && !print('(', out)) return false;
+				for (unsigned int j = 0; j < sets[i].arity; j++) {
+					if (j != 0 && !print(", ", out)) return false;
+					if (!print(sets[i].elements[k * sets[i].arity + j], out, std::forward<Printer>(printer)...))
+						return false;
+				}
+				if (sets[i].arity > 1 && !print(')', out)) return false;
+			}
+			if (!print("}\n", out)) return false;
 		}
 		return true;
 	}
 
 	bool are_elements_unique() const {
-		hash_map<unsigned int, array<unsigned int>> all_elements(1024);
+		hash_map<tuple, array<unsigned int>> all_elements(1024);
 		for (unsigned int i = 1; i < set_count + 1; i++) {
 			if (sets[i].size_axiom == NULL) continue;
-			if (!all_elements.check_size(all_elements.table.size + sets[i].elements.length)) {
-				for (auto entry : all_elements) free(entry.value);
+			if (!all_elements.check_size(all_elements.table.size + sets[i].element_count())) {
+				for (auto entry : all_elements) { free(entry.key); free(entry.value); }
 				return false;
 			}
-			for (unsigned int element : sets[i].elements) {
+			for (unsigned int k = 0; k < sets[i].element_count(); k++) {
 				bool contains; unsigned int bucket;
-				array<unsigned int>& containing_sets = all_elements.get(element, contains, bucket);
+				tuple key = { sets[i].elements.data + (k * sets[i].arity), sets[i].arity };
+				array<unsigned int>& containing_sets = all_elements.get(key, contains, bucket);
 				if (!contains) {
 					if (!array_init(containing_sets, 4)) {
-						for (auto entry : all_elements) free(entry.value);
+						for (auto entry : all_elements) { free(entry.key); free(entry.value); }
 						return false;
+					} else if (!init(all_elements.table.keys[bucket], key)) {
+						for (auto entry : all_elements) { free(entry.key); free(entry.value); }
+						free(containing_sets); return false;
 					}
-					all_elements.table.keys[bucket] = element;
 					all_elements.table.size++;
 				} if (!containing_sets.add(i)) {
-					for (auto entry : all_elements) free(entry.value);
+					for (auto entry : all_elements) { free(entry.key); free(entry.value); }
 					return false;
 				}
 			}
@@ -2225,7 +2414,7 @@ struct set_reasoning
 			}
 		}
 
-		for (auto entry : all_elements) free(entry.value);
+		for (auto entry : all_elements) { free(entry.key); free(entry.value); }
 		return success;
 	}
 

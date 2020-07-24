@@ -742,7 +742,7 @@ bool propose_universal_intro(
 	}
 
 	/* check if the set containing `concept_id` is unfixed and will be freed by this transformation */
-	unsigned int old_set_id = T.sets.element_map.get(concept_id);
+	unsigned int old_set_id = T.sets.element_map.get({&concept_id, 1});
 	if (T.sets.is_unfixed(old_set_id, T.observations)
 	 && T.sets.extensional_graph.vertices[old_set_id].children.size == 0
 	 && T.sets.extensional_graph.vertices[old_set_id].parents.size == 0
@@ -1090,7 +1090,7 @@ bool propose_universal_elim(
 	}
 
 	/* determine if removing this edge will create a new set */
-	unsigned int old_set_id = T.sets.element_map.get(constant);
+	unsigned int old_set_id = T.sets.element_map.get({&constant, 1});
 	Formula* old_set_formula = T.sets.sets[old_set_id].set_formula();
 	Formula* new_set_formula = Formula::new_and(old_set_formula, consequent);
 	if (new_set_formula == NULL) {
@@ -1106,7 +1106,7 @@ bool propose_universal_elim(
 		free(proposed_proofs); return false;
 	}
 	unsigned int new_set_id;
-	T.sets.get_set_id(canonicalized_new_set_formula, new_set_id, unfixed_set_count_change);
+	T.sets.get_set_id(canonicalized_new_set_formula, 1, new_set_id, unfixed_set_count_change);
 
 	/* the old set could also be removed */
 	if (old_set_id != selected_edge.antecedent_set
