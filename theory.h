@@ -69,6 +69,1015 @@ struct instance {
 	}
 };
 
+
+/* forward declarations */
+
+struct instantiation;
+bool intersect(instantiation&, const instantiation&, const instantiation&);
+
+struct any_instantiation {
+	instantiation* excluded;
+	uint_fast8_t excluded_count;
+};
+
+struct any_integer_instantiation {
+	pair<int64_t, int64_t>* included;
+	uint_fast8_t included_count;
+};
+
+inline bool init(any_integer_instantiation& any_integer, const any_integer_instantiation& second)
+{
+	any_integer.included_count = src.any_integer.included_count;
+	any_integer.included = (pair<int64_t, int64_t>*) malloc(max((size_t) 1, sizeof(pair<int64_t, int64_t>) * src.any_integer.included_count));
+	if (any_integer.included == nullptr) {
+		fprintf(stderr, "init ERROR: Insufficient memory for `any_integer_instantiation.included`.\n");
+		return false;
+	}
+	for (uint_fast8_t i = 0; i < any_integer.included_count; i++)
+		any_integer.included[i] = src.any_integer.included[i];
+	return true;
+}
+
+enum class instantiation_type {
+	ANY,
+	ANY_INTEGER,
+	CONSTANT,
+	INTEGER,
+	STRING
+};
+
+struct instantiation {
+	instantiation_type type;
+	union {
+		any_instantiation any;
+		any_integer_instantiation any_integer;
+		unsigned int constant;
+		int64_t integer;
+		const string* str;
+	};
+
+	instantiation(const instantiation& src) {
+		if (!init_helper(src)) throw std::bad_alloc();
+	}
+
+	inline bool operator = (const instantiation& src) {
+		return init_helper(src);
+	}
+
+	static inline void free(instantiation& value) {
+		if (value.type == instantiation_type::ANY) {
+			for (uint_fast8_t i = 0; i < value.any.excluded_count; i++)
+				core::free(value.any.excluded[i]);
+			core::free(value.any.excluded);
+		} else if (value.type == instantiation_type::ANY_INTEGER) {
+
+		}
+	}
+
+private:
+	inline bool init_helper(const instantiation& src) {
+		type = src.type;
+		switch (type) {
+		case instantiation_type::ANY:
+			any.excluded_count = src.any.excluded_count;
+			any.excluded = (instantiation*) malloc(max((size_t) 1, sizeof(instantiation) * src.any.excluded_count));
+			if (any.excluded == nullptr) {
+				fprintf(stderr, "instantiation.init_helper ERROR: Out of memory.\n");
+				return false;
+			}
+			for (uint_fast8_t i = 0; i < any.excluded_count; i++) {
+				if (!init(any.excluded[i], src.any.excluded[i])) {
+					for (unsigned int j = 0; j < i; j++) core::free(any.excluded[j]);
+					core::free(any.excluded);
+					return false;
+				}
+			}
+			return true;
+		case instantiation_type::ANY_INTEGER
+			return init(any_integer, src.any_integer);
+		case instantiation_type::CONSTANT:
+			constant = src.constant; return true;
+		case instantiation_type::INTEGER:
+			integer = src.integer; return true;
+		case instantiation_type::STRING:
+			str = src.str; return true;
+		}
+		fprintf(stderr, "instantiation.init_helper ERROR: Unrecognized `instantiation_type`.\n");
+		return false;
+	}
+
+	friend bool init(instantiation&, const instantiation&);
+	friend bool operator != (const instantiation&, const instantiation&);
+	friend bool operator < (const instantiation&, const instantiation&);
+};
+
+inline bool init(instantiation& inst, instantiation_type type) {
+	inst.type = type;
+	if (type == instantiation_type::ANY) {
+		inst.any.excluded = (instantiation*) malloc(1);
+		if (inst.any.excluded == nullptr)
+			return false;
+		inst.any.excluded_count = 0;
+	}
+	return true;
+}
+
+inline bool init(instantiation& inst, const instantiation& src) {
+	return inst.init_helper(src);
+}
+
+inline bool operator == (const any_instantiation& first, const any_instantiation& second) {
+	if (first.excluded_count != second.excluded_count)
+		return false;
+	for (uint_fast8_t i = 0; i < first.excluded_count; i++)
+		if (first.excluded[i] != second.excluded[i]) return false;
+	return true;
+}
+
+inline bool operator == (const any_integer_instantiation& first, const any_integer_instantiation& second) {
+	if (first.included_count != second.included_count)
+		return false;
+	for (uint_fast8_t i = 0; i < first.included_count; i++)
+		if (first.included[i] != second.included[i]) return false;
+	return true;
+}
+
+inline bool operator < (const any_instantiation& first, const any_instantiation& second) {
+	if (first.excluded_count < second.excluded_count) return true;
+	else if (first.excluded_count > second.excluded_count) return false;
+	for (uint_fast8_t i = 0; i < first.excluded_count; i++) {
+		if (first.excluded[i] < second.excluded[i]) return true;
+		else if (second.excluded[i] < first.excluded[i]) return false;
+	}
+	return false;
+}
+
+inline bool operator < (const any_integer_instantiation& first, const any_integer_instantiation& second) {
+	if (first.included_count < second.included_count) return true;
+	else if (first.included_count > second.included_count) return false;
+	for (uint_fast8_t i = 0; i < first.included_count; i++) {
+		if (first.included[i].key < second.included[i].key) return true;
+		else if (first.included[i].key > second.included[i].key) return false;
+		else if (first.included[i].value < second.included[i].value) return true;
+		else if (first.included[i].value > second.included[i].value) return false;
+	}
+	return false;
+}
+
+inline bool operator == (const instantiation& first, const instantiation& second) {
+	if (first.type != second.type) return false;
+	switch (first.type) {
+	case instantiation_type::ANY:
+		return first.any == second.any;
+	case instantiation_type::ANY_INTEGER:
+		return first.any_integer == second.any_integer;
+	case instantiation_type::CONSTANT:
+		return first.constant == second.constant;
+	case instantiation_type::INTEGER:
+		return first.integer == second.integer;
+	case instantiation_type::STRING:
+		return first.str == second.str || *first.str == *second.str;
+	}
+	fprintf(stderr, "operator == ERROR: Unrecognized `instantiation_type`.\n");
+	return false;
+}
+
+inline bool operator != (const instantiation& first, const instantiation& second) {
+	return !(first == second);
+}
+
+inline bool operator < (const instantiation& first, const instantiation& second) {
+	if (first.type < second.type) return true;
+	else if (first.type > second.type) return false;
+	switch (first.type) {
+	case instantiation_type::ANY:
+		return first.any < second.any;
+	case instantiation_type::ANY_INTEGER:
+		return first.any_integer < second.any_integer;
+	case instantiation_type::CONSTANT:
+		return first.constant < second.constant;
+	case instantiation_type::INTEGER:
+		return first.integer < second.integer;
+	case instantiation_type::STRING:
+		return *first.str < *second.str;
+	}
+	fprintf(stderr, "operator < ERROR: Unrecognized `instantiation_type`.\n");
+	return false;
+}
+
+inline bool subtract_with_any(instantiation& dst,
+	const instantiation& first, const instantiation& second)
+{
+	dst.any.excluded = (instantiation*) malloc(sizeof(instantiation) * (first.any.excluded_count + 1));
+	if (dst.any.excluded == nullptr) {
+		fprintf(stderr, "subtract_with_any ERROR: Insufficient memory for `instantiation.any.excluded`.\n");
+		return false;
+	}
+
+	for (unsigned int i = 0; i < first.any.excluded_count; i++) {
+		if (!init(dst.any.excluded[i], first.any.excluded[i])) {
+			for (unsigned int j = 0; j < i; j++) free(dst.any.excluded[j]);
+			free(dst.any.excluded);
+			return false;
+		}
+	}
+
+	if (!init(dst.any.excluded[first.any.excluded_count], second)) {
+		for (unsigned int j = 0; j < first.any.excluded_count; j++) free(dst.any.excluded[j]);
+		free(dst.any.excluded);
+		return false;
+	}
+	dst.any.excluded_count = first.any.excluded_count + 1;
+	return true;
+}
+
+inline bool set_union(any_integer_instantiation& dst,
+		const any_integer_instantiation& first, int64_t second)
+{
+	dst.included = (pair<int64_t, int64_t>*) malloc(sizeof(pair<int64_t, int64_t>) * (first.included_count + 1));
+	if (dst.included == nullptr) {
+		fprintf(stderr, "set_union ERROR: Insufficient memory for `any_integer_instantiation.included`.\n");
+		return false;
+	}
+	dst.included_count = 0;
+
+	uint_fast8_t i = 1;
+	while (i < first.included_count) {
+		if (second + 1 < first.included[i].key) {
+			dst.included[dst.included_count].key = second;
+			dst.included[dst.included_count++].value = second;
+			break;
+		} else if (second + 1 == first.included[i].key) {
+			dst.included[dst.included_count].key = second;
+			dst.included[dst.included_count++].value = first.included[i].value;
+			i++; break;
+		} else if (second <= first.included[i].value) {
+			dst.included[dst.included_count].key = first.included[i].key;
+			dst.included[dst.included_count++].value = first.included[i].value;
+			i++; break;
+		} else if (second - 1 == first.included[i].value) {
+			if (i + 1 < first.included_count && first.included[i + 1].key == second + 1) {
+				dst.included[dst.included_count].key = first.included[i].key;
+				dst.included[dst.included_count++].value = first.included[i + 1].value;
+				i += 2; break;
+			} else {
+				dst.included[dst.included_count].key = first.included[i].key;
+				dst.included[dst.included_count++].value = first.included[i].value;
+				i++; break;
+			}
+		} else {
+			dst.included[dst.included_count].key = first.included[i].key;
+			dst.included[dst.included_count++].value = first.included[i].value;
+			i++;
+		}
+	}
+
+	while (i < first.included_count) {
+		dst.included[dst.included_count].key = first.included[i].key;
+		dst.included[dst.included_count++].value = first.included[i].value;
+		i++;
+	}
+	return true;
+}
+
+inline bool set_union(any_integer_instantiation& dst,
+		const any_integer_instantiation& first,
+		const any_integer_instantiation& second)
+{
+	int64_t lower, upper;
+	uint_fast8_t i, j;
+	if (first.included[0].key < second.included[0].key) {
+		lower = first.included[0].key;
+		upper = first.included[0].value;
+		i = 1; j = 0;
+	} else {
+		lower = second.included[0].key;
+		upper = second.included[0].value;
+		i = 0; j = 1;
+	}
+
+	dst.included = (pair<int64_t, int64_t>*) malloc(sizeof(pair<int64_t, int64_t>) * (first.included_count + second.included_count));
+	if (dst.included == nullptr) {
+		fprintf(stderr, "set_union ERROR: Insufficient memory for `any_integer_instantiation.included`.\n");
+		return false;
+	}
+	dst.included_count = 0;
+	while (i < first.included_count && j < second.included_count) {
+		if (first.included[i].key <= upper + 1) {
+			upper = max(upper, first.included[i++].value);
+		} else if (second.included[j].key <= upper + 1) {
+			upper = max(upper, second.included[j++].value);
+		} else {
+			dst.included[dst.included_count].key = lower;
+			dst.included[dst.included_count++].value = upper;
+			if (first.included[i].key < second.included[j].key) {
+				lower = first.included[i].key;
+				upper = first.included[i++].value;
+			} else {
+				lower = second.included[j].key;
+				upper = second.included[j++].value;
+			}
+		}
+	}
+
+	while (i < first.included_count) {
+		if (first.included[i].key <= upper + 1) {
+			upper = max(upper, first.included[i++].value);
+		} else {
+			dst.included[dst.included_count].key = lower;
+			dst.included[dst.included_count++].value = upper;
+			lower = first.included[i].key;
+			upper = first.included[i++].value;
+		}
+	} while (j < second.included_count) {
+		if (second.included[j].key <= upper + 1) {
+			upper = max(upper, second.included[j++].value);
+		} else {
+			dst.included[dst.included_count].key = lower;
+			dst.included[dst.included_count++].value = upper;
+			lower = second.included[j].key;
+			upper = second.included[j++].value;
+		}
+	}
+	return true;
+}
+
+inline bool set_subtract(any_integer_instantiation& dst,
+		const any_integer_instantiation& first,
+		const any_integer_instantiation& second)
+{
+	dst.included = (pair<int64_t, int64_t>*) malloc(sizeof(pair<int64_t, int64_t>) * (first.included_count + second.included_count));
+	if (dst.included == nullptr) {
+		fprintf(stderr, "set_subtract ERROR: Insufficient memory for `any_integer_instantiation.included`.\n");
+		return false;
+	}
+	dst.included_count = 0;
+	uint_fast8_t i = 0, j = 0;
+	int64_t lower = first.included[0].key;
+	while (i < first.included_count && j < second.included_count) {
+		if (second.included[j].value < lower) {
+			j++;
+		} else if (second.included[j].key <= lower) {
+			if (second.included[j].value < first.included[i].value) {
+				lower = second.included[j].value + 1;
+			} else if (i + 1 == first.included_count) {
+				i++; break;
+			} else {
+				lower = first.included[++i].key;
+			}
+		} else if (second.included[j].key <= first.included[i].value) {
+			dst.included[dst.included_count].key = lower;
+			dst.included[dst.included_count++].value = second.included[j].key - 1;
+			if (second.included[j].value < first.included[i].value) {
+				lower = second.included[j++].value + 1;
+			} else if (i + 1 == first.included_count) {
+				i++; break;
+			} else {
+				lower = first.included[++i].key;
+			}
+		} else {
+			dst.included[dst.included_count].key = lower;
+			dst.included[dst.included_count++].value = first.included[i++].value;
+			if (i == first.included_count) break;
+			lower = first.included[i].key;
+		}
+	}
+
+	while (i < first.included_count) {
+		dst.included[dst.included_count].key = lower;
+		dst.included[dst.included_count++].value = first.included[i++].value;
+		if (i < first.included_count)
+			lower = first.included_count[i].key;
+	}
+	return true;
+}
+
+inline bool set_subtract(any_integer_instantiation& dst,
+		const any_integer_instantiation& first, int64_t second)
+{
+	dst.included = (pair<int64_t, int64_t>*) malloc(sizeof(pair<int64_t, int64_t>) * (first.included_count + 1));
+	if (dst.included == nullptr) {
+		fprintf(stderr, "set_subtract ERROR: Insufficient memory for `any_integer_instantiation.included`.\n");
+		return false;
+	}
+	dst.included_count = 0;
+	uint_fast8_t i = 0;
+	while (i < first.included_count) {
+		if (first.included[i].value < second) {
+			dst.included[dst.included_count].key = first.included[i].key;
+			dst.included[dst.included_count++].value = first.included[i++].value;
+		} else if (first.included[i].value == second) {
+			if (first.included[i].key < first.included[i].value) {
+				dst.included[dst.included_count].key = first.included[i].key;
+				dst.included[dst.included_count++].value = second - 1;
+			}
+			i++; break;
+		} else if (second > first.included[i].key) {
+			dst.included[dst.included_count].key = first.included[i].key;
+			dst.included[dst.included_count++].value = second - 1;
+			dst.included[dst.included_count].key = second + 1;
+			dst.included[dst.included_count++].value = first.included[i].value;
+			i++; break;
+		} else if (second == first.included[i].key) {
+			if (first.included[i].key < first.included[i].value) {
+				dst.included[dst.included_count].key = second + 1;
+				dst.included[dst.included_count++].value = first.included[i].value;
+			}
+			i++; break;
+		}
+	}
+
+	while (i < first.included_count) {
+		dst.included[dst.included_count].key = first.included[i].key;
+		dst.included[dst.included_count++].value = first.included[i++].value;
+	}
+	return true;
+}
+
+inline bool subtract(instantiation& dst,
+		const instantiation& first, const instantiation& second)
+{
+	if (first.type == instance_type::ANY) {
+		return subtract_with_any(dst, first, second);
+	} else if (second.type == instance_type::ANY) {
+		if (!init(dst, first)) return false;
+		for (uint_fast8_t i = 0; i < second.any.excluded_count; i++) {
+			instantiation& tmp = *((instantiation*) alloca(sizezof(instantiation)));
+			if (!intersect(tmp, first, second.any.excluded[i])) {
+				free(dst);
+				return false;
+			}
+
+			/* compute the union of `dst` and `tmp` */
+			if (dst.type == instantiation_type::ANY_INTEGER) {
+				instantiation& dummy = *((instantiation*) alloca(sizezof(instantiation)));
+				if (tmp.type == instantiation_type::ANY_INTEGER) {
+					dummy.type = instantiation_type::ANY_INTEGER;
+					if (!set_union(dummy.any_integer, dst.any_integer, tmp.any_integer)) return false;
+				} else if (tmp.type == instantiation_type::INTEGER) {
+					dummy.type = instantiation_type::ANY_INTEGER;
+					if (!set_union(dummy.any_integer, dst.any_integer, tmp.integer)) return false;
+				} else {
+					fprintf(stderr, "subtract ERROR: Unclosed subtraction of `instantiation` objects.\n");
+					return false;
+				}
+				free(dst); free(tmp);
+				move(dummy, dst);
+			} else if (tmp.type == instantiation_type::ANY_INTEGER) {
+				instantiation& dummy = *((instantiation*) alloca(sizezof(instantiation)));
+				if (dst.type == instantiation_type::INTEGER) {
+					dummy.type = instantiation_type::ANY_INTEGER;
+					if (!set_union(dummy.any_integer, tmp.any_integer, dst.integer)) return false;
+				} else {
+					fprintf(stderr, "subtract ERROR: Unclosed subtraction of `instantiation` objects.\n");
+					return false;
+				}
+				free(dst); free(tmp);
+				move(dummy, dst);
+			} else {
+				free(tmp);
+			}
+		}
+	} else if (first.type == instantiation_type::ANY_INTEGER) {
+		if (second.type == instantiation_type::ANY_INTEGER) {
+			if (!set_subtract(dst.any_integer, first.any_integer, second.any_integer)) return false;
+		} else if (second.type == instantiation_type::INTEGER) {
+			if (!set_subtract(dst.any_integer, first.any_integer, second.integer)) return false;
+		} else {
+			return init(dst, first);
+		}
+
+		if (dst.any_integer.included_count == 1 && dst.any_integer.included[0].key == dst.any_integer.included[0].value) {
+			int64_t value = dst.any_integer.included[0].key;
+			free(dst.any_integer.included);
+			dst.integer = value;
+			dst.type = instantiation_type::INTEGER;
+		} else {
+			dst.type = instantiation_type::ANY_INTEGER;
+		}
+		return true;
+	} else if (second.type == instantiation_type::ANY_INTEGER) {
+		if (first.type == instantiation_type::INTEGER) {
+			for (uint_fast8_t i = 0; i < second.any_integer.included_count; i++)
+				if (first.integer >= second.any_integer.included[i].key && first.integer <= second.any_integer.included[i].value) return false;
+			return init(dst, first);
+		} else {
+			return init(dst, first);
+		}
+	} else if (first.type != second.type) {
+		return init(dst, first);
+	}
+
+	switch (first.type) {
+	case instance_type::CONSTANT:
+		if (first.constant == second.constant) return false;
+		dst.type = instance_type::CONSTANT;
+		dst.constant = first.constant;
+		return true;
+	case instance_type::INTEGER:
+		if (first.integer == second.integer) return false;
+		dst.type = instance_type::INTEGER;
+		dst.integer = first.integer;
+		return true;
+	case instance_type::STRING:
+		if (first.str == second.str || *first.str == *second.str) return false;
+		dst.type = instance_type::STRING;
+		dst.str = first.str;
+		return true;
+	case instance_type::ANY:
+	case instance_type::ANY_INTEGER:
+		break;
+	}
+	fprintf(stderr, "intersect ERROR: Unrecognized `instance_type`.\n");
+	return false;
+}
+
+inline bool intersect_with_any(instantiation& dst,
+	const instantiation& first, const instantiation& second)
+{
+	if (second.type == instance_type::ANY) {
+		array<instantiation>& new_excluded = *((array<instantiation>*) alloca(sizeof(array<instantiation>)));
+		if  (!array_init(new_excluded, first.any.excluded_count + second.any.excluded_count))
+			return false;
+		set_union(new_excluded.data, new_excluded.length, first.any.excluded, first.any.excluded_count, second.any.excluded, second.any.excluded_count);
+		dst.type = instance_type::ANY;
+		dst.any.excluded = new_excluded.data;
+		dst.any.excluded_count = new_excluded.length;
+		return true;
+	}
+
+	for (uint_fast8_t i = 0; i < first.any.excluded_count; i++) {
+		if (intersect(dst, first.any.excluded[i], second)) {
+			free(dst);
+			return false;
+		}
+	}
+
+	return init(dst, second);
+}
+
+inline bool intersect(instantiation& dst,
+	const instantiation& first, const instantiation& second)
+{
+	if (first.type == instance_type::ANY) {
+		return intersect_with_any(dst, first, second);
+	} else if (second.type == instance_type::ANY) {
+		return intersect_with_any(dst, second, first);
+	} else if (first.type != second.type) {
+		return false;
+	}
+
+	switch (first.type) {
+	case instance_type::CONSTANT:
+		if (first.constant != second.constant) return false;
+		dst.type = instance_type::CONSTANT;
+		dst.constant = first.constant;
+		return true;
+	case instance_type::INTEGER:
+		if (first.integer != second.integer) return false;
+		dst.type = instance_type::INTEGER;
+		dst.integer = first.integer;
+		return true;
+	case instance_type::STRING:
+		if (first.str != second.str && *first.str != *second.str) return false;
+		dst.type = instance_type::STRING;
+		dst.str = first.str;
+		return true;
+	case instance_type::ANY:
+		break;
+	}
+	fprintf(stderr, "intersect ERROR: Unrecognized `instance_type`.\n");
+	return false;
+}
+
+struct pair_sorter { };
+
+template<typename K, typename V>
+inline bool less_than(const pair<K, V>& first, const pair<K, V>& second, const pair_sorter& sorter) {
+	if (first.key < second.key) return true;
+	else if (first.key > second.key) return false;
+	else if (first.value < second.value) return true;
+	else return false;
+}
+
+struct instantiation_tuple {
+	instantiation* values;
+	uint_fast8_t length;
+	array<pair<uint_fast8_t, uint_fast8_t>> equal_indices;
+	array<pair<uint_fast8_t, uint_fast8_t>> not_equal_indices;
+
+	instantiation_tuple(const instantiation_tuple& src) :
+			equal_indices(max((size_t) 1, src.equal_indices.length)),
+			not_equal_indices(max((size_t) 1, src.not_equal_indices.length))
+	{
+		if (!init_helper(src)) throw std::bad_alloc();
+	}
+
+	~instantiation_tuple() { free_helper(); }
+
+	inline bool operator = (const instantiation_tuple& src) {
+		if (!array_init(equal_indices, max((size_t) 1, src.equal_indices.length))) {
+			return false;
+		} else if (!array_init(not_equal_indices, max((size_t) 1, src.not_equal_indices.length))) {
+			core::free(equal_indices);
+			return false;
+		} else if (!init_helper(src)) {
+			core::free(equal_indices);
+			core::free(not_equal_indices);
+			return false;
+		}
+		return true;
+	}
+
+	bool change_value(uint_fast8_t index, instantiation& new_value) {
+		if (values[index].type == instance_type::ANY) {
+			if (new_value.type == instance_type::ANY) {
+				uint_fast8_t root = length;
+				for (const pair<uint_fast8_t, uint_fast8_t>& entry : equal_indices) {
+					if (entry.key == index || entry.value == index) {
+						root = entry.key;
+						break;
+					}
+				}
+				if (root == length) root = index;
+				array<uint_fast8_t> component(8);
+				component[component.length++] = root;
+				for (unsigned int i = 0; i < equal_indices.length; i++) {
+					if (equal_indices[i].key == root) {
+						if (!component.add(equal_indices[i].value))
+							return false;
+					}
+				}
+				for (uint_fast8_t other : component) {
+					core::free(values[other]);
+					if (!init(values[other], new_value))
+						return false;
+				}
+			} else {
+				uint_fast8_t root = length;
+				for (const pair<uint_fast8_t, uint_fast8_t>& entry : equal_indices) {
+					if (entry.key == index || entry.value == index) {
+						root = entry.key;
+						break;
+					}
+				}
+				if (root == length) root = index;
+				array<uint_fast8_t> component(4);
+				component[component.length++] = root;
+				for (unsigned int i = 0; i < equal_indices.length; i++) {
+					if (equal_indices[i].key == root) {
+						if (!component.add(equal_indices[i].value))
+							return false;
+						equal_indices.remove(i--);
+					}
+				}
+				for (uint_fast8_t other : component) {
+					core::free(values[other]);
+					if (!init(values[other], new_value))
+						return false;
+				}
+				if (equal_indices.length > 1)
+					insertion_sort(equal_indices, pair_sorter());
+
+				for (unsigned int i = 0; i < not_equal_indices.length; i++) {
+					uint_fast8_t other;
+					if (component.contains(not_equal_indices[i].key))
+						other = not_equal_indices[i].value;
+					else if (component.contains(not_equal_indices[i].value))
+						other = not_equal_indices[i].key;
+					else continue;
+
+					instantiation& dummy = *((instantiation*) alloca(sizeof(instantiation)));
+					if (!subtract(dummy, values[other], new_value)
+					 || !change_value(other, dummy))
+					{
+						core::free(dummy);
+						return false;
+					}
+					core::free(dummy);
+					not_equal_indices.remove(i--);
+				}
+				if (not_equal_indices.length > 1)
+					insertion_sort(not_equal_indices, pair_sorter());
+			}
+		} else {
+			core::free(values[index]);
+			return init(new_value, values[index]);
+		}
+		return true;
+	}
+
+	template<typename Term>
+	bool unify_value(uint_fast8_t index, const Term* term) {
+		typedef typename Term::Type TermType;
+		instantiation* dummy = (instantiation*) alloca(2 * sizeof(instantiation));
+		if (term->type == TermType::CONSTANT) {
+			dummy[0].type = instance_type::CONSTANT;
+			dummy[0].constant = term->constant;
+			if (!intersect(dummy[1], values[index], dummy[0])) return false;
+			bool result = change_value(index, dummy[1]);
+			core::free(dummy[1]); return result;
+		} else if (term->type == TermType::INTEGER) {
+			dummy[0].type = instance_type::INTEGER;
+			dummy[0].integer = term->integer;
+			if (!intersect(dummy[1], values[index], dummy[0]))
+				return false;
+			bool result = change_value(index, dummy[1]);
+			core::free(dummy[1]); return result;
+		} else if (term->type == TermType::STRING) {
+			dummy[0].type = instance_type::STRING;
+			dummy[0].str = &term->str;
+			if (!intersect(dummy[1], values[index], dummy[0]))
+				return false;
+			bool result = change_value(index, dummy[1]);
+			core::free(dummy[1]); return result;
+		} else if (term->type == TermType::VARIABLE) {
+			if (!intersect(dummy[1], values[index], values[term->variable - 1]))
+				return false;
+
+			if (dummy[1].type != instance_type::ANY) {
+				bool result = change_value(index, dummy[1]) && change_value(term->variable - 1, dummy[1]);
+				core::free(dummy[1]); return result;
+			}
+
+			uint_fast8_t first_root = length;
+			uint_fast8_t second_root = length;
+			for (const pair<uint_fast8_t, uint_fast8_t>& entry : equal_indices) {
+				if (entry.key == index || entry.value == index) {
+					first_root = entry.key;
+					break;
+				}
+			} for (const pair<uint_fast8_t, uint_fast8_t>& entry : equal_indices) {
+				if (entry.key == term->variable - 1 || entry.value == term->variable - 1) {
+					second_root = entry.key;
+					break;
+				}
+			}
+
+			array<uint_fast8_t> first_component(4), second_component(4);
+			first_component[first_component.length++] = first_root;
+			second_component[second_component.length++] = second_root;
+			for (uint_fast8_t i = 0; i < equal_indices.length; i++) {
+				if (equal_indices[i].key == first_root) {
+					if (!first_component.add(equal_indices[i].value)) return false;
+					equal_indices.remove(i--);
+				} else if (equal_indices[i].key == second_root) {
+					if (!second_component.add(equal_indices[i].value)) return false;
+					equal_indices.remove(i--);
+				}
+			}
+
+			if (!equal_indices.ensure_capacity(equal_indices.length + first_component.length + second_component.length - 1))
+				return false;
+			uint_fast8_t new_root = min(first_root, second_root);
+			for (uint_fast8_t i = (first_root < second_root ? 1 : 0); i < first_component.length; i++)
+				equal_indices[equal_indices.length++] = {new_root, first_component[i]};
+			for (uint_fast8_t i = (first_root < second_root ? 0 : 1); i < second_component.length; i++)
+				equal_indices[equal_indices.length++] = {new_root, second_component[i]};
+			insertion_sort(equal_indices, pair_sorter());
+
+			for (uint_fast8_t i = 0; i < first_component.length; i++) {
+				for (uint_fast8_t j = 0; j < second_component.length; j++) {
+					if ((first_component[i] < second_component[j] && not_equal_indices.contains(make_pair(first_component[i], second_component[j])))
+					 || (first_component[i] > second_component[j] && not_equal_indices.contains(make_pair(second_component[j], first_component[i]))))
+						return false;
+				}
+			}
+			return true;
+
+		} else {
+			return false;
+		}
+	}
+
+	template<typename Term>
+	bool antiunify_value(uint_fast8_t index, const Term* term) {
+		typedef typename Term::Type TermType;
+		instantiation* dummy = (instantiation*) alloca(2 * sizeof(instantiation));
+		if (term->type == TermType::CONSTANT) {
+			dummy[0].type = instance_type::CONSTANT;
+			dummy[0].constant = term->constant;
+			if (!subtract(dummy[1], values[index], dummy[0])) return false;
+			bool result = change_value(index, dummy[1]);
+			core::free(dummy[1]); return result;
+		} else if (term->type == TermType::INTEGER) {
+			dummy[0].type = instance_type::INTEGER;
+			dummy[0].integer = term->integer;
+			if (!subtract(dummy[1], values[index], dummy[0]))
+				return false;
+			bool result = change_value(index, dummy[1]);
+			core::free(dummy[1]); return result;
+		} else if (term->type == TermType::STRING) {
+			dummy[0].type = instance_type::STRING;
+			dummy[0].str = &term->str;
+			if (!subtract(dummy[1], values[index], dummy[0]))
+				return false;
+			bool result = change_value(index, dummy[1]);
+			core::free(dummy[1]); return result;
+		} else if (term->type == TermType::VARIABLE) {
+			if (values[index].type == instance_type::ANY) {
+				if (values[term->variable - 1].type == instance_type::ANY) {
+					uint_fast8_t first_root = length;
+					uint_fast8_t second_root = length;
+					for (const pair<uint_fast8_t, uint_fast8_t>& entry : equal_indices) {
+						if (entry.key == index || entry.value == index) {
+							first_root = entry.key;
+							break;
+						}
+					} for (const pair<uint_fast8_t, uint_fast8_t>& entry : equal_indices) {
+						if (entry.key == term->variable - 1 || entry.value == term->variable - 1) {
+							second_root = entry.key;
+							break;
+						}
+					}
+					if (first_root == length) first_root = index;
+					if (second_root == length) second_root = term->variable - 1;
+					if (first_root == second_root) return false;
+
+					return not_equal_indices.add((index < term->variable - 1)
+							? make_pair(index, (uint_fast8_t) (term->variable - 1))
+							: make_pair((uint_fast8_t) (term->variable - 1), index));
+				} else {
+					if (!subtract(dummy[1], values[index], values[term->variable - 1]))
+						return false;
+					bool result = change_value(index, dummy[1]);
+					core::free(dummy[1]); return result;
+				}
+			} else {
+				if (values[term->variable - 1].type == instance_type::ANY) {
+					if (!subtract(dummy[1], values[term->variable - 1], values[index]))
+						return false;
+					bool result = change_value(term->variable - 1, dummy[1]);
+					core::free(dummy[1]); return result;
+				} else {
+					return values[index] != values[term->variable - 1];
+				}
+			}
+		} else {
+			return false;
+		}
+	}
+
+	static inline void free(instantiation_tuple& tuple) {
+		tuple.free_helper();
+		core::free(tuple.equal_indices);
+		core::free(tuple.not_equal_indices);
+	}
+
+	static inline void move(const instantiation_tuple& src, instantiation_tuple& dst) {
+		dst.values = src.values;
+		dst.length = src.length;
+		core::move(src.equal_indices, dst.equal_indices);
+		core::move(src.not_equal_indices, dst.not_equal_indices);
+	}
+
+	static inline void swap(instantiation_tuple& first, instantiation_tuple& second) {
+		core::swap(first.values, second.values);
+		core::swap(first.length, second.length);
+		core::swap(first.equal_indices, second.equal_indices);
+		core::swap(first.not_equal_indices, second.not_equal_indices);
+	}
+
+private:
+	inline bool init_helper(uint_fast8_t src_length) {
+		length = src_length;
+		values = (instantiation*) malloc(sizeof(instantiation) * length);
+		if (values == nullptr) {
+			fprintf(stderr, "instantiation_tuple.init_helper ERROR: Out of memory.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < length; i++) {
+			if (!init(values[i], instance_type::ANY)) {
+				for (unsigned int j = 0; j < i; j++) core::free(values[j]);
+				core::free(values);
+				return false;
+			}
+		}
+		return true;
+	}
+
+	inline bool init_helper(const instantiation_tuple& src) {
+		length = src.length;
+		values = (instantiation*) malloc(sizeof(instantiation) * length);
+		if (values == nullptr) {
+			fprintf(stderr, "instantiation_tuple.init_helper ERROR: Out of memory.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < length; i++) {
+			if (!init(values[i], src.values[i])) {
+				for (unsigned int j = 0; j < i; j++) core::free(values[j]);
+				core::free(values);
+				return false;
+			}
+		}
+
+		if (!equal_indices.append(src.equal_indices.data, src.equal_indices.length)
+		 || !not_equal_indices.append(src.not_equal_indices.data, src.not_equal_indices.length))
+		{
+			free_helper();
+			return false;
+		}
+		return true;
+	}
+
+	inline void free_helper() {
+		for (unsigned int i = 0; i < length; i++)
+			core::free(values[i]);
+		core::free(values);
+	}
+
+	friend bool init(instantiation_tuple&, uint_fast8_t);
+	friend bool init(instantiation_tuple&, const instantiation_tuple&);
+};
+
+inline bool init(instantiation_tuple& new_tuple, uint_fast8_t length) {
+	if (!array_init(new_tuple.equal_indices, 2)) {
+		return false;
+	} else if (!array_init(new_tuple.not_equal_indices, 2)) {
+		free(new_tuple.equal_indices);
+		return false;
+	} else if (!new_tuple.init_helper(length)) {
+		free(new_tuple.equal_indices);
+		free(new_tuple.not_equal_indices);
+		return false;
+	}
+	return true;
+}
+
+inline bool init(instantiation_tuple& new_tuple, const instantiation_tuple& src) {
+	if (!array_init(new_tuple.equal_indices, max((size_t) 1, src.equal_indices.length))) {
+		return false;
+	} else if (!array_init(new_tuple.not_equal_indices, max((size_t) 1, src.not_equal_indices.length))) {
+		free(new_tuple.equal_indices);
+		return false;
+	} else if (!new_tuple.init_helper(src)) {
+		free(new_tuple.equal_indices);
+		free(new_tuple.not_equal_indices);
+		return false;
+	}
+	return true;
+}
+
+inline bool operator == (const instantiation_tuple& src, const instantiation_tuple& dst) {
+	if (src.length != dst.length
+	 || src.equal_indices.length != dst.equal_indices.length
+	 || src.not_equal_indices.length != dst.not_equal_indices.length)
+		return false;
+	for (unsigned int i = 0; i < src.length; i++)
+		if (src.values[i] != dst.values[i]) return false;
+	for (unsigned int i = 0; i < src.equal_indices.length; i++)
+		if (src.equal_indices[i] != dst.equal_indices[i]) return false;
+	for (unsigned int i = 0; i < src.not_equal_indices.length; i++)
+		if (src.not_equal_indices[i] != dst.not_equal_indices[i]) return false;
+	return true;
+}
+
+inline bool operator != (const instantiation_tuple& src, const instantiation_tuple& dst) {
+	return !(src == dst);
+}
+
+inline bool operator < (const instantiation_tuple& src, const instantiation_tuple& dst) {
+	if (src.length < dst.length) return true;
+	else if (src.length > dst.length) return false;
+	else if (src.equal_indices.length < dst.equal_indices.length) return true;
+	else if (src.equal_indices.length > dst.equal_indices.length) return false;
+	else if (src.not_equal_indices.length < dst.not_equal_indices.length) return true;
+	else if (src.not_equal_indices.length > dst.not_equal_indices.length) return false;
+
+	for (unsigned int i = 0; i < src.length; i++) {
+		if (src.values[i] < dst.values[i]) return true;
+		else if (dst.values[i] < src.values[i]) return false;
+	} for (unsigned int i = 0; i < src.equal_indices.length; i++) {
+		if (src.equal_indices[i].key < dst.equal_indices[i].key) return true;
+		else if (dst.equal_indices[i].key < src.equal_indices[i].key) return true;
+		else if (src.equal_indices[i].value < dst.equal_indices[i].value) return true;
+		else if (dst.equal_indices[i].value < src.equal_indices[i].value) return true;
+	} for (unsigned int i = 0; i < src.not_equal_indices.length; i++) {
+		if (src.not_equal_indices[i].key < dst.not_equal_indices[i].key) return true;
+		else if (dst.not_equal_indices[i].key < src.not_equal_indices[i].key) return true;
+		else if (src.not_equal_indices[i].value < dst.not_equal_indices[i].value) return true;
+		else if (dst.not_equal_indices[i].value < src.not_equal_indices[i].value) return true;
+	}
+	return false;
+}
+
+template<typename T>
+unsigned int unique_and_cleanup(T* array, size_t length)
+{
+	unsigned int result = 0;
+	for (unsigned int i = 1; i < length; i++) {
+		if (array[result] != array[i])
+			move(array[i], array[++result]);
+		else free(array[i]);
+	}
+	return result + 1;
+}
+
+template<typename T>
+void unique_and_cleanup(array<T>& a) {
+	a.length = unique_and_cleanup(a.data, a.length);
+}
+
 struct relation {
 	unsigned int predicate;
 	unsigned int arg1; /* `0` here indicates the source vertex */
@@ -408,6 +1417,7 @@ struct theory
 	array<pair<Formula*, Proof*>> existential_intro_nodes;
 
 	Proof* empty_set_axiom;
+	Proof* maximality_axiom;
 
 	theory(unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), atoms(64), relations(64),
@@ -439,6 +1449,46 @@ struct theory
 			core::free(empty_set_formula);
 		if (empty_set_axiom == NULL) exit(EXIT_FAILURE);
 		empty_set_axiom->reference_count++;
+
+		/* add definition of maximality */
+		Formula* left = Formula::new_exists(4, Formula::new_and(
+				Formula::new_apply(Formula::new_apply(Term::new_constant((unsigned int) built_in_predicates::GREATEST), &Variables<2>::value), &Variables<4>::value),
+				Formula::new_equals(Formula::new_apply(&Variables<4>::value), &Variables<3>::value),
+				Formula::new_equals(Formula::new_apply(&Variables<4>::value), &Variables<1>::value)
+			));
+		if (left == nullptr) exit(EXIT_FAILURE);
+		Variables<1>::value.reference_count++;
+		Variables<2>::value.reference_count++;
+		Variables<3>::value.reference_count++;
+		Variables<4>::value.reference_count += 3;
+		Formula* right = Formula::new_exists(4, Formula::new_exists(5, Formula::new_and(
+				Formula::new_apply(&Variables<2>::value, &Variables<4>::value),
+				Formula::new_equals(Term::new_apply(Term::new_constant((unsigned int) built_in_predicates::ARG1), &Variables<4>::value), &Variables<1>::value),
+				Formula::new_equals(Term::new_apply(Term::new_constant((unsigned int) built_in_predicates::ARG2), &Variables<4>::value), &Variables<5>::value),
+				Formula::new_for_all(6, Formula::new_if_then(
+					Formula::new_apply(&Variables<3>::value, &Variables<6>::value),
+					Formula::new_exists(7, Formula::new_exists(8, Formula::new_and(
+						Formula::new_apply(&Variables<2>::value, &Variables<7>::value),
+						Formula::new_equals(Term::new_apply(Term::new_constant((unsigned int) built_in_predicates::ARG1), &Variables<7>::value), &Variables<6>::value),
+						Formula::new_equals(Term::new_apply(Term::new_constant((unsigned int) built_in_predicates::ARG2), &Variables<7>::value), &Variables<8>::value),
+						Formula::new_apply(Term::new_constant((unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL), &Variables<5>::value, &Variables<8>::value)
+					)))
+				))
+			)));
+		if (right == nullptr) exit(EXIT_FAILURE);
+		Variables<1>::value.reference_count++;
+		Variables<2>::value.reference_count += 2;
+		Variables<3>::value.reference_count++;
+		Variables<4>::value.reference_count += 3;
+		Variables<5>::value.reference_count += 2;
+		Variables<6>::value.reference_count += 2;
+		Variables<7>::value.reference_count += 3;
+		Variables<8>::value.reference_count += 2;
+		maximality_axiom = sets.template get_subset_axiom<true>(left, right, 3);
+		free(*left); if (left->reference_count == 0) free(left);
+		free(*right); if (right->reference_count == 0) free(right);
+		if (maximality_axiom == NULL) exit(EXIT_FAILURE);
+		maximality_axiom->reference_count++;
 	}
 
 	~theory() {
@@ -502,6 +1552,8 @@ struct theory
 		core::free(*empty_set_axiom);
 		if (empty_set_axiom->reference_count == 0)
 			core::free(empty_set_axiom);
+		core::free(*maximality_axiom);
+		sets.free_subset_axiom(maximality_axiom);
 	}
 
 	unsigned int get_free_concept_id() {
@@ -692,7 +1744,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	}
 
 	template<bool Negated, bool ResolveInconsistencies, typename... Args>
-	inline bool add_unary_atom(const Term& atom, Proof* axiom, Args&&... visitor)
+	inline bool add_unary_atom(Term& atom, Proof* axiom, Args&&... visitor)
 	{
 #if !defined(NDEBUG)
 		if (atom.binary.right->type != TermType::CONSTANT)
@@ -759,6 +1811,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		axiom->reference_count++;
 		ground_axiom_count++;
 		free(*lifted_literal); free(lifted_literal);
+
+		if (!check_set_membership_after_addition(&atom))
+			remove_unary_atom<Negated, false>(atom, std::forward<Args>(visitor)...);
 		return true;
 	}
 
@@ -914,11 +1969,20 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			axiom->reference_count++;
 			ground_axiom_count++;
 		}
+
+		Formula* atom = Formula::new_atom(rel.predicate, Term::new_constant(rel.arg1), Term::new_constant(rel.arg2));
+		if (atom == nullptr) return false;
+		if (!check_set_membership_after_addition(atom)) {
+			remove_binary_atom<Negated, false>(rel, std::forward<Args>(visitor)...);
+			free(*atom); free(atom);
+			return false;
+		}
+		free(*atom); free(atom);
 		return true;
 	}
 
-	template<bool Negated, typename... Args>
-	inline bool remove_unary_atom(const Term& atom, Args&&... visitor)
+	template<bool Negated, bool CheckSetMembership = true, typename... Args>
+	inline bool remove_unary_atom(Term& atom, Args&&... visitor)
 	{
 #if !defined(NDEBUG)
 		if (atom.binary.right->type != TermType::CONSTANT)
@@ -979,10 +2043,10 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		ground_types.remove_at(index);
 		ground_axiom_count--;
 		free(*lifted_literal); free(lifted_literal);
-		return true;
+		return !CheckSetMembership || check_set_membership_after_subtraction(&atom);
 	}
 
-	template<bool Negated, typename... Args>
+	template<bool Negated, bool CheckSetMembership = true, typename... Args>
 	inline bool remove_binary_atom(relation rel, Args&&... visitor)
 	{
 		if (rel.arg1 == rel.arg2) {
@@ -1137,6 +2201,13 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			ground_axiom_count--;
 		}
 
+		if (CheckSetMembership) {
+			Formula* atom = Formula::new_atom(rel.predicate, Term::new_constant(rel.arg1), Term::new_constant(rel.arg2));
+			if (atom == nullptr) return false;
+			bool result = check_set_membership_after_subtraction(atom);
+			free(*atom); free(atom);
+			return result;
+		}
 		return true;
 	}
 
@@ -1251,9 +2322,9 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	};
 
 	template<typename... Args>
-	bool add_changes(const theory::changes& changes, Args&&... visitor)
+	bool add_changes(theory::changes& changes, Args&&... visitor)
 	{
-		for (const change& c : changes.list) {
+		for (change& c : changes.list) {
 			array_multiset<unsigned int> constants(8);
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
@@ -1353,12 +2424,12 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	}
 
 	template<typename... Args>
-	bool subtract_changes(const theory::changes& changes, Args&&... visitor)
+	bool subtract_changes(theory::changes& changes, Args&&... visitor)
 	{
 		on_subtract_changes(std::forward<Args>(visitor)...);
 		array<Proof*> freeable_set_size_axioms(8);
 		for (unsigned int i = changes.list.length; i > 0; i--) {
-			const change& c = changes.list[i - 1];
+			change& c = changes.list[i - 1];
 			array_multiset<unsigned int> constants(8);
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
@@ -1687,7 +2758,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return get_theory_changes(proof, discharged_axioms, reference_counts, changes, std::forward<Visitor>(visitor)...);
 	}
 
-	bool unify_atom(Term* term, Term* atom,
+	static bool unify_atom(Term* term, Term* atom,
 			array<Formula*>& quantifiers,
 			array_map<Formula*, Term*>& unifications)
 	{
@@ -1695,13 +2766,15 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			if (!unifications.ensure_capacity(unifications.size + 1))
 				return false;
 			bool contains;
-			Term*& unification = unifications.get(quantifiers[term->variable], contains);
+			Term*& unification = unifications.get(quantifiers[term->variable - 1], contains);
 			if (!contains) {
 				unification = atom;
+				unifications.keys[unifications.size++] = quantifiers[term->variable - 1];
 			} else {
 				if (unification != atom && *unification != *atom)
 					return false;
 			}
+			return true;
 		} else if (term->type != atom->type) {
 			return false;
 		}
@@ -1751,10 +2824,1617 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			break;
 		}
 		fprintf(stderr, "theory.unify_atom ERROR: Unrecognized TermType.\n");
-		return false
+		return false;
 	}
 
-	bool get_unifying_atoms(
+	static bool unify(Formula* first, Formula* second,
+			array<Formula*>& quantifiers,
+			array_map<Formula*, Term*>& unifications)
+	{
+		if (first->type == FormulaType::VARIABLE) {
+			if (!unifications.ensure_capacity(unifications.size + 1))
+				return false;
+			bool contains;
+			Term*& unification = unifications.get(quantifiers[first->variable - 1], contains);
+			if (!contains) {
+				unification = second;
+				unifications.keys[unifications.size++] = quantifiers[first->variable - 1];
+			} else {
+				if (unification != second && *unification != *second)
+					return false;
+			}
+			return true;
+		} else if (first->type != second->type) {
+			return false;
+		}
+
+		switch (first->type) {
+		case FormulaType::TRUE:
+		case FormulaType::FALSE:
+			return true;
+		case FormulaType::CONSTANT:
+			return first->constant == second->constant;
+		case FormulaType::VARIABLE:
+		case FormulaType::VARIABLE_PREIMAGE:
+			return first->variable == second->variable;
+		case FormulaType::PARAMETER:
+			return first->parameter == second->parameter;
+		case FormulaType::INTEGER:
+			return first->integer == second->integer;
+		case FormulaType::STRING:
+			return first->str == second->str;
+		case FormulaType::UINT_LIST:
+			return first->uint_list == second->uint_list;
+		case FormulaType::IF_THEN:
+		case FormulaType::EQUALS:
+		case FormulaType::UNARY_APPLICATION:
+			return unify(first->binary.left, second->binary.left, quantifiers, unifications)
+				&& unify(first->binary.right, second->binary.right, quantifiers, unifications);
+		case FormulaType::BINARY_APPLICATION:
+			return unify(first->ternary.first, second->ternary.first, quantifiers, unifications)
+				&& unify(first->ternary.second, second->ternary.second, quantifiers, unifications)
+				&& unify(first->ternary.third, second->ternary.third, quantifiers, unifications);
+		case FormulaType::NOT:
+			return unify(first->unary.operand, second->unary.operand, quantifiers, unifications);
+		case FormulaType::AND:
+		case FormulaType::OR:
+		case FormulaType::IFF:
+			if (first->array.length != second->array.length) return false;
+			for (unsigned int i = 0; i < first->array.length; i++)
+				if (!unify(first->array.operands[i], second->array.operands[i], quantifiers, unifications)) return false;
+			return true;
+		case FormulaType::FOR_ALL:
+		case FormulaType::EXISTS:
+		case FormulaType::LAMBDA:
+			if (!quantifiers.add(first)
+			 || !unify(first->quantifier.operand, second->quantifier.operand, quantifiers, unifications))
+				return false;
+			quantifiers.length--;
+			return true;
+		case FormulaType::ANY:
+		case FormulaType::ANY_RIGHT:
+		case FormulaType::ANY_RIGHT_ONLY:
+		case FormulaType::ANY_ARRAY:
+		case FormulaType::ANY_CONSTANT:
+		case FormulaType::ANY_CONSTANT_EXCEPT:
+		case FormulaType::ANY_QUANTIFIER:
+			break;
+		}
+		fprintf(stderr, "theory.unify ERROR: Unrecognized FormulaType.\n");
+		return false;
+	}
+
+	static bool unify(Formula* first, Formula* second,
+			array<Formula*>& first_quantifiers,
+			array_map<Formula*, Term*>& first_unifications,
+			array<Formula*>& second_quantifiers,
+			array_map<Formula*, Term*>& second_unifications)
+	{
+		if (first->type == FormulaType::VARIABLE) {
+			if (!first_unifications.ensure_capacity(first_unifications.size + 1))
+				return false;
+			bool contains;
+			Term*& unification = first_unifications.get(first_quantifiers[first->variable - 1], contains);
+			if (!contains) {
+				unification = second;
+				first_unifications.keys[first_unifications.size++] = first_quantifiers[first->variable - 1];
+			} else {
+				if (unification != second && *unification != *second)
+					return false;
+			}
+			return true;
+		} else if (second->type == FormulaType::VARIABLE) {
+			if (!second_unifications.ensure_capacity(second_unifications.size + 1))
+				return false;
+			bool contains;
+			Term*& unification = second_unifications.get(second_quantifiers[second->variable - 1], contains);
+			if (!contains) {
+				unification = first;
+				second_unifications.keys[second_unifications.size++] = second_quantifiers[second->variable - 1];
+			} else {
+				if (unification != first && *unification != *first)
+					return false;
+			}
+			return true;
+		} else if (first->type != second->type) {
+			return false;
+		}
+
+		switch (first->type) {
+		case FormulaType::TRUE:
+		case FormulaType::FALSE:
+			return true;
+		case FormulaType::CONSTANT:
+			return first->constant == second->constant;
+		case FormulaType::VARIABLE:
+		case FormulaType::VARIABLE_PREIMAGE:
+			return first->variable == second->variable;
+		case FormulaType::PARAMETER:
+			return first->parameter == second->parameter;
+		case FormulaType::INTEGER:
+			return first->integer == second->integer;
+		case FormulaType::STRING:
+			return first->str == second->str;
+		case FormulaType::UINT_LIST:
+			return first->uint_list == second->uint_list;
+		case FormulaType::IF_THEN:
+		case FormulaType::EQUALS:
+		case FormulaType::UNARY_APPLICATION:
+			return unify(first->binary.left, second->binary.left, first_quantifiers, first_unifications, second_quantifiers, second_unifications)
+				&& unify(first->binary.right, second->binary.right, first_quantifiers, first_unifications, second_quantifiers, second_unifications);
+		case FormulaType::BINARY_APPLICATION:
+			return unify(first->ternary.first, second->ternary.first, first_quantifiers, first_unifications, second_quantifiers, second_unifications)
+				&& unify(first->ternary.second, second->ternary.second, first_quantifiers, first_unifications, second_quantifiers, second_unifications)
+				&& unify(first->ternary.third, second->ternary.third, first_quantifiers, first_unifications, second_quantifiers, second_unifications);
+		case FormulaType::NOT:
+			return unify(first->unary.operand, second->unary.operand, first_quantifiers, first_unifications, second_quantifiers, second_unifications);
+		case FormulaType::AND:
+		case FormulaType::OR:
+		case FormulaType::IFF:
+			if (first->array.length != second->array.length) return false;
+			for (unsigned int i = 0; i < first->array.length; i++)
+				if (!unify(first->array.operands[i], second->array.operands[i], first_quantifiers, first_unifications, second_quantifiers, second_unifications)) return false;
+			return true;
+		case FormulaType::FOR_ALL:
+		case FormulaType::EXISTS:
+		case FormulaType::LAMBDA:
+			if (!first_quantifiers.add(first) || !second_quantifiers.add(second)
+			 || !unify(first->quantifier.operand, second->quantifier.operand, first_quantifiers, first_unifications, second_quantifiers, second_unifications))
+				return false;
+			first_quantifiers.length--;
+			second_quantifiers.length--;
+			return true;
+		case FormulaType::ANY:
+		case FormulaType::ANY_RIGHT:
+		case FormulaType::ANY_RIGHT_ONLY:
+		case FormulaType::ANY_ARRAY:
+		case FormulaType::ANY_CONSTANT:
+		case FormulaType::ANY_CONSTANT_EXCEPT:
+		case FormulaType::ANY_QUANTIFIER:
+			break;
+		}
+		fprintf(stderr, "theory.unify ERROR: Unrecognized FormulaType.\n");
+		return false;
+	}
+
+	template<bool Contradiction>
+	bool is_provable_by_theorem_without_abduction(
+			Formula* formula, array<Formula*>& quantifiers,
+			const array<instantiation_tuple>& possible_values,
+			array<instantiation_tuple>& new_possible_values) const
+	{
+		unsigned int old_size = new_possible_values.length;
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == nullptr) continue;
+
+			array<Formula*> second_quantifiers(sets.sets[i].arity);
+			Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+			for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+				second_quantifiers.add(set_formula);
+				set_formula = set_formula->quantifier.operand;
+			}
+			if (Contradiction) {
+				if (set_formula->type != FormulaType::NOT) continue;
+				set_formula = set_formula->unary.operand;
+			}
+			array_map<Formula*, Term*> first_unifications(4);
+			array_map<Formula*, Term*> second_unifications(4);
+			if (!unify(formula, set_formula, quantifiers, first_unifications, second_quantifiers, second_unifications))
+				continue;
+
+			hash_set<tuple> provable_elements(16);
+			if (!sets.get_provable_elements(i, provable_elements))
+				return false;
+
+			for (unsigned int i = 0; i < possible_values.length; i++) {
+				const instantiation_tuple& values = possible_values[i];
+				if (!new_possible_values.ensure_capacity(new_possible_values.length + provable_elements.size + 1)) {
+					for (tuple& tup : provable_elements) free(tup);
+					return false;
+				}
+				instantiation_tuple new_value(values);
+
+				bool unifies = true;
+				for (const auto& unification : first_unifications) {
+					if (unification.value->type != TermType::VARIABLE
+					 && !new_value.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+						unifies = false;
+						break;
+					}
+				}
+				if (!unifies) continue;
+
+				for (const tuple& element : provable_elements) {
+					instantiation_tuple& new_new_value = new_possible_values[new_possible_values.length];
+					if (!init(new_new_value, new_value)) {
+						for (tuple& tup : provable_elements) free(tup);
+						return false;
+					}
+
+					unifies = true;
+					for (const auto& unification : first_unifications) {
+						if (unification.value->type != TermType::VARIABLE) continue;
+						Term* constant = Term::new_constant(element[unification.value->variable - 1]);
+						if (constant == nullptr) {
+							for (tuple& tup : provable_elements) free(tup);
+							return false;
+						}
+						if (!new_new_value.unify_value(unification.key->quantifier.variable - 1, constant)) {
+							free(*constant); free(constant);
+							unifies = false;
+							break;
+						}
+						free(*constant); free(constant);
+					}
+					if (!unifies) {
+						free(new_new_value);
+						continue;
+					}
+
+					for (const auto& unification : second_unifications) {
+						if (unification.value->type != TermType::CONSTANT
+						 || unification.value->constant != element[unification.key->quantifier.variable - 1])
+						{
+							unifies = false;
+							break;
+						}
+					}
+					if (!unifies) {
+						free(new_new_value);
+						continue;
+					}
+
+					new_possible_values.length++;
+				}
+			}
+			for (tuple& tup : provable_elements) free(tup);
+		}
+		if (new_possible_values.length > old_size) {
+			insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size, default_sorter());
+			array<instantiation_tuple> temp(new_possible_values.length);
+			set_union(temp.data, temp.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+			swap(temp, new_possible_values);
+			for (auto& element : temp) free(element);
+		}
+		return true;
+	}
+
+	bool for_all_is_provable_without_abduction(
+			Formula* formula, array<Formula*>& quantifiers,
+			const array<instantiation_tuple>& possible_values,
+			array<instantiation_tuple>& new_possible_values) const
+	{
+		unsigned int arity = 0;
+		while (formula->type == TermType::FOR_ALL) {
+			formula = formula->quantifier.operand;
+			arity++;
+		}
+
+		if (formula->type == TermType::IF_THEN) {
+			Formula* antecedent = formula->binary.left;
+			Formula* consequent = formula->binary.right;
+
+			/* find sets that unify with `antecedent` */
+			for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+				if (sets.sets[i].size_axiom == nullptr || sets.sets[i].arity < arity) continue;
+
+				array<Formula*> second_quantifiers(sets.sets[i].arity);
+				Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+				for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+					second_quantifiers.add(set_formula);
+					set_formula = set_formula->quantifier.operand;
+				}
+				array_map<Formula*, Term*> first_unifications(4);
+				array_map<Formula*, Term*> second_unifications(4);
+				if (!unify(set_formula, antecedent, second_quantifiers, second_unifications, quantifiers, first_unifications))
+					continue;
+
+				hash_set<tuple> provable_elements(16);
+				if (!sets.get_provable_elements(i, provable_elements))
+					return false;
+				if (provable_elements.size != sets.sets[i].set_size) {
+					for (tuple& tup : provable_elements) free(tup);
+					continue;
+				}
+
+				for (unsigned int i = 0; i < possible_values.length; i++) {
+					const instantiation_tuple& values = possible_values[i];
+					array<instantiation_tuple> temp_possible_values(4);
+					instantiation_tuple& new_values = temp_possible_values[0];
+					if (!init(new_values, values)) {
+						for (tuple& tup : provable_elements) free(tup);
+						return false;
+					}
+					temp_possible_values.length = 1;
+
+					bool unifies = true;
+					for (const auto& unification : first_unifications) {
+						if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+							unifies = false;
+							break;
+						}
+					}
+					if (!unifies) {
+						for (auto& element : temp_possible_values) free(element);
+						continue;
+					}
+
+					/* check that `consequent` is provable for values in `provable_elements` */
+					for (const tuple& element : provable_elements) {
+						Term** src_variables = (Term**) alloca(sizeof(Term*) * (element.length + second_unifications.size) * 2);
+						for (unsigned int i = 0; i < element.length; i++) {
+							src_variables[i] = Term::new_variable(i + 1);
+							if (src_variables[i] == nullptr) {
+								for (unsigned int j = 0; j < i; j++) { free(*src_variables[j]); free(src_variables[j]); }
+								for (auto& element : temp_possible_values) free(element);
+								for (tuple& tup : provable_elements) free(tup);
+								return false;
+							}
+						} for (unsigned int i = 0; i < second_unifications.size; i++) {
+							src_variables[element.length + i] = Term::new_variable(second_unifications.keys[i]->quantifier.variable);
+							if (src_variables[element.length + i] == nullptr) {
+								for (unsigned int j = 0; j < element.length + i; j++) { free(*src_variables[j]); free(src_variables[j]); }
+								for (auto& element : temp_possible_values) free(element);
+								for (tuple& tup : provable_elements) free(tup);
+								return false;
+							}
+						}
+
+						Term** dst_constants = src_variables + element.length + second_unifications.size;
+						for (unsigned int i = 0; i < element.length; i++) {
+							dst_constants[i] = Term::new_constant(element[i]);
+							if (dst_constants[i] == nullptr) {
+								for (unsigned int j = 0; j < element.length; j++) { free(*src_variables[j]); free(src_variables[j]); }
+								for (unsigned int j = 0; j < i; j++) { free(*dst_constants[j]); free(dst_constants[j]); }
+								for (auto& element : temp_possible_values) free(element);
+								for (tuple& tup : provable_elements) free(tup);
+								return false;
+							}
+						} for (unsigned int i = 0; i < second_unifications.size; i++) {
+							dst_constants[i] = second_unifications.values[i];
+							dst_constants[i]->reference_count++;
+						}
+
+						Formula* substituted_consequent = substitute_all(consequent, src_variables, dst_constants, element.length);
+						for (unsigned int j = 0; j < element.length + second_unifications.size; j++) { free(*src_variables[j]); free(src_variables[j]); }
+						for (unsigned int j = 0; j < element.length + second_unifications.size; j++) { free(*dst_constants[j]); free(dst_constants[j]); }
+
+						if (!is_provable_without_abduction<false>(substituted_consequent, quantifiers, temp_possible_values)) {
+							free(*substituted_consequent); if (substituted_consequent->reference_count == 0) free(substituted_consequent);
+							break;
+						}
+						free(*substituted_consequent); if (substituted_consequent->reference_count == 0) free(substituted_consequent);
+					}
+
+					if (temp_possible_values.length != 0) {
+						array<instantiation_tuple> temp(new_possible_values.length + temp_possible_values.length);
+						set_union(temp, new_possible_values, temp_possible_values);
+						swap(temp, new_possible_values);
+						for (auto& element : temp_possible_values) free(element);
+						for (auto& element : temp) free(element);
+					}
+				}
+				for (tuple& tup : provable_elements) free(tup);
+			}
+		}
+		return true;
+	}
+
+	template<bool Contradiction>
+	bool exists_is_provable_without_abduction(
+			Formula* formula, array<Formula*>& quantifiers,
+			const array<instantiation_tuple>& possible_values,
+			array<instantiation_tuple>& new_possible_values) const
+	{
+		Formula* quantified = formula->quantifier.operand;
+		unsigned int variable = formula->quantifier.variable;
+
+		array<instance> constants(ground_concept_capacity + 1);
+		hash_set<int64_t> integers(64); array<string*> strings(64);
+		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
+			if (ground_concepts[i].types.keys != NULL) {
+				constants[constants.length].type = instance_type::CONSTANT;
+				constants[constants.length++].constant = new_constant_offset + i;
+
+				for (const auto& entry : ground_concepts[i].function_values) {
+					Term* constant = entry.value->formula->binary.right;
+					if (constant->type == TermType::INTEGER) {
+						if (!integers.add(constant->integer)) return false;
+					} else if (constant->type == TermType::STRING) {
+						bool contains = false;
+						for (const string* str : strings)
+							if (str == &constant->str || *str == constant->str) { contains = true; break; }
+						if (!contains && !strings.add(&constant->str)) return false;
+					}
+				}
+			}
+		}
+		if (!constants.ensure_capacity(constants.length + integers.size + strings.length))
+			return false;
+		for (int64_t integer : integers) {
+			constants[constants.length].type = instance_type::INTEGER;
+			constants[constants.length++].integer = integer;
+		} for (string* str : strings) {
+			constants[constants.length].type = instance_type::STRING;
+			constants[constants.length++].str = str;
+		}
+
+		if (!filter_constants(*this, quantified, variable, constants))
+			return true;
+
+		Term* var = Term::new_variable(variable);
+		if (var == nullptr)
+			return false;
+
+		for (const instance& id : constants) {
+			Term* constant = nullptr;
+			if (id.type == instance_type::CONSTANT) {
+				constant = Formula::new_constant(id.constant);
+			} else if (id.type == instance_type::INTEGER) {
+				constant = Formula::new_int(id.integer);
+			} else if (id.type == instance_type::STRING) {
+				constant = Formula::new_string(*id.str);
+			}
+			if (constant == nullptr) {
+				free(*var); if (var->reference_count == 0) free(var);
+				return false;
+			}
+			Formula* substituted = substitute(quantified, var, constant);
+			if (substituted == NULL) {
+				free(*var); if (var->reference_count == 0) free(var);
+				free(*constant); if (constant->reference_count == 0) free(constant);
+				return false;
+			}
+
+			array<instantiation_tuple> copy(possible_values.length);
+			for (unsigned int j = 0; j < possible_values.length; j++) {
+				if (!init(copy[copy.length], possible_values[j])) {
+					for (auto& element : copy) free(element);
+					return false;
+				}
+				copy.length++;
+			}
+
+			bool result = is_provable_without_abduction<Contradiction>(substituted, quantifiers, copy);
+			free(*substituted); if (substituted->reference_count == 0) free(substituted);
+			free(*constant); if (constant->reference_count == 0) free(constant);
+			if (!result) {
+				for (auto& element : copy) free(element);
+				continue;
+			}
+
+			array<instantiation_tuple> union_result(new_possible_values.length + copy.length);
+			set_union(union_result, new_possible_values, copy);
+			swap(union_result, new_possible_values);
+			for (auto& element : union_result) free(element);
+			for (auto& element : copy) free(element);
+		}
+		return true;
+	}
+
+	template<bool Contradiction>
+	bool is_provable_without_abduction(
+			Formula* formula, array<Formula*>& quantifiers,
+			array<instantiation_tuple>& possible_values) const
+	{
+		/* consider if this formula provable by other extensional edges (i.e. universally-quantified theorems) */
+		array<instantiation_tuple> new_possible_values(possible_values.length);
+		if (!is_provable_by_theorem_without_abduction<Contradiction>(formula, quantifiers, possible_values, new_possible_values)) {
+			for (auto& element : new_possible_values) free(element);
+			return false;
+		}
+
+		if (formula->type == FormulaType::UNARY_APPLICATION) {
+			if (formula->binary.right->type != TermType::CONSTANT
+			 && formula->binary.right->type != TermType::VARIABLE)
+			{
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+
+			for (const auto& atom : atoms) {
+				array_map<Formula*, Term*> unifications(2);
+				if (!unify_atom(formula->binary.left, atom.key.binary.left, quantifiers, unifications))
+					continue;
+				for (unsigned int i = 0; i < possible_values.length; i++) {
+					const array<unsigned int>& constants = (Contradiction ? atom.value.value : atom.value.key);
+					array<instantiation_tuple> temp(possible_values.length + constants.length);
+					const instantiation_tuple& values = possible_values[i];
+					instantiation_tuple new_values(values);
+					/* make sure the `possible_values` unify with the variables in this term */
+					bool unifies = true;
+					for (const auto& unification : unifications) {
+						if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+							unifies = false;
+							break;
+						}
+					}
+					if (!unifies) {
+						for (auto& element : temp) free(element);
+						continue;
+					}
+
+					if (formula->binary.right->type == TermType::VARIABLE) {
+						for (unsigned int constant : constants) {
+							instantiation_tuple& current_new_values = temp[temp.length];
+							if (!init(current_new_values, new_values)) {
+								for (auto& element : new_possible_values) free(element);
+								for (auto& element : temp) free(element);
+								return false;
+							}
+							Term* term = Term::new_constant(constant);
+							if (term == nullptr) {
+								for (auto& element : new_possible_values) free(element);
+								for (auto& element : temp) free(element);
+								return false;
+							}
+							unifies &= current_new_values.unify_value(formula->binary.right->variable - 1, term);
+							free(*term); free(term);
+							if (!unifies) {
+								free(current_new_values);
+								continue;
+							}
+							temp.length++;
+						}
+						if (temp.length > 0)
+							insertion_sort(temp, default_sorter());
+					} else if (constants.contains(formula->binary.right->constant)) {
+						if (!init(temp[0], new_values)) {
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+						temp.length++;
+					}
+					if (temp.length != 0) {
+						array<instantiation_tuple> union_result(new_possible_values.length + temp.length);
+						set_union(union_result, new_possible_values, temp);
+						swap(new_possible_values, union_result);
+						for (auto& element : temp) free(element);
+						for (auto& element : union_result) free(element);
+					}
+				}
+			}
+			for (auto& element : possible_values) free(element);
+			swap(new_possible_values, possible_values);
+
+		} else if (formula->type == FormulaType::BINARY_APPLICATION) {
+			if (formula->ternary.first->constant == (unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL) {
+				if (formula->ternary.second->type == TermType::INTEGER) {
+					if (formula->ternary.third->type == TermType::INTEGER) {
+						if ((!Contradiction && formula->ternary.second->integer >= formula->ternary.third->integer)
+						 || (Contradiction && formula->ternary.second->integer < formula->ternary.third->integer))
+						{
+							for (auto& element : new_possible_values) free(element);
+							return true;
+						} else {
+							for (auto& element : new_possible_values) free(element);
+							for (auto& element : possible_values) free(element);
+							possible_values.clear(); return false;
+						}
+					} else if (formula->ternary.third->type == TermType::VARIABLE) {
+
+					} else if (!Contradiction) {
+						for (auto& element : new_possible_values) free(element);
+						for (auto& element : possible_values) free(element);
+						possible_values.clear(); return false;
+					}
+				} else if (formula->ternary.second->type == TermType::VARIABLE) {
+					if (formula->ternary.third->type == TermType::INTEGER) {
+
+					} else if (formula->ternary.third->type == TermType::VARIABLE) {
+
+					} else if (!Contradiction) {
+						for (auto& element : new_possible_values) free(element);
+						for (auto& element : possible_values) free(element);
+						possible_values.clear(); return false;
+					}
+				} else if (!Contradiction) {
+					for (auto& element : new_possible_values) free(element);
+					for (auto& element : possible_values) free(element);
+					possible_values.clear(); return false;
+				}
+			}
+
+			unsigned int predicate;
+			if (formula->ternary.first->type == TermType::VARIABLE)
+				predicate = 0;
+			else if (formula->ternary.first->type == TermType::CONSTANT)
+				predicate = formula->ternary.first->constant;
+			else {
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+
+			unsigned int arg1;
+			if (formula->ternary.second->type == TermType::VARIABLE)
+				arg1 = 0;
+			else if (formula->ternary.second->type == TermType::CONSTANT)
+				arg1 = formula->ternary.second->constant;
+			else {
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+
+			unsigned int arg2;
+			if (formula->ternary.third->type == TermType::VARIABLE)
+				arg2 = 0;
+			else if (formula->ternary.third->type == TermType::CONSTANT)
+				arg2 = formula->ternary.third->constant;
+			else {
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+
+			array<instantiation_tuple> temp(possible_values.length);
+			for (const auto& rel : relations) {
+				if (rel.key.predicate != 0 && predicate != 0 && rel.key.predicate != predicate) continue;
+				if (rel.key.arg1 != 0 && arg1 != 0 && rel.key.arg1 != arg1) continue;
+				if (rel.key.arg2 != 0 && arg2 != 0 && rel.key.arg2 != arg2) continue;
+
+				const array<unsigned int>& constants = (Contradiction ? rel.value.value : rel.value.key);
+				for (unsigned int i = 0; i < possible_values.length; i++) {
+					if (!temp.ensure_capacity(temp.length + constants.length + 1)) {
+						for (auto& element : new_possible_values) free(element);
+						for (auto& element : temp) free(element);
+						return false;
+					}
+					instantiation_tuple values(possible_values[i]);
+					if (predicate == 0 && rel.key.predicate != 0) {
+						Term* temp = Term::new_constant(rel.key.predicate);
+						bool unifies = values.unify_value(formula->ternary.first->variable - 1, temp);
+						free(*temp); free(temp);
+						if (!unifies) continue;
+					} if (arg1 == 0 && rel.key.arg1 != 0) {
+						Term* temp = Term::new_constant(rel.key.arg1);
+						bool unifies = values.unify_value(formula->ternary.second->variable - 1, temp);
+						free(*temp); free(temp);
+						if (!unifies) continue;
+					} if (arg2 == 0 && rel.key.arg2 != 0) {
+						Term* temp = Term::new_constant(rel.key.arg2);
+						bool unifies = values.unify_value(formula->ternary.third->variable - 1, temp);
+						free(*temp); free(temp);
+						if (!unifies) continue;
+					}
+
+					if (rel.key.predicate == 0) {
+						if (predicate == 0) {
+							for (unsigned int constant : constants) {
+								instantiation_tuple& new_values = temp[temp.length];
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								Term* term = Term::new_constant(constant);
+								if (term == nullptr) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								bool unifies = new_values.unify_value(formula->ternary.first->variable - 1, term);
+								free(*term); free(term);
+								if (!unifies) {
+									free(new_values);
+									continue;
+								}
+								temp.length++;
+							}
+						} else {
+							instantiation_tuple& new_values = temp[temp.length];
+							if (constants.contains(predicate)) {
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								temp.length++;
+							}
+						}
+					} else if (rel.key.arg1 == 0) {
+						if (arg1 == 0) {
+							for (unsigned int constant : constants) {
+								instantiation_tuple& new_values = temp[temp.length];
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								Term* term = Term::new_constant(constant);
+								if (term == nullptr) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								bool unifies = new_values.unify_value(formula->ternary.second->variable - 1, term);
+								free(*term); free(term);
+								if (!unifies) {
+									free(new_values);
+									continue;
+								}
+								temp.length++;
+							}
+						} else {
+							instantiation_tuple& new_values = temp[temp.length];
+							if (constants.contains(arg1)) {
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								temp.length++;
+							}
+						}
+					} else {
+						if (arg2 == 0) {
+							for (unsigned int constant : constants) {
+								instantiation_tuple& new_values = temp[temp.length];
+								if (!init(new_values, values)) {
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								Term* term = Term::new_constant(constant);
+								if (term == nullptr) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								bool unifies = new_values.unify_value(formula->ternary.first->variable - 1, term);
+								free(*term); free(term);
+								if (!unifies) {
+									free(new_values);
+									continue;
+								}
+								temp.length++;
+							}
+						} else {
+							instantiation_tuple& new_values = temp[temp.length];
+							if (constants.contains(arg2)) {
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									for (auto& element : temp) free(element);
+									return false;
+								}
+								temp.length++;
+							}
+						}
+					}
+				}
+			}
+			if (temp.length != 0) {
+				sort(temp); unique_and_cleanup(temp);
+				array<instantiation_tuple> union_result(new_possible_values.length + temp.length);
+				set_union(union_result, new_possible_values, temp);
+				for (auto& element : temp) free(element);
+				for (auto& element : new_possible_values) free(element);
+				for (auto& element : possible_values) free(element);
+				swap(union_result, possible_values);
+			} else {
+				for (auto& element : possible_values) free(element);
+				swap(new_possible_values, possible_values);
+			}
+
+		} else if (formula->type == FormulaType::AND) {
+			if (Contradiction) {
+				for (unsigned int i = 0; i < formula->array.length; i++) {
+					array<instantiation_tuple> copy(possible_values.length);
+					for (unsigned int j = 0; j < possible_values.length; j++) {
+						if (!init(copy[copy.length], possible_values[j])) {
+							for (auto& element : copy) free(element);
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+						copy.length++;
+					}
+					if (!is_provable_without_abduction<true>(formula->array.operands[i], quantifiers, copy))
+						continue;
+
+					array<instantiation_tuple> union_result(new_possible_values.length + copy.length);
+					set_union(union_result, new_possible_values, copy);
+					for (auto& element : new_possible_values) free(element);
+					for (auto& element : copy) free(element);
+					swap(union_result, new_possible_values);
+				}
+				swap(possible_values, new_possible_values);
+				for (auto& element : new_possible_values) free(element);
+				return possible_values.length != 0;
+			}
+
+			for (unsigned int i = 0; i < formula->array.length; i++)
+				if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values)) break;
+			array<instantiation_tuple> union_result(possible_values.length + new_possible_values.length);
+			set_union(union_result, possible_values, new_possible_values);
+			for (auto& element : possible_values) free(element);
+			for (auto& element : new_possible_values) free(element);
+			swap(possible_values, union_result);
+
+		} else if (formula->type == FormulaType::OR) {
+			if (Contradiction) {
+				for (unsigned int i = 0; i < formula->array.length; i++)
+					if (!is_provable_without_abduction<true>(formula->array.operands[i], quantifiers, possible_values)) break;
+				if (possible_values.length != 0) {
+					array<instantiation_tuple> union_result(possible_values.length + new_possible_values.length);
+					set_union(union_result, possible_values, new_possible_values);
+					for (auto& element : possible_values) free(element);
+					for (auto& element : new_possible_values) free(element);
+					swap(possible_values, union_result);
+				} else {
+					swap(possible_values, new_possible_values);
+				}
+				return possible_values.length != 0;
+			}
+
+			for (unsigned int i = 0; i < formula->array.length; i++) {
+				array<instantiation_tuple> copy(possible_values.length);
+				for (unsigned int j = 0; j < possible_values.length; j++) {
+					if (!init(copy[copy.length], possible_values[j])) {
+						for (auto& element : copy) free(element);
+						for (auto& element : new_possible_values) free(element);
+						return false;
+					}
+					copy.length++;
+				}
+				if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, copy))
+					continue;
+
+				array<instantiation_tuple> union_result(new_possible_values.length + copy.length);
+				set_union(union_result, new_possible_values, copy);
+				for (auto& element : new_possible_values) free(element);
+				for (auto& element : copy) free(element);
+				swap(union_result, new_possible_values);
+			}
+			swap(possible_values, new_possible_values);
+			for (auto& element : new_possible_values) free(element);
+
+		} else if (formula->type == FormulaType::IF_THEN) {
+			if (Contradiction) {
+				if (is_provable_without_abduction<false>(formula->binary.left, quantifiers, possible_values))
+					is_provable_without_abduction<true>(formula->binary.right, quantifiers, possible_values);
+				if (possible_values.length != 0) {
+					array<instantiation_tuple> union_result(possible_values.length + new_possible_values.length);
+					set_union(union_result, possible_values, new_possible_values);
+					for (auto& element : possible_values) free(element);
+					for (auto& element : new_possible_values) free(element);
+					swap(union_result, possible_values);
+				} else {
+					swap(possible_values, new_possible_values);
+				}
+				return possible_values.length != 0;
+			}
+
+			array<instantiation_tuple> first(possible_values.length);
+			for (unsigned int j = 0; j < possible_values.length; j++) {
+				if (!init(first[first.length], possible_values[j])) {
+					for (auto& element : first) free(element);
+					for (auto& element : new_possible_values) free(element);
+					return false;
+				}
+				first.length++;
+			}
+			if (!is_provable_without_abduction<true>(formula->binary.left, quantifiers, first))
+				first.length = 0;
+
+			array<instantiation_tuple> second(possible_values.length);
+			for (unsigned int j = 0; j < possible_values.length; j++) {
+				if (!init(first[first.length], possible_values[j])) {
+					for (auto& element : first) free(element);
+					for (auto& element : second) free(element);
+					for (auto& element : new_possible_values) free(element);
+					return false;
+				}
+				first.length++;
+			}
+			if (!is_provable_without_abduction<false>(formula->binary.left, quantifiers, second))
+				second.length = 0;
+
+			array<instantiation_tuple> temp(max((size_t) 1, new_possible_values.length + first.length));
+			set_union(temp, new_possible_values, first);
+			for (auto& element : first) free(element);
+			for (auto& element : new_possible_values) free(element);
+			new_possible_values.length = 0;
+			if (!new_possible_values.ensure_capacity(temp.length + second.length)) {
+				for (auto& element : temp) free(element);
+				for (auto& element : second) free(element);
+				return false;
+			}
+			set_union(new_possible_values, temp, second);
+			for (auto& element : temp) free(element);
+			for (auto& element : second) free(element);
+			swap(possible_values, new_possible_values);
+			for (auto& element : new_possible_values) free(element);
+
+		} else if (formula->type == FormulaType::NOT) {
+			if (!is_provable_without_abduction<!Contradiction>(formula->unary.operand, quantifiers, possible_values)) {
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+			if (possible_values.length != 0) {
+				array<instantiation_tuple> union_result(possible_values.length + new_possible_values.length);
+				set_union(union_result, possible_values, new_possible_values);
+				for (auto& element : possible_values) free(element);
+				for (auto& element : new_possible_values) free(element);
+				swap(union_result, possible_values);
+			} else {
+				swap(possible_values, new_possible_values);
+			}
+			return possible_values.length != 0;
+
+		} else if (formula->type == FormulaType::FOR_ALL) {
+			if (Contradiction) {
+				if (!exists_is_provable_without_abduction<true>(formula, quantifiers, possible_values, new_possible_values)) {
+					for (auto& element : new_possible_values) free(element);
+					return false;
+				}
+				swap(possible_values, new_possible_values);
+				for (auto& element : new_possible_values) free(element);
+				return possible_values.length != 0;
+			}
+
+			if (!for_all_is_provable_without_abduction(formula, quantifiers, possible_values, new_possible_values)) {
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+			swap(possible_values, new_possible_values);
+			for (auto& element : new_possible_values) free(element);
+
+		} else if (formula->type == FormulaType::EXISTS) {
+			if (Contradiction) {
+				/* TODO: implement this */
+				fprintf(stderr, "theory.is_provable_without_abduction ERROR: Not implemented.\n");
+				return false;
+			}
+
+			if (!exists_is_provable_without_abduction<false>(formula, quantifiers, possible_values, new_possible_values)) {
+				for (auto& element : new_possible_values) free(element);
+				return false;
+			}
+			swap(possible_values, new_possible_values);
+			for (auto& element : new_possible_values) free(element);
+
+		} else if (formula->type == FormulaType::EQUALS) {
+			if (formula->binary.left->type == TermType::UNARY_APPLICATION
+			 && formula->binary.left->binary.left->type == TermType::CONSTANT
+			 && formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE)
+			{
+				Term* set_definition = formula->binary.left->binary.right;
+				if (set_definition->type == TermType::LAMBDA) {
+					/* size(^[x]:f(x))=n */
+					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+						if (sets.sets[i].size_axiom == NULL) continue;
+
+						if (formula->binary.right->type == TermType::INTEGER) {
+							if ((!Contradiction && formula->binary.right->integer != sets.sets[i].set_size)
+							 || (Contradiction && formula->binary.right->integer == sets.sets[i].set_size))
+								continue;
+						}
+
+						array<Formula*> quantifiers(4);
+						array_map<Formula*, Term*> unifications(4);
+						if (!unify(set_definition, sets.sets[i].size_axiom->formula->binary.left->binary.right, quantifiers, unifications))
+							continue;
+
+						array<instantiation_tuple> temp(possible_values.length);
+						for (unsigned int i = 0; i < possible_values.length; i++) {
+							const instantiation_tuple& values = possible_values[i];
+							instantiation_tuple& new_values = temp[temp.length];
+							if (!init(new_values, values)) {
+								for (auto& element : new_possible_values) free(element);
+								for (auto& element : temp) free(element);
+								return false;
+							}
+
+							if (formula->binary.right->type == TermType::VARIABLE) {
+								if ((!Contradiction && !new_values.unify_value(formula->binary.right->variable - 1, sets.sets[i].size_axiom->formula->binary.right))
+								 || (Contradiction && !new_values.antiunify_value(formula->binary.right->variable - 1, sets.sets[i].size_axiom->formula->binary.right)))
+								{
+									free(new_values);
+									continue;
+								}
+							}
+
+							/* make sure the `possible_values` unify with the variables in this term */
+							bool unifies = true;
+							for (const auto& unification : unifications) {
+								if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+									unifies = false;
+									break;
+								}
+							}
+							if (!unifies) {
+								free(new_values);
+								continue;
+							}
+							temp.length++;
+						}
+						if (temp.length != 0) {
+							insertion_sort(temp, default_sorter());
+							array<instantiation_tuple> union_result(new_possible_values.length + temp.length);
+							set_union(union_result, new_possible_values, temp);
+							for (auto& element : new_possible_values) free(element);
+							for (auto& element : temp) free(element);
+							swap(union_result, new_possible_values);
+						}
+					}
+				} else if (set_definition->type == TermType::VARIABLE) {
+					/* size(x)=n */
+					for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+						if (sets.sets[i].size_axiom == NULL) continue;
+						Formula* set_formula = sets.sets[i].set_formula();
+						if (set_formula->type != TermType::UNARY_APPLICATION
+						 || set_formula->binary.left->type != TermType::CONSTANT
+						 || set_formula->binary.right->type != TermType::VARIABLE
+						 || set_formula->binary.right->variable != 1)
+							continue;
+
+						if (formula->binary.right->type == TermType::INTEGER) {
+							if ((!Contradiction && formula->binary.right->integer != sets.sets[i].set_size)
+							 || (Contradiction && formula->binary.right->integer == sets.sets[i].set_size))
+								continue;
+						}
+
+						array<instantiation_tuple> temp(possible_values.length);
+						for (unsigned int i = 0; i < possible_values.length; i++) {
+							const instantiation_tuple& values = possible_values[i];
+							instantiation_tuple& new_values = temp[temp.length];
+							if (!init(new_values, values)) {
+								for (auto& element : new_possible_values) free(element);
+								for (auto& element : temp) free(element);
+								return false;
+							}
+
+							if (!new_values.unify_value(set_definition->variable - 1, set_formula->binary.left)) {
+								free(new_values);
+								continue;
+							}
+
+							if (formula->binary.right->type == TermType::VARIABLE) {
+								if ((!Contradiction && !new_values.unify_value(formula->binary.right->variable - 1, sets.sets[i].size_axiom->formula->binary.right))
+								 || (Contradiction && !new_values.antiunify_value(formula->binary.right->variable - 1, sets.sets[i].size_axiom->formula->binary.right)))
+								{
+									free(new_values);
+									continue;
+								}
+							}
+							temp.length++;
+						}
+						if (temp.length != 0) {
+							insertion_sort(temp, default_sorter());
+							array<instantiation_tuple> union_result(new_possible_values.length + temp.length);
+							set_union(union_result, new_possible_values, temp);
+							for (auto& element : new_possible_values) free(element);
+							for (auto& element : temp) free(element);
+							swap(union_result, new_possible_values);
+						}
+					}
+				} else if (set_definition->type == TermType::CONSTANT && set_definition->constant >= new_constant_offset) {
+					/* size(a)=n */
+					Term* set_formula = Term::new_apply(set_definition, &Variables<1>::value);
+					if (set_formula == nullptr)
+						return false;
+					set_definition->reference_count++;
+					bool contains;
+					unsigned int set_id = sets.set_ids.get(*set_formula, contains);
+					if (!contains) return false;
+
+					if (formula->binary.right->type == TermType::INTEGER) {
+						if ((!Contradiction && formula->binary.right->integer != sets.sets[set_id].set_size)
+						 || (Contradiction && formula->binary.right->integer == sets.sets[set_id].set_size))
+							return false;
+					}
+					array<instantiation_tuple> temp(possible_values.length);
+					for (unsigned int i = 0; i < possible_values.length; i++) {
+						const instantiation_tuple& values = possible_values[i];
+						instantiation_tuple& new_values = temp[temp.length];
+						if (!init(new_values, values)) {
+							for (auto& element : new_possible_values) free(element);
+							for (auto& element : temp) free(element);
+							return false;
+						}
+						if (formula->binary.right->type == TermType::VARIABLE) {
+							if ((!Contradiction && !new_values.unify_value(formula->binary.right->variable - 1, sets.sets[i].size_axiom->formula->binary.right))
+							 || (Contradiction && !new_values.antiunify_value(formula->binary.right->variable - 1, sets.sets[i].size_axiom->formula->binary.right)))
+							{
+								free(new_values);
+								return false;
+							}
+						}
+						temp.length++;
+					}
+					if (temp.length != 0) {
+						insertion_sort(temp, default_sorter());
+						array<instantiation_tuple> union_result(new_possible_values.length + temp.length);
+						set_union(union_result, new_possible_values, temp);
+						for (auto& element : new_possible_values) free(element);
+						for (auto& element : temp) free(element);
+						swap(union_result, new_possible_values);
+					}
+
+				} else {
+					fprintf(stderr, "theory.is_provable_without_abduction ERROR: Unsupported set size axiom.\n");
+					return false;
+				}
+
+				swap(possible_values, new_possible_values);
+				for (auto& element : new_possible_values) free(element);
+				return possible_values.length != 0;
+			}
+
+			/* A=A */
+			array_map<Formula*, Term*> unifications(4);
+			if (!Contradiction && unify(formula->binary.left, formula->binary.right, quantifiers, unifications)) {
+				if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+					for (auto& element : new_possible_values) free(element);
+					return false;
+				}
+				unsigned int old_size = new_possible_values.length;
+				for (unsigned int i = 0; i < possible_values.length; i++) {
+					const instantiation_tuple& values = possible_values[i];
+					instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+					if (!init(new_values, values)) {
+						for (auto& element : new_possible_values) free(element);
+						return false;
+					}
+
+					/* make sure the `possible_values` unify with the variables in this term */
+					bool unifies = true;
+					for (const auto& unification : unifications) {
+						if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+							unifies = false;
+							break;
+						}
+					}
+					if (!unifies) {
+						free(new_values);
+						continue;
+					}
+					new_possible_values.length++;
+				}
+				if (new_possible_values.length > old_size) {
+					insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+					array<instantiation_tuple> union_result(new_possible_values.length);
+					set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+					for (auto& element : new_possible_values) free(element);
+					swap(union_result, new_possible_values);
+				}
+			}
+
+			/* a=b */
+			if (!Contradiction) {
+				if (formula->binary.left->type == TermType::CONSTANT) {
+					if (formula->binary.right->type == TermType::CONSTANT && formula->binary.right->constant == formula->binary.left->constant) {
+						return false;
+					} else if (formula->binary.right->type == TermType::VARIABLE) {
+						if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+						unsigned int old_size = new_possible_values.length;
+						for (unsigned int i = 0; i < possible_values.length; i++) {
+							const instantiation_tuple& values = possible_values[i];
+							instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+							if (!init(new_values, values)) {
+								for (auto& element : new_possible_values) free(element);
+								return false;
+							}
+
+							if (!new_values.antiunify_value(formula->binary.right->variable - 1, formula->binary.left)) {
+								free(new_values);
+								continue;
+							}
+							new_possible_values.length++;
+						}
+						if (new_possible_values.length > old_size) {
+							insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+							array<instantiation_tuple> union_result(new_possible_values.length);
+							set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+							for (auto& element : new_possible_values) free(element);
+							swap(union_result, new_possible_values);
+						}
+					}
+				} else if (formula->binary.left->type == TermType::VARIABLE) {
+					if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+						for (auto& element : new_possible_values) free(element);
+						return false;
+					}
+					unsigned int old_size = new_possible_values.length;
+					for (unsigned int i = 0; i < possible_values.length; i++) {
+						const instantiation_tuple& values = possible_values[i];
+						instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+						if (!init(new_values, values)) {
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+
+						if (!new_values.antiunify_value(formula->binary.left->variable - 1, formula->binary.right)) {
+							free(new_values);
+							continue;
+						}
+						new_possible_values.length++;
+					}
+					if (new_possible_values.length > old_size) {
+						insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+						array<instantiation_tuple> union_result(new_possible_values.length);
+						set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+						for (auto& element : new_possible_values) free(element);
+						swap(union_result, new_possible_values);
+					}
+				}
+			}
+
+			/* a=A or A=a (definition of a) */
+			Term* left = formula->binary.left;
+			Term* right = formula->binary.right;
+			if (formula->binary.left->type == TermType::CONSTANT || formula->binary.right->type == TermType::CONSTANT) {
+				if (left->type != TermType::CONSTANT)
+					swap(left, right);
+
+				if (Contradiction) {
+					for (unsigned int i = 0; i < ground_concept_capacity; i++) {
+						if (ground_concepts[i].types.keys == nullptr || i + new_constant_offset == left->constant)
+							continue;
+						for (Proof* definition : ground_concepts[i].definitions) {
+							array_map<Formula*, Term*> unifications(4);
+							if (!unify(right, definition->formula->binary.left, quantifiers, unifications))
+								continue;
+							if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+								for (auto& element : new_possible_values) free(element);
+								return false;
+							}
+							unsigned int old_size = new_possible_values.length;
+							for (unsigned int i = 0; i < possible_values.length; i++) {
+								const instantiation_tuple& values = possible_values[i];
+								instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									return false;
+								}
+
+								/* make sure the `possible_values` unify with the variables in this term */
+								bool unifies = true;
+								for (const auto& unification : unifications) {
+									if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+										unifies = false;
+										break;
+									}
+								}
+								if (!unifies) {
+									free(new_values);
+									continue;
+								}
+								new_possible_values.length++;
+							}
+							if (new_possible_values.length > old_size) {
+								insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+								array<instantiation_tuple> union_result(new_possible_values.length);
+								set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+								for (auto& element : new_possible_values) free(element);
+								swap(union_result, new_possible_values);
+							}
+						}
+					}
+				} else if (left->constant >= new_constant_offset) {
+					for (Proof* definition : ground_concepts[left->constant - new_constant_offset].definitions) {
+						array_map<Formula*, Term*> unifications(4);
+						if (!unify(right, definition->formula->binary.left, quantifiers, unifications))
+							continue;
+						if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+						unsigned int old_size = new_possible_values.length;
+						for (unsigned int i = 0; i < possible_values.length; i++) {
+							const instantiation_tuple& values = possible_values[i];
+							instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+							if (!init(new_values, values)) {
+								for (auto& element : new_possible_values) free(element);
+								return false;
+							}
+
+							/* make sure the `possible_values` unify with the variables in this term */
+							bool unifies = true;
+							for (const auto& unification : unifications) {
+								if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+									unifies = false;
+									break;
+								}
+							}
+							if (!unifies) {
+								free(new_values);
+								continue;
+							}
+							new_possible_values.length++;
+						}
+						if (new_possible_values.length > old_size) {
+							insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+							array<instantiation_tuple> union_result(new_possible_values.length);
+							set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+							for (auto& element : new_possible_values) free(element);
+							swap(union_result, new_possible_values);
+						}
+					}
+				}
+			} else if (formula->binary.left->type == TermType::VARIABLE || formula->binary.right->type == TermType::VARIABLE) {
+				if (formula->binary.left->type != TermType::VARIABLE)
+					swap(left, right);
+
+				for (unsigned int i = 0; i < possible_values.length; i++) {
+					const instantiation_tuple& values = possible_values[i];
+					if (!Contradiction && values.values[left->variable - 1].type == instance_type::CONSTANT) {
+						const concept<ProofCalculus>& c = ground_concepts[values.values[left->variable - 1].constant - new_constant_offset];
+						if (!new_possible_values.ensure_capacity(new_possible_values.length + c.definitions.length)) {
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+						unsigned int old_size = new_possible_values.length;
+						for (Proof* definition : c.definitions) {
+							array_map<Formula*, Term*> unifications(4);
+							if (!unify(right, definition->formula->binary.right, quantifiers, unifications))
+								continue;
+
+							instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+							if (!init(new_values, values)) {
+								for (auto& element : new_possible_values) free(element);
+								return false;
+							}
+
+							/* make sure the `possible_values` unify with the variables in this term */
+							bool unifies = true;
+							for (const auto& unification : unifications) {
+								if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+									unifies = false;
+									break;
+								}
+							}
+							if (!unifies) {
+								free(new_values);
+								continue;
+							}
+							new_possible_values.length++;
+						}
+						if (new_possible_values.length > old_size) {
+							insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+							array<instantiation_tuple> union_result(new_possible_values.length);
+							set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+							for (auto& element : new_possible_values) free(element);
+							swap(union_result, new_possible_values);
+						}
+						continue;
+					} else if (!Contradiction && values.values[left->variable - 1].type != instance_type::ANY) {
+						continue;
+					}
+
+					for (unsigned int i = 0; i < ground_concept_capacity; i++) {
+						const concept<ProofCalculus>& c = ground_concepts[i];
+						if (c.types.keys == nullptr)
+							continue;
+						unsigned int old_size = new_possible_values.length;
+						if (!new_possible_values.ensure_capacity(new_possible_values.length + c.definitions.length)) {
+							for (auto& element : new_possible_values) free(element);
+							return false;
+						}
+						instantiation_tuple new_values(values);
+						if ((!Contradiction && !new_values.unify_value(left->variable - 1, c.definitions[0]->formula->binary.left))
+						 || (Contradiction && !new_values.antiunify_value(left->variable - 1, c.definitions[0]->formula->binary.left)))
+							continue;
+
+						for (Proof* definition : c.definitions) {
+							array_map<Formula*, Term*> unifications(4);
+							if (!unify(right, definition->formula->binary.right, quantifiers, unifications))
+								continue;
+
+							instantiation_tuple& new_new_values = new_possible_values[new_possible_values.length];
+							if (!init(new_new_values, new_values)) {
+								for (auto& element : new_possible_values) free(element);
+								return false;
+							}
+
+							/* make sure the `possible_values` unify with the variables in this term */
+							bool unifies = true;
+							for (const auto& unification : unifications) {
+								if (!new_new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+									unifies = false;
+									break;
+								}
+							}
+							if (!unifies) {
+								free(new_new_values);
+								continue;
+							}
+							new_possible_values.length++;
+						}
+						if (new_possible_values.length > old_size) {
+							insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+							array<instantiation_tuple> union_result(new_possible_values.length);
+							set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+							for (auto& element : new_possible_values) free(element);
+							swap(union_result, new_possible_values);
+						}
+					}
+				}
+			}
+
+			/* a(b)=A or A=a(b) (function definition of a evaluated at b) */
+			if ((left->type == TermType::UNARY_APPLICATION && left->binary.left->type == TermType::CONSTANT)
+			 || (right->type == TermType::UNARY_APPLICATION && right->binary.left->type == TermType::CONSTANT))
+			{
+				if (left->type != TermType::UNARY_APPLICATION || left->binary.left->type != TermType::CONSTANT)
+					swap(left, right);
+				
+				if (left->binary.right->type == TermType::CONSTANT && left->binary.right->constant >= new_constant_offset) {
+					bool contains;
+					Proof* function_value = ground_concepts[left->binary.right->constant - new_constant_offset].function_values.get(left->binary.left->constant, contains);
+					if (contains) {
+						array_map<Formula*, Term*> unifications(4);
+						if (!unify(right, function_value->formula->binary.right, quantifiers, unifications)) {
+							if (Contradiction) {
+								swap(new_possible_values, possible_values);
+								for (auto& element : new_possible_values) free(element);
+								return true;
+							}
+						} else {
+							if (Contradiction) {
+								fprintf(stderr, "theory.is_provable_without_abduction ERROR: Not implemented.\n");
+								return false;
+							}
+							if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+								for (auto& element : new_possible_values) free(element);
+								return false;
+							}
+							unsigned int old_size = new_possible_values.length;
+							for (unsigned int i = 0; i < possible_values.length; i++) {
+								const instantiation_tuple& values = possible_values[i];
+								instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+								if (!init(new_values, values)) {
+									for (auto& element : new_possible_values) free(element);
+									return false;
+								}
+
+								/* make sure the `possible_values` unify with the variables in this term */
+								bool unifies = true;
+								for (const auto& unification : unifications) {
+									if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+										unifies = false;
+										break;
+									}
+								}
+								if (!unifies) {
+									free(new_values);
+									continue;
+								}
+								new_possible_values.length++;
+							}
+							if (new_possible_values.length > old_size) {
+								insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+								array<instantiation_tuple> union_result(new_possible_values.length);
+								set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+								for (auto& element : new_possible_values) free(element);
+								swap(union_result, new_possible_values);
+							}
+						}
+					}
+				} else if (left->binary.right->type == TermType::VARIABLE) {
+					if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+						for (auto& element : new_possible_values) free(element);
+						return false;
+					}
+					unsigned int old_size = new_possible_values.length;
+					for (unsigned int i = 0; i < possible_values.length; i++) {
+						const instantiation_tuple& values = possible_values[i];
+						if (!Contradiction && values.values[left->binary.right->variable - 1].type == instance_type::CONSTANT) {
+							const concept<ProofCalculus>& c = ground_concepts[values.values[left->binary.right->variable - 1].constant - new_constant_offset];
+							bool contains;
+							Proof* function_value = c.function_values.get(left->binary.left->constant, contains);
+							if (contains) {
+								array_map<Formula*, Term*> unifications(4);
+								if (!unify(right, function_value->formula->binary.right, quantifiers, unifications)) {
+									if (Contradiction) {
+										instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+										if (!init(new_values, values)) {
+											for (auto& element : new_possible_values) free(element);
+											return false;
+										}
+										new_possible_values.length++;
+									}
+								} else {
+									if (Contradiction) {
+										fprintf(stderr, "theory.is_provable_without_abduction ERROR: Not implemented.\n");
+										return false;
+									}
+									instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+									if (!init(new_values, values)) {
+										for (auto& element : new_possible_values) free(element);
+										return false;
+									}
+
+									/* make sure the `possible_values` unify with the variables in this term */
+									bool unifies = true;
+									for (const auto& unification : unifications) {
+										if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+											unifies = false;
+											break;
+										}
+									}
+									if (!unifies) {
+										free(new_values);
+										continue;
+									}
+									new_possible_values.length++;
+								}
+							}
+							continue;
+						} else if (!Contradiction && values.values[left->binary.right->variable - 1].type != instance_type::ANY) {
+							continue;
+						}
+
+						for (unsigned int i = 0; i < ground_concept_capacity; i++) {
+							const concept<ProofCalculus>& c = ground_concepts[i];
+							if (c.types.keys == nullptr)
+								continue;
+							bool contains;
+							Proof* function_value = c.function_values.get(left->binary.left->constant, contains);
+							if (contains) {
+								array_map<Formula*, Term*> unifications(4);
+								if (!new_possible_values.ensure_capacity(new_possible_values.length + possible_values.length)) {
+									for (auto& element : new_possible_values) free(element);
+									return false;
+								}
+								if (!unify(right, function_value->formula->binary.right, quantifiers, unifications)) {
+									if (Contradiction) {
+										instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+										if (!init(new_values, values)) {
+											for (auto& element : new_possible_values) free(element);
+											return false;
+										}
+										new_possible_values.length++;
+									}
+								} else {
+									if (Contradiction) {
+										fprintf(stderr, "theory.is_provable_without_abduction ERROR: Not implemented.\n");
+										return false;
+									}
+									instantiation_tuple& new_values = new_possible_values[new_possible_values.length];
+									if (!init(new_values, values)) {
+										for (auto& element : new_possible_values) free(element);
+										return false;
+									}
+
+									/* make sure the `possible_values` unify with the variables in this term */
+									bool unifies = true;
+									for (const auto& unification : unifications) {
+										if (!new_values.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+											unifies = false;
+											break;
+										}
+									}
+									if (!unifies) {
+										free(new_values);
+										continue;
+									}
+									new_possible_values.length++;
+								}
+							}
+						}
+					}
+					if (new_possible_values.length > old_size) {
+						insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size);
+						array<instantiation_tuple> union_result(new_possible_values.length);
+						set_union(union_result.data, union_result.length, new_possible_values.data, old_size, new_possible_values.data + old_size, new_possible_values.length - old_size);
+						for (auto& element : new_possible_values) free(element);
+						swap(union_result, new_possible_values);
+					}
+				}
+			}
+
+			swap(possible_values, new_possible_values);
+			for (auto& element : new_possible_values) free(element);
+
+		} else {
+			fprintf(stderr, "is_provable_without_abduction ERROR: Unsupported FormulaType.\n");
+			return false;
+		}
+		return possible_values.length != 0;
+	}
+
+	static bool get_unifying_atoms(
 			Formula* formula, Formula* atom,
 			array<Formula*>& quantifiers,
 			array<array_map<Formula*, Term*>>& unifications)
@@ -1773,51 +4453,51 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		case FormulaType::UNARY_APPLICATION:
 		case FormulaType::BINARY_APPLICATION:
 			if (!unifications.ensure_capacity(unifications.length + 1)
-			 || !array_init(unifications[unifications.length], 2))
+			 || !array_map_init(unifications[unifications.length], 2))
 				return false;
 			if (unify_atom(formula, atom, quantifiers, unifications[unifications.length]))  {
 				unifications.length++;
 			} else {
-				free(unifications[unifications.length--]);
+				free(unifications[unifications.length]);
 			}
 			return true;
 		case FormulaType::NOT:
 			if (!unifications.ensure_capacity(unifications.length + 2)
-			 || !array_init(unifications[unifications.length], 2))
+			 || !array_map_init(unifications[unifications.length], 2))
 				return false;
 			if (unify_atom(formula, atom, quantifiers, unifications[unifications.length]))  {
 				unifications.length++;
 			} else {
-				free(unifications[unifications.length--]);
+				free(unifications[unifications.length]);
 			}
 
-			if (!array_init(unifications[unifications.length], 2))
+			if (!array_map_init(unifications[unifications.length], 2))
 				return false;
 			if (unify_atom(formula->unary.operand, atom, quantifiers, unifications[unifications.length]))  {
 				unifications.length++;
 			} else {
-				free(unifications[unifications.length--]);
+				free(unifications[unifications.length]);
 			}
-			return get_unifying_atoms(formuls->unary.operand, atom, quantifiers);
+			return get_unifying_atoms(formula->unary.operand, atom, quantifiers, unifications);
 
 		case FormulaType::IF_THEN:
-			return get_unifying_atoms(formula->binary.left, atom, quantifiers)
-				&& get_unifying_atoms(formula->binary.right, atom, quantifiers);
+			return get_unifying_atoms(formula->binary.left, atom, quantifiers, unifications)
+				&& get_unifying_atoms(formula->binary.right, atom, quantifiers, unifications);
 		case FormulaType::AND:
 		case FormulaType::OR:
 		case FormulaType::IFF:
 			for (unsigned int i = 0; i < formula->array.length; i++)
-				if (!get_unifying_atoms(formula->array.operands[i], atom, quantifiers)) return false;
+				if (!get_unifying_atoms(formula->array.operands[i], atom, quantifiers, unifications)) return false;
 			return true;
 		case FormulaType::FOR_ALL:
 		case FormulaType::EXISTS:
 		case FormulaType::LAMBDA:
-			if (!quantifier.add(formula)) return false;
-			if (!get_unifying_atoms(formula->quantifier.operand, atom, quantifiers)) {
-				quantifier.length--;
+			if (!quantifiers.add(formula)) return false;
+			if (!get_unifying_atoms(formula->quantifier.operand, atom, quantifiers, unifications)) {
+				quantifiers.length--;
 				return false;
 			} else {
-				quantifier.length--;
+				quantifiers.length--;
 				return true;
 			}
 		case FormulaType::ANY:
@@ -1833,15 +4513,17 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return false;
 	}
 
-	bool is_consistent_with_extensional_edges(Formula* new_atom) {
+	bool check_set_membership_after_addition(Formula* new_atom) {
 		/* We first need to find all pairs of tuples and sets such that, with
 		   the addition of `new_atom` as an axiom, the tuple must necessarily
 		   belong to the set (and is not the case otherwise without
 		   `new_atom`). To do this, find all sets that contain an atom that
 		   unifies with `new_atom`. */
+		array_map<unsigned int, array<tuple>> new_elements(4);
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-			if (sets.sets[i].size_axiom == NULL) continue;
-			const Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+			if (sets.sets[i].size_axiom == nullptr)
+				continue;
+			Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
 
 			array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
 			for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
@@ -1849,14 +4531,288 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				set_formula = set_formula->quantifier.operand;
 			}
 			array<array_map<Formula*, Term*>> unifications(4);
-			if (!get_unifying_atoms(set_formula, new_atom, quantifiers, unifications))
+			if (!get_unifying_atoms(set_formula, new_atom, quantifiers, unifications)) {
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				}
 				return false;
+			}
 
-			for (const array_map<Formula*, Term>& unification : unifications) {
+			array<instantiation_tuple> possible_values(max((size_t) 1, 4 * unifications.length));
+			for (const array_map<Formula*, Term*>& unification : unifications) {
 				/* given `unification`, find the values of the quantified variables that make `set_formula` necessarily true */
-				
+				bool valid_unification = true;
+				array_map<unsigned int, Term*> bound_variable_map(unification.size);
+				array<instantiation_tuple> temp_possible_values(4);
+				instantiation_tuple& values = temp_possible_values[0];
+				if (!init(values, sets.sets[i].arity)) {
+					for (auto& element : unifications) free(element);
+					for (auto& element : possible_values) free(element);
+					for (auto entry : new_elements) {
+						for (tuple& tup : entry.value) free(tup);
+						free(entry.value);
+					}
+					return false;
+				}
+				temp_possible_values.length++;
+				for (const auto& entry : unification) {
+					bound_variable_map.put(entry.key->quantifier.variable, entry.value);
+					if (entry.key->quantifier.variable <= sets.sets[i].arity) {
+						if (entry.value->type == TermType::CONSTANT) {
+							free(values.values[entry.key->quantifier.variable - 1]);
+							values.values[entry.key->quantifier.variable - 1].type = instance_type::CONSTANT;
+							values.values[entry.key->quantifier.variable - 1].constant = entry.value->constant;
+						} else if (entry.value->type == TermType::INTEGER) {
+							free(values.values[entry.key->quantifier.variable - 1]);
+							values.values[entry.key->quantifier.variable - 1].type = instance_type::INTEGER;
+							values.values[entry.key->quantifier.variable - 1].constant = entry.value->integer;
+						} else if (entry.value->type == TermType::STRING) {
+							free(values.values[entry.key->quantifier.variable - 1]);
+							values.values[entry.key->quantifier.variable - 1].type = instance_type::STRING;
+							values.values[entry.key->quantifier.variable - 1].str = &entry.value->str;
+						} else {
+							valid_unification = false;
+							break;
+						}
+					}
+				}
+				if (!valid_unification) {
+					for (auto& element : temp_possible_values) free(element);
+					continue;
+				}
+
+				Formula* new_formula = substitute_quantified_variables(set_formula, bound_variable_map);
+				if (new_formula == nullptr) {
+					for (auto& element : unifications) free(element);
+					for (auto& element : possible_values) free(element);
+					for (auto& element : temp_possible_values) free(element);
+					for (auto entry : new_elements) {
+						for (tuple& tup : entry.value) free(tup);
+						free(entry.value);
+					}
+					return false;
+				}
+
+				if (!is_provable_without_abduction<false>(new_formula, quantifiers, temp_possible_values)) {
+					for (auto& element : temp_possible_values) free(element);
+					free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
+					continue;
+				}
+				free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
+
+				array<instantiation_tuple> union_result(possible_values.length + temp_possible_values.length);
+				set_union(union_result, possible_values, temp_possible_values);
+				for (auto& element : possible_values) free(element);
+				for (auto& element : temp_possible_values) free(element);
+				swap(union_result, possible_values);
+			}
+			for (auto& element : unifications) free(element);
+
+			/* check if any of the possible values of the quantified variables are newly provable members of this set */
+			hash_set<tuple> provable_elements(16);
+			if (!sets.get_provable_elements(i, provable_elements)) {
+				for (tuple& tup : provable_elements) free(tup);
+				for (auto& element : possible_values) free(element);
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				}
+				return false;
+			}
+			for (unsigned int j = 0; j < possible_values.length; j++) {
+				const instantiation_tuple& values = possible_values[j];
+				tuple new_tuple;
+				if (!init(new_tuple, values.length)) {
+					for (tuple& tup : provable_elements) free(tup);
+					for (auto& element : possible_values) free(element);
+					for (auto entry : new_elements) {
+						for (tuple& tup : entry.value) free(tup);
+						free(entry.value);
+					}
+					return false;
+				}
+				bool all_constants = true;
+				for (unsigned int k = 0; k < values.length; k++) {
+					if (values.values[k].type != instance_type::CONSTANT) {
+						all_constants = false;
+						break;
+					} else {
+						new_tuple[k] = values.values[k].constant;
+					}
+				}
+				if (!all_constants) {
+					free(new_tuple);
+					continue;
+				}
+
+				bool is_old = provable_elements.contains(new_tuple);
+				free(new_tuple);
+				if (is_old) {
+					free(possible_values[j]);
+					move(possible_values[possible_values.length - 1], possible_values[j]);
+					possible_values.length--;
+					j--;
+				}
+			}
+			for (tuple& tup : provable_elements) free(tup);
+
+			if (possible_values.length == 0)
+				continue;
+
+			/* all values in `possible_values` are newly provable */
+			for (const auto& entry : sets.extensional_graph.vertices[i].parents) {
+				unsigned int other_set = entry.key;
+				Formula* other_formula = sets.sets[other_set].set_formula();
+
+				array<instantiation_tuple> copy(possible_values.length);
+				for (unsigned int j = 0; j < possible_values.length; j++) {
+					if (!init(copy[copy.length], possible_values[j])) {
+						for (auto& element : possible_values) free(element);
+						for (auto entry : new_elements) {
+							for (tuple& tup : entry.value) free(tup);
+							free(entry.value);
+						}
+						return false;
+					}
+					copy.length++;
+				}
+
+				if (is_provable_without_abduction<true>(other_formula, quantifiers, copy)) {
+					/* we found a contradiction with a universally-quantified theorem */
+					for (auto& element : possible_values) free(element);
+					for (auto& element : copy) free(element);
+					for (auto entry : new_elements) {
+						for (tuple& tup : entry.value) free(tup);
+						free(entry.value);
+					}
+					return false;
+				}
+				for (auto& element : copy) free(element);
+			}
+
+			/* add the newly provable elements to `new_elements` */
+			if (!new_elements.ensure_capacity(new_elements.size + 1)) {
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				}
+				return false;
+			}
+			new_elements.keys[new_elements.size] = i;
+			if (!array_init(new_elements.values[new_elements.size], possible_values.length)) {
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				}
+				return false;
+			}
+			array<tuple>& new_element_array = new_elements.values[new_elements.size++];
+			for (unsigned int j = 0; j < possible_values.length; j++) {
+				if (!init(new_element_array[new_element_array.length], possible_values[0].length)) {
+					for (auto& element : possible_values) free(element);
+					for (auto entry : new_elements) {
+						for (tuple& tup : entry.value) free(tup);
+						free(entry.value);
+					}
+					return false;
+				}
+
+				bool all_constant = true;
+				const instantiation_tuple& values = possible_values[j];
+				for (unsigned int k = 0; k < values.length; k++) {
+					if (values.values[k].type != instance_type::CONSTANT) {
+						all_constant = false;
+						free(new_element_array[new_element_array.length]);
+						break;
+					}
+					new_element_array[new_element_array.length][k] = values.values[k].constant;
+				}
+				if (!all_constant) continue;
+				new_element_array.length++;
+			}
+			for (auto& element : possible_values) free(element);
+		}
+
+		/* add the elements to the sets */
+		for (const auto& entry : new_elements) {
+			for (const tuple& element : entry.value) {
+				if (!sets.sets[entry.key].add_element(element)) {
+					for (auto entry : new_elements) {
+						for (tuple& tup : entry.value) free(tup);
+						free(entry.value);
+					}
+					return false;
+				}
 			}
 		}
+		for (auto entry : new_elements) {
+			for (tuple& tup : entry.value) free(tup);
+			free(entry.value);
+		}
+		return true;
+	}
+
+	bool check_set_membership_after_subtraction(Formula* old_atom)
+	{
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == nullptr)
+				continue;
+			Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+
+			array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
+			for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+				quantifiers[quantifiers.length++] = set_formula;
+				set_formula = set_formula->quantifier.operand;
+			}
+			array<array_map<Formula*, Term*>> unifications(4);
+			if (!get_unifying_atoms(set_formula, old_atom, quantifiers, unifications))
+				return false;
+
+			for (unsigned int j = 0; j < sets.sets[i].element_count(); j++) {
+				const unsigned int* element = sets.sets[i].elements.data + (j * sets.sets[i].arity);
+				bool has_satisfying_unification = false;
+				for (const array_map<Formula*, Term*>& unification : unifications) {
+					bool matches = true;
+					for (const auto& entry : unification) {
+						if (entry.value->type != TermType::CONSTANT
+						 || element[entry.key->quantifier.variable - 1] != entry.value->constant)
+						{
+							matches = false;
+							break;
+						}
+					}
+					if (matches) {
+						has_satisfying_unification = true;
+						break;
+					}
+				}
+				if (!has_satisfying_unification) continue;
+
+				array<instantiation_tuple> temp_possible_values(1);
+				instantiation_tuple& values = temp_possible_values[0];
+				if (!init(values, sets.sets[i].arity)) {
+					for (auto& element : unifications) free(element);
+					return false;
+				}
+				for (unsigned int k = 0; k < values.length; k++) {
+					free(values.values[k]);
+					values.values[k].type = instance_type::CONSTANT;
+					values.values[k].constant = element[k];
+				}
+				temp_possible_values.length++;
+
+				if (is_provable_without_abduction<false>(set_formula, quantifiers, temp_possible_values)) {
+					for (auto& element : temp_possible_values) free(element);
+					continue;
+				}
+
+				/* `element` is not longer a member of this set */
+				sets.sets[i].remove_element_at(j--);
+			}
+			for (auto& element : unifications) free(element);
+		}
+		return true;
 	}
 
 	template<bool Contradiction, bool DefinitionsAllowed, bool ResolveInconsistencies, typename... Args>
@@ -2714,6 +5670,11 @@ private:
 			return NULL;
 		}
 		definition->reference_count++;
+
+		if (!check_set_membership_after_addition(definition->formula)) {
+			remove_definition(definition, std::forward<Args>(args)...);
+			return nullptr;
+		}
 		return definition;
 	}
 
@@ -2751,6 +5712,7 @@ private:
 
 		ground_concepts[concept_id - new_constant_offset].definitions.remove(index);
 		try_free_concept_id(concept_id);
+		check_set_membership_after_subtraction(definition->formula);
 		free(*definition); if (definition->reference_count == 0) free(definition);
 	}
 
@@ -2782,6 +5744,11 @@ private:
 		function_values.values[index] = function_value_axiom;
 		function_values.size++;
 		function_value_axiom->reference_count++;
+
+		if (!check_set_membership_after_addition(function_value_axiom->formula)) {
+			remove_function_value(function_value_axiom);
+			return nullptr;
+		}
 		return function_value_axiom;
 	}
 
@@ -2797,6 +5764,7 @@ private:
 
 		function_values.remove_at(index);
 		try_free_concept_id(concept_id);
+		check_set_membership_after_addition(function_value_axiom->formula);
 		free(*function_value_axiom); if (function_value_axiom->reference_count == 0) free(function_value_axiom);
 	}
 
@@ -3069,6 +6037,26 @@ private:
 				 || arg2->constant == (unsigned int) built_in_predicates::UNKNOWN) {
 					fprintf(stderr, "theory.make_atom_proof ERROR: Unsupported formula type.\n");
 					return NULL;
+				} else if (atom->ternary.first->type == TermType::CONSTANT && atom->ternary.first->constant == (unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL) {
+					if (arg1->type != TermType::INTEGER && arg2->type != TermType::INTEGER)
+						return nullptr;
+					if (arg1->integer >= arg2->integer) {
+						if (Negated) return nullptr;
+						Proof* new_proof = ProofCalculus::new_comparison_introduction(atom);
+						if (new_proof == nullptr) return nullptr;
+						new_proof->reference_count++;
+						return new_proof;
+					} else {
+						if (!Negated) return nullptr;
+						Formula* negated = Formula::new_not(atom);
+						if (negated == nullptr) return nullptr;
+						atom->reference_count++;
+						Proof* new_proof = ProofCalculus::new_comparison_introduction(negated);
+						free(*negated); if (negated->reference_count == 0) free(negated);
+						if (new_proof == nullptr) return nullptr;
+						new_proof->reference_count++;
+						return new_proof;
+					}
 				} else {
 					/* this is a formula of form `r(c_1,c_2)` */
 					if (atom->ternary.first->type != TermType::CONSTANT) {
@@ -3273,7 +6261,8 @@ private:
 
 		/* make sure we can't currently prove the negation of this new axiom
 		   via set containment (can we prove that the instance does not belong to any ancestor?) */
-		unsigned int new_set_id = sets.set_ids.get(*canonicalized);
+		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+		/*unsigned int new_set_id = sets.set_ids.get(*canonicalized);
 		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axiom == NULL) continue;
@@ -3292,7 +6281,7 @@ private:
 				else sets.move_element_to_superset({&element, 1}, old_set_formula);
 				return false;
 			}
-		}
+		}*/
 
 		return true;
 	}
@@ -4330,8 +7319,8 @@ T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
-/*if (t == 10)
-fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
+if (t == 21)
+fprintf(stderr, "DEBUG: BREAKPOINT\n");
 T.print_axioms(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector);
 if (t % 1000 == 0)

@@ -2877,6 +2877,73 @@ inline hol_term* substitute(hol_term* src,
 	return dst;
 }
 
+struct term_array_substituter {
+	const hol_term* const* src;
+	hol_term** dst;
+	unsigned int term_count;
+};
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, const term_array_substituter& substituter) {
+	for (unsigned int i = 0; i < substituter.term_count; i++) {
+		if (*src == *substituter.src[i]) {
+			substituter.dst[i]->reference_count++;
+			return substituter.dst[i];
+		}
+	}
+	return default_apply<Type>(src, substituter);
+}
+
+inline hol_term* substitute_all(
+		hol_term* src,
+		const hol_term* const* src_terms,
+		hol_term** dst_terms,
+		unsigned int term_count)
+{
+	const term_array_substituter substituter = {src_terms, dst_terms, term_count};
+	hol_term* dst = apply(src, substituter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct quantified_variable_substituter {
+	const array_map<unsigned int, hol_term*>& variable_map;
+};
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, const quantified_variable_substituter& substituter) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		unsigned int index = substituter.variable_map.index_of(src->quantifier.variable);
+		if (index < substituter.variable_map.size) {
+			return apply(src->quantifier.operand, substituter);
+		} else {
+			return default_apply<Type>(src, substituter);
+		}
+	} else if (Type == hol_term_type::VARIABLE) {
+		unsigned int index = substituter.variable_map.index_of(src->variable);
+		if (index < substituter.variable_map.size) {
+			hol_term* dst = substituter.variable_map.values[index];
+			dst->reference_count++;
+			return dst;
+		} else {
+			return default_apply<Type>(src, substituter);
+		}
+	} else {
+		return default_apply<Type>(src, substituter);
+	}
+}
+
+inline hol_term* substitute_quantified_variables(
+		hol_term* src, const array_map<unsigned int, hol_term*>& variable_map)
+{
+	const quantified_variable_substituter substituter = {variable_map};
+	hol_term* dst = apply(src, substituter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
 struct index_substituter {
 	const hol_term* src;
 	hol_term* dst;

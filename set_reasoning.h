@@ -380,20 +380,31 @@ struct tuple {
 	}
 
 private:
-	inline bool init_helper(const tuple& src) {
-		length = src.length;
+	inline bool init_helper(unsigned int src_length) {
+		length = src_length;
 		elements = (unsigned int*) malloc(sizeof(unsigned int) * length);
 		if (elements == nullptr) {
 			fprintf(stderr, "tuple.init_helper ERROR: Out of memory.\n");
 			return false;
 		}
+		return true;
+	}
+
+	inline bool init_helper(const tuple& src) {
+		if (!init_helper(src.length))
+			return false;
 		for (unsigned int i = 0; i < src.length; i++)
 			elements[i] = src.elements[i];
 		return true;
 	}
 
+	friend bool init(tuple&, unsigned int);
 	friend bool init(tuple&, const tuple&);
 };
+
+inline bool init(tuple& new_tuple, unsigned int length) {
+	return new_tuple.init_helper(length);
+}
 
 inline bool init(tuple& new_tuple, const tuple& src) {
 	return new_tuple.init_helper(src);

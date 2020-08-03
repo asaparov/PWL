@@ -1435,8 +1435,8 @@ inline void on_free_set(unsigned int set_id,
 template<typename Formula, typename Canonicalizer>
 bool undo_proof_changes(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
-		const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
-		const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
+		typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
+		typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof,
 		const undo_remove_sets& old_sets, const undo_remove_sets& new_sets)
 {
@@ -1784,6 +1784,7 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 				}
 				break;
 			case nd_step_type::AXIOM:
+			case nd_step_type::COMPARISON_INTRODUCTION:
 			case nd_step_type::PARAMETER:
 			case nd_step_type::TERM_PARAMETER:
 			case nd_step_type::ARRAY_PARAMETER:
@@ -1953,8 +1954,8 @@ inline bool do_mh_disjunction_intro(
 	pair<Formula*, nd_step<Formula>*>& selected_step,
 	nd_step<Formula>* proposed_proof,
 	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
-	const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
-	const typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
+	typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
+	typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
 	PriorState& proof_axioms,
 	const PriorStateChanges& old_axioms,
 	const PriorStateChanges& new_axioms,

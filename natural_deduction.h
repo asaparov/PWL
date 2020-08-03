@@ -36,6 +36,7 @@ enum class nd_step_type : uint_fast16_t
 	PROOF_BY_CONTRADICTION,
 	NEGATION_ELIMINATION,
 	FALSITY_ELIMINATION,
+	COMPARISON_INTRODUCTION,
 
 	UNIVERSAL_INTRODUCTION,
 	UNIVERSAL_ELIMINATION,
@@ -85,6 +86,7 @@ struct nd_step
 		case nd_step_type::FORMULA_PARAMETER:
 			return true;
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
 		case nd_step_type::BETA_EQUIVALENCE:
 		case nd_step_type::CONJUNCTION_ELIMINATION:
@@ -118,6 +120,7 @@ struct nd_step
 	inline void get_subproofs(nd_step<Formula>* const*& subproofs, unsigned int& length) {
 		switch (type) {
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::PARAMETER:
 		case nd_step_type::TERM_PARAMETER:
 		case nd_step_type::ARRAY_PARAMETER:
@@ -162,6 +165,7 @@ struct nd_step
 	inline void get_subproofs(const nd_step<Formula>* const*& subproofs, unsigned int& length) const {
 		switch (type) {
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::PARAMETER:
 		case nd_step_type::TERM_PARAMETER:
 		case nd_step_type::ARRAY_PARAMETER:
@@ -227,6 +231,7 @@ struct nd_step
 				core::free(term);
 			return;
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			core::free(*formula);
 #if !defined(NDEBUG)
@@ -294,6 +299,7 @@ struct nd_step
 		case nd_step_type::ARRAY_PARAMETER:
 			return type_hash ^ default_hash(key.parameters.data, key.parameters.length);
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			return type_hash ^ Formula::hash(*key.formula);
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -359,6 +365,7 @@ struct nd_step
 			dst.term->reference_count++;
 			return true;
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			dst.formula = src.formula;
 			dst.formula->reference_count++;
@@ -437,6 +444,7 @@ struct nd_step
 		case nd_step_type::TERM_PARAMETER:
 			dst.term = src.term; return;
 		case nd_step_type::AXIOM:
+		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			dst.formula = src.formula; return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -503,6 +511,7 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 		}
 		return 0;
 	case nd_step_type::AXIOM:
+	case nd_step_type::COMPARISON_INTRODUCTION:
 	case nd_step_type::FORMULA_PARAMETER:
 		return compare(*first.formula, *second.formula);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -580,6 +589,7 @@ inline bool operator == (const nd_step<Formula>& first, const nd_step<Formula>& 
 			if (first.parameters[i] != second.parameters[i]) return false;
 		return true;
 	case nd_step_type::AXIOM:
+	case nd_step_type::COMPARISON_INTRODUCTION:
 	case nd_step_type::FORMULA_PARAMETER:
 		return *first.formula == *second.formula;
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -950,6 +960,28 @@ bool check_proof(proof_state<Formula>& out,
 		out.formula = proof.formula;
 		out.formula->reference_count++;
 		return out.assumptions.add(out.formula);
+	case nd_step_type::COMPARISON_INTRODUCTION:
+		if (proof.formula->type == FormulaType::NOT) {
+			Formula* operand = proof.formula->unary.operand;
+			if (operand->type != FormulaType::BINARY_APPLICATION
+			 || operand->ternary.first->type != TermType::CONSTANT
+			 || operand->ternary.first->constant != (unsigned int) BuiltInPredicates::GREATER_THAN_OR_EQUAL
+			 || operand->ternary.second->type != TermType::INTEGER
+			 || operand->ternary.third->type != TermType::INTEGER
+			 || operand->ternary.second->integer >= operand->ternary.third->integer)
+				return false;
+		} else {
+			if (operand->type != FormulaType::BINARY_APPLICATION
+			 || operand->ternary.first->type != TermType::CONSTANT
+			 || operand->ternary.first->constant != (unsigned int) BuiltInPredicates::GREATER_THAN_OR_EQUAL
+			 || operand->ternary.second->type != TermType::INTEGER
+			 || operand->ternary.third->type != TermType::INTEGER
+			 || operand->ternary.second->integer < operand->ternary.third->integer)
+				return false;
+		}
+		out.formula = proof.formula;
+		out.formula->reference_count++;
+		return true;
 	case nd_step_type::BETA_EQUIVALENCE:
 		second_operand = map_const(proof.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (operand_count != 2 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER || second_operand->type != nd_step_type::FORMULA_PARAMETER)
@@ -1511,6 +1543,10 @@ struct natural_deduction
 		return new_binary_step<nd_step_type::BETA_EQUIVALENCE>(new_formula_parameter(first), new_formula_parameter(second));
 	}
 
+	static inline Proof* new_comparison_introduction(Formula* comparison) {
+		return new_parameterized_step<nd_step_type::COMPARISON_INTRODUCTION>(comparison);
+	}
+
 	template<typename... Proofs>
 	static inline Proof* new_conjunction_intro(Proof* proof, Proofs&&... other_proofs) {
 		return new_array_step<nd_step_type::CONJUNCTION_INTRODUCTION, 2>(proof, std::forward<Proofs>(other_proofs)...);
@@ -1914,6 +1950,9 @@ double log_probability(
 		}
 		/* the contribution from the axiom_prior is computed at the end */
 		return 0.0;
+	case nd_step_type::COMPARISON_INTRODUCTION:
+		formula_counter++;
+		return -LOG_ND_RULE_COUNT;
 	case nd_step_type::BETA_EQUIVALENCE:
 		/* TODO: this is a hack; correct it */
 		formula_counter++;

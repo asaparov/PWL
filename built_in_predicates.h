@@ -32,6 +32,7 @@ enum class built_in_predicates : unsigned int {
 	GAP,
 	GREATER,
 	GREATEST,
+	GREATER_THAN_OR_EQUAL,
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
@@ -188,6 +189,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("GAP", (unsigned int) built_in_predicates::GAP)
 		&& names.put("greater", (unsigned int) built_in_predicates::GREATER)
 		&& names.put("greatest", (unsigned int) built_in_predicates::GREATEST)
+		&& names.put("≥", (unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL)
 		&& names.put("=", (unsigned int) built_in_predicates::EQUALS)
 		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET)
 		&& names.put("name", (unsigned int) built_in_predicates::NAME)
