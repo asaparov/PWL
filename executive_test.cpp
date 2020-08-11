@@ -1133,6 +1133,48 @@ inline void run_console(Stream& input, const char* prompt,
 	run_console(input, prompt, parser, names, dummy_training_set);
 }
 
+template<bool AllConstantsDistinct, bool PolymorphicEquality, typename BuiltInPredicates>
+struct polymorphic_canonicalizer
+{
+	template<bool Quiet = false>
+	static inline hol_term* canonicalize(const hol_term& src)
+	{
+		equals_arg_types<simple_type> types(16);
+		array_map<unsigned int, hol_type<simple_type>> constant_types(8);
+		array_map<unsigned int, hol_type<simple_type>> variable_types(8);
+		array_map<unsigned int, hol_type<simple_type>> parameter_types(8);
+
+		constant_types.keys[0] = (unsigned int) BuiltInPredicates::ARG1;
+		constant_types.keys[1] = (unsigned int) BuiltInPredicates::ARG2;
+		constant_types.keys[2] = (unsigned int) BuiltInPredicates::ARG3;
+		if (!init(constant_types.values[0], 1, hol_type<simple_type>(2, hol_type<simple_type>(hol_type<simple_type>(1), hol_type<simple_type>(2))))) {
+			return nullptr;
+		} else if (!init(constant_types.values[1], 1, hol_type<simple_type>(2, hol_type<simple_type>(hol_type<simple_type>(1), hol_type<simple_type>(2))))) {
+			free(constant_types.values[0]);
+			return nullptr;
+		} else if (!init(constant_types.values[2], 1, hol_type<simple_type>(2, hol_type<simple_type>(hol_type<simple_type>(1), hol_type<simple_type>(2))))) {
+			free(constant_types.values[0]);
+			free(constant_types.values[1]);
+			return nullptr;
+		}
+		constant_types.size += 3;
+
+		bool success = compute_type<PolymorphicEquality, Quiet>(src, types, constant_types, variable_types, parameter_types);
+		for (unsigned int j = 0; j < constant_types.size; j++) free(constant_types.values[j]);
+		for (unsigned int j = 0; j < variable_types.size; j++) free(variable_types.values[j]);
+		for (unsigned int j = 0; j < parameter_types.size; j++) free(parameter_types.values[j]);
+		if (!success) return nullptr;
+
+		array_map<unsigned int, unsigned int> variable_map(16);
+		hol_scope& scope = *((hol_scope*) alloca(sizeof(hol_scope)));
+		if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map, types))
+			return nullptr;
+		hol_term* canonicalized = scope_to_term(scope);
+		free(scope);
+		return canonicalized;
+	}
+};
+
 
 unsigned int constant_offset = 0;
 
@@ -1330,7 +1372,7 @@ return EXIT_SUCCESS;*/
 	}
 
 	/* read the articles */
-	theory<natural_deduction<hol_term>, standard_canonicalizer<true, false>> T(1000000000);
+	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			chinese_restaurant_process<unsigned int>(1.0), chinese_restaurant_process<unsigned int>(1.0));
@@ -1352,16 +1394,29 @@ return EXIT_SUCCESS;*/
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/
 
+	read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "Arkansas is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	/*read_sentence(corpus, parser, "Oklahoma is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "New Mexico is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);*/
+	read_sentence(corpus, parser, "There are 2 states that border Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of Louisiana is 104.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of Arkansas is 103.", T, names, seed_entities, proof_prior, proof_axioms);
+	/*read_sentence(corpus, parser, "The area of Oklahoma is 200.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of New Mexico is 1082.", T, names, seed_entities, proof_prior, proof_axioms);*/
+	/*read_sentence(corpus, parser, "The largest state bordering Texas is Arkansas.", T, names, seed_entities, proof_prior, proof_axioms);
+for (auto entry : names) free(entry.key);
+return EXIT_SUCCESS;*/
+
 	array<string> answers(4);
 	/*if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "The population of Arizona is what?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "The population of Arizona is what?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} /*if (answer_question<true>(answers, "What is the largest state bordering Texas?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	}*/ if (answer_question<true>(answers, "What is the largest state bordering Texas?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/
+	}
 for (string& str : answers) free(str);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;

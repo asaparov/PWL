@@ -728,7 +728,7 @@ bool propose_universal_intro(
 
 		antecedent = canonicalized->quantifier.operand->binary.left;
 		consequent = canonicalized->quantifier.operand->binary.right;
-		axiom_step = T.sets.template get_subset_axiom<false>(antecedent, consequent, 1, unfixed_set_count_change);
+		axiom_step = T.template get_subset_axiom<false>(antecedent, consequent, 1, unfixed_set_count_change);
 		free(*canonicalized);
 		if (canonicalized->reference_count == 0)
 			free(canonicalized);

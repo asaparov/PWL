@@ -971,6 +971,7 @@ bool check_proof(proof_state<Formula>& out,
 			 || operand->ternary.second->integer >= operand->ternary.third->integer)
 				return false;
 		} else {
+			Formula* operand = proof.formula;
 			if (operand->type != FormulaType::BINARY_APPLICATION
 			 || operand->ternary.first->type != TermType::CONSTANT
 			 || operand->ternary.first->constant != (unsigned int) BuiltInPredicates::GREATER_THAN_OR_EQUAL
@@ -1502,7 +1503,7 @@ bool check_proof(const nd_step<Formula>& proof,
 	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 /* TODO: for debugging; delete this */
-print("actual_conclusion:  ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
+print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
 print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr); print('\n', stderr);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");

@@ -164,6 +164,10 @@ struct in_memory_article_store {
 	const article<Derivation>& get(unsigned int article_id, bool& contains) const {
 		return articles.get(article_id, contains);
 	}
+
+	inline bool contains(unsigned int article_id) const {
+		return articles.table.contains(article_id);
+	}
 };
 
 

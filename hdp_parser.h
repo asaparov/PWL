@@ -18573,6 +18573,8 @@ bool is_ambiguous(const hol_type<syntactic_type>& type)
 		return false;
 	case hol_type_kind::FUNCTION:
 		return is_ambiguous(*type.function.left) || is_ambiguous(*type.function.right);
+	case hol_type_kind::POLYMORPHIC:
+		return is_ambiguous(*type.polymorphic.operand);
 	case hol_type_kind::VARIABLE:
 	case hol_type_kind::ANY:
 		return true;
@@ -18753,9 +18755,9 @@ inline bool check_variable_type(unsigned int other_variable,
 
 	array<pair<unsigned int, bool>> visited_variables(8);
 	for (auto entry : bound_variable_types)
-		if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) return false;
+		if (!flatten_type_variable<true, false>(entry.value, visited_variables, type_variables)) return false;
 	for (auto entry : free_variable_types)
-		if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) return false;
+		if (!flatten_type_variable<true, false>(entry.value, visited_variables, type_variables)) return false;
 	free(expected_other_type);
 	return init(expected_other_type, new_index.key ? bound_variable_types.values[new_index.value] : free_variable_types.values[new_index.value]);
 }
@@ -18933,9 +18935,9 @@ bool check_type(hol_term* term, unsigned int variable,
 
 			array<pair<unsigned int, bool>> visited_variables(8);
 			for (auto entry : bound_variable_types)
-				if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) return false;
+				if (!flatten_type_variable<true, false>(entry.value, visited_variables, type_variables)) return false;
 			for (auto entry : free_variable_types)
-				if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) return false;
+				if (!flatten_type_variable<true, false>(entry.value, visited_variables, type_variables)) return false;
 		}
 		return true;
 	case hol_term_type::UNARY_APPLICATION:
@@ -18988,9 +18990,9 @@ bool check_type(hol_term* term, unsigned int variable,
 
 				array<pair<unsigned int, bool>> visited_variables(8);
 				for (auto entry : bound_variable_types)
-					if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) return false;
+					if (!flatten_type_variable<true, false>(entry.value, visited_variables, type_variables)) return false;
 				for (auto entry : free_variable_types)
-					if (!flatten_type_variable<true>(entry.value, visited_variables, type_variables)) return false;
+					if (!flatten_type_variable<true, false>(entry.value, visited_variables, type_variables)) return false;
 			}
 		}
 		return true;
@@ -19268,7 +19270,7 @@ inline bool invert_remove_conjunct(
 
 	return invert_apply_head(inverse, inverse_count, flags, first, second,
 		find_head<built_in_predicates>, find_head<built_in_predicates>, on_remap_variables,
-		[second](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array)
+		[](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array)
 	{
 		hol_term* old_second_head = second_head;
 		if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) && second_head->any.included != nullptr)
@@ -19465,31 +19467,6 @@ inline bool invert_remove_conjunct(
 					}
 					for (unsigned int i = 0; i < old_second_head->any.excluded_tree_count; i++)
 						old_second_head->any.excluded_trees[i]->reference_count++;
-				}
-			} else if (first_has_any && (second == second_head || (second->type == hol_term_type::UNARY_APPLICATION && second->binary.left->type == hol_term_type::CONSTANT && second->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE && second->binary.right == second_head))) {
-				dst_outer[dst_outer.length] = &HOL_ZERO;
-
-				/* check if the resulting intersection of the heads can refer to any quantifiers defined outside the head */
-				if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr)
-					first_head = first_head->any.included;
-				if (first_head->type == hol_term_type::EXISTS) {
-					hol_term* conjunct = nullptr;
-					hol_term* operand = first_head->quantifier.operand;
-					if (operand->type == hol_term_type::ANY_ARRAY && operand->any_array.oper == hol_term_type::AND) {
-						if (ConjunctIndex < 0 && (uint_fast8_t) (-ConjunctIndex) <= operand->any_array.right.length)
-							conjunct = operand->any_array.right.operands[operand->any_array.right.length + ConjunctIndex];
-						else if (ConjunctIndex >= 0 && (uint_fast8_t) ConjunctIndex < operand->any_array.left.length)
-							conjunct = operand->any_array.left.operands[ConjunctIndex];
-					} else if (operand->type == hol_term_type::AND) {
-						conjunct = operand->array.operands[(ConjunctIndex < 0) ? (operand->array.length + ConjunctIndex) : ConjunctIndex];
-					} else {
-						any_right_only = false;
-					}
-
-					if (conjunct == nullptr || can_have_free_variables(*conjunct))
-						any_right_only = false;
-				} else {
-					any_right_only = false;
 				}
 			} else {
 				hol_term* conjunct = nullptr;

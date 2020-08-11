@@ -4,7 +4,7 @@
 #include "article.h"
 #include "natural_deduction_mh.h"
 
-constexpr double PERPLEXITY_THRESHOLD = 0.01;
+constexpr double PERPLEXITY_THRESHOLD = 0.0; //0.01;
 constexpr double SUFFICIENT_KNOWLEDGE_THRESHOLD = 8.0;
 
 template<typename Formula>
@@ -96,6 +96,17 @@ bool read_sentence(
 		}
 		for (string& entity : named_entities) free(entity);
 
+		/* preemptively remove tokens for which an article doesn't exist in the corpus */
+		for (unsigned int i = 0; i < unrecognized_concatenated.length; i++) {
+			if (!articles.contains(unrecognized_concatenated[i])) {
+				if (!visited_articles.add(unrecognized_concatenated[i])) {
+					free_logical_forms(logical_forms, parse_count);
+					return false;
+				}
+				unrecognized_concatenated.remove(i--);
+			}
+		}
+
 		/* read the article on the unrecognized word */
 		if (unrecognized_concatenated.length == 0) {
 			break;
@@ -186,10 +197,10 @@ bool read_article(
 
 	bool article_exists;
 	const auto& doc = articles.get(article_name, article_exists);
-	if (!article_exists) {
-		print("read_article ERROR: No such article '", stderr); print(article_name, stderr, parser.get_printer()); print("'.\n", stderr);
+	if (!visited_articles.add(article_name)) {
 		return false;
-	} else if (!visited_articles.add(article_name)) {
+	} else if (!article_exists) {
+		print("read_article ERROR: No such article '", stderr); print(article_name, stderr, parser.get_printer()); print("'.\n", stderr);
 		return false;
 	}
 
@@ -198,6 +209,24 @@ bool read_article(
 			return false;
 	}
 	return true;
+}
+
+template<typename ArticleSource, typename Parser,
+	typename Formula, typename Canonicalizer, typename TheoryPrior>
+inline bool read_sentence(
+		const ArticleSource& articles, Parser& parser, const char* input_sentence,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
+		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms)
+{
+	typename Parser::SentenceType sentence;
+	if (!tokenize(input_sentence, sentence, names)
+	 || !parser.invert_name_map(names))
+		return false;
+
+	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms);
+	free(sentence);
+	return result;
 }
 
 template<typename Parser, size_t ParseCount>
@@ -234,8 +263,11 @@ inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<
 	hol_term* logical_forms[max_parse_count];
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count;
-	if (!parse_sentence(parser, sentence, names, logical_forms, log_probabilities, parse_count))
+	if (!parse_sentence(parser, sentence, names, logical_forms, log_probabilities, parse_count)) {
+		free(sentence);
 		return false;
+	}
+	free(sentence);
 	for (unsigned int i = 0; i < parse_count; i++) {
 		print(*logical_forms[i], stderr, parser.get_printer()); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
 		free(*logical_forms[i]);
@@ -1262,9 +1294,12 @@ bool read_sentence(
 		typename TheoryPrior::PriorState& proof_axioms)
 {
 	typename Parser::SentenceType sentence;
-	if (!tokenize(tokens, length, sentence, names)
-	 || !parser.invert_name_map(names))
+	if (!tokenize(tokens, length, sentence, names)) {
 		return false;
+	} else if (!parser.invert_name_map(names)) {
+		free(sentence);
+		return false;
+	}
 	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms);
 	free(sentence);
 	return result;

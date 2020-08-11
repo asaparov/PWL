@@ -508,7 +508,7 @@ struct set_info
 
 	inline Formula* set_formula() {
 		Formula* operand = size_axiom->formula->binary.left->binary.right->quantifier.operand;
-		while (operand->type == FormulaType::FOR_ALL)
+		while (operand->type == FormulaType::LAMBDA)
 			operand = operand->quantifier.operand;
 		return operand;
 	}
@@ -1493,12 +1493,13 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
-	Proof* get_subset_axiom(Formula* antecedent, Formula* consequent, unsigned int arity, Args&&... visitor)
+	Proof* get_subset_axiom(
+			Formula* antecedent, Formula* consequent, unsigned int arity,
+			unsigned int& antecedent_set, unsigned int& consequent_set,
+			bool& is_antecedent_new, bool& is_consequent_new, Args&&... visitor)
 	{
 		if (!set_ids.check_size(set_ids.table.size + 2)) return NULL;
 
-		unsigned int antecedent_set, consequent_set;
-		bool is_antecedent_new, is_consequent_new;
 		if (!get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
 			return NULL;
 		} else if (!get_set_id(consequent, arity, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
@@ -1866,9 +1867,11 @@ struct set_reasoning
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
-	inline Proof* get_size_axiom(Formula* formula, unsigned int arity, unsigned int new_size, Args&&... visitor) {
-		unsigned int set_id;
-		if (!get_set_id(formula, arity, set_id, std::forward<Args>(visitor)...))
+	inline Proof* get_size_axiom(
+			Formula* formula, unsigned int arity, unsigned int new_size,
+			unsigned int& set_id, bool& is_set_new, Args&&... visitor)
+	{
+		if (!get_set_id(formula, arity, set_id, is_set_new, std::forward<Args>(visitor)...))
 			return NULL;
 		return get_size_axiom<ResolveInconsistencies>(set_id, new_size);
 	}
@@ -1926,6 +1929,7 @@ struct set_reasoning
 				if (sets[i].size_axiom == NULL) continue;
 				for (unsigned int j = i + 1; j < set_count + 1; j++) {
 					if (sets[j].size_axiom == NULL) continue;
+					if (sets[i].arity != sets[j].arity) continue;
 					if (are_newly_disjoint(sets[i].set_formula(), sets[j].set_formula(), set_id)) {
 						/* check if any ancestor of `i` and `j` has a set size smaller than its lower bound */
 						if (!find_largest_disjoint_clique_with_edge(*this, i, j, clique, clique_count, ancestor_of_clique, INT_MIN, 0)) {
@@ -2237,6 +2241,8 @@ struct set_reasoning
 	inline bool are_disjoint(Formula* first, Formula* second) const
 	{
 		Formula* intersection = intersect(first, second);
+		if (intersection == nullptr)
+			return true;
 
 		array<unsigned int> stack(8);
 		hash_set<unsigned int> visited(16);
@@ -2263,6 +2269,8 @@ struct set_reasoning
 
 	inline bool are_disjoint(unsigned int first_set, unsigned int second_set) const
 	{
+		if (sets[first_set].arity != sets[second_set].arity)
+			return false;
 		return are_disjoint(sets[first_set].set_formula(), sets[second_set].set_formula());
 	}
 
@@ -2273,6 +2281,7 @@ struct set_reasoning
 	inline bool are_newly_disjoint(Formula* first, Formula* second, unsigned int set_id) const
 	{
 		Formula* intersection = intersect(first, second);
+		if (intersection == nullptr) return false;
 
 		/* first check if the intersection belongs to `set_id` */
 		if (!is_subset(intersection, sets[set_id].set_formula())) {
