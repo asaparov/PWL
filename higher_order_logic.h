@@ -4310,8 +4310,9 @@ inline bool unify_variable(
 			return false;
 		if (out.kind == hol_type_kind::NONE) return true;
 		free(type_variables[var]);
+		free(new_second);
 		move(out, type_variables[var]);
-		return init(out, var);
+		return init(out, var) && init(new_second, var);
 	}
 	fprintf(stderr, "unify_variable ERROR: Unrecognized hol_type_kind.\n");
 	return false;
@@ -5245,8 +5246,8 @@ int_fast8_t compare(
 		const hol_term& first,
 		const hol_term& second)
 {
-	if (first.type < second.type) return true;
-	else if (first.type > second.type) return false;
+	if (first.type < second.type) return -1;
+	else if (first.type > second.type) return 1;
 	switch (first.type) {
 	case hol_term_type::VARIABLE:
 	case hol_term_type::VARIABLE_PREIMAGE:

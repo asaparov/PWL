@@ -621,8 +621,26 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 		const simple_hol_term_distribution<ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
-	if (function->type != hol_term_type::CONSTANT)
+	if (function->type == hol_term_type::UNARY_APPLICATION) {
+		if (function->binary.left->type != hol_term_type::CONSTANT
+		 || function->binary.right->type != hol_term_type::CONSTANT)
+		{
+			return -std::numeric_limits<double>::infinity();
+		} else {
+			constants.add_predicate(function->binary.left->constant);
+			constants.add_predicate(function->binary.right->constant);
+			if (Quantified && arg1->type == hol_term_type::VARIABLE) {
+				return prior.log_binary_probability;
+			} else if (!Quantified && arg1->type == hol_term_type::CONSTANT) {
+				constants.add_constant(arg1->constant);
+				return prior.log_binary_probability;
+			} else {
+				return -std::numeric_limits<double>::infinity();
+			}
+		}
+	} else if (function->type != hol_term_type::CONSTANT) {
 		return -std::numeric_limits<double>::infinity();
+	}
 
 	constants.add_predicate(function->constant);
 	if (Quantified && arg1->type == hol_term_type::VARIABLE) {
@@ -632,7 +650,7 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 		return prior.log_unary_probability;
 	} else {
 		return -std::numeric_limits<double>::infinity();
-	}	
+	}
 }
 
 template<bool Quantified, typename ConstantDistribution, typename SetSizeDistribution>
@@ -726,7 +744,8 @@ double log_probability_helper(const hol_term* term,
 			}
 			return value;
 		} else {
-			return -std::numeric_limits<double>::infinity();
+			// TODO: implement this (this is currently only possible if `term` is a prespecified theorem)
+			return 0.0;
 		}
 	case hol_term_type::EQUALS:
 		if (term->binary.left->type == hol_term_type::UNARY_APPLICATION
@@ -1137,7 +1156,7 @@ template<bool AllConstantsDistinct, bool PolymorphicEquality, typename BuiltInPr
 struct polymorphic_canonicalizer
 {
 	template<bool Quiet = false>
-	static inline hol_term* canonicalize(const hol_term& src)
+	static inline hol_term* canonicalize(const hol_term& src, array_map<unsigned int, unsigned int>& variable_map)
 	{
 		equals_arg_types<simple_type> types(16);
 		array_map<unsigned int, hol_type<simple_type>> constant_types(8);
@@ -1165,13 +1184,19 @@ struct polymorphic_canonicalizer
 		for (unsigned int j = 0; j < parameter_types.size; j++) free(parameter_types.values[j]);
 		if (!success) return nullptr;
 
-		array_map<unsigned int, unsigned int> variable_map(16);
 		hol_scope& scope = *((hol_scope*) alloca(sizeof(hol_scope)));
 		if (!canonicalize_scope<AllConstantsDistinct>(src, scope, variable_map, types))
 			return nullptr;
 		hol_term* canonicalized = scope_to_term(scope);
 		free(scope);
 		return canonicalized;
+	}
+
+	template<bool Quiet = false>
+	static inline hol_term* canonicalize(const hol_term& src)
+	{
+		array_map<unsigned int, unsigned int> variable_map(16);
+		return canonicalize<Quiet>(src, variable_map);
 	}
 };
 

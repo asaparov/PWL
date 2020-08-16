@@ -9808,21 +9808,28 @@ inline bool select_arg_without_head(
 						return (hol_term*) nullptr;
 					}
 
-					hol_term* expected_conjunct;
-					if (InvertArg) {
-						expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
-								hol_term::new_apply(hol_term::new_constant(ArgConstant), head_var),
-								&HOL_ANY));
-					} else {
-						expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
-								hol_term::new_apply(hol_term::new_constant(ArgConstant), &HOL_ANY),
-								head_var));
-					}
-					if (expected_conjunct == nullptr) {
+					hol_term* any_quantifier = hol_term::new_any_quantifier(hol_quantifier_type::ANY, &HOL_ANY);
+					if (any_quantifier == nullptr) {
 						free(*excluded); free(excluded);
 						return (hol_term*) nullptr;
 					}
 					HOL_ANY.reference_count++;
+
+					hol_term* expected_conjunct;
+					if (InvertArg) {
+						expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
+								hol_term::new_apply(hol_term::new_constant(ArgConstant), head_var),
+								hol_term::new_any(nullptr, &any_quantifier, 1)));
+					} else {
+						expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
+								hol_term::new_apply(hol_term::new_constant(ArgConstant), hol_term::new_any(nullptr, &any_quantifier, 1)),
+								head_var));
+					}
+					if (expected_conjunct == nullptr) {
+						free(*excluded); free(excluded);
+						free(*any_quantifier); free(any_quantifier);
+						return (hol_term*) nullptr;
+					}
 					head_var->reference_count++;
 
 					array<hol_term*> intersection(2);

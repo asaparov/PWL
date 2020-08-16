@@ -1099,7 +1099,12 @@ bool propose_universal_elim(
 	}
 	old_set_formula->reference_count++;
 	consequent->reference_count++;
-	Formula* canonicalized_new_set_formula = Canonicalizer::canonicalize(*new_set_formula);
+	array_map<unsigned int, unsigned int> variable_map(max(16u, T.sets.sets[old_set_id].arity));
+	for (unsigned int i = 0; i < T.sets.sets[old_set_id].arity; i++) {
+		variable_map.keys[variable_map.size] = i + 1;
+		variable_map.values[variable_map.size++] = i + 1;
+	}
+	Formula* canonicalized_new_set_formula = Canonicalizer::canonicalize(*new_set_formula, variable_map);
 	free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 	if (canonicalized_new_set_formula == NULL) {
 		free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
@@ -1634,6 +1639,7 @@ bool propose_disjunction_intro(
 
 	nd_step<Formula>* new_proof;
 	proof_sampler sampler;
+unsigned int debug = 0;
 	while (true) {
 		/* sample a new proof, only selecting one path at every branch,
 		   and avoiding paths that we've previously proved to be inconsistent,
@@ -1642,9 +1648,16 @@ bool propose_disjunction_intro(
 		sampler.log_probability = 0.0;
 		sampler.removed_set_sizes.clear();
 		sampler.undo = false;
+fprintf(stderr, "INNER DEBUG: %u\n", debug);
+T.print_axioms(stderr);
+T.sets.are_elements_unique();
+debug++;
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_constant, sampler);
 		if (new_proof != NULL) break;
 	}
+fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
+T.print_axioms(stderr);
+T.sets.are_elements_unique();
 
 	log_proposal_probability_ratio -= sampler.log_probability;
 	log_proposal_probability_ratio -= sampler.set_size_log_probability;

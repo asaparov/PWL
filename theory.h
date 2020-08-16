@@ -2132,7 +2132,8 @@ struct theory
 		Formula* new_formula = preprocess_formula(formula);
 		if (new_formula == NULL) return nullptr;
 
-		Formula* canonicalized = Canonicalizer::canonicalize(*new_formula);
+		array_map<unsigned int, unsigned int> variable_map(16);
+		Formula* canonicalized = Canonicalizer::canonicalize(*new_formula, variable_map);
 		free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
 		if (canonicalized == NULL) return nullptr;
 
@@ -2226,6 +2227,52 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return success;
 	}
 
+	inline bool are_elements_provable() const {
+		bool success = true;
+		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+			if (sets.sets[i].size_axiom == nullptr)
+				continue;
+			Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+
+			array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
+			for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+				quantifiers[quantifiers.length++] = set_formula;
+				set_formula = set_formula->quantifier.operand;
+			}
+
+			for (unsigned int j = 0; j < sets.sets[i].element_count(); j++) {
+				unsigned int* element = (unsigned int*) alloca(sizeof(unsigned int) * sets.sets[i].arity);
+				const unsigned int* element_src = sets.sets[i].elements.data + (sets.sets[i].arity * j);
+				for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++)
+					element[k] = element_src[k];
+				array<instantiation_tuple> possible_values(1);
+				if (!init(possible_values[0], sets.sets[i].arity))
+					return false;
+				possible_values.length = 1;
+				for (uint_fast8_t k = 0; k < possible_values[0].length; k++) {
+					free(possible_values[0].values[k]);
+					possible_values[0].values[k].type = instantiation_type::CONSTANT;
+					possible_values[0].values[k].constant = element[k];
+				}
+
+				sets.sets[i].remove_element_at(j);
+				if (!is_provable_without_abduction<false>(set_formula, quantifiers, possible_values)) {
+					print("theory.are_elements_provable ERROR: The element ", stderr);
+					if (sets.sets[i].arity == 1)
+						print(element[0], stderr);
+					else print(element, sets.sets[i].arity, stderr);
+					print(" does not provably belong to set with ID ", stderr);
+					print(i, stderr); print(".\n", stderr);
+					success = false;
+				}
+				for (auto& element : possible_values) free(element);
+				for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++)
+					sets.sets[i].elements[sets.sets[i].elements.length++] = element[k];
+			}
+		}
+		return success;
+	}
+
 	inline bool is_provably_not_a_set(unsigned int constant) const {
 		if (constant < new_constant_offset || ground_concepts[constant - new_constant_offset].types.keys == NULL)
 			return false;
@@ -2277,10 +2324,6 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		} else {
 			lifted_literal = lifted_atom;
 		}
-		if (!move_element_to_subset<ResolveInconsistencies>(arg, lifted_literal, std::forward<Args>(visitor)...)) {
-			free(*lifted_literal); free(lifted_literal);
-			return false;
-		}
 
 #if !defined(NDEBUG)
 		if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
@@ -2322,8 +2365,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		ground_axiom_count++;
 		free(*lifted_literal); free(lifted_literal);
 
-		if (!check_set_membership_after_addition(&atom)) {
-			remove_unary_atom<Negated, false>(atom, std::forward<Args>(visitor)...);
+		if (!check_set_membership_after_addition<ResolveInconsistencies>(&atom, std::forward<Args>(visitor)...)) {
+			remove_unary_atom<Negated>(atom, std::forward<Args>(visitor)...);
 			return false;
 		}
 		return true;
@@ -2332,66 +2375,6 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 	template<bool Negated, bool ResolveInconsistencies, typename... Args>
 	inline bool add_binary_atom(relation rel, Proof* axiom, Args&&... visitor)
 	{
-		/* check if this observation is inconsistent with the theory (can we prove its negation?) */
-		if (rel.arg1 == rel.arg2) {
-			Formula* lifted_literal;
-			Formula* lifted_atom = Formula::new_and(
-					Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2)),
-					Formula::new_atom(rel.predicate, &Variables<1>::value, &Variables<1>::value),
-					Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value));
-			if (lifted_atom == NULL) return false;
-			Variables<1>::value.reference_count += 4;
-			if (Negated) {
-				lifted_literal = Formula::new_not(lifted_atom);
-				if (lifted_literal == NULL) {
-					free(*lifted_atom); free(lifted_atom); return false;
-				}
-			} else {
-				lifted_literal = lifted_atom;
-			}
-			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
-				free(*lifted_literal); free(lifted_literal);
-				return false;
-			}
-			free(*lifted_literal); free(lifted_literal);
-
-		} else {
-			Formula* lifted_literal;
-			Formula* lifted_atom = Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2));
-			if (lifted_atom == NULL) return false;
-			Variables<1>::value.reference_count++;
-			if (Negated) {
-				lifted_literal = Formula::new_not(lifted_atom);
-				if (lifted_literal == NULL) {
-					free(*lifted_atom); free(lifted_atom); return false;
-				}
-			} else {
-				lifted_literal = lifted_atom;
-			}
-			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
-				free(*lifted_literal); free(lifted_literal);
-				return false;
-			}
-			free(*lifted_literal); free(lifted_literal);
-
-			lifted_atom = Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value);
-			if (lifted_atom == NULL) return false;
-			Variables<1>::value.reference_count++;
-			if (Negated) {
-				lifted_literal = Formula::new_not(lifted_atom);
-				if (lifted_literal == NULL) {
-					free(*lifted_atom); free(lifted_atom); return false;
-				}
-			} else {
-				lifted_literal = lifted_atom;
-			}
-			if (!move_element_to_subset<ResolveInconsistencies>(rel.arg2, lifted_literal, std::forward<Args>(visitor)...)) {
-				free(*lifted_literal); free(lifted_literal);
-				return false;
-			}
-			free(*lifted_literal); free(lifted_literal);
-		}
-
 #if !defined(NDEBUG)
 		if (rel.arg1 < new_constant_offset || ground_concepts[rel.arg1 - new_constant_offset].types.keys == NULL)
 			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
@@ -2484,8 +2467,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 
 		Formula* atom = Formula::new_atom(rel.predicate, Term::new_constant(rel.arg1), Term::new_constant(rel.arg2));
 		if (atom == nullptr) return false;
-		if (!check_set_membership_after_addition(atom)) {
-			remove_binary_atom<Negated, false>(rel, std::forward<Args>(visitor)...);
+		if (!check_set_membership_after_addition<ResolveInconsistencies>(atom, std::forward<Args>(visitor)...)) {
+			remove_binary_atom<Negated>(rel, std::forward<Args>(visitor)...);
 			free(*atom); free(atom);
 			return false;
 		}
@@ -2493,7 +2476,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return true;
 	}
 
-	template<bool Negated, bool CheckSetMembership = true, typename... Args>
+	template<bool Negated, typename... Args>
 	inline bool remove_unary_atom(Term& atom, Args&&... visitor)
 	{
 #if !defined(NDEBUG)
@@ -2516,11 +2499,6 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			}
 		} else {
 			lifted_literal = lifted_atom;
-		}
-		if (!move_element_to_superset(arg, lifted_literal, std::forward<Args>(visitor)...)) {
-			fprintf(stderr, "theory.remove_unary_atom ERROR: `move_element_to_superset` failed.\n");
-			if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
-			return false;
 		}
 
 #if !defined(NDEBUG)
@@ -2555,83 +2533,21 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		ground_types.remove_at(index);
 		ground_axiom_count--;
 		free(*lifted_literal); free(lifted_literal);
-		return !CheckSetMembership || check_set_membership_after_subtraction(&atom);
+		return check_set_membership_after_subtraction(&atom, std::forward<Args>(visitor)...);
 	}
 
-	template<bool Negated, bool CheckSetMembership = true, typename... Args>
+	template<bool Negated, typename... Args>
 	inline bool remove_binary_atom(relation rel, Args&&... visitor)
 	{
-		if (rel.arg1 == rel.arg2) {
-			Formula* lifted_literal;
-			Formula* lifted_atom = Formula::new_and(
-					Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value),
-					Formula::new_atom(rel.predicate, &Variables<1>::value, &Variables<1>::value),
-					Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2)));
-			if (lifted_atom == NULL) return false;
-			Variables<1>::value.reference_count += 4;
-			if (Negated) {
-				lifted_literal = Formula::new_not(lifted_atom);
-				if (lifted_literal == NULL) {
-					free(*lifted_atom); free(lifted_atom); return false;
-				}
-			} else {
-				lifted_literal = lifted_atom;
-			}
-			if (!move_element_to_superset(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
-				fprintf(stderr, "theory.remove_binary_atom ERROR: `move_element_to_superset` failed.\n");
-				if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
-				return false;
-			}
-			free(*lifted_literal); free(lifted_literal);
-
-		} else {
-			Formula* lifted_literal;
-			Formula* lifted_atom = Formula::new_atom(rel.predicate, &Variables<1>::value, Formula::new_constant(rel.arg2));
-			if (lifted_atom == NULL) return false;
-			Variables<1>::value.reference_count++;
-			if (Negated) {
-				lifted_literal = Formula::new_not(lifted_atom);
-				if (lifted_literal == NULL) {
-					free(*lifted_atom); free(lifted_atom); return false;
-				}
-			} else {
-				lifted_literal = lifted_atom;
-			}
-			if (!move_element_to_superset(rel.arg1, lifted_literal, std::forward<Args>(visitor)...)) {
-				fprintf(stderr, "theory.remove_binary_atom ERROR: `move_element_to_superset` failed.\n");
-				if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
-				return false;
-			}
-			free(*lifted_literal); free(lifted_literal);
-
-			lifted_atom = Formula::new_atom(rel.predicate, Formula::new_constant(rel.arg1), &Variables<1>::value);
-			if (lifted_atom == NULL) return false;
-			Variables<1>::value.reference_count++;
-			if (Negated) {
-				lifted_literal = Formula::new_not(lifted_atom);
-				if (lifted_literal == NULL) {
-					free(*lifted_atom); free(lifted_atom); return false;
-				}
-			} else {
-				lifted_literal = lifted_atom;
-			}
-			if (!move_element_to_superset(rel.arg2, lifted_literal, std::forward<Args>(visitor)...)) {
-				fprintf(stderr, "theory.remove_binary_atom ERROR: `move_element_to_superset` failed.\n");
-				if (lifted_literal != NULL) { free(*lifted_literal); free(lifted_literal); }
-				return false;
-			}
-			free(*lifted_literal); free(lifted_literal);
-		}
-
 #if !defined(NDEBUG)
 		if (!relations.table.contains({0, rel.arg1, rel.arg2})
 		 || !relations.table.contains({rel.predicate, 0, rel.arg2})
 		 || !relations.table.contains({rel.predicate, rel.arg1, 0}))
-			fprintf(stderr, "theory.add_binary_atom WARNING: `relations` does not contain the necessary relations.\n");
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `relations` does not contain the necessary relations.\n");
 		if (rel.arg1 < new_constant_offset || ground_concepts[rel.arg1 - new_constant_offset].types.keys == NULL)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
 		if (rel.arg2 < new_constant_offset || ground_concepts[rel.arg2 - new_constant_offset].types.keys == NULL)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
 #endif
 
 		pair<array<unsigned int>, array<unsigned int>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2});
@@ -2651,7 +2567,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			index = both_arg_instances.index_of(rel.arg1);
 #if !defined(NDEBUG)
 			if (index == both_arg_instances.length)
-				fprintf(stderr, "theory.add_binary_atom WARNING: `both_arg_instances` does not contain %u.\n", rel.arg1);
+				fprintf(stderr, "theory.remove_binary_atom WARNING: `both_arg_instances` does not contain %u.\n", rel.arg1);
 #endif
 			shift_left(both_arg_instances.data + index, both_arg_instances.length - index - 1);
 			both_arg_instances.length--;
@@ -2660,7 +2576,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		index = predicate_instances.index_of(rel.predicate);
 #if !defined(NDEBUG)
 		if (index == predicate_instances.length)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `predicate_instances` does not contain %u.\n", rel.predicate);
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `predicate_instances` does not contain %u.\n", rel.predicate);
 #endif
 		shift_left(predicate_instances.data + index, predicate_instances.length - index - 1);
 		predicate_instances.length--;
@@ -2668,7 +2584,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		index = arg1_instances.index_of(rel.arg1);
 #if !defined(NDEBUG)
 		if (index == arg1_instances.length)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `arg1_instances` does not contain %u.\n", rel.arg1);
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `arg1_instances` does not contain %u.\n", rel.arg1);
 #endif
 		shift_left(arg1_instances.data + index, arg1_instances.length - index - 1);
 		arg1_instances.length--;
@@ -2676,7 +2592,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		index = arg2_instances.index_of(rel.arg2);
 #if !defined(NDEBUG)
 		if (index == arg2_instances.length)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `arg2_instances` does not contain %u.\n", rel.arg2);
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `arg2_instances` does not contain %u.\n", rel.arg2);
 #endif
 		shift_left(arg2_instances.data + index, arg2_instances.length - index - 1);
 		arg2_instances.length--;
@@ -2684,7 +2600,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		index = ground_arg1.index_of(relation(rel.predicate, 0, rel.arg2));
 #if !defined(NDEBUG)
 		if (index == ground_arg1.size)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
 #endif
 		Proof* axiom = ground_arg1.values[index];
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
@@ -2693,7 +2609,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		index = ground_arg2.index_of(relation(rel.predicate, rel.arg1, 0));
 #if !defined(NDEBUG)
 		if (index == ground_arg2.size)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg2` does not contain the requested predicate.\n");
+			fprintf(stderr, "theory.remove_binary_atom WARNING: `ground_arg2` does not contain the requested predicate.\n");
 #endif
 		axiom = ground_arg2.values[index];
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
@@ -2705,7 +2621,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			index = ground_arg1.index_of(relation(rel.predicate, 0, 0));
 #if !defined(NDEBUG)
 			if (index == ground_arg1.size)
-				fprintf(stderr, "theory.add_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
+				fprintf(stderr, "theory.remove_binary_atom WARNING: `ground_arg1` does not contain the requested predicate.\n");
 #endif
 			axiom = ground_arg1.values[index];
 			core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
@@ -2713,14 +2629,11 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			ground_axiom_count--;
 		}
 
-		if (CheckSetMembership) {
-			Formula* atom = Formula::new_atom(rel.predicate, Term::new_constant(rel.arg1), Term::new_constant(rel.arg2));
-			if (atom == nullptr) return false;
-			bool result = check_set_membership_after_subtraction(atom);
-			free(*atom); free(atom);
-			return result;
-		}
-		return true;
+		Formula* atom = Formula::new_atom(rel.predicate, Term::new_constant(rel.arg1), Term::new_constant(rel.arg2));
+		if (atom == nullptr) return false;
+		bool result = check_set_membership_after_subtraction(atom, std::forward<Args>(visitor)...);
+		free(*atom); free(atom);
+		return result;
 	}
 
 	unsigned int index_of(const array<pair<Formula*, Proof*>>& elements, Proof* proof) const {
@@ -2894,7 +2807,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					return false;
 				continue;
 			case change_type::FUNCTION_VALUE:
-				if (!add_function_value<false>(c.axiom))
+				if (!add_function_value<false>(c.axiom, std::forward<Args>(visitor)...))
 					return false;
 				continue;
 			case change_type::IMPLICATION_INTRO_NODE:
@@ -3014,7 +2927,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				remove_definition(c.axiom, freeable_set_size_axioms, std::forward<Args>(visitor)...);
 				continue;
 			case change_type::FUNCTION_VALUE:
-				remove_function_value(c.axiom);
+				remove_function_value(c.axiom, std::forward<Args>(visitor)...);
 				continue;
 			case change_type::IMPLICATION_INTRO_NODE:
 				implication_intro_nodes.remove(index_of(implication_intro_nodes, c.intro_node.value));
@@ -3278,13 +3191,13 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		if (term->type == TermType::VARIABLE) {
 			if (!unifications.ensure_capacity(unifications.size + 1))
 				return false;
-			bool contains;
-			Term*& unification = unifications.get(quantifiers[term->variable - 1], contains);
-			if (!contains) {
-				unification = atom;
-				unifications.keys[unifications.size++] = quantifiers[term->variable - 1];
+			Formula* quantifier = quantifiers[term->variable - 1];
+			unsigned int index = unifications.index_of(quantifier);
+			if (index == unifications.size) {
+				unifications.values[unifications.size] = atom;
+				unifications.keys[unifications.size++] = quantifier;
 			} else {
-				if (unification != atom && *unification != *atom)
+				if (unifications.values[index] != atom && *unifications.values[index] != *atom)
 					return false;
 			}
 			return true;
@@ -3426,26 +3339,26 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		if (first->type == FormulaType::VARIABLE) {
 			if (!first_unifications.ensure_capacity(first_unifications.size + 1))
 				return false;
-			bool contains;
-			Term*& unification = first_unifications.get(first_quantifiers[first->variable - 1], contains);
-			if (!contains) {
-				unification = second;
-				first_unifications.keys[first_unifications.size++] = first_quantifiers[first->variable - 1];
+			Formula* first_quantifier = first_quantifiers[first->variable - 1];
+			unsigned int index = first_unifications.index_of(first_quantifier);
+			if (index == first_unifications.size) {
+				first_unifications.values[first_unifications.size] = second;
+				first_unifications.keys[first_unifications.size++] = first_quantifier;
 			} else {
-				if (unification != second && *unification != *second)
+				if (first_unifications.values[index] != second && *first_unifications.values[index] != *second)
 					return false;
 			}
 			return true;
 		} else if (second->type == FormulaType::VARIABLE) {
 			if (!second_unifications.ensure_capacity(second_unifications.size + 1))
 				return false;
-			bool contains;
-			Term*& unification = second_unifications.get(second_quantifiers[second->variable - 1], contains);
-			if (!contains) {
-				unification = first;
-				second_unifications.keys[second_unifications.size++] = second_quantifiers[second->variable - 1];
+			Formula* second_quantifier = second_quantifiers[second->variable - 1];
+			unsigned int index = second_unifications.index_of(second_quantifier);
+			if (index == second_unifications.size) {
+				second_unifications.values[second_unifications.size] = first;
+				second_unifications.keys[second_unifications.size++] = second_quantifier;
 			} else {
-				if (unification != first && *unification != *first)
+				if (second_unifications.values[index] != first && *second_unifications.values[index] != *first)
 					return false;
 			}
 			return true;
@@ -3539,8 +3452,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			if (!sets.get_provable_elements(i, provable_elements))
 				return false;
 
-			for (unsigned int i = 0; i < possible_values.length; i++) {
-				const instantiation_tuple& values = possible_values[i];
+			for (unsigned int j = 0; j < possible_values.length; j++) {
+				const instantiation_tuple& values = possible_values[j];
 				if (!new_possible_values.ensure_capacity(new_possible_values.length + provable_elements.size + 1)) {
 					for (tuple& tup : provable_elements) free(tup);
 					return false;
@@ -3567,6 +3480,14 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					unifies = true;
 					for (const auto& unification : first_unifications) {
 						if (unification.value->type != TermType::VARIABLE) continue;
+						if (unification.value->variable > element.length) {
+							if (unification.value->variable != unification.key->quantifier.variable) {
+								unifies = false;
+								break;
+							} else {
+								continue;
+							}
+						}
 						Term* constant = Term::new_constant(element[unification.value->variable - 1]);
 						if (constant == nullptr) {
 							for (tuple& tup : provable_elements) free(tup);
@@ -3884,7 +3805,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 								for (auto& element : temp) free(element);
 								return false;
 							}
-							unifies &= current_new_values.unify_value(formula->binary.right->variable - 1, term);
+							unifies = current_new_values.unify_value(formula->binary.right->variable - 1, term);
 							free(*term); free(term);
 							if (!unifies) {
 								free(current_new_values);
@@ -5074,6 +4995,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return false;
 	}
 
+	template<bool ResolveInconsistencies>
 	bool check_set_membership(unsigned int set_id,
 			array<instantiation_tuple>& possible_values,
 			array<tuple>& new_elements,
@@ -5086,6 +5008,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			for (auto& element : possible_values) free(element);
 			return false;
 		}
+		unsigned int provable_set_size = provable_elements.size;
 		for (unsigned int j = 0; j < possible_values.length; j++) {
 			const instantiation_tuple& values = possible_values[j];
 			tuple new_tuple;
@@ -5145,6 +5068,15 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 			for (auto& element : copy) free(element);
 		}
 
+		/* make sure the set is big enough to contain the new elements */
+		provable_set_size += possible_values.length;
+		if (provable_set_size > sets.sets[set_id].set_size
+		 && !sets.template get_size_axiom<ResolveInconsistencies>(set_id, provable_set_size))
+		{
+			for (auto& element : possible_values) free(element);
+			return false;
+		}
+
 		/* add the newly provable elements to `new_elements` */
 		if (!new_elements.ensure_capacity(new_elements.length + possible_values.length))
 			return false;
@@ -5171,7 +5103,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		return true;
 	}
 
-	bool check_set_membership_after_addition(Formula* new_atom) {
+	template<bool ResolveInconsistencies, typename... Args>
+	bool check_set_membership_after_addition(Formula* new_atom, Args&&... visitor) {
 		/* We first need to find all pairs of tuples and sets such that, with
 		   the addition of `new_atom` as an axiom, the tuple must necessarily
 		   belong to the set (and is not the case otherwise without
@@ -5276,7 +5209,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				return false;
 			}
 			new_elements.keys[new_elements.size++] = i;
-			if (!check_set_membership(i, possible_values, new_elements.values[new_elements.size - 1], quantifiers)) {
+			if (!check_set_membership<ResolveInconsistencies>(i, possible_values, new_elements.values[new_elements.size - 1], quantifiers)) {
 				for (auto entry : new_elements) {
 					for (tuple& tup : entry.value) free(tup);
 					free(entry.value);
@@ -5286,87 +5219,301 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		}
 
 		/* add the elements to the sets */
+		array_map<unsigned int, array<Formula*>> new_unary_elements(4);
+		if (new_atom->type == FormulaType::UNARY_APPLICATION && new_atom->binary.right->type == TermType::CONSTANT
+		 && new_atom->binary.right->constant >= new_constant_offset)
+		{
+			if (!array_init(new_unary_elements.values[0], 8)) {
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				}
+				return false;
+			}
+			new_unary_elements.values[0][0] = Formula::new_apply(new_atom->binary.left, &Variables<1>::value);
+			if (new_unary_elements.values[0][0] == nullptr) {
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				}
+				free(new_unary_elements.values[0]);
+				return false;
+			}
+			new_atom->binary.left->reference_count++;
+			Variables<1>::value.reference_count++;
+			new_unary_elements.keys[0] = new_atom->binary.right->constant;
+			new_unary_elements.values[0].length++;
+			new_unary_elements.size = 1;
+		}
 		for (const auto& entry : new_elements) {
 			for (const tuple& element : entry.value) {
-				if (!sets.sets[entry.key].add_element(element)) {
+				if (element.length == 1) {
+					if (!new_unary_elements.ensure_capacity(new_unary_elements.size + 1)) {
+						for (auto entry : new_elements) {
+							for (tuple& tup : entry.value) free(tup);
+							free(entry.value);
+						} for (auto entry : new_unary_elements) free(entry.value);
+						return false;
+					}
+					unsigned int index = new_unary_elements.index_of(element[0]);
+					array<Formula*>& conjuncts = new_unary_elements.values[index];
+					if (index == new_unary_elements.size) {
+						if (!array_init(conjuncts, 8)) {
+							for (auto entry : new_elements) {
+								for (tuple& tup : entry.value) free(tup);
+								free(entry.value);
+							} for (auto entry : new_unary_elements) free(entry.value);
+							return false;
+						}
+						new_unary_elements.keys[index] = element[0];
+						new_unary_elements.size++;
+					}
+
+					Formula* set_formula = sets.sets[entry.key].set_formula();
+					if (set_formula->type == FormulaType::AND) {
+						if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
+							for (auto entry : new_elements) {
+								for (tuple& tup : entry.value) free(tup);
+								free(entry.value);
+							} for (auto entry : new_unary_elements) free(entry.value);
+							return false;
+						}
+					} else if (!conjuncts.add(set_formula)) {
+						for (auto entry : new_elements) {
+							for (tuple& tup : entry.value) free(tup);
+							free(entry.value);
+						} for (auto entry : new_unary_elements) free(entry.value);
+						return false;
+					}
+
+				} else if (!sets.sets[entry.key].add_element(element)) {
 					for (auto entry : new_elements) {
 						for (tuple& tup : entry.value) free(tup);
 						free(entry.value);
-					}
+					} for (auto entry : new_unary_elements) free(entry.value);
 					return false;
 				}
+			}
+		}
+
+		array_map<unsigned int, Formula*> new_unary_subsets(max((size_t) 1, new_unary_elements.size));
+		for (auto entry : new_unary_elements) {
+			Formula* new_subset;
+			if (entry.value.length == 1)
+				new_subset = entry.value[0];
+			else new_subset = Formula::new_and(make_array_view(entry.value.data, entry.value.length));
+			if (new_subset == nullptr) {
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				} for (auto entry : new_unary_subsets) {
+					free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
+				} for (auto entry : new_unary_elements) free(entry.value);
+				return false;
+			}
+			for (Formula* conjunct : entry.value)
+				conjunct->reference_count++;
+			new_unary_subsets.keys[new_unary_subsets.size] = entry.key;
+			new_unary_subsets.values[new_unary_subsets.size++] = new_subset;
+		}
+		for (auto entry : new_unary_elements) free(entry.value);
+
+		/* We need to call `move_element_to_subset` in the exact reverse order
+		   in which we call `move_element_to_superset` in
+		   `check_set_membership_after_subtraction`, so we sort
+		   `new_unary_subsets`. Otherwise, the order depends on the order of
+		   `sets.sets` which can change between here and the corresponding call
+		   to `check_set_membership_after_subtraction`. */
+		insertion_sort(new_unary_subsets.keys, new_unary_subsets.values, new_unary_subsets.size);
+		for (unsigned int i = 0; i < new_unary_subsets.size; i++) {
+			if (!move_element_to_subset<ResolveInconsistencies>(new_unary_subsets.keys[i], new_unary_subsets.values[i], std::forward<Args>(visitor)...)) {
+				/* we have to undo the changes in reverse order */
+				for (unsigned int j = i; j > 0; j--)
+					move_element_to_superset(new_unary_subsets.keys[j - 1], new_unary_subsets.values[j - 1], std::forward<Args>(visitor)...);					
+				for (auto entry : new_elements)
+					for (const tuple& element : entry.value)
+						if (element.length != 1) sets.sets[entry.key].remove_element_at(sets.sets[entry.key].index_of_element(element));
+				for (auto entry : new_elements) {
+					for (tuple& tup : entry.value) free(tup);
+					free(entry.value);
+				} for (auto entry : new_unary_elements) free(entry.value);
+				return false;
 			}
 		}
 		for (auto entry : new_elements) {
 			for (tuple& tup : entry.value) free(tup);
 			free(entry.value);
+		} for (auto entry : new_unary_subsets) {
+			free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
 		}
 		return true;
 	}
 
-	bool check_set_membership_after_subtraction(Formula* old_atom)
+	template<typename... Args>
+	bool check_set_membership_after_subtraction(Formula* old_atom, Args&&... visitor)
 	{
-		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-			if (sets.sets[i].size_axiom == nullptr)
-				continue;
-			Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
+		bool changed = true;
+		array_map<unsigned int, array<Formula*>> old_unary_conjuncts(4);
+		array_map<unsigned int, unsigned int> removed_elements(8);
+		while (changed) {
+			changed = false;
+			for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+				if (sets.sets[i].size_axiom == nullptr)
+					continue;
+				Formula* set_formula = sets.sets[i].size_axiom->formula->binary.left->binary.right;
 
-			array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
-			for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
-				quantifiers[quantifiers.length++] = set_formula;
-				set_formula = set_formula->quantifier.operand;
-			}
-			array<array_map<Formula*, Term*>> unifications(4);
-			if (!get_unifying_atoms(set_formula, old_atom, quantifiers, unifications))
-				return false;
+				array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
+				for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+					quantifiers[quantifiers.length++] = set_formula;
+					set_formula = set_formula->quantifier.operand;
+				}
+				array<array_map<Formula*, Term*>> unifications(4);
+				if (!get_unifying_atoms(set_formula, old_atom, quantifiers, unifications)) {
+					for (auto entry : old_unary_conjuncts) free(entry.value);
+					return false;
+				}
 
-			for (unsigned int j = 0; j < sets.sets[i].element_count(); j++) {
-				const unsigned int* element = sets.sets[i].elements.data + (j * sets.sets[i].arity);
-				bool has_satisfying_unification = false;
-				for (const array_map<Formula*, Term*>& unification : unifications) {
-					bool matches = true;
-					for (const auto& entry : unification) {
-						if (entry.value->type != TermType::CONSTANT
-						 || element[entry.key->quantifier.variable - 1] != entry.value->constant)
-						{
-							matches = false;
+				for (unsigned int j = 0; j < sets.sets[i].element_count(); j++) {
+					unsigned int* element = (unsigned int*) alloca(sizeof(unsigned int) * sets.sets[i].arity);
+					const unsigned int* element_src = sets.sets[i].elements.data + (sets.sets[i].arity * j);
+					for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++)
+						element[k] = element_src[k];
+					bool has_satisfying_unification = false;
+					for (const array_map<Formula*, Term*>& unification : unifications) {
+						bool matches = true;
+						for (const auto& entry : unification) {
+							if (entry.key->quantifier.variable > sets.sets[i].arity)
+								continue;
+							if (entry.value->type != TermType::CONSTANT
+							 || element[entry.key->quantifier.variable - 1] != entry.value->constant)
+							{
+								matches = false;
+								break;
+							}
+						}
+						if (matches) {
+							has_satisfying_unification = true;
 							break;
 						}
 					}
-					if (matches) {
-						has_satisfying_unification = true;
-						break;
+					if (!has_satisfying_unification) continue;
+
+					array<Formula*> conjuncts(4);
+					if (set_formula->type == FormulaType::AND) {
+						if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
+							for (auto& element : unifications) free(element);
+							for (auto entry : old_unary_conjuncts) free(entry.value);
+							return false;
+						}
+					} else {
+						conjuncts[conjuncts.length++] = set_formula;
 					}
-				}
-				if (!has_satisfying_unification) continue;
 
-				array<instantiation_tuple> temp_possible_values(1);
-				instantiation_tuple& values = temp_possible_values[0];
-				if (!init(values, sets.sets[i].arity)) {
-					for (auto& element : unifications) free(element);
-					return false;
-				}
-				for (unsigned int k = 0; k < values.length; k++) {
-					free(values.values[k]);
-					values.values[k].type = instantiation_type::CONSTANT;
-					values.values[k].constant = element[k];
-				}
-				temp_possible_values.length++;
+					sets.sets[i].remove_element_at(j);
+					for (unsigned int l = 0; l < conjuncts.length; l++) {
+						array<instantiation_tuple> temp_possible_values(1);
+						instantiation_tuple& values = temp_possible_values[0];
+						if (!init(values, sets.sets[i].arity)) {
+							for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++)
+								sets.sets[i].elements[sets.sets[i].elements.length++] = element[k];
+							for (auto& element : unifications) free(element);
+							for (auto entry : old_unary_conjuncts) free(entry.value);
+							return false;
+						}
+						for (unsigned int k = 0; k < values.length; k++) {
+							free(values.values[k]);
+							values.values[k].type = instantiation_type::CONSTANT;
+							values.values[k].constant = element[k];
+						}
+						temp_possible_values.length++;
 
-				if (is_provable_without_abduction<false>(set_formula, quantifiers, temp_possible_values)) {
-					for (auto& element : temp_possible_values) free(element);
-					continue;
-				}
+						if (is_provable_without_abduction<false>(conjuncts[l], quantifiers, temp_possible_values)) {
+							for (auto& element : temp_possible_values) free(element);
+							conjuncts.remove(l--);
+						}
+					}
 
-				/* `element` is not longer a member of this set */
-				sets.sets[i].remove_element_at(j--);
+					/* `conjuncts` is the collection of sets that `element` is no longer a member of */
+					if (conjuncts.length == 0) {
+						for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++)
+							sets.sets[i].elements[sets.sets[i].elements.length++] = element[k];
+						continue;
+					} else if (sets.sets[i].arity == 1) {
+						if (!old_unary_conjuncts.ensure_capacity(old_unary_conjuncts.size + 1)
+						 || !removed_elements.ensure_capacity(removed_elements.size + 1))
+						{
+							for (auto& element : unifications) free(element);
+							for (auto entry : old_unary_conjuncts) free(entry.value);
+							return false;
+						}
+						unsigned int index = old_unary_conjuncts.index_of(element[0]);
+						if (index == old_unary_conjuncts.size) {
+							if (!array_init(old_unary_conjuncts.values[index], max((size_t) 8, conjuncts.length))) {
+								for (auto& element : unifications) free(element);
+								for (auto entry : old_unary_conjuncts) free(entry.value);
+								return false;
+							}
+							old_unary_conjuncts.keys[index] = element[0];
+							old_unary_conjuncts.size++;
+						} if (!old_unary_conjuncts.values[index].append(conjuncts.data, conjuncts.length)) {
+							for (auto& element : unifications) free(element);
+							for (auto entry : old_unary_conjuncts) free(entry.value);
+							return false;
+						}
+						removed_elements.keys[removed_elements.size] = element[0];
+						removed_elements.values[removed_elements.size++] = i;
+					}
+					changed = true;
+				}
+				for (auto& element : unifications) free(element);
 			}
-			for (auto& element : unifications) free(element);
+		}
+
+		for (const auto& entry : removed_elements)
+			sets.sets[entry.value].elements[sets.sets[entry.value].elements.length++] = entry.key;
+
+		array_map<unsigned int, Formula*> old_unary_subsets(max((size_t) 1, old_unary_conjuncts.size));
+		for (auto entry : old_unary_conjuncts) {
+			Formula* old_subset;
+			if (entry.value.length == 1)
+				old_subset = entry.value[0];
+			else old_subset = Formula::new_and(make_array_view(entry.value.data, entry.value.length));
+			if (old_subset == nullptr) {
+				for (auto entry : old_unary_subsets) {
+					free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
+				} for (auto entry : old_unary_conjuncts) free(entry.value);
+				return false;
+			}
+			for (Formula* conjunct : entry.value)
+				conjunct->reference_count++;
+			old_unary_subsets.keys[old_unary_subsets.size] = entry.key;
+			old_unary_subsets.values[old_unary_subsets.size++] = old_subset;
+		}
+		for (auto entry : old_unary_conjuncts) free(entry.value);
+
+		/* We need to call `move_element_to_superset` in the exact reverse order
+		   in which we call `move_element_to_subset` in
+		   `check_set_membership_after_addition`, so we sort
+		   `old_unary_subsets`. Otherwise, the order depends on the order of
+		   `sets.sets` which can change between here and the corresponding
+		   earlier call to `check_set_membership_after_addition`. */
+		insertion_sort(old_unary_subsets.keys, old_unary_subsets.values, old_unary_subsets.size);
+		for (unsigned int i = old_unary_subsets.size; i > 0; i--) {
+			if (!move_element_to_superset(old_unary_subsets.keys[i - 1], old_unary_subsets.values[i - 1], std::forward<Args>(visitor)...)) {
+				for (auto entry : old_unary_subsets) {
+					free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
+				}
+				return false;
+			}
+		}
+		for (auto entry : old_unary_subsets) {
+			free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
 		}
 		return true;
 	}
 
-	bool check_new_set_membership(unsigned int set_id)
+	template<bool ResolveInconsistencies, typename... Args>
+	bool check_new_set_membership(unsigned int set_id, Args&&... visitor)
 	{
 		Formula* set_formula = sets.sets[set_id].size_axiom->formula->binary.left->binary.right;
 
@@ -5388,14 +5535,16 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 		}
 
 		array<tuple> new_elements(4);
-		if (!check_set_membership(set_id, possible_values, new_elements, quantifiers)) {
+		if (!check_set_membership<ResolveInconsistencies>(set_id, possible_values, new_elements, quantifiers)) {
 			for (tuple& tup : new_elements) free(tup);
 			return false;
 		}
 
 		/* add the elements to the sets */
 		for (const tuple& element : new_elements) {
-			if (!sets.sets[set_id].add_element(element)) {
+			if ((element.length == 1 && !move_element_to_subset<ResolveInconsistencies>(element[0], sets.sets[set_id].set_formula(), std::forward<Args>(visitor)...))
+			 || (element.length != 1 && !sets.sets[set_id].add_element(element)))
+			{
 				for (tuple& tup : new_elements) free(tup);
 				return false;
 			}
@@ -5855,7 +6004,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				if (set_size_axiom == NULL) {
 					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
 					return NULL;
-				} else if (is_set_new && !check_new_set_membership(set_id)) {
+				} else if (is_set_new && !check_new_set_membership<ResolveInconsistencies>(set_id, std::forward<Args>(args)...)) {
 					free(*lambda_formula); if (lambda_formula->reference_count == 0) free(lambda_formula);
 					sets.try_free_set(set_formula, set_id, std::forward<Args>(args)...); return NULL;
 				}
@@ -5948,7 +6097,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				Proof* set_size_axiom = sets.template get_size_axiom<ResolveInconsistencies>(arg1->quantifier.operand, arity, right->integer, set_id, is_set_new, std::forward<Args>(args)...);
 				if (set_size_axiom == nullptr) {
 					return nullptr;
-				} else if (is_set_new && !check_new_set_membership(set_id)) {
+				} else if (is_set_new && !check_new_set_membership<ResolveInconsistencies>(set_id, std::forward<Args>(args)...)) {
 					sets.try_free_set(arg1->quantifier.operand, set_id, std::forward<Args>(args)...);
 					return nullptr;
 				}
@@ -5985,7 +6134,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					return NULL;
 				proof->reference_count++;
 
-				if (is_set_new && !check_new_set_membership(set_id)) {
+				if (is_set_new && !check_new_set_membership<ResolveInconsistencies>(set_id, std::forward<Args>(args)...)) {
 					free_proof(proof);
 					return nullptr;
 				}
@@ -6138,7 +6287,7 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 					return NULL;
 				new_proof->reference_count++;
 
-				Proof* function_value = add_function_value<ResolveInconsistencies>(new_proof);
+				Proof* function_value = add_function_value<ResolveInconsistencies>(new_proof, std::forward<Args>(args)...);
 				if (function_value != new_proof) {
 					free(*new_proof); free(new_proof);
 				} if (function_value == nullptr) {
@@ -6180,8 +6329,8 @@ free(*expected_conclusion); if (expected_conclusion->reference_count == 0) free(
 				std::forward<Args>(visitor)...);
 		if (axiom == nullptr) return nullptr;
 
-		if ((is_antecedent_new && !check_new_set_membership(antecedent_set))
-		 || (is_consequent_new && !check_new_set_membership(consequent_set)))
+		if ((is_antecedent_new && !check_new_set_membership<ResolveInconsistencies>(antecedent_set, std::forward<Args>(visitor)...))
+		 || (is_consequent_new && !check_new_set_membership<ResolveInconsistencies>(consequent_set, std::forward<Args>(visitor)...)))
 		{
 			sets.free_subset_axiom(antecedent, consequent, std::forward<Args>(visitor)...);
 			return nullptr;
@@ -6298,7 +6447,7 @@ private:
 		}
 		definition->reference_count++;
 
-		if (!check_set_membership_after_addition(definition->formula)) {
+		if (!check_set_membership_after_addition<ResolveInconsistencies>(definition->formula, std::forward<Args>(args)...)) {
 			remove_definition(definition, std::forward<Args>(args)...);
 			return nullptr;
 		}
@@ -6339,12 +6488,12 @@ private:
 
 		ground_concepts[concept_id - new_constant_offset].definitions.remove(index);
 		try_free_concept_id(concept_id);
-		check_set_membership_after_subtraction(definition->formula);
+		check_set_membership_after_subtraction(definition->formula, std::forward<Args>(args)...);
 		free(*definition); if (definition->reference_count == 0) free(definition);
 	}
 
-	template<bool ResolveInconsistencies>
-	Proof* add_function_value(Proof* function_value_axiom)
+	template<bool ResolveInconsistencies, typename... Args>
+	Proof* add_function_value(Proof* function_value_axiom, Args&&... args)
 	{
 		Formula* constant = function_value_axiom->formula->binary.left->binary.right;
 		if (!try_init_concept(constant->constant))
@@ -6372,14 +6521,15 @@ private:
 		function_values.size++;
 		function_value_axiom->reference_count++;
 
-		if (!check_set_membership_after_addition(function_value_axiom->formula)) {
-			remove_function_value(function_value_axiom);
+		if (!check_set_membership_after_addition<ResolveInconsistencies>(function_value_axiom->formula, std::forward<Args>(args)...)) {
+			remove_function_value(function_value_axiom, std::forward<Args>(args)...);
 			return nullptr;
 		}
 		return function_value_axiom;
 	}
 
-	void remove_function_value(Proof* function_value_axiom) {
+	template<typename... Args>
+	void remove_function_value(Proof* function_value_axiom, Args&&... args) {
 		unsigned int concept_id = function_value_axiom->formula->binary.left->binary.right->constant;
 
 		array_map<unsigned int, Proof*>& function_values = ground_concepts[concept_id - new_constant_offset].function_values;
@@ -6391,7 +6541,7 @@ private:
 
 		function_values.remove_at(index);
 		try_free_concept_id(concept_id);
-		check_set_membership_after_addition(function_value_axiom->formula);
+		check_set_membership_after_subtraction(function_value_axiom->formula, std::forward<Args>(args)...);
 		free(*function_value_axiom); if (function_value_axiom->reference_count == 0) free(function_value_axiom);
 	}
 
@@ -6877,7 +7027,10 @@ private:
 		}
 		if (new_set_formula == NULL)
 			return false;
-		Formula* canonicalized = Canonicalizer::canonicalize(*new_set_formula);
+		array_map<unsigned int, unsigned int> variable_map(16);
+		variable_map.keys[variable_map.size] = 1;
+		variable_map.values[variable_map.size++] = 1;
+		Formula* canonicalized = Canonicalizer::canonicalize(*new_set_formula, variable_map);
 		free(*new_set_formula); if (new_set_formula->reference_count == 0) free(new_set_formula);
 		if (canonicalized == NULL)
 			return false;
@@ -6941,9 +7094,15 @@ private:
 	template<typename... Args>
 	bool move_element_to_superset(unsigned int element, Formula* lifted_literal, Args&&... visitor)
 	{
-		Formula* old_set_formula = sets.sets[sets.element_map.get({&element, 1})].set_formula();
+		unsigned int set_id = sets.element_map.get({&element, 1});
+		Formula* old_set_formula = sets.sets[set_id].set_formula();
 
-		Formula* canonicalized = Canonicalizer::canonicalize(*lifted_literal);
+		array_map<unsigned int, unsigned int> variable_map(max(16u, sets.sets[set_id].arity));
+		for (unsigned int i = 0; i < sets.sets[set_id].arity; i++) {
+			variable_map.keys[variable_map.size] = i + 1;
+			variable_map.values[variable_map.size++] = i + 1;
+		}
+		Formula* canonicalized = Canonicalizer::canonicalize(*lifted_literal, variable_map);
 		array<Formula*> difference(8);
 		if (canonicalized == NULL) {
 			return false;
@@ -7150,9 +7309,13 @@ bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 				}
 				free(*new_right); if (new_right->reference_count == 0) free(new_right);
 			}
-		} else if (left->type == TermType::CONSTANT || right->type == TermType::CONSTANT) {
-			if (right->type == TermType::CONSTANT && right->constant != (unsigned int) built_in_predicates::UNKNOWN)
+		} else if (left->type == TermType::CONSTANT || right->type == TermType::CONSTANT
+				|| left->type == TermType::VARIABLE || right->type == TermType::VARIABLE)
+		{
+			if ((left->type != TermType::CONSTANT || left->constant == (unsigned int) built_in_predicates::UNKNOWN) && left->type != TermType::VARIABLE)
 				swap(left, right);
+			if (left->type == TermType::VARIABLE)
+				return true;
 
 			/* check that this constant could be a set */
 			if (right->type == FormulaType::LAMBDA && T.is_provably_not_a_set(left->constant))
@@ -7285,7 +7448,7 @@ bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 					right->reference_count++;
 				}
 
-				/* first check if this function value is already defined */
+				/* check if this function value is already defined */
 				const array_map<unsigned int, Proof*>& function_values = T.ground_concepts[new_left->binary.right->constant - T.new_constant_offset].function_values;
 				unsigned int index = function_values.index_of(new_left->binary.left->constant);
 				if (index < function_values.size) {
@@ -7939,6 +8102,7 @@ proof_axioms.check_proof_axioms(T);
 proof_axioms.check_universal_eliminations(T, collector);
 T.check_concept_axioms();
 T.check_disjunction_introductions();
+T.are_elements_provable();
 T.sets.are_elements_unique();
 T.sets.check_freeable_sets();
 T.sets.are_descendants_valid();
@@ -7946,7 +8110,7 @@ T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
-if (t == 21)
+if (t == 100)
 fprintf(stderr, "DEBUG: BREAKPOINT\n");
 T.print_axioms(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector);
