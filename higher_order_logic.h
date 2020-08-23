@@ -23,6 +23,7 @@ constexpr unsigned int ANY_VARIABLE = UINT_MAX;
 struct hol_term;
 bool operator == (const hol_term&, const hol_term&);
 bool operator != (const hol_term&, const hol_term&);
+bool operator < (const hol_term&, const hol_term&);
 
 enum class hol_term_type : uint_fast8_t {
 	VARIABLE = 1,
@@ -632,6 +633,7 @@ inline bool hol_term::is_empty(const hol_term& key) {
 }
 
 inline void hol_term::set_empty(hol_term& key) {
+	key.type = (hol_term_type) 0;
 	key.reference_count = 0;
 }
 
@@ -1709,6 +1711,28 @@ inline bool compute_indices(const hol_term& src,
 		const hol_term& term, array<unsigned int>& indices)
 {
 	index_computer visitor = {term, indices, 0};
+	return visit(src, visitor);
+}
+
+struct pointer_index_computer {
+	const hol_term* term;
+	array<unsigned int>& indices;
+	unsigned int index;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, pointer_index_computer& visitor) {
+	if (&term == visitor.term) {
+		if (!visitor.indices.add(visitor.index)) return false;
+	}
+	visitor.index++;
+	return true;
+}
+
+inline bool compute_pointer_indices(const hol_term& src,
+		const hol_term* term, array<unsigned int>& indices)
+{
+	pointer_index_computer visitor = {term, indices, 0};
 	return visit(src, visitor);
 }
 
@@ -2907,43 +2931,6 @@ inline hol_term* substitute_all(
 	return dst;
 }
 
-struct quantified_variable_substituter {
-	const array_map<unsigned int, hol_term*>& variable_map;
-};
-
-template<hol_term_type Type>
-inline hol_term* apply(hol_term* src, const quantified_variable_substituter& substituter) {
-	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
-		unsigned int index = substituter.variable_map.index_of(src->quantifier.variable);
-		if (index < substituter.variable_map.size) {
-			return apply(src->quantifier.operand, substituter);
-		} else {
-			return default_apply<Type>(src, substituter);
-		}
-	} else if (Type == hol_term_type::VARIABLE) {
-		unsigned int index = substituter.variable_map.index_of(src->variable);
-		if (index < substituter.variable_map.size) {
-			hol_term* dst = substituter.variable_map.values[index];
-			dst->reference_count++;
-			return dst;
-		} else {
-			return default_apply<Type>(src, substituter);
-		}
-	} else {
-		return default_apply<Type>(src, substituter);
-	}
-}
-
-inline hol_term* substitute_quantified_variables(
-		hol_term* src, const array_map<unsigned int, hol_term*>& variable_map)
-{
-	const quantified_variable_substituter substituter = {variable_map};
-	hol_term* dst = apply(src, substituter);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
 struct index_substituter {
 	const hol_term* src;
 	hol_term* dst;
@@ -3149,6 +3136,68 @@ inline hol_term* change_quantifier(hol_term* src, unsigned int variable,
 {
 	const quantifier_changer changer = {variable, src_quantifier, dst_quantifier};
 	hol_term* dst = apply(src, changer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct order_canonicalizer { };
+
+template<hol_term_type Type, typename std::enable_if<
+	Type == hol_term_type::AND || Type == hol_term_type::OR>::type* = nullptr>
+inline hol_term* apply(hol_term* src, const order_canonicalizer& sorter) {
+	if (Type == hol_term_type::AND || Type == hol_term_type::OR) {
+		hol_term* term = default_apply<Type>(src, sorter);
+		if (term == nullptr)
+			return nullptr;
+		if (is_sorted(term->array.operands, term->array.length, pointer_sorter()))
+			return term;
+
+		hol_term* new_term;
+		if (Type == hol_term_type::AND)
+			new_term = hol_term::new_and(make_array_view(term->array.operands, term->array.length));
+		else if (Type == hol_term_type::OR)
+			new_term = hol_term::new_or(make_array_view(term->array.operands, term->array.length));
+		if (new_term == nullptr) {
+			if (term != src) {
+				free(*term); if (term->reference_count == 0) free(term);
+			}
+			return nullptr;
+		}
+		for (unsigned int i = 0; i < term->array.length; i++)
+			term->array.operands[i]->reference_count++;
+		insertion_sort(new_term->array.operands, new_term->array.length, pointer_sorter());
+		if (term != src) {
+			free(*term); if (term->reference_count == 0) free(term);
+		}
+		return new_term;
+	} else {
+		hol_term* term = default_apply<Type>(src, sorter);
+		if (term == nullptr)
+			return nullptr;
+		if (!(*term->binary.right < *term->binary.left))
+			return term;
+
+		hol_term* new_term = hol_term::new_equals(term->binary.right, term->binary.left);
+		if (new_term == nullptr) {
+			if (term != src) {
+				free(*term); if (term->reference_count == 0) free(term);
+			}
+			return nullptr;
+		}
+		term->binary.left->reference_count++;
+		term->binary.right->reference_count++;
+		if (term != src) {
+			free(*term); if (term->reference_count == 0) free(term);
+		}
+		return new_term;
+	}
+}
+
+inline hol_term* canonicalize_order(hol_term* src)
+{
+	const order_canonicalizer sorter;
+	hol_term* dst = apply(src, sorter);
 	if (dst == src)
 		dst->reference_count++;
 	return dst;
@@ -4447,9 +4496,9 @@ inline bool compute_equals_type(
 {
 	unsigned int type_variable = type_variables.length;
 	if (!types.template push<hol_term_type::EQUALS>(term)
-		|| !expect_type<Quiet>(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
-		|| !type_variables.ensure_capacity(type_variables.length + 1)
-		|| !init(type_variables[type_variable], hol_type_kind::ANY))
+	 || !expect_type<Quiet>(base_types<BaseType>::BOOLEAN, expected_type, type_variables)
+	 || !type_variables.ensure_capacity(type_variables.length + 1)
+	 || !init(type_variables[type_variable], hol_type_kind::ANY))
 		return false;
 	type_variables.length++;
 

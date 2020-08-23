@@ -505,7 +505,7 @@ bool get_satisfying_extensional_edges(
 	typedef typename Formula::Type FormulaType;
 
 	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
-		if (T.sets.sets[i].size_axiom == NULL) continue;
+		if (T.sets.sets[i].size_axioms.data == nullptr) continue;
 		Formula* set_formula = T.sets.sets[i].set_formula();
 		if (Negated) {
 			if (set_formula->type != FormulaType::NOT) continue;
@@ -516,7 +516,13 @@ bool get_satisfying_extensional_edges(
 				if (!is_satisfying_antecedent(concept_id, entry.key, T)) continue;
 
 				/* as far as we can tell, we can't prove that `concept_id` cannot belong to the antecedent set */
-				if (!satisfying_extensional_edges.add({i, entry.key})) return false;
+				for (unsigned int j = 0; j < entry.value.length; j++) {
+					Formula* formula = entry.value[j]->formula->quantifier.operand;
+					while (formula->type == FormulaType::FOR_ALL)
+						formula = formula->quantifier.operand;
+					if (*T.sets.sets[entry.key].set_formula() != *formula->binary.left || a != *formula->binary.right) continue;
+					if (!satisfying_extensional_edges.add({i, entry.key})) return false;
+				}
 			}
 		}
 	}
@@ -549,9 +555,9 @@ inline bool compute_new_set_size(unsigned int& out,
 	return true;
 }
 
-template<typename BuiltInConstants, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, ProofCalculus>& sets,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		const unfixed_set_counter& visitor)
 { }
 
@@ -589,9 +595,18 @@ bool propose_universal_intro(
 	unfixed_set_counter unfixed_set_count_change = {0};
 	if (random < satisfying_extensional_edges.length) {
 		const pair<unsigned int, unsigned int>& selected = satisfying_extensional_edges[random];
-		axiom_step = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
 		consequent = T.sets.sets[selected.key].set_formula();
 		antecedent = T.sets.sets[selected.value].set_formula();
+		array<nd_step<Formula>*> proofs = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
+		for (nd_step<Formula>* proof : proofs) {
+			Formula* formula = proof->formula->quantifier.operand;
+			if (formula->type == FormulaType::FOR_ALL)
+				formula = formula->quantifier.operand;
+			if (*antecedent == *formula->binary.left && *consequent == *formula->binary.right) {
+				axiom_step = proof;
+				break;
+			}
+		}
 		axiom_step->reference_count++;
 
 	} else {
@@ -743,11 +758,18 @@ bool propose_universal_intro(
 
 	/* check if the set containing `concept_id` is unfixed and will be freed by this transformation */
 	unsigned int old_set_id = T.sets.element_map.get({&concept_id, 1});
+	bool size_axiom_is_used_in_proof = false;
+	for (Proof* size_axiom : T.sets.sets[old_set_id].size_axioms) {
+		if (size_axiom->children.length != 0) {
+			size_axiom_is_used_in_proof = true;
+			break;
+		}
+	}
 	if (T.sets.is_unfixed(old_set_id, T.observations)
 	 && T.sets.extensional_graph.vertices[old_set_id].children.size == 0
 	 && T.sets.extensional_graph.vertices[old_set_id].parents.size == 0
 	 && T.sets.sets[old_set_id].elements.length == 1
-	 && T.sets.sets[old_set_id].size_axiom->children.length == 0)
+	 && !size_axiom_is_used_in_proof)
 	{
 		unfixed_set_count_change.change--;
 		double log_prob = 0.0;
@@ -1064,23 +1086,38 @@ bool propose_universal_elim(
 	unfixed_set_counter unfixed_set_count_change = {0};
 	if (selected_edge.axiom->reference_count == 3) {
 		/* if this edge is removed from the set graph, two unfixed sets may also be freed */
+		bool size_axiom_is_used_in_proof = false;
+		for (Proof* size_axiom : T.sets.sets[selected_edge.consequent_set].size_axioms) {
+			if (size_axiom->children.length != 0) {
+				size_axiom_is_used_in_proof = true;
+				break;
+			}
+		}
 		if (T.sets.is_unfixed(selected_edge.consequent_set, T.observations)
 		 && T.sets.extensional_graph.vertices[selected_edge.consequent_set].parents.size
 		  + T.sets.extensional_graph.vertices[selected_edge.consequent_set].children.size == 1
 		 && T.sets.sets[selected_edge.consequent_set].elements.length == 0
-		 && T.sets.sets[selected_edge.consequent_set].size_axiom->children.length == 0)
+		 && !size_axiom_is_used_in_proof)
 		{
 			double log_prob = 0.0;
 			set_size_proposal_log_probability(selected_edge.consequent_set, T.sets, log_prob);
 			unfixed_set_count_change.log_probability -= log_prob;
 			unfixed_set_count_change.change--;
 		}
+
+		size_axiom_is_used_in_proof = false;
+		for (Proof* size_axiom : T.sets.sets[selected_edge.antecedent_set].size_axioms) {
+			if (size_axiom->children.length != 0) {
+				size_axiom_is_used_in_proof = true;
+				break;
+			}
+		}
 		if (T.sets.is_unfixed(selected_edge.antecedent_set, T.observations)
 		 && T.sets.extensional_graph.vertices[selected_edge.antecedent_set].parents.size
 		  + T.sets.extensional_graph.vertices[selected_edge.antecedent_set].children.size == 1
 		 && (T.sets.sets[selected_edge.antecedent_set].elements.length == 0
 		  || (T.sets.sets[selected_edge.antecedent_set].elements.length == 1 && T.sets.sets[selected_edge.antecedent_set].elements[0] == constant))
-		 && T.sets.sets[selected_edge.antecedent_set].size_axiom->children.length == 0)
+		 && !size_axiom_is_used_in_proof)
 		{
 			double log_prob = 0.0;
 			set_size_proposal_log_probability(selected_edge.antecedent_set, T.sets, log_prob);
@@ -1114,12 +1151,19 @@ bool propose_universal_elim(
 	T.sets.get_set_id(canonicalized_new_set_formula, 1, new_set_id, unfixed_set_count_change);
 
 	/* the old set could also be removed */
+	bool size_axiom_is_used_in_proof = false;
+	for (Proof* size_axiom : T.sets.sets[old_set_id].size_axioms) {
+		if (size_axiom->children.length != 0) {
+			size_axiom_is_used_in_proof = true;
+			break;
+		}
+	}
 	if (old_set_id != selected_edge.antecedent_set
 	 && T.sets.is_unfixed(old_set_id, T.observations)
 	 && T.sets.extensional_graph.vertices[old_set_id].parents.size == 0
 	 && T.sets.extensional_graph.vertices[old_set_id].children.size == 0
 	 && T.sets.sets[old_set_id].elements.length == 1
-	 && T.sets.sets[old_set_id].size_axiom->children.length == 0)
+	 && !size_axiom_is_used_in_proof)
 		unfixed_set_count_change.change--;
 
 	unsigned int new_axiom_indices_length = c.types.size + c.negated_types.size + c.relations.size + c.negated_relations.size;
@@ -1203,11 +1247,12 @@ bool propose_change_set_size(
 #endif
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
-		Proof* axiom = T.sets.template get_size_axiom<false>(selected_set, new_size);
+		T.sets.template set_size_axiom<false>(selected_set, new_size);
 
 		/* check if the axiom is used in any proofs */
-		array<Proof*> stack(8);
-		stack[stack.length++] = axiom;
+		array<Proof*> stack(max((size_t) 8, T.sets.sets[selected_set].size_axioms.length));
+		for (Proof* size_axiom : T.sets.sets[selected_set].size_axioms)
+			stack[stack.length++] = size_axiom;
 		bool proves_observation = false;
 		while (stack.length != 0) {
 			Proof* proof = stack.pop();
@@ -1431,9 +1476,9 @@ inline bool compute_new_set_size(unsigned int& out,
 	return true;
 }
 
-template<typename BuiltInConstants, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, ProofCalculus>& sets,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		const undo_remove_sets& visitor)
 { }
 
@@ -1471,9 +1516,9 @@ bool undo_proof_changes(
 	return T.add_changes(old_proof_changes, old_sets);
 }
 
-template<typename BuiltInConstants, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void set_size_proposal_log_probability(unsigned int set_id,
-		set_reasoning<BuiltInConstants, ProofCalculus>& sets,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		double& log_probability_value)
 {
 	unsigned int min_set_size, max_set_size;
@@ -1520,9 +1565,9 @@ inline bool compute_new_set_size(unsigned int& out,
 	return true;
 }
 
-template<typename BuiltInConstants, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, ProofCalculus>& sets,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		inverse_set_size_log_probability& visitor)
 {
 	set_size_proposal_log_probability(set_id, sets, visitor.value);
@@ -1557,9 +1602,9 @@ inline bool compute_new_set_size(
 	return true;
 }
 
-template<typename BuiltInConstants, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, ProofCalculus>& sets,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		proof_sampler& sampler)
 {
 	if (sampler.undo) return;
@@ -1651,6 +1696,7 @@ unsigned int debug = 0;
 fprintf(stderr, "INNER DEBUG: %u\n", debug);
 T.print_axioms(stderr);
 T.sets.are_elements_unique();
+T.sets.check_set_ids();
 debug++;
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_constant, sampler);
 		if (new_proof != NULL) break;
@@ -1658,6 +1704,7 @@ debug++;
 fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
 T.print_axioms(stderr);
 T.sets.are_elements_unique();
+T.sets.check_set_ids();
 
 	log_proposal_probability_ratio -= sampler.log_probability;
 	log_proposal_probability_ratio -= sampler.set_size_log_probability;
@@ -2058,23 +2105,25 @@ bool get_eliminable_extensional_edges(
 	typedef typename ProofCalculus::Proof Proof;
 
 	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
-		if (T.sets.sets[i].size_axiom == NULL) continue;
+		if (T.sets.sets[i].size_axioms.data == nullptr) continue;
 
 		const Formula* set_formula = T.sets.sets[i].set_formula();
 		if (set_formula->type == FormulaType::NOT)
 			set_formula = set_formula->unary.operand;
 		if (!is_atomic(*set_formula)) continue;
 		for (auto entry : T.sets.extensional_graph.vertices[i].children) {
-			/* check that this universally-quantified axiom can be removed */
-			if (T.observations.contains(entry.value)) continue;
-			for (Proof* child : entry.value->children) {
-				if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
-				 || child->operands[1]->type != nd_step_type::TERM_PARAMETER
-				 || child->operands[1]->term->type != TermType::CONSTANT) continue;
-				for (Proof* grandchild : child->children) {
-					if (grandchild->type != nd_step_type::IMPLICATION_ELIMINATION) continue;
-					if (!eliminable_extensional_edges.add({i, entry.key, entry.value, child, grandchild}))
-						return false;
+			for (Proof* axiom : entry.value) {
+				/* check that this universally-quantified axiom can be removed */
+				if (T.observations.contains(axiom)) continue;
+				for (Proof* child : axiom->children) {
+					if (child->type != nd_step_type::UNIVERSAL_ELIMINATION
+					|| child->operands[1]->type != nd_step_type::TERM_PARAMETER
+					|| child->operands[1]->term->type != TermType::CONSTANT) continue;
+					for (Proof* grandchild : child->children) {
+						if (grandchild->type != nd_step_type::IMPLICATION_ELIMINATION) continue;
+						if (!eliminable_extensional_edges.add({i, entry.key, axiom, child, grandchild}))
+							return false;
+					}
 				}
 			}
 		}
