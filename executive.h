@@ -40,13 +40,13 @@ inline bool concatenate(
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior>
+	typename Formula, typename Canonicalizer, typename TheoryPrior, typename... Args>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const typename Parser::SentenceType& s,
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int article_name, hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior,
-		typename TheoryPrior::PriorState& proof_axioms)
+		typename TheoryPrior::PriorState& proof_axioms, Args&&... add_formula_args)
 {
 	unsigned int parse_count, new_constant;
 	Formula* logical_forms[2];
@@ -112,7 +112,7 @@ bool read_sentence(
 			break;
 		} else if (parse_count > 0 && unrecognized_concatenated.length == 1 && unrecognized_concatenated[0] == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			auto* new_proof = T.add_formula(logical_forms[0], new_constant);
+			auto* new_proof = T.add_formula(logical_forms[0], new_constant, std::forward<Args>(add_formula_args)...);
 			if (new_proof != nullptr) {
 				if (proof_axioms.add(new_proof, theory_prior)) {
 					if (!parser.add_definition(s, logical_forms[0], new_constant, names)) {
@@ -151,7 +151,7 @@ exit(EXIT_FAILURE);
 			}
 			next_article = unrecognized_concatenated[1];
 		}
-		read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms);
+		read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...);
 		free_logical_forms(logical_forms, parse_count);
 	}
 
@@ -165,7 +165,7 @@ exit(EXIT_FAILURE);
 	}
 
 	/* add the most probable logical form to the theory */
-	auto* new_proof = T.add_formula(logical_forms[0], new_constant);
+	auto* new_proof = T.add_formula(logical_forms[0], new_constant, std::forward<Args>(add_formula_args)...);
 	if (new_proof != nullptr && !proof_axioms.add(new_proof, theory_prior)) {
 		T.remove_formula(new_proof);
 		new_proof = nullptr;
@@ -186,12 +186,13 @@ exit(EXIT_FAILURE);
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior>
+	typename Formula, typename Canonicalizer, typename TheoryPrior, typename... Args>
 bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
-		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms)
+		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms,
+		Args&&... add_formula_args)
 {
 	print("Reading article: '", stdout); print(article_name, stdout, parser.get_printer()); print("'\n", stdout);
 
@@ -205,26 +206,27 @@ bool read_article(
 	}
 
 	for (unsigned int i = 0; i < doc.sentence_count; i++) {
-		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, names, visited_articles, theory_prior, proof_axioms))
+		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
 			return false;
 	}
 	return true;
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior>
+	typename Formula, typename Canonicalizer, typename TheoryPrior, typename... Args>
 inline bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const char* input_sentence,
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
-		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms)
+		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms,
+		Args&&... add_formula_args)
 {
 	typename Parser::SentenceType sentence;
 	if (!tokenize(input_sentence, sentence, names)
 	 || !parser.invert_name_map(names))
 		return false;
 
-	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms);
+	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...);
 	free(sentence);
 	return result;
 }
@@ -1309,7 +1311,7 @@ bool read_sentence(
 
 template<bool LookupUnknownWords, typename ArticleSource,
 	typename ProofCalculus, typename Canonicalizer,
-	typename TheoryPrior, typename Parser>
+	typename TheoryPrior, typename Parser, typename... Args>
 inline bool answer_question(array<string>& answers,
 		const char* input_question, unsigned int num_samples,
 		const ArticleSource& articles, Parser& parser,
@@ -1317,7 +1319,8 @@ inline bool answer_question(array<string>& answers,
 		hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles,
 		TheoryPrior& theory_prior,
-		typename TheoryPrior::PriorState& proof_axioms)
+		typename TheoryPrior::PriorState& proof_axioms,
+		Args&&... add_formula_args)
 {
 	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
@@ -1389,7 +1392,7 @@ inline bool answer_question(array<string>& answers,
 
 			/* find an article in order to learn about the unrecognized word */
 			unsigned int next_article = unrecognized_concatenated[0];
-			read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms);
+			read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...);
 		} else {
 			for (array<sentence_token>& tokens : unrecognized) free(tokens);
 			break;
@@ -1440,6 +1443,7 @@ inline bool answer_question(array<string>& answers,
 			}
 		} else if (term->type == TermType::CONSTANT) {
 			bool contains;
+			bool named_constant = false;
 			for (Proof* definition : T.ground_concepts[term->constant - T.new_constant_offset].definitions) {
 				if (definition->formula->binary.right->type != TermType::UNARY_APPLICATION
 				 || definition->formula->binary.right->binary.left->type != TermType::CONSTANT
@@ -1459,11 +1463,27 @@ print(term->constant, stderr); print(": \"", stderr);
 print(function_value_axiom->formula->binary.right->str, stderr);
 print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);
 T.print_axioms(stderr); print('\n', stderr);
+				named_constant = true;
 				unsigned int index = temp_answers.index_of(function_value_axiom->formula->binary.right->str);
 				if (index < temp_answers.size) {
 					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
 				} else {
 					if (!init(temp_answers.keys[index], function_value_axiom->formula->binary.right->str))
+						return;
+					temp_answers.values[index] = log_probability;
+					temp_answers.size++;
+				}
+			}
+
+			if (!named_constant) {
+print(term->constant, stderr); print(": <unnamed>, log probability: ", stderr);
+print(log_probability, stderr); print('\n', stderr);
+T.print_axioms(stderr); print('\n', stderr);
+				unsigned int index = temp_answers.index_of("<unknown concept>");
+				if (index < temp_answers.size) {
+					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+				} else {
+					if (!init(temp_answers.keys[index], "<unknown concept>"))
 						return;
 					temp_answers.values[index] = log_probability;
 					temp_answers.size++;
@@ -1482,7 +1502,7 @@ print(entry.value, stderr); print('\n', stderr);
 /* TODO: for debugging; delete this */
 extern const string_map_scribe* debug_terminal_printer;
 debug_terminal_printer = &parser.get_printer();
-	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, on_new_proof_sample)) {
+	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
 		fprintf(stderr, "ERROR: Failed to answer question.\n");
 		free_logical_forms(logical_forms, parse_count);
 		free(*name_atom); free(name_atom);

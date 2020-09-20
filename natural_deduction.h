@@ -7,6 +7,8 @@
 
 #include "array_view.h"
 
+#define DEBUG_LOG_PROBABILITY
+
 using namespace core;
 
 enum class nd_step_type : uint_fast16_t
@@ -2449,28 +2451,63 @@ double log_probability(
 	typedef typename UniversalEliminationPrior::ObservationCollection UniversalEliminations;
 	typedef typename TermIndicesPrior::ObservationCollection TermIndices;
 
+#if defined(DEBUG_LOG_PROBABILITY)
+	unsigned int proof_index = 0;
+#endif
+
 	double value = 0.0;
 	array_multiset<Formula*, false> axioms(16);
 	for (nd_step<Formula>* entry : proofs) {
+#if defined(DEBUG_LOG_PROBABILITY)
+		fprintf(stderr, "Proof with index %u:\n", proof_index);
+		proof_index++;
+#endif
 		double proof_log_probability = 0.0;
 		if (theory_sample_collector.has_prior(entry)) {
 			ConjunctionIntroductions conjunction_introductions;
 			UniversalIntroductions universal_introductions;
 			UniversalEliminations universal_eliminations;
 			TermIndices term_indices;
-			proof_log_probability += log_probability_helper(*entry, axioms, conjunction_introductions,
+			double value = log_probability_helper(*entry, axioms, conjunction_introductions,
 					universal_introductions, universal_eliminations, term_indices, prior.proof_length_prior);
+#if defined(DEBUG_LOG_PROBABILITY)
+			fprintf(stderr, "  log_probability_helper returned %lf.\n", value);
+#endif
+			proof_log_probability += value;
 
-			proof_log_probability += log_probability(conjunction_introductions, prior.conjunction_introduction_prior);
-			proof_log_probability += log_probability(universal_introductions, prior.universal_introduction_prior);
-			proof_log_probability += log_probability(universal_eliminations, prior.universal_elimination_prior);
-			proof_log_probability += log_probability(term_indices, prior.term_indices_prior);
+			value = log_probability(conjunction_introductions, prior.conjunction_introduction_prior);
+#if defined(DEBUG_LOG_PROBABILITY)
+			fprintf(stderr, "  log probability of `conjunction_introductions`: %lf.\n", value);
+#endif
+			proof_log_probability += value;
+			value = log_probability(universal_introductions, prior.universal_introduction_prior);
+#if defined(DEBUG_LOG_PROBABILITY)
+			fprintf(stderr, "  log probability of `universal_introductions`: %lf.\n", value);
+#endif
+			proof_log_probability += value;
+			value = log_probability(universal_eliminations, prior.universal_elimination_prior);
+#if defined(DEBUG_LOG_PROBABILITY)
+			fprintf(stderr, "  log probability of `universal_eliminations`: %lf.\n", value);
+#endif
+			proof_log_probability += value;
+			value = log_probability(term_indices, prior.term_indices_prior);
+#if defined(DEBUG_LOG_PROBABILITY)
+			fprintf(stderr, "  log probability of `term_indices`: %lf.\n", value);
+#endif
+			proof_log_probability += value;
 		} else {
+#if defined(DEBUG_LOG_PROBABILITY)
+			fprintf(stderr, "  theory_sample_collector.has_prior returned true.\n");
+#endif
 			if (!count_axioms(*entry, axioms))
 				exit(EXIT_FAILURE);
 		}
 		value += proof_log_probability;
 	}
+
+#if defined(DEBUG_LOG_PROBABILITY)
+	fprintf(stderr, "Total log likelihood of `canonicalized_proof_prior`: %lf.\n", value);
+#endif
 
 	if (axioms.counts.size > 1)
 		sort(axioms.counts.keys, axioms.counts.values, axioms.counts.size);

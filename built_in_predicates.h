@@ -40,6 +40,8 @@ enum class built_in_predicates : unsigned int {
 	OBJECT,
 	NAME,
 
+AREA, /* TODO: for debugging; delete this */
+
 	COUNT
 };
 
@@ -194,7 +196,8 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET)
 		&& names.put("name", (unsigned int) built_in_predicates::NAME)
 		&& names.put("same", (unsigned int) built_in_predicates::SAME)
-		&& names.put("object", (unsigned int) built_in_predicates::OBJECT);
+		&& names.put("object", (unsigned int) built_in_predicates::OBJECT)
+		&& names.put("area", (unsigned int) built_in_predicates::AREA);
 }
 
 struct no_op {

@@ -19442,14 +19442,6 @@ inline bool invert_remove_conjunct(
 				dst.last() = temp;
 			}
 
-			bool first_has_any = false;
-			for (hol_term* term : first_inverter.outer) {
-				if (term->type == hol_term_type::ANY || term->type == hol_term_type::ANY_RIGHT) {
-					first_has_any = true;
-					break;
-				}
-			}
-
 			if (old_second_head->type == hol_term_type::ANY || old_second_head->type == hol_term_type::ANY_RIGHT) {
 				hol_term* conjunct = nullptr;
 				if (first_head->type == hol_term_type::EXISTS) {
