@@ -72,7 +72,7 @@
 								(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
 									(PP:try_remove_correlated,select_right_arg1_of_without_head
 										(P:require_no_preposition,remove_right_conjunct "in")
-										(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+										(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 											(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 												(THE "the")
 												(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -121,7 +121,7 @@
 				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
 					(PP:remove_wide_scope,add_is_adjunct,require_no_preposition
 						(P:require_no_preposition,remove_right_conjunct "in")
-						(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 								(THE "the")
 								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -189,7 +189,7 @@
 												(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
 													(PP:try_remove_correlated,select_right_arg1_of_without_head
 														(P:require_no_preposition,remove_right_conjunct "in")
-														(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+														(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 															(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 																(THE "the")
 																(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1012,7 +1012,7 @@
 								(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
 									(PP:try_remove_correlated,select_right_arg1_of_without_head
 										(P:require_no_preposition,remove_right_conjunct "in")
-										(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+										(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 											(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 												(THE "the")
 												(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1087,9 +1087,9 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg1_of_without_head
+					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head
 						(P:require_no_preposition,remove_right_conjunct "in")
-						(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 								(THE "the")
 								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1177,9 +1177,9 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg1_of_without_head
+					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head
 						(P:require_no_preposition,remove_right_conjunct "in")
-						(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(WHAT:require_no_wh_minus "what")
 							(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
 								(NOMINAL_L:identity_predicative
@@ -1251,7 +1251,7 @@
 												(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
 													(PP:try_remove_correlated,select_right_arg1_of_without_head
 														(P:require_no_preposition,remove_right_conjunct "in")
-														(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+														(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 															(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 																(THE:empty "the")
 																(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1483,7 +1483,7 @@
 				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
 					(PP:remove_wide_scope,add_is_adjunct,require_no_preposition
 						(P:require_no_preposition,remove_right_conjunct "in")
-						(NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 								(THE "the")
 								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1745,6 +1745,152 @@
 : # largest
 {(ADJ "large"/"largest")}
 	{?[g]:area(g)[sup]};
+
+: # largest
+{(ADJ "large"/"largest")}
+	{?[g]:area(g)[sup]};
+
+: # Galileo observed Jupiter with a telescope.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity_predicative
+							(NOMINAL_L:identity_predicative
+								(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Galileo")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_R:remove_right_conjunct
+						(VP_L:identity
+							(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "observe"/"observed")
+						)
+					)
+					(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+						(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+							(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+								(NOMINAL_R:identity_predicative
+									(NOMINAL_L:identity_predicative
+										(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Jupiter")
+									)
+								)
+							)
+						)
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head
+						(P:require_no_preposition,remove_right_conjunct "with")
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+							(A "a")
+							(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
+								(NOMINAL_R:identity_predicative
+									(NOMINAL_L:identity_predicative
+										(N:require_no_correlator_predicative,select_predicate_in_set "telescope"/"telescope")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ?[t]:(telescope(t) & ?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j) & ?[u]:(use_instrument(u) & (arg2(u)=t) & (arg1_of(o)=u))))))};
+
+: # Galileo observed Jupiter with four moons.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity_predicative
+							(NOMINAL_L:identity_predicative
+								(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Galileo")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "observe"/"observed")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+							(NOMINAL_R:identity_predicative
+								(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
+									(NOMINAL_L:identity_predicative
+										(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Jupiter")
+									)
+								)
+								(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
+									(PP:try_remove_correlated,select_right_arg1_of_without_head
+										(P:require_no_preposition,remove_right_conjunct "with")
+										(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+											(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_universal
+												(Q:try_remove_genitive,select_second_left_set_conjunct_root
+													(NUMBER:size "four")
+												)
+												(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+													(NOMINAL_L:identity_predicative
+														(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moons")
+													)
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[M]:(subset(M,^[m]:moon(m)) & (size(M)=4) & ?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ![m]:(M(m) => ?[o]:(own(o) & (arg2(o)=m) & (arg1_of(j)=o))) & ?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j)))))};
+
+: # butterfly
+{(N "butterfly"/"butterfly")}
+	{butterfly[index:sg]};
+
+: # net
+{(N "net"/"net")}
+	{net[index:sg]};
+
+: # spot
+{(N "spot"/"spot")}
+	{spot[index:sg]};
+
+: # catch
+{(V "catch"/"catches")}
+	{?[c]:(catch(c) & present(c))[index:sg,arg2]};
+
+: # person
+{(N "person"/"person")}
+	{person[index:sg]};
+
+: # use
+{(V "use"/"uses")}
+	{?[u]:(use_instrument(u) & present(u))[index:sg,arg2]};
+
+: # have
+{(V "have"/"has")}
+	{?[o]:(own(o) & present(o))[index:sg,arg2]};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

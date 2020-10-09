@@ -329,8 +329,8 @@
 #  "i will buy what she wants."
 #  "i will buy whatever she wants."
 #  ?[b]:(arg1(b)=me & U(0,b) & buy(b) & future(b) & ?[x]:(U(1,x) & ?[w]:(?[h]:(U(2,h) & female_ref(0,h) & arg1(w)=h) & U(3,w) & want(w) & arg2(w)=x) & arg2(b)=x))
-#?"
-#  "are you generous
+#
+#  "are you generous?"
 #  "you are generous?"
 #  ^[x]:(x=?[g]:(arg1(g)=you & U(0,g) & generous(g) & present(g)))
 #
@@ -1068,13 +1068,13 @@ V_ADJUNCT nonterminal {} {0.1} {10.0} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
 #V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
 #V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
 #V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,add_modifies_event,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
 #V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
 
 # predicative complements
@@ -1090,7 +1090,7 @@ V_ADJUNCT -> ADVP_R:remove_wide_scope,add_is_adjunct,require_no_preposition
 # where `p` is the predicate, `fi` contains verb-specific terms such as
 # `present` as well as any adjuncts of y whereas `f` contains everything else,
 # such as the arguments.
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,add_modifies_event
 
 # V_ADJUNCT {... & ?[y1]:(inverse(own)(y1) & arg2(y1)=a) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=a)}
 #  -> NP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1330,9 +1330,9 @@ VP_L nonterminal {} {100.0} {0.1} {} 10 1.0 {}
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
 #VP_L -> ADVP_L:try_remove_correlator,try_remove_wh_minus,select_left_arg1_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
-#VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,select_left_arg1_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
+#VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,add_modifies_event,select_left_arg1_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
 #VP_L -> ADVP_L:try_remove_correlator,try_remove_wh_minus,select_left_arg2_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
-#VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,select_left_arg2_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
+#VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,add_modifies_event,select_left_arg2_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
 
 VP_L -> WILL VP_L:try_remove_correlated,remove_future,add_infinitive,add_aux,require_no_subjunctive # future "tense"
 VP_L -> HAVE:identity VP_L:try_remove_correlated,require_no_future,remove_perfect,add_past_participle,add_aux,require_no_subjunctive # perfect aspect
@@ -2368,22 +2368,22 @@ PP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #  -> P {?[x]:(U(i,x) & p(x))}
 #     NP {^[P]:?[Y]:(F(Y) & ![y]:(Y(y) => P(y)))}
 # e.g. "house(s) next to the tree(s)"
-PP -> P:require_no_preposition,remove_right_conjunct NP:try_remove_correlated,try_remove_is_adjunct,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+PP -> P:require_no_preposition,remove_right_conjunct NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 # e.g. "friend of Mary's", "eyes of Mary's"
-#PP -> P:require_no_preposition,remove_right_conjunct NP:add_genitive,try_remove_correlated,try_remove_is_adjunct,has_arg2_in_set
+#PP -> P:require_no_preposition,remove_right_conjunct NP:add_genitive,try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,has_arg2_in_set
 # for prepositional verbs (i.e. "look forward to", etc)
-#PP -> P_PLACEHOLDER:require_preposition,remove_right_conjunct NP:try_remove_correlated,try_remove_is_adjunct,has_arg2_in_set
+#PP -> P_PLACEHOLDER:require_preposition,remove_right_conjunct NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,has_arg2_in_set
 
 # for (intransitive) prepositional verbs (i.e. "look forward to", etc)
 # PP {... & ?[x]:(U(i,x) & p(x))}
 #  -> P {p}
-#PP -> P_PLACEHOLDER:require_preposition NP:try_remove_correlated,try_remove_is_adjunct,has_arg2_in_set
+#PP -> P_PLACEHOLDER:require_preposition NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,has_arg2_in_set
 
 # PP {... & ?[x]:(U(i,x) & p(x) & ?[y]:(f(y) & arg1/arg2(x)=y))}
 #  -> P {p}
 #     S' {... & ?[y]:f(y)}
 # e.g. "before the meeting ended"
-#PP -> P:require_no_preposition S':try_remove_correlated,try_remove_is_adjunct
+#PP -> P:require_no_preposition S':try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event
 
 # closed interrogative finite subordinate clause
 # PP {... & (~)?[y]:(g(y) & f(y))}
@@ -2391,7 +2391,7 @@ PP -> P:require_no_preposition,remove_right_conjunct NP:try_remove_correlated,tr
 #     S' {... & f'}
 # where f(y) = arg2(y)=^[x]:A and f' = ^[x]:A
 # e.g. "he is worried about whether or not the game ended"
-#PP -> P S':add_req_no_aux,add_whether,try_remove_correlated,try_remove_is_adjunct
+#PP -> P S':add_req_no_aux,add_whether,try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event
 
 # open interrogative finite subordinate clause
 # PP {^[P]:(... & (~)?[y]:(g(y) & f(y))}
@@ -2399,7 +2399,7 @@ PP -> P:require_no_preposition,remove_right_conjunct NP:try_remove_correlated,tr
 #     S' {... & f'}
 # where f(y) = arg2(y)=^[x]:A and f' = ^[x]:A
 # e.g. "he is worried about when she will arrive"
-#PP -> P S':add_req_no_aux,add_subordinate,try_remove_correlated,try_remove_is_adjunct
+#PP -> P S':add_req_no_aux,add_subordinate,try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event
 
 # prepositional phrase complements
 # PP {... & ?[x]:(U(i,x) & p(x) & f(x))}
@@ -2425,7 +2425,7 @@ PP -> P:require_no_preposition,predicate PP:add_preposition,try_remove_correlate
 #  -> NP {^[P]:?[Y]:(F(Y) & ![y]:(Y(y) => P(y)))}
 #     P {p}
 # e.g. "ten years ago"
-#PP -> NP:try_remove_is_adjunct,has_arg2_in_set POSTPOSITION:require_no_preposition
+#PP -> NP:try_remove_is_adjunct,try_remove_modifies_event,has_arg2_in_set POSTPOSITION:require_no_preposition
 
 # PP {... & ~?[x]:f(x)}
 #  -> NOT PP {... & ?[x]:f(x)}
@@ -2434,7 +2434,7 @@ PP -> P:require_no_preposition,predicate PP:add_preposition,try_remove_correlate
 # PP {... & (~)?[x]:((~)?[v1]:g1(v1) & ... & (~)?[vn]:gn(vn) & f(x))}
 #  -> ADVP_L {(~)?[v1]:g1(v1) & ... & (~)?[vn]:gn(vn)}
 #     PP {... & (~)?[x]:f(x)}
-#PP -> ADVP_L:try_remove_correlator,try_remove_wh_minus PP:try_remove_correlated,try_remove_is_adjunct
+#PP -> ADVP_L:try_remove_correlator,try_remove_wh_minus,try_remove_modifies_event PP:try_remove_correlated,try_remove_is_adjunct
 
 # preposition stranding
 # e.g. "what school did Jason run to?"
@@ -2864,7 +2864,7 @@ ADVP_L -> BOTH ADVP_L:remove_both
 ADVP_L -> NEITHER ADVP_L:remove_neither,add_negative
 
 
-V preterminal {predicate, has_arg2} {10.0, 10.0, 10.0} {1.0, 1.0, 1.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.99 verb {"through"}
+V preterminal {predicate, has_arg2} {10.0, 10.0, 0.1} {1.0, 1.0, 10.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.99 verb {"through"}
 
 N preterminal {constant, has_arg2} {10000.0, 16.0, 10.0} {1.0, 1.0, 1.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.99 noun {}
 
@@ -2876,7 +2876,7 @@ NUMBER number_preterminal {} {100.0} {1.0} {} 1 1.0 {}
 
 STRING string_preterminal {} {100.0} {1.0} {} 1 0.95 {}
 
-P preterminal {unambiguous_predicate_only} {10000.0, 10.0} {1.0, 1.0} {} 10000 1.0 {}
+P preterminal {modifies_event, unambiguous_predicate_only} {10000.0, 10.0, 10.0} {1.0, 1.0, 1.0} {} 10000 1.0 {}
 P -> "of"
 P -> "in"
 P -> "through"

@@ -1737,6 +1737,8 @@ inline bool emit_entry(
 		} else {
 			static constexpr const char* rare_str = "rare";
 			static unsigned int rare_str_length = strlen(rare_str);
+			static constexpr const char* by_suppletion_str = "by [[suppletion]]";
+			static unsigned int by_suppletion_str_length = strlen(by_suppletion_str);
 
 			array<string> plural_forms(entry.entries.length - 1);
 			countability count = countability::COUNTABLE;
@@ -1768,7 +1770,9 @@ inline bool emit_entry(
 				} else {
 					unsigned int qualifier_index; const char* qualifier; unsigned int qualifier_length;
 					if (get_parameter(entry.entries[i], "pl", "qual=", qualifier_index, qualifier, qualifier_length)) {
-						if (!string_compare(qualifier, qualifier_length, rare_str, rare_str_length)) {
+						if (!string_compare(qualifier, qualifier_length, rare_str, rare_str_length)
+						 && !string_compare(qualifier, qualifier_length, by_suppletion_str, by_suppletion_str_length))
+						{
 							for (string& str : plural_forms) free(str);
 							return true;
 						}

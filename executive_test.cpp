@@ -83,7 +83,20 @@ struct default_array {
 	inline auto end() const -> decltype(a.end()) {
 		return a.end();
 	}
+
+	static inline void move(const default_array<T>& src, default_array<T>& dst) {
+		core::move(src.a, dst.a);
+	}
+
+	static inline void free(default_array<T>& array) {
+		core::free(array.a);
+	}
 };
+
+template<typename T>
+inline bool init(default_array<T>& array) {
+	return array_init(array.a, 16);
+}
 
 template<typename T>
 inline size_t size(const default_array<T>& array) {
@@ -97,18 +110,31 @@ inline bool print(const default_array<T>& array, Stream& out) {
 
 template<typename T>
 struct default_array_multiset {
-	array_multiset<T, false> a;
+	array_multiset<T, true> a;
 
 	default_array_multiset() : a(16) { }
 
 	inline bool add(const T& item) {
 		return a.add(item);
 	}
+
+	static inline void move(const default_array_multiset<T>& src, default_array_multiset<T>& dst) {
+		core::move(src.a, dst.a);
+	}
+
+	static inline void free(default_array_multiset<T>& multiset) {
+		core::free(multiset.a);
+	}
 };
 
 template<typename T>
+inline bool init(default_array_multiset<T>& multiset) {
+	return init(multiset.a, 16);
+}
+
+template<typename T>
 struct default_hash_multiset {
-	hash_multiset<T, false> a;
+	hash_multiset<T, true> a;
 
 	default_hash_multiset() : a(16) { }
 
@@ -123,11 +149,29 @@ struct default_hash_multiset {
 	inline void subtract(const default_array_multiset<T>& changes) {
 		a.template subtract<true>(changes.a);
 	}
+
+	static inline void move(const default_hash_multiset<T>& src, default_hash_multiset<T>& dst) {
+		core::move(src.a, dst.a);
+	}
+
+	static inline void free(default_hash_multiset<T>& multiset) {
+		core::free(multiset.a);
+	}
 };
+
+template<typename T>
+inline bool init(default_hash_multiset<T>& multiset) {
+	return init(multiset.a, 16);
+}
 
 template<typename T>
 inline unsigned int size(const default_array_multiset<T>& multiset) {
 	return multiset.a.counts.size;
+}
+
+template<typename T>
+inline unsigned int size(const default_hash_multiset<T>& multiset) {
+	return multiset.a.counts.table.size;
 }
 
 template<typename T>
@@ -171,7 +215,13 @@ struct empty_prior_state {
 
 	template<typename T>
 	inline void subtract(const T& changes) const { }
+
+	static inline void move(const empty_prior_state& src, const empty_prior_state& dst) { }
+	static inline void free(const empty_prior_state& state) { }
 };
+
+constexpr bool init(const empty_prior_state& new_state) { return true; }
+constexpr unsigned int size(const empty_prior_state& new_state) { return 0; }
 
 template<typename T>
 struct iid_uniform_distribution
@@ -405,9 +455,9 @@ double log_probability_ratio(
 		j++;
 	}
 
-	value += lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + tables.sum - sum(old_observations) + sum(new_observations));
+	value += lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
 	if (prior.d != 0.0)
-		value += -lgamma(prior.alpha/prior.d + tables.counts.table.size) + lgamma(prior.alpha/prior.d + tables.counts.table.size - old_cluster_count + new_cluster_count);
+		value += -lgamma(prior.alpha/prior.d + tables.counts.table.size) + lgamma(prior.alpha/prior.d + (tables.counts.table.size - old_cluster_count + new_cluster_count));
 	return value;
 }
 
@@ -513,12 +563,18 @@ double log_probability_ratio(
 		 + log_probability_ratio(old_clusters, new_clusters, prior.base_distribution, prior_state.base_prior_state, old_prior_changes, new_prior_changes);
 }
 
-template<typename ConstantDistribution, typename PredicateDistribution>
+template<typename ConstantDistribution, typename PredicateDistribution, typename TypeDistribution>
 struct simple_constant_distribution
 {
 	struct prior_state_changes {
 		typename ConstantDistribution::PriorStateChanges constants;
 		typename PredicateDistribution::PriorStateChanges predicates;
+		array_map<unsigned int, typename TypeDistribution::PriorStateChanges> types;
+
+		prior_state_changes() : types(8) { }
+		~prior_state_changes() {
+			for (auto entry : types) core::free(entry.value);
+		}
 
 		inline bool add_constant(unsigned int constant) {
 			return constants.add(constant);
@@ -527,11 +583,34 @@ struct simple_constant_distribution
 		inline bool add_predicate(unsigned int predicate) {
 			return predicates.add(predicate);
 		}
+
+		inline bool add_type(const hol_term* type, unsigned int constant) {
+			if (!types.ensure_capacity(types.size + 1))
+				return false;
+			unsigned int index = types.index_of(constant);
+			if (index == types.size) {
+				if (!init(types.values[index])) {
+					return false;
+				} else if (!types.values[index].add(*type)) {
+					free(types.values[index]);
+					return false;
+				}
+				types.keys[index] = constant;
+				types.size++;
+				insertion_sort(types.keys, types.values, types.size, default_sorter());
+				return true;
+			} else {
+				return types.values[index].add(*type);
+			}
+		}
 	};
 
 	struct prior_state {
 		typename ConstantDistribution::PriorState constants;
 		typename PredicateDistribution::PriorState predicates;
+		hash_map<unsigned int, typename TypeDistribution::PriorState> types;
+
+		prior_state() : types(16) { }
 
 		inline bool add(const prior_state_changes& changes) {
 			if (!constants.add(changes.constants)) {
@@ -540,11 +619,39 @@ struct simple_constant_distribution
 				constants.subtract(changes.constants);
 				return false;
 			}
+
+			if (!types.check_size(types.table.size + changes.types.size)) {
+				constants.subtract(changes.constants);
+				predicates.subtract(changes.predicates);
+				return false;
+			}
+			for (unsigned int i = 0; i < changes.types.size; i++) {
+				bool contains; unsigned int index;
+				typename TypeDistribution::PriorState& value = types.get(changes.types.keys[i], contains, index);
+				if (!contains) {
+					if (!init(types.values[index])) {
+						constants.subtract(changes.constants);
+						predicates.subtract(changes.predicates);
+						for (unsigned int j = 0; j < i; j++)
+							types.get(changes.types.keys[j]).subtract(changes.types.values[j]);
+						return false;
+					}
+					types.table.keys[index] = changes.types.keys[i];
+					types.table.size++;
+				}
+				if (!value.add(changes.types.values[i])) {
+					constants.subtract(changes.constants);
+					predicates.subtract(changes.predicates);
+					for (unsigned int j = 0; j < i; j++)
+						types.get(changes.types.keys[j]).subtract(changes.types.values[j]);
+					return false;
+				}
+			}
 			return true;
 		}
 
 		inline bool add(const prior_state_changes& changes,
-				const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+				const simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>& prior)
 		{
 			return add(changes);
 		}
@@ -552,10 +659,23 @@ struct simple_constant_distribution
 		inline void subtract(const prior_state_changes& changes) {
 			constants.subtract(changes.constants);
 			predicates.subtract(changes.predicates);
+			for (unsigned int i = 0; i < changes.types.size; i++) {
+				bool contains; unsigned int index;
+				typename TypeDistribution::PriorState& value = types.get(changes.types.keys[i], contains, index);
+#if !defined(NDEBUG)
+				if (!contains)
+					fprintf(stderr, "simple_constant_distribution.prior_state.subtract WARNING: The given key does not exist in `types`.\n");
+#endif
+				value.subtract(changes.types.values[i]);
+				if (size(value) == 0) {
+					free(value);
+					types.remove_at(index);
+				}
+			}
 		}
 
 		inline void subtract(const prior_state_changes& changes,
-				const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+				const simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>& prior)
 		{
 			subtract(changes);
 		}
@@ -567,60 +687,104 @@ struct simple_constant_distribution
 
 	ConstantDistribution constant_distribution;
 	PredicateDistribution predicate_distribution;
+	TypeDistribution type_distribution;
 
 	simple_constant_distribution(
 			const ConstantDistribution& constant_distribution,
-			const PredicateDistribution& predicate_distribution) :
+			const PredicateDistribution& predicate_distribution,
+			const TypeDistribution& type_distribution) :
 		constant_distribution(constant_distribution),
-		predicate_distribution(predicate_distribution)
+		predicate_distribution(predicate_distribution),
+		type_distribution(type_distribution)
 	{ }
 
-	simple_constant_distribution(const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& src) :
-		constant_distribution(src.constant_distribution), predicate_distribution(src.predicate_distribution)
+	simple_constant_distribution(const simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>& src) :
+		constant_distribution(src.constant_distribution), predicate_distribution(src.predicate_distribution), type_distribution(src.type_distribution)
 	{ }
-
-	bool add_constant(unsigned int constant) {
-		return constant_distribution.add(constant);
-	}
-
-	bool add_predicate(unsigned int predicate) {
-		return predicate_distribution.add(predicate);
-	}
-
-	void remove_constant(unsigned int constant) {
-		constant_distribution.remove(constant);
-	}
-
-	void remove_predicate(unsigned int predicate) {
-		predicate_distribution.remove(predicate);
-	}
 };
 
-template<typename ConstantDistribution, typename PredicateDistribution>
-inline simple_constant_distribution<ConstantDistribution, PredicateDistribution>
+template<typename ConstantDistribution, typename PredicateDistribution, typename TypeDistribution>
+inline simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>
 make_simple_constant_distribution(
 		const ConstantDistribution& constant_distribution,
-		const PredicateDistribution& predicate_distribution)
+		const PredicateDistribution& predicate_distribution,
+		const TypeDistribution& type_distribution)
 {
-	return simple_constant_distribution<ConstantDistribution, PredicateDistribution>(constant_distribution, predicate_distribution);
+	return simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>(constant_distribution, predicate_distribution, type_distribution);
 }
 
-template<typename ConstantCollection, typename ConstantDistribution, typename PredicateDistribution>
+template<typename ConstantCollection, typename ConstantDistribution, typename PredicateDistribution, typename TypeDistribution>
 inline double log_probability(const ConstantCollection& constants,
-		const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+		const simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>& prior)
 {
-	return log_probability(constants.constants, prior.constant_distribution)
-		 + log_probability(constants.predicates, prior.predicate_distribution);
+	double value = log_probability(constants.constants, prior.constant_distribution)
+				 + log_probability(constants.predicates, prior.predicate_distribution);
+	for (const auto& entry : constants.types) {
+#if defined(DEBUG_LOG_PROBABILITY)
+		fprintf(stderr, "log_probability of type distribution for constant %u:\n", entry.key);
+#endif
+		value += log_probability(entry.value, prior.type_distribution);
+	}
+	return value;
 }
 
 template<typename ObservationCollection, typename ConstantCollection,
-	typename ConstantDistribution, typename PredicateDistribution>
+	typename ConstantDistribution, typename PredicateDistribution, typename TypeDistribution>
 inline double log_probability_ratio(const ObservationCollection& existing_constants,
 		const ConstantCollection& old_constants, const ConstantCollection& new_constants,
-		const simple_constant_distribution<ConstantDistribution, PredicateDistribution>& prior)
+		const simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>& prior)
 {
-	return log_probability_ratio(existing_constants.constants, old_constants.constants, new_constants.constants, prior.constant_distribution)
-		 + log_probability_ratio(existing_constants.predicates, old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
+	double value = log_probability_ratio(existing_constants.constants, old_constants.constants, new_constants.constants, prior.constant_distribution)
+				 + log_probability_ratio(existing_constants.predicates, old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
+
+	static typename TypeDistribution::PriorState empty_type_prior_state;
+	static typename TypeDistribution::PriorStateChanges empty_type_prior_state_changes;
+
+	unsigned int i = 0, j = 0; bool contains;
+	while (i < old_constants.types.size && j < new_constants.types.size) {
+		if (old_constants.types.keys[i] == new_constants.types.keys[j]) {
+			const typename TypeDistribution::PriorState& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
+			if (contains) {
+				value += log_probability_ratio(existing, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution);
+			} else {
+				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution);
+			}
+			i++; j++;
+		} else if (old_constants.types.keys[i] < new_constants.types.keys[j]) {
+			const typename TypeDistribution::PriorState& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
+			if (contains) {
+				value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+			} else {
+				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+			}
+			i++;
+		} else {
+			const typename TypeDistribution::PriorState& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
+			if (contains) {
+				value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+			} else {
+				value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+			}
+			j++;
+		}
+	} while (i < old_constants.types.size) {
+		const typename TypeDistribution::PriorState& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
+		if (contains) {
+			value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+		} else {
+			value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+		}
+		i++;
+	} while (j < new_constants.types.size) {
+		const typename TypeDistribution::PriorState& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
+		if (contains) {
+			value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+		} else {
+			value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+		}
+		j++;
+	}
+	return value;
 }
 
 template<typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
@@ -818,7 +982,7 @@ inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, Set
 			name_count_parameter);
 }
 
-template<bool Quantified, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_atom(const hol_term* function, const hol_term* arg1,
 		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
@@ -848,7 +1012,9 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 	if (Quantified && arg1->type == hol_term_type::VARIABLE) {
 		return prior.log_unary_probability;
 	} else if (!Quantified && arg1->type == hol_term_type::CONSTANT) {
-		constants.add_constant(arg1->constant);
+		if (IsRoot)
+			constants.add_type(function, arg1->constant);
+		else constants.add_constant(arg1->constant);
 		return prior.log_unary_probability;
 	} else {
 		return -std::numeric_limits<double>::infinity();
@@ -886,17 +1052,17 @@ double log_probability_atom(
 	}
 }
 
-template<bool Quantified, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_literal(const hol_term* literal,
 		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (literal->type == hol_term_type::UNARY_APPLICATION) {
-		return prior.log_positive_probability + log_probability_atom<Quantified>(literal->binary.left, literal->binary.right, prior, constants);
+		return prior.log_positive_probability + log_probability_atom<Quantified, IsRoot>(literal->binary.left, literal->binary.right, prior, constants);
 	} else if (literal->type == hol_term_type::BINARY_APPLICATION) {
 		return prior.log_positive_probability + log_probability_atom<Quantified>(literal->ternary.first, literal->ternary.second, literal->ternary.third, prior, constants);
 	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::UNARY_APPLICATION) {
-		return prior.log_negation_probability + log_probability_atom<Quantified>(literal->unary.operand->binary.left, literal->unary.operand->binary.right, prior, constants);
+		return prior.log_negation_probability + log_probability_atom<Quantified, false>(literal->unary.operand->binary.left, literal->unary.operand->binary.right, prior, constants);
 	} else if (literal->type == hol_term_type::NOT && literal->unary.operand->type == hol_term_type::BINARY_APPLICATION) {
 		return prior.log_negation_probability + log_probability_atom<Quantified>(literal->unary.operand->ternary.first, literal->unary.operand->ternary.second, literal->unary.operand->ternary.third, prior, constants);
 	} else {
@@ -912,13 +1078,13 @@ inline bool is_literal(const hol_term* term) {
 	return false;
 }
 
-template<bool Quantified = false, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified = false, bool IsRoot = true, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
 double log_probability_helper(const hol_term* term,
 		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
 		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& changes)
 {
 	if (is_literal(term))
-		return prior.log_ground_literal_probability + log_probability_literal<Quantified>(term, prior, changes.constants);
+		return prior.log_ground_literal_probability + log_probability_literal<Quantified, IsRoot>(term, prior, changes.constants);
 
 	double value;
 	const hol_term* antecedent;
@@ -930,19 +1096,19 @@ double log_probability_helper(const hol_term* term,
 			antecedent = term->quantifier.operand->binary.left;
 			consequent = term->quantifier.operand->binary.right;
 			if (antecedent->type == hol_term_type::AND) {
-				value = (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+				value += (antecedent->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < antecedent->array.length; i++)
-					value += log_probability_helper<true>(antecedent->array.operands[i], prior, changes);
+					value += log_probability_helper<true, false>(antecedent->array.operands[i], prior, changes);
 			} else {
-				value = prior.log_antecedent_stop_probability + log_probability_helper<true>(antecedent, prior, changes);
+				value += prior.log_antecedent_stop_probability + log_probability_helper<true, false>(antecedent, prior, changes);
 			}
 
 			if (consequent->type == hol_term_type::AND) {
-				value = (consequent->array.length - 1) * prior.log_consequent_continue_probability + prior.log_consequent_stop_probability;
+				value += (consequent->array.length - 1) * prior.log_consequent_continue_probability + prior.log_consequent_stop_probability;
 				for (unsigned int i = 0; i < consequent->array.length; i++)
-					value += log_probability_helper<true>(consequent->array.operands[i], prior, changes);
+					value += log_probability_helper<true, false>(consequent->array.operands[i], prior, changes);
 			} else {
-				value = prior.log_consequent_stop_probability + log_probability_helper<true>(consequent, prior, changes);
+				value += prior.log_consequent_stop_probability + log_probability_helper<true, false>(consequent, prior, changes);
 			}
 			return value;
 		} else {
@@ -959,11 +1125,11 @@ double log_probability_helper(const hol_term* term,
 			value = prior.log_set_size_axiom_probability;
 			hol_term* operand = term->binary.left->binary.right->quantifier.operand;
 			if (operand->type == hol_term_type::AND) {
-				value = (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+				value += (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < operand->array.length; i++)
-					value += log_probability_helper<true>(operand->array.operands[i], prior, changes);
+					value += log_probability_helper<true, false>(operand->array.operands[i], prior, changes);
 			} else {
-				value = prior.log_antecedent_stop_probability + log_probability_helper<true>(operand, prior, changes);
+				value += prior.log_antecedent_stop_probability + log_probability_helper<true, false>(operand, prior, changes);
 			}
 			value += log_probability(term->binary.right->integer, prior.set_size_distribution);
 			return value;
@@ -1032,16 +1198,16 @@ double log_probability_helper(const hol_term* term,
 			hol_term* operand = term->quantifier.operand;
 			value += (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 			for (unsigned int i = 0; i < operand->array.length; i++)
-				value += log_probability_helper<true>(operand->array.operands[i], prior, changes);
+				value += log_probability_helper<true, false>(operand->array.operands[i], prior, changes);
 		} else {
-			value += prior.log_antecedent_stop_probability + log_probability_helper<true>(term->quantifier.operand, prior, changes);
+			value += prior.log_antecedent_stop_probability + log_probability_helper<true, false>(term->quantifier.operand, prior, changes);
 		}
 		return value;
 	case hol_term_type::OR:
 		value = prior.log_disjunction_probability;
 		value += (term->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 		for (unsigned int i = 0; i < term->array.length; i++)
-			value += log_probability_helper<true>(term->array.operands[i], prior, changes);
+			value += log_probability_helper<Quantified, false>(term->array.operands[i], prior, changes);
 		return value;
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
@@ -1136,6 +1302,7 @@ double log_probability(const Collection<hol_term*>& clusters,
 #if defined(DEBUG_LOG_PROBABILITY)
 	fprintf(stderr, "  Total: %lf\n", name_prior);
 #endif
+	for (auto entry : name_map) free(entry.value);
 	value += name_prior;
 
 	return value + log_probability(changes.constants, prior.constant_distribution);
@@ -1282,33 +1449,33 @@ double log_probability_ratio(
 	unsigned int i = 0, j = 0;
 	while (i < old_name_map.size && j < new_name_map.size) {
 		if (old_name_map.keys[i] == new_name_map.keys[j]) {
-			unsigned int old_count = name_map.get(old_name_map.keys[i], contains).length;
-			if (!contains) old_count = 0;
+			array<const string*>& names = name_map.get(old_name_map.keys[i], contains);
+			unsigned int old_count = (contains ? names.length : 0);
 			name_prior += log_probability(old_count + ((ssize_t) new_name_map.values[j].length - old_name_map.values[i].length), prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			i++; j++;
 		} else if (old_name_map.keys[i] < new_name_map.keys[j]) {
-			unsigned int old_count = name_map.get(old_name_map.keys[i], contains).length;
-			if (!contains) old_count = 0;
+			array<const string*>& names = name_map.get(old_name_map.keys[i], contains);
+			unsigned int old_count = (contains ? names.length : 0);
 			name_prior += log_probability(old_count - ((ssize_t) old_name_map.values[i].length), prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			i++;
 		} else {
-			unsigned int old_count = name_map.get(new_name_map.keys[j], contains).length;
-			if (!contains) old_count = 0;
+			array<const string*>& names = name_map.get(new_name_map.keys[j], contains);
+			unsigned int old_count = (contains ? names.length : 0);
 			name_prior += log_probability(old_count + new_name_map.values[j].length, prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			j++;
 		}
 	} while (i < old_name_map.size) {
-		unsigned int old_count = name_map.get(old_name_map.keys[i], contains).length;
-		if (!contains) old_count = 0;
+		array<const string*>& names = name_map.get(old_name_map.keys[i], contains);
+		unsigned int old_count = (contains ? names.length : 0);
 		name_prior += log_probability(old_count - ((ssize_t) old_name_map.values[i].length), prior.name_count_distribution)
 					- log_probability(old_count, prior.name_count_distribution);
 		i++;
 	} while (j < new_name_map.size) {
-		unsigned int old_count = name_map.get(new_name_map.keys[j], contains).length;
-		if (!contains) old_count = 0;
+		array<const string*>& names = name_map.get(new_name_map.keys[j], contains);
+		unsigned int old_count = (contains ? names.length : 0);
 		name_prior += log_probability(old_count + new_name_map.values[j].length, prior.name_count_distribution)
 					- log_probability(old_count, prior.name_count_distribution);
 		j++;
@@ -1953,8 +2120,8 @@ return EXIT_SUCCESS;*/
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
-			iid_uniform_distribution<unsigned int>(1000), chinese_restaurant_process<unsigned int>(1.0, 0.0));
-	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2), 0.019, 0.19, 0.29, 0.1, 0.001, 0.2, 0.2, 0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.000000001);
+			iid_uniform_distribution<unsigned int>(1000), chinese_restaurant_process<unsigned int>(1.0, 0.0), chinese_restaurant_process<hol_term>(1.0e-10, 0.0));
+	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2), 0.199 + 0.0099999, 0.0000001, 0.29, 0.1, 0.001, 0.2, 0.2, 0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-3, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
@@ -1968,11 +2135,17 @@ return EXIT_SUCCESS;*/
 		return EXIT_FAILURE;
 	}
 
+	/*read_sentence(corpus, parser, "No butterfly has a net.", T, names, seed_entities, proof_prior, proof_axioms);
+
+	parse_sentence_with_prior(parser, "Sally caught a butterfly with a net.", T, names, proof_prior, proof_axioms);
+for (auto entry : names) free(entry.key);
+return EXIT_SUCCESS;*/
+
 	/*read_article(names.get("Des Moines"), corpus, parser, T, names, seed_entities, proof_prior);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/
 
-theory_initializer initializer(29);
+/*theory_initializer initializer(29);
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_any());
@@ -1987,7 +2160,7 @@ initializer.expected_constants.add(instance_constant(1000000000 + 5));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_any());
 
-/*initializer.expected_constants.add(instance_constant(1000000000 + 0));
+initializer.expected_constants.add(instance_constant(1000000000 + 0));
 initializer.expected_constants.add(instance_constant(1000000000 + 1));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 8));
@@ -1999,66 +2172,65 @@ initializer.expected_constants.add(instance_constant(1000000000 + 1));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 11));
 initializer.expected_constants.add(instance_any());
-initializer.expected_constants.add(instance_any());*/
+initializer.expected_constants.add(instance_any());
 
 initializer.expected_constants.add(instance_constant(1000000000 + 0));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 1));
 
-initializer.expected_constants.add(instance_integer(104));
+initializer.expected_constants.add(instance_integer(52069));
 initializer.expected_constants.add(instance_constant(1000000000 + 2));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 3));
 
-initializer.expected_constants.add(instance_integer(103));
+initializer.expected_constants.add(instance_integer(53179));
 initializer.expected_constants.add(instance_constant(1000000000 + 5));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 6));
 
-/*initializer.expected_constants.add(instance_integer(200));
+initializer.expected_constants.add(instance_integer(69899));
 initializer.expected_constants.add(instance_constant(1000000000 + 8));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 9));
 
-initializer.expected_constants.add(instance_integer(1082));
+initializer.expected_constants.add(instance_integer(121590));
 initializer.expected_constants.add(instance_constant(1000000000 + 11));
 initializer.expected_constants.add(instance_any());
-initializer.expected_constants.add(instance_constant(1000000000 + 12));*/
+initializer.expected_constants.add(instance_constant(1000000000 + 12));
 
-/*initializer.expected_constants.add(instance_constant(1000000000 + 11));
+initializer.expected_constants.add(instance_constant(1000000000 + 11));
 initializer.expected_constants.add(instance_constant(1000000000 + 0));
 initializer.expected_constants.add(instance_constant(1000000000 + 14));
 initializer.expected_constants.add(instance_constant(1000000000 + 11));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
-initializer.expected_constants.add(instance_constant(1000000000 + 2));
+/*initializer.expected_constants.add(instance_constant(1000000000 + 2));
 initializer.expected_constants.add(instance_constant(1000000000 + 0));
 initializer.expected_constants.add(instance_constant(1000000000 + 8));
 initializer.expected_constants.add(instance_constant(1000000000 + 2));
 initializer.expected_constants.add(instance_any());
-initializer.expected_constants.add(instance_constant(1000000000 + 1));
+initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 
-	read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	/*read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "Arkansas is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "Oklahoma is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "New Mexico is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "There are 4 states that border Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-	read_sentence(corpus, parser, "The area of Louisiana is 104.", T, names, seed_entities, proof_prior, proof_axioms);
-	read_sentence(corpus, parser, "The area of Arkansas is 103.", T, names, seed_entities, proof_prior, proof_axioms);
-	read_sentence(corpus, parser, "The area of Oklahoma is 200.", T, names, seed_entities, proof_prior, proof_axioms);
-	read_sentence(corpus, parser, "The area of New Mexico is 1082.", T, names, seed_entities, proof_prior, proof_axioms);
-	/*read_sentence(corpus, parser, "The largest state bordering Texas is New Mexico.", T, names, seed_entities, proof_prior, proof_axioms);
-for (auto entry : names) free(entry.key);
-return EXIT_SUCCESS;*/
+	read_sentence(corpus, parser, "The area of Louisiana is 52069.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of Arkansas is 53179.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of Oklahoma is 69899.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of New Mexico is 121590.", T, names, seed_entities, proof_prior, proof_axioms);*/
 
 	array<string> answers(4);
-	/*if (answer_question<true>(answers, "Pittsburgh is in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	/*if (answer_question<true>(answers, "Pittsburgh is in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} if (answer_question<true>(answers, "Des Moines is located in what state?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "Des Moines is located in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} if (answer_question<true>(answers, "The population of Arizona is what?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "The population of Arizona is what?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "What is the largest state bordering Texas?", 1000000000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	}*/ if (answer_question<true>(answers, "What is the largest city in Alabama?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	}
 for (string& str : answers) free(str);

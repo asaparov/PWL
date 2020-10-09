@@ -254,22 +254,74 @@ inline bool parse_sentence(Parser& parser,
 	}
 }
 
-template<typename Parser>
-inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<string, unsigned int>& names)
+template<typename Parser, size_t ParseCount>
+inline bool parse_sentence(Parser& parser,
+		const char* input_sentence,
+		hash_map<string, unsigned int>& names,
+		hol_term* (&logical_forms)[ParseCount],
+		double (&log_probabilities)[ParseCount],
+		unsigned int& parse_count)
 {
 	typename Parser::SentenceType sentence;
 	if (!tokenize(input_sentence, sentence, names))
 		return false;
 
-	constexpr unsigned int max_parse_count = 4;
-	hol_term* logical_forms[max_parse_count];
-	double log_probabilities[max_parse_count];
-	unsigned int parse_count;
 	if (!parse_sentence(parser, sentence, names, logical_forms, log_probabilities, parse_count)) {
 		free(sentence);
 		return false;
 	}
 	free(sentence);
+	return true;
+}
+
+template<typename Parser, typename ProofCalculus, typename Canonicalizer, typename TheoryPrior>
+inline bool parse_sentence_with_prior(Parser& parser, const char* input_sentence,
+		theory<ProofCalculus, Canonicalizer>& T, hash_map<string, unsigned int>& names,
+		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms)
+{
+	constexpr unsigned int max_parse_count = 6;
+	hol_term* logical_forms[max_parse_count];
+	double log_likelihoods[max_parse_count];
+	unsigned int parse_count;
+	if (!parse_sentence(parser, input_sentence, names, logical_forms, log_likelihoods, parse_count))
+		return false;
+
+	double log_priors[max_parse_count];
+	double log_posteriors[max_parse_count];
+	for (unsigned int i = 0; i < parse_count; i++) {
+		log_priors[i] = log_joint_probability_of_observation(T, theory_prior, proof_axioms, logical_forms[i], 100000);
+		log_posteriors[i] = log_likelihoods[i] + log_priors[i];
+	}
+	unsigned int sorted_indices[max_parse_count];
+	for (unsigned int i = 0; i < parse_count; i++)
+		sorted_indices[i] = i;
+	if (parse_count > 1) {
+		insertion_sort(log_posteriors, sorted_indices, parse_count);
+		reverse(log_posteriors, parse_count);
+		reverse(sorted_indices, parse_count);
+	}
+	for (unsigned int i = 0; i < parse_count; i++) {
+		print(*logical_forms[sorted_indices[i]], stderr, parser.get_printer());
+		print(" with log likelihood ", stderr); print(log_likelihoods[sorted_indices[i]], stderr);
+		print(" + log prior ", stderr); print(log_priors[sorted_indices[i]], stderr);
+		print(" = log posterior ", stderr); print(log_posteriors[i], stderr);
+		print('\n', stderr);
+		free(*logical_forms[sorted_indices[i]]);
+		if (logical_forms[sorted_indices[i]]->reference_count == 0)
+			free(logical_forms[sorted_indices[i]]);
+	}
+	return true;
+}
+
+template<typename Parser>
+inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<string, unsigned int>& names)
+{
+	constexpr unsigned int max_parse_count = 4;
+	hol_term* logical_forms[max_parse_count];
+	double log_probabilities[max_parse_count];
+	unsigned int parse_count;
+	if (!parse_sentence(parser, input_sentence, names, logical_forms, log_probabilities, parse_count))
+		return false;
 	for (unsigned int i = 0; i < parse_count; i++) {
 		print(*logical_forms[i], stderr, parser.get_printer()); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
 		free(*logical_forms[i]);
@@ -553,8 +605,10 @@ bool parse_http_response(Stream& in, array<char>& payload,
 		headers.size++;
 	}
 
-	if (!filter_response_header(status, headers))
+	if (!filter_response_header(status, headers)) {
+		for (auto entry : headers) { free(entry.key); free(entry.value); }
 		return true;
+	}
 
 	/* check if the transfer encoding is chunked */
 	static const string TRANSFER_ENCODING("transfer-encoding");
@@ -825,7 +879,7 @@ bool search_google(
 		return false;
 	}
 
-	/* find all links beginning with '<a href="/url?q=' */
+	/* find all links beginning with '<a href="' */
 	array<string> results(10);
 	unsigned int i; has_next = false;
 	static string URL_PREFIX = "<div class=\"r\"><a href=\"";
@@ -852,6 +906,53 @@ bool search_google(
 		} else if (compare_strings(NEXT_PAGE, response.data + i, min((size_t) NEXT_PAGE.length, response.length - i))) {
 			has_next = true;
 			break;
+		}
+	}
+
+	/* find all links beginning with '<div class="*"><a href=""' */
+	static string DIV_CLASS_PREFIX = "<div class=\"";
+	static string A_HREF_PREFIX = "\"><a href=\"";
+	static string LOGO_STRING = "logo";
+	static string SEARCH_URL_PREFIX = "/search?";
+	for (i = 0; i < response.length; i++) {
+		if (compare_strings(DIV_CLASS_PREFIX, response.data + i, min((size_t) DIV_CLASS_PREFIX.length, response.length - i))) {
+			/* find a closing quote */
+			unsigned int j;
+			for (j = i + DIV_CLASS_PREFIX.length; j < response.length; j++)
+				if (response[j] == '"') break;
+
+			/* make sure the div class is not "logo" */
+			if (compare_strings(LOGO_STRING, response.data + i + DIV_CLASS_PREFIX.length, j - i - DIV_CLASS_PREFIX.length)
+			 || !compare_strings(A_HREF_PREFIX, response.data + j, min((size_t) A_HREF_PREFIX.length, response.length - j)))
+			{
+				i = j;
+				continue;
+			}
+			j += A_HREF_PREFIX.length;
+
+			/* make sure the url does not begin with "/search?" */
+			if (compare_strings(SEARCH_URL_PREFIX, response.data + j, min((size_t) SEARCH_URL_PREFIX.length, response.length - j))) {
+				i = j;
+				continue;
+			}
+
+			/* find a closing quote */
+			unsigned int url_start = j;
+			for (; j < response.length; j++)
+				if (response[j] == '"') break;
+
+			if (j == response.length) {
+				fprintf(stderr, "search_google ERROR: Unexpected end of HTML response.\n");
+				for (string& result : results) free(result);
+				return false;
+			} else if (!results.ensure_capacity(results.length + 1)
+					|| !init(results[results.length], response.data + url_start, j - url_start))
+			{
+				for (string& result : results) free(result);
+				return false;
+			}
+			results.length++;
+			i = j;
 		}
 	}
 
@@ -1171,6 +1272,12 @@ bool find_answer_in_website(const string& address,
 		case '(':
 		case ')':
 		case '%':
+		case '"':
+		case '\'':
+		case '{':
+		case '}':
+		case '[':
+		case ']':
 			if (state == html_lexer_state::TOKEN) {
 				if (position + 1 < response.length && response[position] == '.' && isdigit(response[position - 1]) && isdigit(response[position + 1]))
 					if (!fake_periods.add(tokens.length + 1)) return false;
@@ -1407,8 +1514,10 @@ inline bool answer_question(array<string>& answers,
 	}
 	Term::template variables<1>::value.reference_count++;
 
+	constexpr const char* UNKNOWN_CONCEPT_NAME = "<unknown concept>";
+
 	array_map<string, double> temp_answers(8);
-	auto on_new_proof_sample = [&T, &temp_answers, name_atom](const Term* term, double log_probability)
+	auto on_new_proof_sample = [&T, &temp_answers, name_atom, UNKNOWN_CONCEPT_NAME](const Term* term, double log_probability)
 	{
 		/* get the name of the term */
 		if (term->type == TermType::STRING) {
@@ -1479,11 +1588,11 @@ T.print_axioms(stderr); print('\n', stderr);
 print(term->constant, stderr); print(": <unnamed>, log probability: ", stderr);
 print(log_probability, stderr); print('\n', stderr);
 T.print_axioms(stderr); print('\n', stderr);
-				unsigned int index = temp_answers.index_of("<unknown concept>");
+				unsigned int index = temp_answers.index_of(UNKNOWN_CONCEPT_NAME);
 				if (index < temp_answers.size) {
 					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
 				} else {
-					if (!init(temp_answers.keys[index], "<unknown concept>"))
+					if (!init(temp_answers.keys[index], UNKNOWN_CONCEPT_NAME))
 						return;
 					temp_answers.values[index] = log_probability;
 					temp_answers.size++;
@@ -1513,7 +1622,8 @@ debug_terminal_printer = &parser.get_printer();
 	/* check if we are confident enough in the most probable answer to stop looking for more information */
 	if (temp_answers.size > 1)
 		sort(temp_answers.values, temp_answers.keys, temp_answers.size, default_sorter());
-	if (temp_answers.size > 1 && temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] < SUFFICIENT_KNOWLEDGE_THRESHOLD)
+	if ((temp_answers.size > 1 && temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] < SUFFICIENT_KNOWLEDGE_THRESHOLD)
+	 || (temp_answers.size != 0 && temp_answers.keys[temp_answers.size - 1] == UNKNOWN_CONCEPT_NAME))
 	{
 		for (auto pair : temp_answers) free(pair.key);
 		temp_answers.clear();

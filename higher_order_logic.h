@@ -1559,24 +1559,29 @@ inline bool contains_constant(const hol_term& src, unsigned int constant) {
 	return !visit(src, visitor);
 }
 
+template<bool SearchExcluded>
 struct variable_collector {
 	array<unsigned int>& variables;
 };
 
-template<hol_term_type Type>
-inline bool visit(const hol_term& term, const variable_collector& visitor) {
+template<hol_term_type Type, bool SearchExcluded>
+inline bool visit(const hol_term& term, const variable_collector<SearchExcluded>& visitor) {
 	if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
 		if (!visitor.variables.contains(term.variable))
 			return visitor.variables.add(term.variable);
 	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
 		if (!visitor.variables.contains(term.quantifier.variable))
 			return visitor.variables.add(term.quantifier.variable);
+	} else if (SearchExcluded && (Type == hol_term_type::ANY || Type == hol_term_type::ANY_RIGHT)) {
+		for (unsigned int i = 0; i < term.any.excluded_tree_count; i++)
+			if (!visit(*term.any.excluded_trees[i], visitor)) return false;
 	}
 	return true;
 }
 
+template<bool SearchExcluded = false>
 inline bool get_variables(const hol_term& src, array<unsigned int>& variables) {
-	variable_collector visitor = {variables};
+	variable_collector<SearchExcluded> visitor = {variables};
 	return visit(src, visitor);
 }
 
@@ -8434,19 +8439,27 @@ struct node_alignment {
 	const hol_term* dst;
 };
 
-template<bool MapFromFirst>
+template<bool MapFromFirst, bool MapToDst>
 struct node_map {
 	array<node_alignment>& alignment;
 
 	node_map(array<node_alignment>& alignment) : alignment(alignment) { }
 };
 
-node_map<true> make_map_from_first(array<node_alignment>& alignment) {
-	return node_map<true>(alignment);
+node_map<true, true> make_map_from_first_to_dst(array<node_alignment>& alignment) {
+	return node_map<true, true>(alignment);
 }
 
-node_map<false> make_map_from_second(array<node_alignment>& alignment) {
-	return node_map<false>(alignment);
+node_map<false, true> make_map_from_second_to_dst(array<node_alignment>& alignment) {
+	return node_map<false, true>(alignment);
+}
+
+node_map<true, false> make_map_from_first_to_src(array<node_alignment>& alignment) {
+	return node_map<true, false>(alignment);
+}
+
+node_map<false, false> make_map_from_second_to_src(array<node_alignment>& alignment) {
+	return node_map<false, false>(alignment);
 }
 
 struct variable_map {
@@ -8477,19 +8490,27 @@ struct variable_map {
 		}
 	}
 
-	template<bool MapFromFirst>
-	inline void apply_map(const node_map<MapFromFirst>& node_map) {
+	template<bool MapFromFirst, bool MapToDst>
+	inline void apply_map(const node_map<MapFromFirst, MapToDst>& node_map) {
 		for (unsigned int i = 0; i < scope_map.size; i++) {
 			for (unsigned int j = 0; j < node_map.alignment.length; j++) {
-				if (MapFromFirst && node_map.alignment[j].first == scope_map.keys[i].dst) {
+				if (MapFromFirst && !MapToDst && node_map.alignment[j].first == scope_map.keys[i].src) {
+					scope_map.keys[i].src = node_map.alignment[j].dst;
+					break;
+				} if (!MapFromFirst && !MapToDst && node_map.alignment[j].second == scope_map.keys[i].src) {
+					scope_map.keys[i].src = node_map.alignment[j].dst;
+					break;
+				} if (MapFromFirst && MapToDst && node_map.alignment[j].first == scope_map.keys[i].dst) {
 					scope_map.keys[i].dst = node_map.alignment[j].dst;
 					break;
-				} if (!MapFromFirst && node_map.alignment[j].second == scope_map.keys[i].dst) {
+				} if (!MapFromFirst && MapToDst && node_map.alignment[j].second == scope_map.keys[i].dst) {
 					scope_map.keys[i].dst = node_map.alignment[j].dst;
 					break;
 				}
 			}
 		}
+		if (!MapToDst && scope_map.size > 1)
+			insertion_sort(scope_map.keys, scope_map.values, scope_map.size);
 	}
 
 	static inline void move(const variable_map& src, variable_map& dst) {
@@ -9092,10 +9113,10 @@ inline bool init_variable_map(
 	return true;
 }
 
-template<bool MapFromFirst, typename... VariableMaps>
+template<bool MapFromFirst, bool MapToDst, typename... VariableMaps>
 inline bool init_variable_map(
 		variable_map& dst,
-		const node_map<MapFromFirst>& node_map,
+		const node_map<MapFromFirst, MapToDst>& node_map,
 		const variable_map& src)
 {
 	if (!init_variable_map(dst, src))
@@ -9127,10 +9148,10 @@ inline bool init_variable_map(
 	return true;
 }
 
-template<bool MapFromFirst, typename... VariableMaps>
+template<bool MapFromFirst, bool MapToDst, typename... VariableMaps>
 inline bool init_variable_map(
 		variable_map& dst,
-		const node_map<MapFromFirst>& node_map,
+		const node_map<MapFromFirst, MapToDst>& node_map,
 		const variable_map& src,
 		VariableMaps&&... variable_maps)
 {
@@ -9209,10 +9230,10 @@ inline bool init_alignment(
 	return true;
 }
 
-template<bool MapFromFirst, typename... Args>
+template<bool MapFromFirst, bool MapToDst, typename... Args>
 inline bool init_alignment(
 		array<node_alignment>& dst,
-		const node_map<MapFromFirst>& node_map,
+		const node_map<MapFromFirst, MapToDst>& node_map,
 		const array<node_alignment>& src,
 		Args&&... alignments)
 {
@@ -9354,10 +9375,64 @@ inline bool emplace_scope(
 	map.scope_map.keys[map.scope_map.size].dst = term;
 	move(map.free_variables.values[index], map.scope_map.values[map.scope_map.size]);
 	map.scope_map.size++;
+	insertion_sort(map.scope_map.keys, map.scope_map.values, map.scope_map.size);
 	shift_left(map.free_variables.keys + index, map.free_variables.size - index - 1);
 	shift_left(map.free_variables.values + index, map.free_variables.size - index - 1);
 	map.free_variables.size--;
 	return true;
+}
+
+template<bool MapSecondVariablesToFirst>
+constexpr bool check_src(const hol_term* first, const hol_term* second, const hol_term* src) {
+	return true;
+}
+
+template<bool MapSecondVariablesToFirst>
+inline bool check_src(
+		hol_term* first, hol_term* second,
+		pair<hol_term*, array<node_alignment>>& src)
+{
+#if !defined(NDEBUG)
+	/* TODO: implement this; i don't think the following is correct (what are the semantics of `node_alignment` for a subtract operation?) */
+	/*array<hol_term*> src_scopes(8);
+	if (!get_scopes(MapSecondVariablesToFirst ? *second : *first, src_scopes))
+		return false;
+	for (node_alignment& alignment : src.value) {
+		if (!src_scopes.contains((hol_term*) (MapSecondVariablesToFirst ? alignment.second : alignment.first))) {
+			fprintf(stderr, "check_src ERROR: Found a `node_alignment` where the "
+					"`src` node is not a descendant of the expected hol_term.\n");
+			return false;
+		}
+	}*/
+#endif
+	return true;
+}
+
+template<bool MapSecondVariablesToFirst>
+inline bool check_src(
+		hol_term* first, hol_term* second,
+		pair<hol_term*, variable_map>& src)
+{
+	bool success = true;
+#if !defined(NDEBUG)
+	if (!is_sorted(src.value.scope_map.keys, src.value.scope_map.size, default_sorter())
+	 || !is_sorted(src.value.free_variables.keys, src.value.free_variables.size, default_sorter()))
+	{
+		fprintf(stderr, "check_src ERROR: `variable_map.scope_map` and/or `variable_map.free_variables` are not sorted.\n");
+		success = false;
+	}
+	array<hol_term*> src_scopes(8);
+	if (!get_scopes(MapSecondVariablesToFirst ? *second : *first, src_scopes))
+		return false;
+	for (auto entry : src.value.scope_map) {
+		if (!src_scopes.contains((hol_term*) entry.key.src)) {
+			fprintf(stderr, "check_src ERROR: Found an entry in `variable_map.scope_map`"
+					" where the `src` node is not a descendant of the expected hol_term.\n");
+			return false;
+		}
+	}
+#endif
+	return success;
 }
 
 constexpr bool check_dst(const hol_term* src) {
@@ -9880,7 +9955,7 @@ inline hol_term* apply(hol_term* src, reducer& r) {
 
 		hol_term* new_node;
 		if (!new_hol_term(new_node)) return nullptr;
-		new_node->type = hol_term_type::ANY;
+		new_node->type = Type;
 		new_node->reference_count = 1;
 		new_node->any.excluded_tree_count = 0;
 		if (r.kept_tree_count == 0) {
@@ -10282,6 +10357,7 @@ bool is_subset(hol_term* first, hol_term* second)
 				first_tree_union[i]->reference_count++;
 			}
 			second_tree_union[0]->reference_count++;
+
 			if (!reduce_union<BuiltInPredicates>(first_tree_union, first_tree_union_length, second_tree_union, second_tree_union_length)) {
 				fprintf(stderr, "is_subset ERROR: `reduce_union` failed.\n");
 				for (unsigned int i = 0; i < first_tree_union_length; i++) {
@@ -10807,7 +10883,7 @@ inline bool subtract_any_with_array(hol_array_term& array_term, array<LogicalFor
 					return true;
 				}
 				for (pair<hol_term*, array<node_alignment>>& term : temp) {
-					if (!emplace(intersection_array[i], term.key, make_map_from_first(term.value), get_variable_map(difference_array[i][index_array[i]]))) {
+					if (!emplace(intersection_array[i], term.key, make_map_from_first_to_dst(term.value), get_variable_map(difference_array[i][index_array[i]]))) {
 						for (unsigned int i = 0; i < array_term.length; i++) {
 							free_all(intersection_array[i]);
 							intersection_array[i].clear();
@@ -11147,7 +11223,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->unary.operand) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11164,7 +11240,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					new_term->reference_count = 1;
 					new_term->unary.operand = term.key;
 					new_term->unary.operand->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11192,12 +11268,14 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 						free_all(first_intersection); free_all(second_intersection);
 						return false;
 					} else if (intersection_count == 1 && first_intersection[0].key == get_term(root)->binary.left && second_intersection[0].key == get_term(root)->binary.right) {
-						if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(first_intersection[0].value), get_variable_map(first_child), make_map_from_second(second_intersection[0].value), get_variable_map(second_child))) {
+						if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(first_intersection[0].value), get_variable_map(first_child), make_map_from_second_to_dst(second_intersection[0].value), get_variable_map(second_child))) {
 							free_all(differences); free_all(first_differences); free_all(second_differences);
 							free_all(first_intersection); free_all(second_intersection);
 							return false;
 						}
 						free_all(first_intersection); free_all(second_intersection);
+						check_src<MapSecondVariablesToFirst>(first, second, dst.last());
+						check_dst(dst.last());
 						continue;
 					}
 					for (pair<hol_term*, array<node_alignment>>& first_term : first_intersection) {
@@ -11214,11 +11292,13 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 							new_term->binary.right = second_term.key;
 							new_term->binary.left->reference_count++;
 							new_term->binary.right->reference_count++;
-							if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(first_term.value), get_variable_map(first_child), make_map_from_second(second_term.value), get_variable_map(second_child))) {
+							if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(first_term.value), get_variable_map(first_child), make_map_from_second_to_dst(second_term.value), get_variable_map(second_child))) {
 								free_all(differences); free_all(first_differences); free_all(second_differences);
 								free_all(first_intersection); free_all(second_intersection);
 								free(*new_term); free(new_term); return false;
 							}
+							check_src<MapSecondVariablesToFirst>(first, second, dst.last());
+							check_dst(dst.last());
 						}
 					}
 					free_all(first_intersection); free_all(second_intersection);
@@ -11247,7 +11327,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 							free_all(first_intersection); free_all(second_intersection); free_all(third_intersection);
 							return false;
 						} else if (intersection_count == 1 && first_intersection[0].key == get_term(root)->ternary.first && second_intersection[0].key == get_term(root)->ternary.second && third_intersection[0].key == get_term(root)->ternary.third) {
-							if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(first_intersection[0].value), get_variable_map(first_child), make_map_from_second(second_intersection[0].value), get_variable_map(second_child), make_map_from_second(third_intersection[0].value), get_variable_map(third_child))) {
+							if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(first_intersection[0].value), get_variable_map(first_child), make_map_from_second_to_dst(second_intersection[0].value), get_variable_map(second_child), make_map_from_second_to_dst(third_intersection[0].value), get_variable_map(third_child))) {
 								free_all(differences); free_all(first_differences); free_all(second_differences); free_all(third_differences);
 								free_all(first_intersection); free_all(second_intersection); free_all(third_intersection);
 								return false;
@@ -11272,7 +11352,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 									new_term->ternary.first->reference_count++;
 									new_term->ternary.second->reference_count++;
 									new_term->ternary.third->reference_count++;
-									if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(first_term.value), get_variable_map(first_child), make_map_from_second(second_term.value), get_variable_map(second_child), make_map_from_second(third_term.value), get_variable_map(third_child))) {
+									if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(first_term.value), get_variable_map(first_child), make_map_from_second_to_dst(second_term.value), get_variable_map(second_child), make_map_from_second_to_dst(third_term.value), get_variable_map(third_child))) {
 										free_all(differences); free_all(first_differences); free_all(second_differences); free_all(third_differences);
 										free_all(first_intersection); free_all(second_intersection); free_all(third_intersection);
 										free(*new_term); free(new_term); return false;
@@ -11341,10 +11421,11 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->quantifier.operand) {
-					if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, get_term(root), first, nullptr, get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, get_term(root), first, nullptr, get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
+					check_src<MapSecondVariablesToFirst>(first, second, dst.last());
 					check_dst(dst.last());
 					free_all(intersection);
 					continue;
@@ -11362,10 +11443,11 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					new_term->quantifier.operand = term.key;
 					new_term->quantifier.operand->reference_count++;
 					const pair<const hol_term*, const hol_term*> root_node_map(get_term(root), new_term);
-					if (!emplace_scope<true, MapSecondVariablesToFirst>(dst, new_term, first, nullptr, root_node_map, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace_scope<true, MapSecondVariablesToFirst>(dst, new_term, first, nullptr, root_node_map, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
+					check_src<MapSecondVariablesToFirst>(first, second, dst.last());
 					check_dst(dst.last());
 				}
 				free_all(intersection);
@@ -11406,7 +11488,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->any_quantifier.operand) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11424,7 +11506,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 					new_term->any_quantifier.quantifier = get_term(root)->any_quantifier.quantifier;
 					new_term->any_quantifier.operand = term.key;
 					new_term->any_quantifier.operand->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11536,7 +11618,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->unary.operand) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11553,7 +11635,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					new_term->reference_count = 1;
 					new_term->unary.operand = term.key;
 					new_term->unary.operand->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11575,7 +11657,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->binary.right) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11594,7 +11676,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					new_term->binary.right = term.key;
 					new_term->binary.left->reference_count++;
 					new_term->binary.right->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11614,7 +11696,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->ternary.third) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11635,7 +11717,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					new_term->ternary.first->reference_count++;
 					new_term->ternary.second->reference_count++;
 					new_term->ternary.third->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11657,7 +11739,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->array.operands[get_term(root)->array.length - 1]) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11684,7 +11766,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					}
 					new_term->array.operands[get_term(root)->array.length - 1] = term.key;
 					new_term->array.operands[get_term(root)->array.length - 1]->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11706,7 +11788,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->quantifier.operand) {
-					if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, get_term(root), first, nullptr, get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, get_term(root), first, nullptr, get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11725,7 +11807,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					new_term->quantifier.variable = get_term(root)->quantifier.variable;
 					new_term->quantifier.operand = term.key;
 					new_term->quantifier.operand->reference_count++;
-					if (!emplace_scope<true, MapSecondVariablesToFirst>(dst, new_term, first, nullptr, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace_scope<true, MapSecondVariablesToFirst>(dst, new_term, first, nullptr, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11768,7 +11850,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
 				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->any_quantifier.operand) {
-					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second(intersection[0].value), get_variable_map(first_child))) {
+					if (!emplace(dst, get_term(root), get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
 					}
@@ -11786,7 +11868,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 					new_term->any_quantifier.quantifier = get_term(root)->any_quantifier.quantifier;
 					new_term->any_quantifier.operand = term.key;
 					new_term->any_quantifier.operand->reference_count++;
-					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second(term.value), get_variable_map(first_child))) {
+					if (!emplace<true>(dst, new_term, get_variable_map(root), make_map_from_second_to_dst(term.value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						free(*new_term); free(new_term); return false;
 					}
@@ -11843,7 +11925,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 						return false;
 					}
 					for (pair<hol_term*, array<node_alignment>>& term : temp) {
-						if (!emplace(new_intersections, term.key, make_map_from_first(term.value), get_variable_map(intersection))) {
+						if (!emplace(new_intersections, term.key, make_map_from_first_to_dst(term.value), get_variable_map(intersection))) {
 							free_all(intersections); free_all(new_intersections); free_all(temp);
 							return false;
 						}
@@ -11858,7 +11940,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 							return false;
 						}
 						for (pair<hol_term*, array<node_alignment>>& term : temp) {
-							if (!emplace(new_intersections, term.key, make_map_from_first(term.value), get_variable_map(intersection))) {
+							if (!emplace(new_intersections, term.key, make_map_from_first_to_dst(term.value), get_variable_map(intersection))) {
 								free_all(intersections); free_all(new_intersections); free_all(temp);
 								return false;
 							} else if (!subtract_variable_map(new_intersections.last(), get_variable_map(dst[j]))) {
@@ -13480,10 +13562,27 @@ inline bool intersect_with_any(array<LogicalFormSet>& dst, hol_term* first, hol_
 	for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
 		array<LogicalFormSet> new_differences(8);
 		for (LogicalFormSet& prev : differences) {
-			unsigned int old_length = new_differences.length;
-			subtract<BuiltInPredicates, MapSecondVariablesToFirst>(new_differences, get_term(prev), second->any.excluded_trees[i]);
-			for (unsigned int i = old_length; i < new_differences.length; i++)
-				if (!intersect_variable_map(new_differences[i], get_variable_map(prev))) remove(new_differences, i--);
+			array<LogicalFormSet> temp(8);
+			subtract<BuiltInPredicates, MapSecondVariablesToFirst>(temp, get_term(prev), second->any.excluded_trees[i]);
+
+			array<pair<hol_term*, array<node_alignment>>> intersection(8);
+			intersect<BuiltInPredicates>(intersection, first, get_term(prev));
+			if (!new_differences.ensure_capacity(new_differences.length + intersection.length * temp.length)) {
+				free_all(temp); free_all(intersection);
+				free_all(new_differences); free_all(differences);
+				return false;
+			}
+			for (LogicalFormSet& new_term : temp) {
+				for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+					if (!emplace<false>(new_differences, get_term(new_term), get_variable_map(prev), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+						free_all(temp); free_all(intersection);
+						free_all(new_differences); free_all(differences);
+						return false;
+					}
+				}
+			}
+			free_all(intersection);
+			free_all(temp);
 		}
 /* TODO: if this works, implement this as an additional bool template argument in `subtract`, etc */
 if (MapSecondVariablesToFirst) {
@@ -14634,10 +14733,27 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 	for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
 		array<LogicalFormSet> new_differences(8);
 		for (LogicalFormSet& prev : differences) {
-			unsigned int old_length = new_differences.length;
-			subtract<BuiltInPredicates, MapSecondVariablesToFirst>(new_differences, get_term(prev), second->any.excluded_trees[i]);
-			for (unsigned int j = old_length; j < new_differences.length; j++)
-				if (!intersect_variable_map(new_differences[j], get_variable_map(prev))) remove(new_differences, j--);
+			array<LogicalFormSet> temp(8);
+			subtract<BuiltInPredicates, MapSecondVariablesToFirst>(temp, get_term(prev), second->any.excluded_trees[i]);
+
+			array<pair<hol_term*, array<node_alignment>>> intersection(8);
+			intersect<BuiltInPredicates>(intersection, first, get_term(prev));
+			if (!new_differences.ensure_capacity(new_differences.length + intersection.length * temp.length)) {
+				free_all(temp); free_all(intersection);
+				free_all(new_differences); free_all(differences);
+				return false;
+			}
+			for (LogicalFormSet& new_term : temp) {
+				for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+					if (!emplace<false>(new_differences, get_term(new_term), get_variable_map(prev), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+						free_all(temp); free_all(intersection);
+						free_all(new_differences); free_all(differences);
+						return false;
+					}
+				}
+			}
+			free_all(intersection);
+			free_all(temp);
 		}
 		free_all(differences);
 		swap(new_differences, differences);
@@ -14779,8 +14895,24 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 		for (LogicalFormSet& root : differences) {
 			array<LogicalFormSet> first_intersection(8);
 			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, get_term(root)->binary.right, second_any);
-			for (unsigned int i = 0; i < first_intersection.length; i++)
-				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			if (relabels_variables<LogicalFormSet>::value) {
+				array<pair<hol_term*, array<node_alignment>>> intersection(8);
+				intersect<BuiltInPredicates>(intersection, first->binary.right, get_term(root)->binary.right);
+				array<LogicalFormSet> new_first_intersection(max(1, first_intersection.length * intersection.length));
+				for (LogicalFormSet& first_child : first_intersection) {
+					for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+						if (!emplace<false>(new_first_intersection, get_term(first_child), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(first_child))) {
+							free_all(intersection); free_all(new_first_intersection);
+							free_all(first_intersection); free_all(differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					}
+				}
+				free_all(first_intersection); free_all(intersection);
+				swap(new_first_intersection, first_intersection);
+				intersection_not_empty = (first_intersection.length != 0);
+			}
 			if (!ComputeIntersection && intersection_not_empty) {
 				free_all(differences);
 				free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -14799,6 +14931,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						return false;
 					}
 					free_all(first_intersection);
+					check_src<MapSecondVariablesToFirst>(first, second, dst.last());
+					check_dst(dst.last());
 					continue;
 				}
 			}
@@ -14820,18 +14954,50 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					free(*new_term); free(new_term); return false;
 				}
+				check_src<MapSecondVariablesToFirst>(first, second, dst.last());
+				check_dst(dst.last());
 			}
 			free_all(first_intersection);
 
 			array<LogicalFormSet> intersections(4);
 			intersect<BuiltInPredicates, true, MapSecondVariablesToFirst>(intersections, get_term(root), second->any.included);
-			for (unsigned int i = 0; i < intersections.length; i++)
-				if (!intersect_variable_map(intersections[i], get_variable_map(root))) remove(intersections, i--);
-			for (LogicalFormSet& intersection : intersections) {
+			if (relabels_variables<LogicalFormSet>::value) {
+				array<pair<hol_term*, array<node_alignment>>> intersection(8);
+				intersect<BuiltInPredicates>(intersection, first, get_term(root));
+				array<LogicalFormSet> new_intersections(max(1, intersections.length * intersection.length));
+				for (LogicalFormSet& current_intersection : intersections) {
+					for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+						if (!emplace<false>(new_intersections, get_term(current_intersection), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(current_intersection))) {
+							free_all(intersection); free_all(new_intersections);
+							free_all(intersections); free_all(differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					}
+				}
+				free_all(intersections); free_all(intersection);
+				swap(new_intersections, intersections);
+			}
+			for (LogicalFormSet& current_intersection : intersections) {
 				array<LogicalFormSet> first_differences(8);
-				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(intersection)->binary.right, second_any);
-				for (unsigned int i = 0; i < first_differences.length; i++)
-					if (!intersect_variable_map(first_differences[i], get_variable_map(intersection))) remove(first_differences, i--);
+				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(current_intersection)->binary.right, second_any);
+				if (relabels_variables<LogicalFormSet>::value) {
+					array<pair<hol_term*, array<node_alignment>>> intersection(8);
+					intersect<BuiltInPredicates>(intersection, first->binary.right, get_term(current_intersection)->binary.right);
+					array<LogicalFormSet> new_first_differences(max(1, first_differences.length * intersection.length));
+					for (LogicalFormSet& new_term : first_differences) {
+						for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+								free_all(intersection); free_all(new_first_differences);
+								free_all(first_differences); free_all(intersections); free_all(differences);
+								free(*second_any); if (second_any->reference_count == 0) free(second_any);
+								return false;
+							}
+						}
+					}
+					free_all(first_differences); free_all(intersection);
+					swap(new_first_differences, first_differences);
+				}
 				if (!ComputeIntersection && first_differences.length > 0) {
 					free_all(differences); free_all(intersections); free_all(first_differences);
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -14840,13 +15006,15 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free_all(differences); free_all(intersections); free_all(first_differences);
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
-				} else if (first_differences.length == 1 && get_term(first_differences[0]) == get_term(intersection)->binary.right) {
-					if (!emplace(dst, get_term(intersection), get_variable_map(first_differences[0]))) {
+				} else if (first_differences.length == 1 && get_term(first_differences[0]) == get_term(current_intersection)->binary.right) {
+					if (!emplace(dst, get_term(current_intersection), get_variable_map(first_differences[0]))) {
 						free_all(differences); free_all(intersections); free_all(first_differences);
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
 					free_all(first_differences);
+					check_src<MapSecondVariablesToFirst>(first, second, dst.last());
+					check_dst(dst.last());
 					continue;
 				}
 				for (LogicalFormSet& first_difference : first_differences) {
@@ -14858,7 +15026,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					}
 					new_term->type = first->type;
 					new_term->reference_count = 1;
-					new_term->binary.left = get_term(intersection)->binary.left;
+					new_term->binary.left = get_term(current_intersection)->binary.left;
 					new_term->binary.right = get_term(first_difference);
 					new_term->binary.left->reference_count++;
 					new_term->binary.right->reference_count++;
@@ -14867,6 +15035,8 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						free(*new_term); free(new_term); return false;
 					}
+					check_src<MapSecondVariablesToFirst>(first, second, dst.last());
+					check_dst(dst.last());
 				}
 				free_all(first_differences);
 			}
@@ -15979,7 +16149,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 						break;
 					}
 					for (pair<hol_term*, array<node_alignment>>& any_intersection : temp) {
-						if (!emplace(any_intersections[i], any_intersection.key, make_map_from_first(any_intersection.value), get_variable_map(all))) {
+						if (!emplace(any_intersections[i], any_intersection.key, make_map_from_first_to_dst(any_intersection.value), get_variable_map(all))) {
 							success = false;
 							for (unsigned int j = 0; j < i; j++) {
 								free_all(any_intersections[j]); free(any_intersections[j]);
@@ -16043,7 +16213,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 					}
 					if (!success) break;
 					for (pair<hol_term*, array<node_alignment>>& left_intersection : temp) {
-						if (!emplace(new_left_intersections[i], left_intersection.key, make_map_from_first(left_intersection.value), get_variable_map(term), make_map_from_first(left_intersection.value), get_variable_map(all))) {
+						if (!emplace(new_left_intersections[i], left_intersection.key, make_map_from_first_to_dst(left_intersection.value), get_variable_map(term), make_map_from_second_to_dst(left_intersection.value), get_variable_map(all))) {
 							success = false;
 							for (unsigned int j = 0; j < any_length; j++) {
 								free_all(any_intersections[j]); free(any_intersections[j]);
@@ -16115,7 +16285,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 					}
 					if (!success) break;
 					for (pair<hol_term*, array<node_alignment>>& right_intersection : temp) {
-						if (!emplace(new_right_intersections[i], right_intersection.key, make_map_from_first(right_intersection.value), get_variable_map(term), make_map_from_second(right_intersection.value), get_variable_map(all))) {
+						if (!emplace(new_right_intersections[i], right_intersection.key, make_map_from_first_to_dst(right_intersection.value), get_variable_map(term), make_map_from_second_to_dst(right_intersection.value), get_variable_map(all))) {
 							for (unsigned int j = 0; j < any_length; j++) {
 								free_all(any_intersections[j]); free(any_intersections[j]);
 							} for (unsigned int j = 0; j < new_left_length; j++) {
@@ -16552,7 +16722,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 								return false;
 							}
 							for (pair<hol_term*, array<node_alignment>>& term : temp) {
-								if (!emplace(new_differences, term.key, make_map_from_first(term.value), get_variable_map(difference))) {
+								if (!emplace(new_differences, term.key, make_map_from_first_to_dst(term.value), get_variable_map(difference))) {
 									free_all(temp); free_all(new_differences); free_all(differences);
 									return false;
 								}
@@ -16567,7 +16737,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 									return false;
 								}
 								for (pair<hol_term*, array<node_alignment>>& term : temp) {
-									if (!emplace(new_differences, term.key, make_map_from_first(term.value), get_variable_map(difference))) {
+									if (!emplace(new_differences, term.key, make_map_from_first_to_dst(term.value), get_variable_map(difference))) {
 										free_all(temp); free_all(new_differences); free_all(differences);
 										return false;
 									} else if (!subtract_variable_map(new_differences.last(), get_variable_map(dst[j]))) {
