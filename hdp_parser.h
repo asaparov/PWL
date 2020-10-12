@@ -16345,6 +16345,10 @@ inline bool is_question_word(const string& str) {
 		 || str == "why" || str == "which" || str == "how" || str == "that");
 }
 
+inline bool is_article(const string& str) {
+	return (str == "The" || str == "the" || str == "A" || str == "a");
+}
+
 template<bool AllowAny>
 inline bool require_capitalized(
 		hol_term* src, hol_term*& dst)
@@ -16393,7 +16397,7 @@ inline bool require_capitalized(
 		for (unsigned int i = 1; i + 1 < tokens.length; i++) {
 			if (is_preposition(tokens[i]))
 				continue;
-			if (!isupper(tokens[i][0]))
+			if (!isupper(tokens[i][0]) || is_article(tokens[i]))
 				return false;
 		}
 
@@ -23646,7 +23650,9 @@ inline bool invert_select_arg_without_head_predicative(
 						first_predicate = operand;
 					}
 
-					if (first_predicate != nullptr && get_predicate_of_literal<built_in_predicates>(first_predicate, predicate_variable) != nullptr) {
+					if (first_predicate != nullptr && first_predicate->type == hol_term_type::UNARY_APPLICATION
+					 && first_predicate->binary.right->type == hol_term_type::VARIABLE && first_predicate->binary.right->variable == predicate_variable)
+					{
 						array<hol_term*> new_predicates(2);
 						intersect<built_in_predicates>(new_predicates, expected_predicate, first_predicate);
 						free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);

@@ -1705,8 +1705,11 @@ bool propose_disjunction_intro(
 
 	nd_step<Formula>* new_proof;
 	proof_sampler sampler;
-/*unsigned int debug = 0;
-print(*selected_step.key, stderr); print('\n', stderr);*/
+unsigned int debug = 0;
+bool debug_flag = false;
+if (debug_flag) {
+print(*selected_step.key, stderr); print('\n', stderr);
+}
 	while (true) {
 		/* sample a new proof, only selecting one path at every branch,
 		   and avoiding paths that we've previously proved to be inconsistent,
@@ -1716,14 +1719,18 @@ print(*selected_step.key, stderr); print('\n', stderr);*/
 		sampler.set_size_log_probability = 0.0;
 		sampler.removed_set_sizes.clear();
 		sampler.undo = false;
-/*fprintf(stderr, "INNER DEBUG: %u\n", debug);
+if (debug_flag) {
+fprintf(stderr, "INNER DEBUG: %u\n", debug);
 T.print_axioms(stderr);
-debug++;*/
+}
+debug++;
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_constant, sampler);
 		if (new_proof != NULL) break;
 	}
-/*fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
-T.print_axioms(stderr);*/
+if (debug_flag) {
+fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
+T.print_axioms(stderr);
+}
 
 	log_proposal_probability_ratio -= sampler.log_probability;
 	log_proposal_probability_ratio -= sampler.set_size_log_probability;

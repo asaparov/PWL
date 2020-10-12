@@ -109,3 +109,10 @@ catch	n\~\es	v\catches\catching\caught
 person	n\s\people\pl2qual=by [[suppletion]]	v
 use	n\~	v\us
 have	v\has\having\had	n	n
+low	adj\er	n	adv\er	v	v	n	v	n
+long	adj\er	adv\er	n	v	v	adj\-	v	n	v
+tall	adj\er	n
+short	adj\er	adv\-	n	v
+high	adj\er	adv\er	n	v	n	v
+location	n
+point	n	v

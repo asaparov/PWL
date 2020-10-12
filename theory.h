@@ -6214,7 +6214,7 @@ private:
 
 	bool check_set_membership_of_element(unsigned int element_set_id,
 			unsigned int formula_set_id, Formula* set_formula, unsigned int element_index,
-			array<Formula*>& quantifiers, array<Formula*>& old_atoms)
+			array<Formula*>& quantifiers, array<Formula*>& old_atoms, unsigned int old_atom_index)
 	{
 		tuple& element = *((tuple*) alloca(sizeof(tuple)));
 		element.elements = (tuple_element*) alloca(sizeof(tuple_element) * sets.sets[element_set_id].arity);
@@ -6459,7 +6459,7 @@ private:
 			for (Formula* conjunct : conjuncts) {
 				hol_term* substituted_conjunct = substitute_all(conjunct, src_variables, dst_constants, sets.sets[formula_set_id].arity);
 				if (substituted_conjunct == nullptr
-				 || !old_atoms.add(substituted_conjunct))
+				 || !old_atoms.ensure_capacity(old_atoms.length + 1))
 				{
 					if (substituted_conjunct != nullptr) { free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) free(substituted_conjunct); }
 					for (unsigned int j = 0; j < sets.sets[formula_set_id].arity; j++) { free(*src_variables[j]); free(src_variables[j]); }
@@ -6467,6 +6467,15 @@ private:
 					for (uint_fast8_t k = 0; k < sets.sets[element_set_id].arity; k++) free(element[k]);
 					return false;
 				}
+				/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+				bool in_old_atoms = false;
+				for (unsigned int j = old_atom_index + 1; !in_old_atoms && j < old_atoms.length; j++)
+					if (*old_atoms[j] == *substituted_conjunct) in_old_atoms = true;
+				if (in_old_atoms) {
+					free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) free(substituted_conjunct);
+					continue;
+				}
+				old_atoms[old_atoms.length++] = substituted_conjunct;
 			}
 			for (unsigned int j = 0; j < sets.sets[formula_set_id].arity; j++) { free(*src_variables[j]); free(src_variables[j]); }
 			for (unsigned int j = 0; j < sets.sets[formula_set_id].arity; j++) { free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) free(dst_constants[j]); }
@@ -6501,14 +6510,19 @@ private:
 
 				for (unsigned int j = sets.sets[i].element_count(); j > 0; j--) {
 					tuple& element = *((tuple*) alloca(sizeof(tuple)));
-					element.elements = (tuple_element*) alloca(sizeof(tuple_element) * sets.sets[i].arity);
+					element.elements = (tuple_element*) malloc(sizeof(tuple_element) * sets.sets[i].arity);
+					if (element.elements == nullptr) {
+						fprintf(stderr, "theory.check_set_membership_after_subtraction ERROR: Out of memory.\n");
+						for (auto entry : old_elements) free(entry.value);
+						return false;
+					}
 					element.length = sets.sets[i].arity;
 					const tuple_element* element_src = sets.sets[i].elements.data + (sets.sets[i].arity * (j - 1));
 					for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++) {
 						if (!::init(element.elements[k], element_src[k])) {
 							for (auto entry : old_elements) free(entry.value);
 							for (uint_fast8_t l = 0; l < k; l++) free(element[l]);
-							return false;
+							free(element.elements); return false;
 						}
 					}
 					bool has_satisfying_unification = false;
@@ -6546,7 +6560,7 @@ private:
 						}
 					}
 					if (!has_satisfying_unification) {
-						for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++) free(element[k]);
+						free(element);
 						continue;
 					}
 
@@ -6554,8 +6568,7 @@ private:
 					if (set_formula->type == FormulaType::AND) {
 						if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
 							for (auto entry : old_elements) free(entry.value);
-							for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++) free(element[k]);
-							return false;
+							free(element); return false;
 						}
 					} else {
 						conjuncts[conjuncts.length++] = set_formula;
@@ -6564,8 +6577,7 @@ private:
 					sets.sets[i].remove_element_at(j - 1);
 					if (!old_elements.ensure_capacity(old_elements.size + 1)) {
 						for (auto entry : old_elements) free(entry.value);
-						for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++) free(element[k]);
-						return false;
+						free(element); return false;
 					}
 					old_elements.keys[old_elements.size] = i;
 					move(element, old_elements.values[old_elements.size]);
@@ -6635,7 +6647,7 @@ private:
 					for (Formula* conjunct : conjuncts) {
 						hol_term* substituted_conjunct = substitute_all(conjunct, src_variables, dst_constants, sets.sets[i].arity);
 						if (substituted_conjunct == nullptr
-						 || !old_atoms.add(substituted_conjunct))
+						 || !old_atoms.ensure_capacity(old_atoms.length + 1))
 						{
 							if (substituted_conjunct != nullptr) { free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) free(substituted_conjunct); }
 							for (unsigned int j = 0; j < sets.sets[i].arity; j++) { free(*src_variables[j]); free(src_variables[j]); }
@@ -6643,6 +6655,15 @@ private:
 							for (auto entry : old_elements) free(entry.value);
 							return false;
 						}
+						/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+						bool in_old_atoms = false;
+						for (unsigned int j = old_atom_index + 1; !in_old_atoms && j < old_atoms.length; j++)
+							if (*old_atoms[j] == *substituted_conjunct) in_old_atoms = true;
+						if (in_old_atoms) {
+							free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) free(substituted_conjunct);
+							continue;
+						}
+						old_atoms[old_atoms.length++] = substituted_conjunct;
 					}
 					for (unsigned int j = 0; j < sets.sets[i].arity; j++) { free(*src_variables[j]); free(src_variables[j]); }
 					for (unsigned int j = 0; j < sets.sets[i].arity; j++) { free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) free(dst_constants[j]); }
@@ -6651,173 +6672,190 @@ private:
 			}
 		}
 
-		for (const auto& old_element : old_elements) {
-			/* check if this removed element is still proveable */
-			Formula* set_formula = sets.sets[old_element.key].size_axioms[0]->formula->binary.left->binary.right;
+		bool sets_changed = true;
+		while (sets_changed) {
+			sets_changed = false;
+			for (unsigned int i = 0; i < old_elements.size; i++) {
+				/* check if this removed element is still proveable */
+				Formula* set_formula = sets.sets[old_elements.keys[i]].size_axioms[0]->formula->binary.left->binary.right;
 
-			array<Formula*> quantifiers(1 << (core::log2(sets.sets[old_element.key].arity) + 1));
-			for (unsigned int j = 0; j < sets.sets[old_element.key].arity; j++) {
-				quantifiers[quantifiers.length++] = set_formula;
-				set_formula = set_formula->quantifier.operand;
-			}
-
-			array<instantiation_tuple> temp_possible_values(1);
-			instantiation_tuple& values = temp_possible_values[0];
-			if (!::init(values, sets.sets[old_element.key].arity)) {
-				for (uint_fast8_t k = 0; k < sets.sets[old_element.key].arity; k++)
-					move(old_element.value[k], sets.sets[old_element.key].elements[sets.sets[old_element.key].elements.length++]);
-				for (auto entry : old_elements) free(entry.value);
-				return false;
-			}
-			for (unsigned int k = 0; k < values.length; k++) {
-				free(values.values[k]);
-				if (old_element.value[k].type == tuple_element_type::CONSTANT) {
-					values.values[k].type = instantiation_type::CONSTANT;
-					values.values[k].constant = old_element.value[k].constant;
-				} else if (old_element.value[k].type == tuple_element_type::INTEGER) {
-					values.values[k].type = instantiation_type::INTEGER;
-					values.values[k].integer = old_element.value[k].integer;
-				} else if (old_element.value[k].type == tuple_element_type::STRING) {
-					values.values[k].type = instantiation_type::STRING;
-					if (!core::init(values.values[k].str, old_element.value[k].str)) {
-						values.values[k].type = instantiation_type::CONSTANT;
-						for (uint_fast8_t k = 0; k < sets.sets[old_element.key].arity; k++)
-							move(old_element.value[k], sets.sets[old_element.key].elements[sets.sets[old_element.key].elements.length++]);
-						for (auto entry : old_elements) free(entry.value);
-						free(values); return false;
-					}
+				array<Formula*> quantifiers(1 << (core::log2(sets.sets[old_elements.keys[i]].arity) + 1));
+				for (unsigned int j = 0; j < sets.sets[old_elements.keys[i]].arity; j++) {
+					quantifiers[quantifiers.length++] = set_formula;
+					set_formula = set_formula->quantifier.operand;
 				}
-			}
-			temp_possible_values.length++;
 
-			default_prover prover(sets);
-			if (is_provable_without_abduction<false>(set_formula, quantifiers, temp_possible_values, prover)) {
-				/* this element is still provably a member of this set */
-				for (auto& element : temp_possible_values) free(element);
-				if (!sets.sets[old_element.key].add_element(old_element.value)) {
+				array<instantiation_tuple> temp_possible_values(1);
+				instantiation_tuple& values = temp_possible_values[0];
+				if (!::init(values, sets.sets[old_elements.keys[i]].arity)) {
+					for (uint_fast8_t k = 0; k < sets.sets[old_elements.keys[i]].arity; k++)
+						move(old_elements.values[i][k], sets.sets[old_elements.keys[i]].elements[sets.sets[old_elements.keys[i]].elements.length++]);
 					for (auto entry : old_elements) free(entry.value);
 					return false;
 				}
-				continue;
-			}
+				for (unsigned int k = 0; k < values.length; k++) {
+					free(values.values[k]);
+					if (old_elements.values[i][k].type == tuple_element_type::CONSTANT) {
+						values.values[k].type = instantiation_type::CONSTANT;
+						values.values[k].constant = old_elements.values[i][k].constant;
+					} else if (old_elements.values[i][k].type == tuple_element_type::INTEGER) {
+						values.values[k].type = instantiation_type::INTEGER;
+						values.values[k].integer = old_elements.values[i][k].integer;
+					} else if (old_elements.values[i][k].type == tuple_element_type::STRING) {
+						values.values[k].type = instantiation_type::STRING;
+						if (!core::init(values.values[k].str, old_elements.values[i][k].str)) {
+							values.values[k].type = instantiation_type::CONSTANT;
+							for (uint_fast8_t k = 0; k < sets.sets[old_elements.keys[i]].arity; k++)
+								move(old_elements.values[i][k], sets.sets[old_elements.keys[i]].elements[sets.sets[old_elements.keys[i]].elements.length++]);
+							for (auto entry : old_elements) free(entry.value);
+							free(values); return false;
+						}
+					}
+				}
+				temp_possible_values.length++;
 
-			/* this removed element could belong to an ancestor */
-			/* first get the sets that currently contain `element` */
-			array<unsigned int> stack(8);
-			array<unsigned int> old_sets(8);
-			hash_set<unsigned int> visited(16);
-			stack[stack.length++] = 1;
-			visited.add(1);
-			while (stack.length != 0) {
-				unsigned int current = stack.pop();
-				if (sets.sets[current].index_of_element(old_element.value) < sets.sets[current].element_count()) {
-					if (!old_sets.add(current)) {
+				default_prover prover(sets);
+				if (is_provable_without_abduction<false>(set_formula, quantifiers, temp_possible_values, prover)) {
+					/* this element is still provably a member of this set */
+					for (auto& element : temp_possible_values) free(element);
+					if (!sets.sets[old_elements.keys[i]].add_element(old_elements.values[i])) {
 						for (auto entry : old_elements) free(entry.value);
 						return false;
 					}
+					free(old_elements.values[i]);
+					old_elements.remove_at(i--);
+					sets_changed = true;
 					continue;
 				}
-				bool has_containing_descendant = false;
-				for (unsigned int old_set : old_sets) {
-					if (sets.sets[current].descendants.contains(old_set)) {
-						has_containing_descendant = true;
-						break;
-					}
-				}
-				if (has_containing_descendant) continue;
 
-				for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
-					if (visited.contains(parent)) continue;
-					if (!visited.add(parent) || !stack.add(parent)) {
-						for (auto entry : old_elements) free(entry.value);
-						return false;
-					}
-				} for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
-					if (visited.contains(entry.key)) continue;
-					if (!visited.add(entry.key) || !stack.add(entry.key)) {
-						for (auto entry : old_elements) free(entry.value);
-						return false;
-					}
-				}
-			}
-			visited.clear();
-
-			array<unsigned int> new_sets(8);
-			stack[stack.length++] = old_element.key;
-			visited.add(old_element.key);
-			while (stack.length != 0) {
-				unsigned int current = stack.pop();
-				bool is_ancestor_of_set_containing_element = false;
-				for (unsigned int j = 0; !is_ancestor_of_set_containing_element && j < new_sets.length; j++)
-					if (sets.sets[current].descendants.contains(new_sets[j])) is_ancestor_of_set_containing_element = true;
-				for (unsigned int j = 0; !is_ancestor_of_set_containing_element && j < old_sets.length; j++)
-					if (sets.sets[current].descendants.contains(old_sets[j])) is_ancestor_of_set_containing_element = true;
-				if (is_ancestor_of_set_containing_element) continue;
-
-				Formula* current_set_formula = sets.sets[current].set_formula();
-				if (current_set_formula != set_formula && sets.sets[current].arity == sets.sets[old_element.key].arity) {
-					array<instantiation_tuple> temp_possible_values(1);
-					instantiation_tuple& values = temp_possible_values[0];
-					if (!::init(values, sets.sets[old_element.key].arity)) {
-						for (auto entry : old_elements) free(entry.value);
-						return false;
-					}
-					for (unsigned int k = 0; k < values.length; k++) {
-						free(values.values[k]);
-						if (old_element.value[k].type == tuple_element_type::CONSTANT) {
-							values.values[k].type = instantiation_type::CONSTANT;
-							values.values[k].constant = old_element.value[k].constant;
-						} else if (old_element.value[k].type == tuple_element_type::INTEGER) {
-							values.values[k].type = instantiation_type::INTEGER;
-							values.values[k].integer = old_element.value[k].integer;
-						} else if (old_element.value[k].type == tuple_element_type::STRING) {
-							values.values[k].type = instantiation_type::STRING;
-							if (!core::init(values.values[k].str, old_element.value[k].str)) {
-								values.values[k].type = instantiation_type::CONSTANT;
-								for (auto entry : old_elements) free(entry.value);
-								free(values); return false;
-							}
-						}
-					}
-					temp_possible_values.length++;
-
-					default_prover prover(sets);
-					if (is_provable_without_abduction<false>(current_set_formula, quantifiers, temp_possible_values, prover)) {
-						for (auto& element : temp_possible_values) free(element);
-						for (unsigned int j = 0; j < new_sets.length; j++) {
-							if (sets.sets[new_sets[j]].descendants.contains(current))
-								new_sets.remove(j--);
-						}
-						if (!new_sets.add(current)) {
+				/* this removed element could belong to an ancestor */
+				/* first get the sets that currently contain `element` */
+				array<unsigned int> stack(8);
+				array<unsigned int> old_sets(8);
+				hash_set<unsigned int> visited(16);
+				stack[stack.length++] = 1;
+				visited.add(1);
+				while (stack.length != 0) {
+					unsigned int current = stack.pop();
+					if (sets.sets[current].index_of_element(old_elements.values[i]) < sets.sets[current].element_count()) {
+						if (!old_sets.add(current)) {
 							for (auto entry : old_elements) free(entry.value);
 							return false;
 						}
 						continue;
 					}
+					bool has_containing_descendant = false;
+					for (unsigned int old_set : old_sets) {
+						if (sets.sets[current].descendants.contains(old_set)) {
+							has_containing_descendant = true;
+							break;
+						}
+					}
+					if (has_containing_descendant) continue;
+
+					for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
+						if (visited.contains(parent)) continue;
+						if (!visited.add(parent) || !stack.add(parent)) {
+							for (auto entry : old_elements) free(entry.value);
+							return false;
+						}
+					} for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
+						if (visited.contains(entry.key)) continue;
+						if (!visited.add(entry.key) || !stack.add(entry.key)) {
+							for (auto entry : old_elements) free(entry.value);
+							return false;
+						}
+					}
+				}
+				visited.clear();
+
+				array<unsigned int> new_sets(8);
+				stack[stack.length++] = old_elements.keys[i];
+				visited.add(old_elements.keys[i]);
+				while (stack.length != 0) {
+					unsigned int current = stack.pop();
+					bool is_ancestor_of_set_containing_element = false;
+					for (unsigned int j = 0; !is_ancestor_of_set_containing_element && j < new_sets.length; j++)
+						if (sets.sets[current].descendants.contains(new_sets[j])) is_ancestor_of_set_containing_element = true;
+					for (unsigned int j = 0; !is_ancestor_of_set_containing_element && j < old_sets.length; j++)
+						if (sets.sets[current].descendants.contains(old_sets[j])) is_ancestor_of_set_containing_element = true;
+					if (is_ancestor_of_set_containing_element) continue;
+
+					Formula* current_set_formula = sets.sets[current].set_formula();
+					if (current_set_formula != set_formula && sets.sets[current].arity == sets.sets[old_elements.keys[i]].arity) {
+						array<instantiation_tuple> temp_possible_values(1);
+						instantiation_tuple& values = temp_possible_values[0];
+						if (!::init(values, sets.sets[old_elements.keys[i]].arity)) {
+							for (auto entry : old_elements) free(entry.value);
+							return false;
+						}
+						for (unsigned int k = 0; k < values.length; k++) {
+							free(values.values[k]);
+							if (old_elements.values[i][k].type == tuple_element_type::CONSTANT) {
+								values.values[k].type = instantiation_type::CONSTANT;
+								values.values[k].constant = old_elements.values[i][k].constant;
+							} else if (old_elements.values[i][k].type == tuple_element_type::INTEGER) {
+								values.values[k].type = instantiation_type::INTEGER;
+								values.values[k].integer = old_elements.values[i][k].integer;
+							} else if (old_elements.values[i][k].type == tuple_element_type::STRING) {
+								values.values[k].type = instantiation_type::STRING;
+								if (!core::init(values.values[k].str, old_elements.values[i][k].str)) {
+									values.values[k].type = instantiation_type::CONSTANT;
+									for (auto entry : old_elements) free(entry.value);
+									free(values); return false;
+								}
+							}
+						}
+						temp_possible_values.length++;
+
+						default_prover prover(sets);
+						if (is_provable_without_abduction<false>(current_set_formula, quantifiers, temp_possible_values, prover)) {
+							for (auto& element : temp_possible_values) free(element);
+							for (unsigned int j = 0; j < new_sets.length; j++) {
+								if (sets.sets[new_sets[j]].descendants.contains(current))
+									new_sets.remove(j--);
+							}
+							if (!new_sets.add(current)) {
+								for (auto entry : old_elements) free(entry.value);
+								return false;
+							}
+							continue;
+						}
+					}
+
+					for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
+						if (visited.contains(parent)) continue;
+						if (!visited.add(parent) || !stack.add(parent)) {
+							for (auto entry : old_elements) free(entry.value);
+							return false;
+						}
+					} for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
+						if (visited.contains(entry.key)) continue;
+						if (!visited.add(entry.key) || !stack.add(entry.key)) {
+							for (auto entry : old_elements) free(entry.value);
+							return false;
+						}
+					}
 				}
 
-				for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
-					if (visited.contains(parent)) continue;
-					if (!visited.add(parent) || !stack.add(parent)) {
+				for (unsigned int new_set : new_sets) {
+					if (!sets.sets[new_set].add_element(old_elements.values[i])) {
 						for (auto entry : old_elements) free(entry.value);
 						return false;
 					}
-				} for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
-					if (visited.contains(entry.key)) continue;
-					if (!visited.add(entry.key) || !stack.add(entry.key)) {
-						for (auto entry : old_elements) free(entry.value);
-						return false;
+					/* this element could also be in `old_elements`, so remove it
+					from `old_elements` to avoid the same element being added to
+					the set multiple times */
+					for (unsigned int j = i + 1; j < old_elements.size; j++) {
+						if (old_elements.keys[j] == new_set && old_elements.values[j] == old_elements.values[i]) {
+							free(old_elements.values[j]);
+							old_elements.remove_at(j--);
+						}
 					}
-				}
-			}
-
-			for (unsigned int new_set : new_sets) {
-				if (!sets.sets[new_set].add_element(old_element.value)) {
-					for (auto entry : old_elements) free(entry.value);
-					return false;
 				}
 			}
 		}
+		for (auto entry : old_elements) free(entry.value);
 		return true;
 	}
 
@@ -7137,18 +7175,31 @@ private:
 					free_all(old_atoms);
 					return false;
 				} else if (substituted_formula->type == hol_term_type::AND) {
-					if (!old_atoms.append(substituted_formula->array.operands, substituted_formula->array.length)) {
+					if (!old_atoms.ensure_capacity(old_atoms.length + substituted_formula->array.length)) {
 						free(*substituted_formula); if (substituted_formula->reference_count == 0) free(substituted_formula);
 						free_all(old_atoms); return false;
 					}
-					for (unsigned int j = 0; j < substituted_formula->array.length; j++)
-						substituted_formula->array.operands[j]->reference_count++;
+					for (unsigned int k = 0; k < substituted_formula->array.length; k++) {
+						/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+						bool in_old_atoms = false;
+						for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
+							if (*old_atoms[j] == *substituted_formula->array.operands[k]) in_old_atoms = true;
+						if (in_old_atoms) continue;
+						old_atoms[old_atoms.length++] = substituted_formula->array.operands[k];
+						substituted_formula->array.operands[k]->reference_count++;
+					}
 					free(*substituted_formula); if (substituted_formula->reference_count == 0) free(substituted_formula);
 				} else {
-					if (!old_atoms.add(substituted_formula)) {
+					if (!old_atoms.ensure_capacity(old_atoms.length + 1)) {
 						free(*substituted_formula); if (substituted_formula->reference_count == 0) free(substituted_formula);
 						free_all(old_atoms); return false;
 					}
+					/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+					bool in_old_atoms = false;
+					for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
+						if (*old_atoms[j] == *substituted_formula) in_old_atoms = true;
+					if (in_old_atoms) continue;
+					old_atoms[old_atoms.length++] = substituted_formula;
 				}
 			}
 		}

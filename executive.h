@@ -415,6 +415,7 @@ debug_terminal_printer = &parser.get_printer();
 }
 
 #include "network.h"
+#include <fcntl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/conf.h>
@@ -426,25 +427,33 @@ inline ssize_t read(SSL* ssl, void* buf, size_t nbytes) {
 template<unsigned int BufferSize, typename Stream>
 struct buffered_stream {
 	Stream& underlying_stream;
+	unsigned long long timeout_ms;
 	array<char> buffer;
 	size_t position;
 	bool eof;
 
-	buffered_stream(Stream& underlying_stream) : underlying_stream(underlying_stream), buffer(4096), position(0), eof(false) { }
+	buffered_stream(Stream& underlying_stream, unsigned long long timeout_ms) :
+			underlying_stream(underlying_stream), timeout_ms(timeout_ms), buffer(4096), position(0), eof(false) { }
 
 	bool fill_buffer() {
 		if (!buffer.ensure_capacity(buffer.length + BufferSize))
 			return false;
-		int bytes_read = read(underlying_stream, buffer.data + buffer.length, BufferSize);
-		if (bytes_read == 0) {
-			eof = true;
-			return true;
-		} else if (bytes_read < 0) {
-			fprintf(stderr, "buffered_stream.fill_buffer ERROR: `read` failed.\n");
-			return false;
+		timer stopwatch;
+		while (true) {
+			int bytes_read = read(underlying_stream, buffer.data + buffer.length, BufferSize);
+			if (bytes_read == 0) {
+				eof = true;
+				return true;
+			} else if (bytes_read > 0) {
+				buffer.length += bytes_read;
+				return true;
+			} else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+				fprintf(stderr, "buffered_stream.fill_buffer ERROR: `read` failed.\n");
+				return false;
+			}
+			if (stopwatch.milliseconds() > timeout_ms)
+				return false;
 		}
-		buffer.length += bytes_read;
-		return true;
 	}
 };
 
@@ -746,8 +755,10 @@ void print_openssl_error(SSL* ssl, int ret, bool& can_shutdown)
 }
 
 template<bool UseSSL, typename FilterResponseHeader>
-bool get_http_page(const char* hostname, const char* query, const char* port,
-		array<char>& response, FilterResponseHeader filter_response_header)
+bool get_http_page(
+		const char* hostname, const char* query, const char* port,
+		unsigned long long timeout_ms, array<char>& response,
+		FilterResponseHeader filter_response_header)
 {
 	static constexpr int MAX_REQUEST_LEN = 1024;
 	static char REQUEST_TEMPLATE[] =
@@ -756,7 +767,7 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 			"Accept: text/html,application/xhtml+xml,application/xml,text/plain\r\n"
 			"Accept-Encoding: identity\r\n"
 			"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36\r\n"
-			"Connection: close\r\n"
+			"Connection: keep-alive\r\n"
 			"DNT: 1\r\n\r\n";
 	int request_length = snprintf(NULL, 0, REQUEST_TEMPLATE, query, hostname);
 	if (request_length >= MAX_REQUEST_LEN) {
@@ -772,8 +783,25 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 	snprintf(request, request_length + 1, REQUEST_TEMPLATE, query, hostname);
 
 	bool success = true;
-	auto process_connection = [&response,&success,hostname,request,request_length,filter_response_header](socket_type& connection)
+	auto process_connection = [&response,&success,hostname,request,request_length,filter_response_header,timeout_ms](socket_type& connection)
 	{
+		/* make the underlying socket non-blocking */
+		int flags;
+		while ((flags = fcntl(connection.handle, F_GETFL)) == -1 && errno == EINTR) { }
+		if (flags == -1) {
+			fprintf(stderr, "get_http_page ERROR: Failed to make socket non-blocking; %s.\n", strerror(errno));
+			shutdown(connection.handle, 2);
+			success = false; return false;
+		}
+
+		int rv;
+		while ((rv = fcntl(connection.handle, F_SETFL, flags | O_NONBLOCK)) == -1 && errno == EINTR) { }
+		if (rv != 0) {
+			fprintf(stderr, "get_http_page ERROR: Failed to make socket non-blocking; %s.\n", strerror(errno));
+			shutdown(connection.handle, 2);
+			success = false; return false;
+		}
+
 		SSL* ssl;
 		if (UseSSL) {
 			ssl = SSL_new(GLOBAL_SSL_PROVIDER.ctx);
@@ -801,15 +829,20 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 				SSL_free(ssl); shutdown(connection.handle, 2);
 				success = false; return false;
 			}
-			ret = SSL_connect(ssl);
-			if (ret != 1) {
-				fprintf(stderr, "get_http_page ERROR: SSL_connect failed; ");
+			while (true) {
+				ret = SSL_connect(ssl);
+				if (ret == 1)
+					break;
+				int error = SSL_get_error(ssl, ret);
+				if (error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE) {
+					fprintf(stderr, "get_http_page ERROR: SSL_connect failed; ");
 
-				bool can_shutdown;
-				print_openssl_error(ssl, ret, can_shutdown);
-				if (can_shutdown) SSL_shutdown(ssl);
-				SSL_free(ssl); shutdown(connection.handle, 2);
-				success = false; return false;
+					bool can_shutdown;
+					print_openssl_error(ssl, ret, can_shutdown);
+					if (can_shutdown) SSL_shutdown(ssl);
+					SSL_free(ssl); shutdown(connection.handle, 2);
+					success = false; return false;
+				}
 			}
 		}
 
@@ -830,11 +863,11 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 
 		/* read the response */
 		if (UseSSL) {
-			buffered_stream<BUFSIZ, SSL*> in(ssl);
+			buffered_stream<BUFSIZ, SSL*> in(ssl, timeout_ms);
 			success = parse_http_response(in, response, filter_response_header);
 			SSL_shutdown(ssl); SSL_free(ssl);
 		} else {
-			buffered_stream<BUFSIZ, decltype(connection.handle)> in(connection.handle);
+			buffered_stream<BUFSIZ, decltype(connection.handle)> in(connection.handle, timeout_ms);
 			success = parse_http_response(in, response, filter_response_header);
 		}
 		shutdown(connection.handle, 2);
@@ -855,6 +888,7 @@ bool get_http_page(const char* hostname, const char* query, const char* port,
 template<typename ProcessResultFunction>
 bool search_google(
 		const string* query, unsigned int query_length,
+		unsigned long long timeout_ms,
 		unsigned int start, bool& has_next,
 		ProcessResultFunction process_result)
 {
@@ -873,7 +907,7 @@ bool search_google(
 	if (!write('\0', query_stream)) return false;
 
 	array<char> response(4096);
-	if (!get_http_page<true>("www.google.com", query_stream.buffer, "443", response, [](unsigned int status, const array_map<string, string>& headers) { return true; })) {
+	if (!get_http_page<true>("www.google.com", query_stream.buffer, "443", timeout_ms, response, [](unsigned int status, const array_map<string, string>& headers) { return true; })) {
 		print("search_google ERROR: Unable to retrieve webpage at '", stderr);
 		print(query_stream.buffer, stderr); print("'.\n", stderr);
 		return false;
@@ -965,6 +999,7 @@ bool search_google(
 template<typename ProcessResultFunction>
 bool search_google(
 		const string* query, unsigned int query_length,
+		unsigned long long timeout_ms,
 		ProcessResultFunction process_result)
 {
 	bool has_next = true;
@@ -982,7 +1017,7 @@ bool search_google(
 			print('\n', stdout);
 		}
 
-		if (!search_google(query, query_length, page * 10, has_next, process_result)) return false;
+		if (!search_google(query, query_length, timeout_ms, page * 10, has_next, process_result)) return false;
 	}
 	return true;
 }
@@ -1071,7 +1106,7 @@ bool parse_url(const string& url,
 	return true;
 }
 
-bool get_website(const string& address, array<char>& response)
+bool get_website(const string& address, array<char>& response, unsigned long long timeout_ms = 5000)
 {
 	string& scheme = *((string*) alloca(sizeof(string)));
 	string& userinfo = *((string*) alloca(sizeof(string)));
@@ -1127,8 +1162,8 @@ bool get_website(const string& address, array<char>& response)
 			|| compare_strings(TEXT_PLAIN, content_type.data, end);
 	};
 
-	if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, response, filter_response_header))
-	 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, response, filter_response_header)))
+	if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
+	 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header)))
 	{
 		print("find_answer_in_website ERROR: Unable to retrieve webpage at '", stderr);
 		print(address, stderr); print("'.\n", stderr);
@@ -1148,8 +1183,8 @@ bool get_website(const string& address, array<char>& response)
 			free(query); free(fragment);
 			free(redirect); redirect.length = 0;
 
-			if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, response, filter_response_header))
-			 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, response, filter_response_header)))
+			if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
+			 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header)))
 			{
 				print("find_answer_in_website ERROR: Unable to retrieve webpage at '", stderr);
 				print(address, stderr); print("'.\n", stderr);
@@ -1157,7 +1192,7 @@ bool get_website(const string& address, array<char>& response)
 				free(path); free(port); return true;
 			}
 		} else {
-			if (!get_website(redirect, response)) {
+			if (!get_website(redirect, response, timeout_ms)) {
 				free(scheme); free(userinfo); free(hostname);
 				free(path); free(port); return false;
 			}
@@ -1195,6 +1230,7 @@ struct html_lexer_token {
 
 template<typename EmitSentenceFunction>
 bool find_answer_in_website(const string& address,
+		unsigned long long timeout_ms,
 		const sequence& left_question,
 		const sequence& right_question,
 		hash_map<string, unsigned int>& names,
@@ -1203,7 +1239,7 @@ bool find_answer_in_website(const string& address,
 	print("Searching for sentence in website '", stdout); print(address, stdout); print("'.\n", stdout);
 
 	array<char> response(4096);
-	if (!get_website(address, response))
+	if (!get_website(address, response, timeout_ms))
 		return false;
 
 	unsigned int start = 0;
@@ -1692,8 +1728,9 @@ debug_terminal_printer = &parser.get_printer();
 			}
 			return true;
 		};
+		constexpr unsigned long long TIMEOUT_MS = 5000;
 		auto process_search_result = [&left_query,&right_query,&names,process_matched_sentence](const string& result) {
-			return find_answer_in_website(result, left_query, right_query, names, process_matched_sentence);
+			return find_answer_in_website(result, TIMEOUT_MS, left_query, right_query, names, process_matched_sentence);
 		};
 
 		memory_stream out(32);
@@ -1711,7 +1748,7 @@ debug_terminal_printer = &parser.get_printer();
 			out.shift = {0};
 		}
 
-		if (!search_google(query, search_query.length, process_search_result)) {
+		if (!search_google(query, search_query.length, TIMEOUT_MS, process_search_result)) {
 			free_logical_forms(logical_forms, parse_count);
 			free(*name_atom); free(name_atom);
 			for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);

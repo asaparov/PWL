@@ -2135,9 +2135,9 @@ return EXIT_SUCCESS;*/
 		return EXIT_FAILURE;
 	}
 
-	/*read_sentence(corpus, parser, "No butterfly has a net.", T, names, seed_entities, proof_prior, proof_axioms);
+	/*read_sentence(corpus, parser, "A butterfly has a spot.", T, names, seed_entities, proof_prior, proof_axioms);
 
-	parse_sentence_with_prior(parser, "Sally caught a butterfly with a net.", T, names, proof_prior, proof_axioms);
+	parse_sentence_with_prior(parser, "Sally caught a butterfly with a spot.", T, names, proof_prior, proof_axioms);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/
 
@@ -2230,7 +2230,7 @@ initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "What is the largest city in Alabama?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	}*/ if (answer_question<true>(answers, "What is the highest point in Texas?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	}
 for (string& str : answers) free(str);

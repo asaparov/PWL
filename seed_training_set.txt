@@ -95,7 +95,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System")) & ?[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[s]:((arg1(s)=m) & same(s) & present(s) & (arg2(s)=p)))))};
+	{?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System")) & ?[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[s]:((arg1(s)=m) & same(s) & present(s) & (arg2(s)=p)))))};
 
 : # Mercury is in the Solar System.
 {(S
@@ -140,7 +140,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System")) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[l]:((arg1(l)=m) & location(l) & present(l) & (arg2(l)=x))))};
+	{?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System")) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[l]:((arg1(l)=m) & locate(l) & present(l) & (arg2(l)=x))))};
 
 : # Neptune is one of the 8 planets in the Solar System.
 {(S
@@ -216,7 +216,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[z]:(?[n]:(name(n) & (arg1_of(z)=n) & (arg2(n)="Solar System")) & ?[P]:((P=^[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=z) & (arg1_of(p)=l)))) & (size(P)=8) & ?[S]:(subset(S,^[x]:P(x)) & (size(S)=1) & ?[x]:(S(x) & ?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Neptune")) & ?[s]:((arg1(s)=y) & same(s) & present(s) & (arg2(s)=x)))))))};
+	{?[z]:(?[n]:(name(n) & (arg1_of(z)=n) & (arg2(n)="Solar System")) & ?[P]:((P=^[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=z) & (arg1_of(p)=l)))) & (size(P)=8) & ?[S]:(subset(S,^[x]:P(x)) & (size(S)=1) & ?[x]:(S(x) & ?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Neptune")) & ?[s]:((arg1(s)=y) & same(s) & present(s) & (arg2(s)=x)))))))};
 
 : # United States
 {(STRING "United States")}
@@ -775,7 +775,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[n]:(nucleus(n) & ![e]:(eukaryote(e) => ?[l]:((arg1(l)=n) & location(l) & present(l) & (arg2(l)=e))))};
+	{?[n]:(nucleus(n) & ![e]:(eukaryote(e) => ?[l]:((arg1(l)=n) & locate(l) & present(l) & (arg2(l)=e))))};
 
 : # No cell is both eukaryotic and prokaryotic.
 {(S
@@ -1057,7 +1057,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[x]:(?[y]:(?[i]:(inner(i) & (arg1_of(y)=i)) & contains_region(y) & (arg1(y)=solar_system) & (arg2_of(x)=y)) & ?[p]:(planet(p) & ?[l]:(location(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[v]:(?[n]:(name(n) & (arg1_of(v)=n) & (arg2(n)="Venus")) & ?[s]:((arg1(s)=v) & same(s) & present(s) & (arg2(s)=p)))))};
+	{?[x]:(?[y]:(?[i]:(inner(i) & (arg1_of(y)=i)) & contains_region(y) & (arg1(y)=solar_system) & (arg2_of(x)=y)) & ?[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[v]:(?[n]:(name(n) & (arg1_of(v)=n) & (arg2(n)="Venus")) & ?[s]:((arg1(s)=v) & same(s) & present(s) & (arg2(s)=p)))))};
 
 : # The Earth is located in the solar system.
 {(S
@@ -1108,7 +1108,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[l]:((arg1(l)=e) & inverse(locate)(l) & present(l) & ?[i]:(location(i) & (arg2(i)=solar_system) & (arg1_of(l)=i))))};
+	{?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[l]:((arg1(l)=e) & inverse(locate)(l) & present(l) & ?[i]:(locate(i) & (arg2(i)=solar_system) & (arg1_of(l)=i))))};
 
 : # Eris is orbited by which moon?
 {(S
@@ -1194,7 +1194,7 @@
 	)
 	(QUESTION "?")
 )}
-	{^[x]:?[r]:(?[n]:(name(n) & (arg1_of(r)=n) & (arg2(n)="Rigel")) & ?[S]:((S=^[c]:constellation(c)) & S(x) & ?[l]:((arg1(l)=r) & inverse(locate)(l) & present(l) & ?[i]:(location(i) & (arg2(i)=x) & (arg1_of(l)=i)))))};
+	{^[x]:?[r]:(?[n]:(name(n) & (arg1_of(r)=n) & (arg2(n)="Rigel")) & ?[S]:((S=^[c]:constellation(c)) & S(x) & ?[l]:((arg1(l)=r) & inverse(locate)(l) & present(l) & ?[i]:(locate(i) & (arg2(i)=x) & (arg1_of(l)=i)))))};
 
 : # The Outer Solar System is a name for the outer planets in the Solar System.
 {(S
@@ -1278,7 +1278,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Solar System")) & ?[x]:(?[P]:((P=^[p]:(?[o]:(outer(o) & (arg1_of(p)=o)) & planet(p) & ?[l]:(location(l) & (arg2(l)=y) & (arg1_of(p)=l)))) & ?[n]:(name(n) & (arg1(n)=P) & (arg2_of(x)=n))) & ?[s]:((arg1(s)="Outer Solar System") & same(s) & present(s) & (arg2(s)=x))))};
+	{?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Solar System")) & ?[x]:(?[P]:((P=^[p]:(?[o]:(outer(o) & (arg1_of(p)=o)) & planet(p) & ?[l]:(locate(l) & (arg2(l)=y) & (arg1_of(p)=l)))) & ?[n]:(name(n) & (arg1(n)=P) & (arg2_of(x)=n))) & ?[s]:((arg1(s)="Outer Solar System") & same(s) & present(s) & (arg2(s)=x))))};
 
 : # The population of the Earth is 7594000000.
 {(S
@@ -1514,7 +1514,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[f]:(?[n]:(name(n) & (arg1_of(f)=n) & (arg2(n)="Fair Trade Day")) & ?[m]:(month(m) & ?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="May")) & ?[l]:((arg1(l)=f) & location(l) & present(l) & (arg2(l)=m))))};
+	{?[f]:(?[n]:(name(n) & (arg1_of(f)=n) & (arg2(n)="Fair Trade Day")) & ?[m]:(month(m) & ?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="May")) & ?[l]:((arg1(l)=f) & locate(l) & present(l) & (arg2(l)=m))))};
 
 : # Titan is the brightest moon orbiting Saturn.
 {(S
@@ -1748,7 +1748,19 @@
 
 : # largest
 {(ADJ "large"/"largest")}
-	{?[g]:area(g)[sup]};
+	{?[g]:population(g)[sup]};
+
+: # longest
+{(ADJ "long"/"longest")}
+	{?[g]:length(g)[sup]};
+
+: # highest
+{(ADJ "high"/"highest")}
+	{?[g]:height(g)[sup]};
+
+: # tallest
+{(ADJ "tall"/"tallest")}
+	{?[g]:height(g)[sup]};
 
 : # Galileo observed Jupiter with a telescope.
 {(S
@@ -1891,6 +1903,10 @@
 : # have
 {(V "have"/"has")}
 	{?[o]:(own(o) & present(o))[index:sg,arg2]};
+
+: # point
+{(N "point"/"point")}
+	{location[index:sg]};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
