@@ -45,7 +45,7 @@ enum class hol_term_type : uint_fast8_t {
 	EXISTS,
 	LAMBDA,
 
-	INTEGER,
+	NUMBER,
 	STRING,
 	UINT_LIST,
 
@@ -211,6 +211,24 @@ struct hol_any_quantifier {
 	static inline void free(hol_any_quantifier& term);
 };
 
+struct hol_number {
+	int64_t integer;
+	uint64_t decimal;
+
+	static inline unsigned int hash(const hol_number& key);
+	static inline void move(const hol_number& src, hol_number& dst);
+
+	static inline constexpr hol_number min() { return {INT64_MIN, 0}; }
+	static inline constexpr hol_number max() { return {INT64_MAX, 9999999999999999999ull}; }
+};
+
+template<typename Stream>
+inline bool print(const hol_number& number, Stream& out) {
+	if (number.decimal == 0)
+		return print(number.integer, out);
+	else return print(number.integer, out) && print('.', out) && print(number.decimal, out);
+}
+
 struct hol_term
 {
 	typedef hol_term_type Type;
@@ -223,7 +241,7 @@ struct hol_term
 		unsigned int variable;
 		unsigned int constant;
 		unsigned int parameter;
-		int64_t integer;
+		hol_number number;
 		string str;
 		sequence uint_list;
 		hol_unary_term unary;
@@ -294,7 +312,8 @@ struct hol_term
 	static hol_term* new_variable_preimage(unsigned int variable);
 	static hol_term* new_constant(unsigned int constant);
 	static hol_term* new_parameter(unsigned int parameter);
-	static hol_term* new_int(int integer);
+	static hol_term* new_number(hol_number number);
+	static hol_term* new_number(int64_t integer, uint64_t decimal);
 	static hol_term* new_string(const string& str);
 	static hol_term* new_uint_list(const sequence& list);
 	static hol_term* new_atom(unsigned int predicate, hol_term* arg1, hol_term* arg2);
@@ -355,8 +374,8 @@ private:
 			constant = src.constant; return true;
 		case hol_term_type::PARAMETER:
 			parameter = src.parameter; return true;
-		case hol_term_type::INTEGER:
-			integer = src.integer; return true;
+		case hol_term_type::NUMBER:
+			number = src.number; return true;
 		case hol_term_type::STRING:
 			str = src.str; return true;
 		case hol_term_type::UINT_LIST:
@@ -571,6 +590,91 @@ inline bool operator == (const hol_any_quantifier& first, const hol_any_quantifi
 		&& (first.operand == second.operand || *first.operand == *second.operand);
 }
 
+inline bool operator == (const hol_number& first, const hol_number& second) {
+	return (first.integer == second.integer)
+		&& (first.decimal == second.decimal);
+}
+
+inline bool operator != (const hol_number& first, const hol_number& second) {
+	return (first.integer != second.integer)
+		|| (first.decimal != second.decimal);
+}
+
+inline bool operator == (const hol_number& first, unsigned int second) {
+	return (first.integer == second) && (first.decimal == 0);
+}
+
+inline bool operator != (const hol_number& first, unsigned int second) {
+	return (first.integer != second) || (first.decimal != 0);
+}
+
+inline unsigned int log10(uint64_t x) {
+	/* TODO: this can be optimized */
+	unsigned int value = 0;
+	while (x != 0) { x /= 10; value++; }
+	return value;
+}
+
+inline bool operator < (const hol_number& first, const hol_number& second) {
+	if (first.integer < second.integer) {
+		return true;
+	} else if (first.integer > second.integer) {
+		return false;
+	} else {
+		unsigned int first_digits = log10(first.decimal);
+		unsigned int second_digits = log10(second.decimal);
+
+		if (first_digits == 0) {
+			if (second_digits == 0)
+				return false;
+			else return true;
+		} else {
+			if (second_digits == 0)
+				return false;
+		}
+		uint64_t first_decimal = first.decimal;
+		uint64_t second_decimal = second.decimal;
+		while (first_digits < second_digits) {
+			first_decimal *= 10;
+			first_digits++;
+		} while (second_digits < first_digits) {
+			second_decimal *= 10;
+			second_digits++;
+		}
+
+		return (first_decimal < second_decimal);
+	}
+}
+
+inline bool operator <= (const hol_number& first, const hol_number& second) {
+	if (first.integer < second.integer) {
+		return true;
+	} else if (first.integer > second.integer) {
+		return false;
+	} else {
+		unsigned int first_digits = log10(first.decimal);
+		unsigned int second_digits = log10(second.decimal);
+
+		if (first_digits == 0) {
+			return true;
+		} else {
+			if (second_digits == 0)
+				return false;
+		}
+		uint64_t first_decimal = first.decimal;
+		uint64_t second_decimal = second.decimal;
+		while (first_digits < second_digits) {
+			first_decimal *= 10;
+			first_digits++;
+		} while (second_digits < first_digits) {
+			second_decimal *= 10;
+			second_digits++;
+		}
+
+		return (first_decimal <= second_decimal);
+	}
+}
+
 bool operator == (const hol_term& first, const hol_term& second)
 {
 	if (hol_term::is_empty(first)) return false;
@@ -583,8 +687,8 @@ bool operator == (const hol_term& first, const hol_term& second)
 		return first.constant == second.constant;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
-	case hol_term_type::INTEGER:
-		return first.integer == second.integer;
+	case hol_term_type::NUMBER:
+		return first.number == second.number;
 	case hol_term_type::STRING:
 		return first.str == second.str;
 	case hol_term_type::UINT_LIST:
@@ -687,6 +791,10 @@ inline unsigned int hol_any_quantifier::hash(const hol_any_quantifier& key) {
 	return default_hash(key.quantifier) ^ hol_term::hash(*key.operand);
 }
 
+inline unsigned int hol_number::hash(const hol_number& key) {
+	return default_hash(key.integer) ^ default_hash(key.decimal);
+}
+
 inline unsigned int hol_term::hash(const hol_term& key) {
 	/* TODO: precompute these and store them in a table for faster access */
 	unsigned int type_hash = default_hash<hol_term_type, 571290832>(key.type);
@@ -698,8 +806,8 @@ inline unsigned int hol_term::hash(const hol_term& key) {
 		return type_hash ^ default_hash(key.constant);
 	case hol_term_type::PARAMETER:
 		return type_hash ^ default_hash(key.parameter);
-	case hol_term_type::INTEGER:
-		return type_hash ^ default_hash(key.integer);
+	case hol_term_type::NUMBER:
+		return type_hash ^ hol_number::hash(key.number);
 	case hol_term_type::STRING:
 		return type_hash ^ string::hash(key.str);
 	case hol_term_type::UINT_LIST:
@@ -750,8 +858,8 @@ inline void hol_term::move(const hol_term& src, hol_term& dst) {
 		dst.constant = src.constant; return;
 	case hol_term_type::PARAMETER:
 		dst.parameter = src.parameter; return;
-	case hol_term_type::INTEGER:
-		dst.integer = src.integer; return;
+	case hol_term_type::NUMBER:
+		hol_number::move(src.number, dst.number); return;
 	case hol_term_type::STRING:
 		string::move(src.str, dst.str); return;
 	case hol_term_type::UINT_LIST:
@@ -847,6 +955,10 @@ inline void hol_any_quantifier::move(const hol_any_quantifier& src, hol_any_quan
 	dst.operand = src.operand;
 }
 
+inline void hol_number::move(const hol_number& src, hol_number& dst) {
+	dst = src;
+}
+
 inline void hol_term::free_helper() {
 	reference_count--;
 	if (reference_count == 0) {
@@ -888,7 +1000,7 @@ inline void hol_term::free_helper() {
 		case hol_term_type::VARIABLE_PREIMAGE:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::PARAMETER:
-		case hol_term_type::INTEGER:
+		case hol_term_type::NUMBER:
 			return;
 		}
 		fprintf(stderr, "hol_term.free_helper ERROR: Unrecognized hol_term_type.\n");
@@ -1235,8 +1347,8 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 	case hol_term_type::PARAMETER:
 		return print_parameter<Syntax>(term.parameter, out);
 
-	case hol_term_type::INTEGER:
-		return print(term.integer, out);
+	case hol_term_type::NUMBER:
+		return print(term.number, out);
 
 	case hol_term_type::STRING:
 		return print('"', out) && print(term.str, out) && print('"', out);
@@ -1435,8 +1547,8 @@ bool visit(Term&& term, Visitor&&... visitor)
 		return visit<hol_term_type::VARIABLE_PREIMAGE>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::PARAMETER:
 		return visit<hol_term_type::PARAMETER>(term, std::forward<Visitor>(visitor)...);
-	case hol_term_type::INTEGER:
-		return visit<hol_term_type::INTEGER>(term, std::forward<Visitor>(visitor)...);
+	case hol_term_type::NUMBER:
+		return visit<hol_term_type::NUMBER>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::STRING:
 		return visit<hol_term_type::STRING>(term, std::forward<Visitor>(visitor)...);
 	case hol_term_type::UINT_LIST:
@@ -1843,8 +1955,8 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return true;
 }
 
-inline bool clone_integer(int64_t src_integer, int64_t& dst_integer) {
-	dst_integer = src_integer;
+inline bool clone_number(hol_number src_number, hol_number& dst_number) {
+	dst_number = src_number;
 	return true;
 }
 
@@ -1895,8 +2007,8 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return clone_variable(src.variable, dst.variable, std::forward<Cloner>(cloner)...);
 	case hol_term_type::PARAMETER:
 		return clone_parameter(src.parameter, dst.parameter, std::forward<Cloner>(cloner)...);
-	case hol_term_type::INTEGER:
-		return clone_integer(src.integer, dst.integer, std::forward<Cloner>(cloner)...);
+	case hol_term_type::NUMBER:
+		return clone_number(src.number, dst.number, std::forward<Cloner>(cloner)...);
 	case hol_term_type::STRING:
 		return clone_string(src.str, dst.str, std::forward<Cloner>(cloner)...);
 	case hol_term_type::UINT_LIST:
@@ -2092,8 +2204,8 @@ inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parame
 	return clone_parameter(src_parameter, dst_parameter);
 }
 
-inline bool clone_integer(int64_t src_integer, int64_t& dst_integer, constant_relabeler& relabeler) {
-	return clone_integer(src_integer, dst_integer);
+inline bool clone_number(hol_number src_number, hol_number& dst_number, constant_relabeler& relabeler) {
+	return clone_number(src_number, dst_number);
 }
 
 inline bool clone_string(const string& src_string, string& dst_string, constant_relabeler& relabeler) {
@@ -2230,7 +2342,7 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 	case hol_term_type::VARIABLE:
 	case hol_term_type::VARIABLE_PREIMAGE:
 	case hol_term_type::PARAMETER:
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 		return src;
@@ -2493,8 +2605,8 @@ inline hol_term* apply(hol_term* src, Function&&... function)
 		return apply<hol_term_type::VARIABLE_PREIMAGE>(src, std::forward<Function>(function)...);
 	case hol_term_type::PARAMETER:
 		return apply<hol_term_type::PARAMETER>(src, std::forward<Function>(function)...);
-	case hol_term_type::INTEGER:
-		return apply<hol_term_type::INTEGER>(src, std::forward<Function>(function)...);
+	case hol_term_type::NUMBER:
+		return apply<hol_term_type::NUMBER>(src, std::forward<Function>(function)...);
 	case hol_term_type::STRING:
 		return apply<hol_term_type::STRING>(src, std::forward<Function>(function)...);
 	case hol_term_type::UINT_LIST:
@@ -3232,8 +3344,8 @@ bool unify(
 		return first.variable == second.variable;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
-	case hol_term_type::INTEGER:
-		return first.integer == second.integer;
+	case hol_term_type::NUMBER:
+		return first.number == second.number;
 	case hol_term_type::STRING:
 		return first.str == second.str;
 	case hol_term_type::UINT_LIST:
@@ -3333,12 +3445,29 @@ hol_term* hol_term::new_parameter(unsigned int parameter) {
 	return term;
 }
 
-hol_term* hol_term::new_int(int integer) {
+hol_term* hol_term::new_number(hol_number number) {
 	hol_term* term;
 	if (!new_hol_term(term)) return NULL;
 	term->reference_count = 1;
-	term->type = hol_term_type::INTEGER;
-	term->integer = integer;
+	term->type = hol_term_type::NUMBER;
+	term->number = number;
+	return term;
+}
+
+hol_term* hol_term::new_number(int64_t integer, uint64_t decimal) {
+	hol_term* term;
+	if (!new_hol_term(term)) return NULL;
+	term->reference_count = 1;
+	term->type = hol_term_type::NUMBER;
+	term->number.integer = integer;
+	if (decimal != 0) {
+		uint64_t temp = decimal / 10;
+		while (temp * 10 == decimal) {
+			decimal = temp;
+			temp /= 10;
+		}
+	}
+	term->number.decimal = decimal;
 	return term;
 }
 
@@ -3817,7 +3946,7 @@ enum class hol_type_kind {
 enum class hol_constant_type {
 	BOOLEAN,
 	STRING,
-	INTEGER,
+	NUMBER,
 	INDIVIDUAL
 };
 
@@ -4161,14 +4290,14 @@ template<>
 struct base_types<simple_type> {
 	static const hol_type<simple_type> BOOLEAN;
 	static const hol_type<simple_type> STRING;
-	static const hol_type<simple_type> INTEGER;
+	static const hol_type<simple_type> NUMBER;
 	static const hol_type<simple_type> UINT_LIST;
 	static const hol_type<simple_type> INDIVIDUAL;
 };
 
 const hol_type<simple_type> base_types<simple_type>::BOOLEAN(simple_type::BOOLEAN);
 const hol_type<simple_type> base_types<simple_type>::STRING(simple_type::INDIVIDUAL);
-const hol_type<simple_type> base_types<simple_type>::INTEGER(simple_type::INDIVIDUAL);
+const hol_type<simple_type> base_types<simple_type>::NUMBER(simple_type::INDIVIDUAL);
 const hol_type<simple_type> base_types<simple_type>::UINT_LIST(simple_type::INDIVIDUAL);
 const hol_type<simple_type> base_types<simple_type>::INDIVIDUAL(simple_type::INDIVIDUAL);
 
@@ -4179,6 +4308,13 @@ inline bool intersect(simple_type& out, simple_type first, simple_type second) {
 	} else {
 		return false;
 	}
+}
+
+inline constexpr bool intersect(
+		hol_type<simple_type>& out, simple_type first,
+		const hol_function_type<simple_type>& second)
+{
+	return false;
 }
 
 template<typename BaseType>
@@ -4198,6 +4334,13 @@ inline bool unify_base_type(
 		} else {
 			return init(out, intersection)
 				&& init(new_second, intersection);
+		}
+	} else if (second.kind == hol_type_kind::FUNCTION) {
+		if (!intersect(out, first, second.function)) {
+			return init(out, hol_type_kind::NONE)
+				&& init(new_second, hol_type_kind::NONE);
+		} else {
+			return init(new_second, out);
 		}
 	} else if (second.kind == hol_type_kind::VARIABLE) {
 		if (!unify_base_type(first, type_variables[second.variable], out, new_second, type_variables))
@@ -4808,10 +4951,10 @@ bool compute_type(const hol_term& term,
 			&& types.template add<hol_term_type::VARIABLE_PREIMAGE>(term, expected_type);
 	case hol_term_type::PARAMETER:
 		return compute_type<hol_term_type::PARAMETER, Quiet>(term.parameter, term, types, expected_type, parameter_types, type_variables);
-	case hol_term_type::INTEGER:
-		return types.template push<hol_term_type::INTEGER>(term)
-			&& expect_type<Quiet>(base_types<BaseType>::INTEGER, expected_type, type_variables)
-			&& types.template add<hol_term_type::INTEGER>(term, base_types<BaseType>::INTEGER);
+	case hol_term_type::NUMBER:
+		return types.template push<hol_term_type::NUMBER>(term)
+			&& expect_type<Quiet>(base_types<BaseType>::NUMBER, expected_type, type_variables)
+			&& types.template add<hol_term_type::NUMBER>(term, base_types<BaseType>::NUMBER);
 	case hol_term_type::STRING:
 		return types.template push<hol_term_type::STRING>(term)
 			&& expect_type<Quiet>(base_types<BaseType>::STRING, expected_type, type_variables)
@@ -5296,6 +5439,42 @@ inline int_fast8_t compare(
 	return 0;
 }
 
+inline int_fast8_t compare(
+		const hol_number& first,
+		const hol_number& second)
+{
+	if (first.integer < second.integer) {
+		return -1;
+	} else if (first.integer > second.integer) {
+		return 1;
+	} else {
+		unsigned int first_digits = log10(first.decimal);
+		unsigned int second_digits = log10(second.decimal);
+
+		if (first_digits == 0) {
+			if (second_digits == 0)
+				return 0;
+			else return -1;
+		} else {
+			if (second_digits == 0)
+				return 1;
+		}
+		uint64_t first_decimal = first.decimal;
+		uint64_t second_decimal = second.decimal;
+		while (first_digits < second_digits) {
+			first_decimal *= 10;
+			first_digits++;
+		} while (second_digits < first_digits) {
+			second_decimal *= 10;
+			second_digits++;
+		}
+
+		if (first_decimal < second_decimal) return -1;
+		else if (first_decimal > second_decimal) return 1;
+		else return 0;
+	}
+}
+
 int_fast8_t compare(
 		const hol_term& first,
 		const hol_term& second)
@@ -5316,10 +5495,8 @@ int_fast8_t compare(
 		if (first.parameter < second.parameter) return -1;
 		else if (first.parameter > second.parameter) return 1;
 		else return 0;
-	case hol_term_type::INTEGER:
-		if (first.integer < second.integer) return -1;
-		else if (first.integer > second.integer) return 1;
-		else return 0;
+	case hol_term_type::NUMBER:
+		return compare(first.number, second.number);
 	case hol_term_type::STRING:
 		return compare(first.str, second.str);
 	case hol_term_type::UINT_LIST:
@@ -5459,7 +5636,7 @@ struct hol_scope {
 		unsigned int variable;
 		unsigned int constant;
 		unsigned int parameter;
-		int integer;
+		hol_number number;
 		string str;
 		sequence uint_list;
 		hol_scope* unary;
@@ -5493,8 +5670,8 @@ struct hol_scope {
 			dst.variable = src.variable; return;
 		case hol_term_type::PARAMETER:
 			dst.parameter = src.parameter; return;
-		case hol_term_type::INTEGER:
-			dst.integer = src.integer; return;
+		case hol_term_type::NUMBER:
+			dst.number = src.number; return;
 		case hol_term_type::STRING:
 			string::move(src.str, dst.str); return;
 		case hol_term_type::UINT_LIST:
@@ -5571,7 +5748,7 @@ private:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
-		case hol_term_type::INTEGER:
+		case hol_term_type::NUMBER:
 		case hol_term_type::STRING:
 		case hol_term_type::UINT_LIST:
 			return true;
@@ -5623,7 +5800,7 @@ private:
 		case hol_term_type::CONSTANT:
 		case hol_term_type::VARIABLE:
 		case hol_term_type::PARAMETER:
-		case hol_term_type::INTEGER:
+		case hol_term_type::NUMBER:
 		case hol_term_type::TRUE:
 		case hol_term_type::FALSE:
 			return;
@@ -5740,8 +5917,8 @@ inline bool operator == (const hol_scope& first, const hol_scope& second)
 		return first.variable == second.variable;
 	case hol_term_type::PARAMETER:
 		return first.parameter == second.parameter;
-	case hol_term_type::INTEGER:
-		return first.integer == second.integer;
+	case hol_term_type::NUMBER:
+		return first.number == second.number;
 	case hol_term_type::STRING:
 		return first.str == second.str;
 	case hol_term_type::UINT_LIST:
@@ -5870,10 +6047,8 @@ int_fast8_t compare(
 		if (first.parameter < second.parameter) return -1;
 		else if (first.parameter > second.parameter) return 1;
 		else return 0;
-	case hol_term_type::INTEGER:
-		if (first.integer < second.integer) return -1;
-		else if (first.integer > second.integer) return 1;
-		else return 0;
+	case hol_term_type::NUMBER:
+		return compare(first.number, second.number);
 	case hol_term_type::STRING:
 		return compare(first.str, second.str);
 	case hol_term_type::UINT_LIST:
@@ -5942,7 +6117,7 @@ void shift_variables(hol_scope& scope, unsigned int removed_variable) {
 		return;
 	case hol_term_type::CONSTANT:
 	case hol_term_type::PARAMETER:
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 		return;
@@ -6303,8 +6478,8 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 		return hol_term::new_variable(scope.variable);
 	case hol_term_type::PARAMETER:
 		return hol_term::new_parameter(scope.parameter);
-	case hol_term_type::INTEGER:
-		return hol_term::new_int(scope.integer);
+	case hol_term_type::NUMBER:
+		return hol_term::new_number(scope.number.integer, scope.number.decimal);
 	case hol_term_type::STRING:
 		return hol_term::new_string(scope.str);
 	case hol_term_type::UINT_LIST:
@@ -7756,9 +7931,9 @@ bool canonicalize_scope(const hol_term& src, hol_scope& out,
 	case hol_term_type::PARAMETER:
 		if (!init(out, hol_term_type::PARAMETER)) return false;
 		out.parameter = src.parameter; return true;
-	case hol_term_type::INTEGER:
-		if (!init(out, hol_term_type::INTEGER)) return false;
-		out.integer = src.integer; return true;
+	case hol_term_type::NUMBER:
+		if (!init(out, hol_term_type::NUMBER)) return false;
+		out.number = src.number; return true;
 	case hol_term_type::STRING:
 		if (!init(out, hol_term_type::STRING)) return false;
 		out.str = src.str; return true;
@@ -8013,7 +8188,7 @@ bool is_subset(const hol_term* first, const hol_term* second)
 		/* TODO: this is an incorrect workaround */
 		return false;
 
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 		fprintf(stderr, "is_subset ERROR: `first` does not have type proposition.\n");
@@ -9581,20 +9756,30 @@ inline bool any_number(const hol_term& src) {
 }
 
 /* NOTE: this function assumes src is not ANY */
-inline bool get_number(const hol_term& src, int64_t& value) {
-	if (src.type != hol_term_type::INTEGER)
+inline bool get_number(const hol_term& src, int64_t& integer, uint64_t& decimal) {
+	if (src.type != hol_term_type::NUMBER)
 		return false;
-	value = src.integer;
+	integer = src.number.integer;
+	decimal = src.number.decimal;
 	return true;
 }
 
-inline bool set_number(hol_term& exp,
-		const hol_term& set, int64_t value)
+inline bool set_number(
+		hol_term& exp, const hol_term& set,
+		int64_t integer, uint64_t decimal)
 {
-	if (set.type != hol_term_type::ANY && set.type != hol_term_type::ANY_RIGHT && set.type != hol_term_type::INTEGER)
+	if (set.type != hol_term_type::ANY && set.type != hol_term_type::ANY_RIGHT && set.type != hol_term_type::NUMBER)
 		return false;
-	exp.type = hol_term_type::INTEGER;
-	exp.integer = value;
+	exp.type = hol_term_type::NUMBER;
+	exp.number.integer = integer;
+	if (decimal != 0) {
+		uint64_t temp = decimal / 10;
+		while (temp * 10 == decimal) {
+			decimal = temp;
+			temp /= 10;
+		}
+	}
+	exp.number.decimal = decimal;
 	exp.reference_count = 1;
 	return true;
 }
@@ -9880,8 +10065,8 @@ bool is_reduceable(
 		return first_src->variable == second_src->variable;
 	case hol_term_type::PARAMETER:
 		return first_src->parameter == second_src->parameter;
-	case hol_term_type::INTEGER:
-		return first_src->integer == second_src->integer;
+	case hol_term_type::NUMBER:
+		return first_src->number == second_src->number;
 	case hol_term_type::STRING:
 		return first_src->str == second_src->str;
 	case hol_term_type::UINT_LIST:
@@ -10467,7 +10652,7 @@ bool is_subset(hol_term* first, hol_term* second)
 			return is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
 		case hol_term_type::ANY_QUANTIFIER:
 			return is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
-		case hol_term_type::INTEGER:
+		case hol_term_type::NUMBER:
 		case hol_term_type::STRING:
 		case hol_term_type::UINT_LIST:
 		case hol_term_type::CONSTANT:
@@ -10519,7 +10704,7 @@ bool is_subset(hol_term* first, hol_term* second)
 			return is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
 		case hol_term_type::ANY_QUANTIFIER:
 			return is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
-		case hol_term_type::INTEGER:
+		case hol_term_type::NUMBER:
 		case hol_term_type::STRING:
 		case hol_term_type::UINT_LIST:
 		case hol_term_type::CONSTANT:
@@ -10668,8 +10853,8 @@ bool is_subset(hol_term* first, hol_term* second)
 		return (first->quantifier.variable_type == second->quantifier.variable_type)
 			&& (first->quantifier.variable == second->quantifier.variable)
 			&& is_subset<BuiltInPredicates>(first->quantifier.operand, second->quantifier.operand);
-	case hol_term_type::INTEGER:
-		return first->integer == second->integer;
+	case hol_term_type::NUMBER:
+		return first->number == second->number;
 	case hol_term_type::STRING:
 		return first->str == second->str;
 	case hol_term_type::UINT_LIST:
@@ -11455,7 +11640,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 		free_all(differences); free_all(first_differences);
 		return (dst.length > old_dst_length);
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
@@ -11817,7 +12002,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 		}
 		free_all(first_differences); free_all(differences);
 		return (dst.length > old_dst_length);
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
@@ -13067,8 +13252,8 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 		free_all(first_differences);
 		return (dst.length > old_dst_length);
-	case hol_term_type::INTEGER:
-		if (first->integer == second->integer) {
+	case hol_term_type::NUMBER:
+		if (first->number == second->number) {
 			return false;
 		} else {
 			return add<false, false>(dst, first);
@@ -14423,7 +14608,7 @@ if (MapSecondVariablesToFirst) {
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
@@ -15435,7 +15620,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 		free_all(differences);
 		free(*second_any); if (second_any->reference_count == 0) free(second_any);
 		return (dst.length > old_dst_length);
-	case hol_term_type::INTEGER:
+	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
 	case hol_term_type::CONSTANT:
@@ -17500,9 +17685,9 @@ bool intersect(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		free_all(first_intersection);
 		return true;
 
-	case hol_term_type::INTEGER:
-		if (second->type != hol_term_type::INTEGER
-		 || second->integer != first->integer)
+	case hol_term_type::NUMBER:
+		if (second->type != hol_term_type::NUMBER
+		 || second->number != first->number)
 			return false;
 		if (!ComputeIntersection) return true;
 		return add<false, false>(dst, first);
@@ -17597,6 +17782,7 @@ enum class tptp_token_type {
 	RPAREN,
 	COMMA,
 	COLON,
+	PERIOD,
 
 	AND,
 	OR,
@@ -17630,6 +17816,8 @@ inline bool print(tptp_token_type type, Stream& stream) {
 		return print(',', stream);
 	case tptp_token_type::COLON:
 		return print(':', stream);
+	case tptp_token_type::PERIOD:
+		return print('.', stream);
 	case tptp_token_type::AND:
 		return print('&', stream);
 	case tptp_token_type::OR:
@@ -17671,6 +17859,8 @@ bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char sym
 		return emit_token(tokens, start, start + 1, tptp_token_type::COMMA);
 	case ':':
 		return emit_token(tokens, start, start + 1, tptp_token_type::COLON);
+	case '.':
+		return emit_token(tokens, start, start + 1, tptp_token_type::PERIOD);
 	case '(':
 		return emit_token(tokens, start, start + 1, tptp_token_type::LPAREN);
 	case ')':
@@ -17705,7 +17895,7 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	if (next == ',' || next == ':' || next == '(' || next == ')'
 	 || next == '[' || next == ']' || next == '&' || next == '|'
 	 || next == '~' || next == '!' || next == '?' || next == '^'
-	 || next == ';')
+	 || next == ';' || next == '.')
 	{
 		return tptp_emit_symbol(tokens, current, next);
 	} else if (next == '=') {
@@ -17752,7 +17942,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			if (next == ',' || next == ':' || next == '(' || next == ')'
 			 || next == '[' || next == ']' || next == '&' || next == '|'
 			 || next == '~' || next == '!' || next == '?' || next == '='
-			 || next == '^' || next == ';' || next == '-')
+			 || next == '^' || next == ';' || next == '.' || next == '-')
 			{
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER)
 				 || !tptp_lex_symbol(tokens, input, next, current))
@@ -17797,7 +17987,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			if (next == ',' || next == ':' || next == '(' || next == ')'
 			 || next == '[' || next == ']' || next == '&' || next == '|'
 			 || next == '~' || next == '!' || next == '?' || next == '='
-			 || next == '^' || next == ';' || next == '-')
+			 || next == '^' || next == ';' || next == '.' || next == '-')
 			{
 				if (!tptp_lex_symbol(tokens, input, next, current))
 					return false;
@@ -18035,11 +18225,35 @@ bool tptp_interpret_unary_term(
 			term.reference_count = 1;
 			index++;
 		} else if (parse_long(tokens[index].text, integer)) {
-			/* this is an integer */
-			term.integer = integer;
-			term.type = hol_term_type::INTEGER;
-			term.reference_count = 1;
+			/* this is a number */
 			index++;
+			if (index < tokens.length && tokens[index].type == tptp_token_type::PERIOD) {
+				index++;
+				unsigned long long decimal;
+				if (index == tokens.length || tokens[index].type != tptp_token_type::IDENTIFIER
+				 || !parse_ulonglong(tokens[index].text, decimal))
+				{
+					fprintf(stderr, "ERROR at %u:%u: Expected decimal.\n", tokens[index - 1].end.line, tokens[index - 1].end.column);
+					return false;
+				}
+				index++;
+				if (decimal != 0) {
+					unsigned long temp = decimal / 10;
+					while (temp * 10 == decimal) {
+						decimal = temp;
+						temp /= 10;
+					}
+				}
+				term.number.integer = integer;
+				term.number.decimal = decimal;
+				term.type = hol_term_type::NUMBER;
+				term.reference_count = 1;
+			} else {
+				term.number.integer = integer;
+				term.number.decimal = 0;
+				term.type = hol_term_type::NUMBER;
+				term.reference_count = 1;
+			}
 		} else {
 			/* this is a constant or variable */
 			bool contains;

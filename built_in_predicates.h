@@ -33,6 +33,7 @@ enum class built_in_predicates : unsigned int {
 	GREATER,
 	GREATEST,
 	GREATER_THAN_OR_EQUAL,
+	NUMBER,
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
@@ -42,6 +43,8 @@ enum class built_in_predicates : unsigned int {
 	NAMED_ENTITY, /* this is only used in parsing */
 
 AREA, /* TODO: for debugging; delete this */
+SQUARE, /* TODO: for debugging; delete this */
+MILE, /* TODO: for debugging; delete this */
 
 	COUNT
 };
@@ -198,8 +201,11 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("name", (unsigned int) built_in_predicates::NAME)
 		&& names.put("same", (unsigned int) built_in_predicates::SAME)
 		&& names.put("object", (unsigned int) built_in_predicates::OBJECT)
+		&& names.put("number", (unsigned int) built_in_predicates::NUMBER)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)
-		&& names.put("area", (unsigned int) built_in_predicates::AREA);
+		&& names.put("area", (unsigned int) built_in_predicates::AREA)
+		&& names.put("square", (unsigned int) built_in_predicates::SQUARE)
+		&& names.put("mile", (unsigned int) built_in_predicates::MILE);
 }
 
 struct no_op {

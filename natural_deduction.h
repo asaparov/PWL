@@ -343,7 +343,35 @@ struct nd_step
 		exit(EXIT_FAILURE);
 	}
 
-	static inline bool clone(const nd_step<Formula>& src, nd_step<Formula>& dst)
+	static inline bool clone(const nd_step<Formula>* src, nd_step<Formula>*& dst,
+			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map)
+	{
+		if (!pointer_map.ensure_capacity(pointer_map.size + 1))
+			return false;
+		unsigned int index = pointer_map.index_of(src);
+		if (index < pointer_map.size) {
+			dst = pointer_map.values[index];
+			dst->reference_count++;
+		} else {
+			dst = (nd_step<Formula>*) malloc(sizeof(nd_step<Formula>));
+			if (dst == nullptr) {
+				fprintf(stderr, "nd_step.clone ERROR: Out of memory.\n");
+				return false;
+			}
+			pointer_map.keys[index] = src;
+			pointer_map.values[index] = dst;
+			pointer_map.size++;
+			if (!clone(*src, *dst, pointer_map)) {
+				core::free(dst);
+				pointer_map.remove_at(pointer_map.index_of(src));
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static inline bool clone(const nd_step<Formula>& src, nd_step<Formula>& dst,
+			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map)
 	{
 		dst.type = src.type;
 		dst.reference_count = 1;
@@ -379,13 +407,13 @@ struct nd_step
 				return false;
 			}
 			for (unsigned int i = 0; i < src.operand_array.length; i++) {
-				dst.operand_array[i] = (nd_step<Formula>*) malloc(sizeof(nd_step<Formula>));
-				if (dst.operand_array[i] == nullptr) {
-					for (unsigned int j = 0; j < i; j++) { core::free(*dst.operand_array[j]); core::free(dst.operand_array[j]); }
+				if (!clone(src.operand_array[i], dst.operand_array[i], pointer_map)) {
+					for (unsigned int j = 0; j < i; j++) {
+						core::free(*dst.operand_array[j]);
+						if (dst.operand_array[j]->reference_count == 0)
+							core::free(dst.operand_array[j]);
+					}
 					core::free(dst.children); return false;
-				} else if (!clone(*src.operand_array[i], *dst.operand_array[i])) {
-					for (unsigned int j = 0; j < i; j++) { core::free(*dst.operand_array[j]); core::free(dst.operand_array[j]); }
-					core::free(dst.operand_array[i]); core::free(dst.children); return false;
 				}
 				dst.operand_array[i]->children.add(&dst);
 			}
@@ -415,13 +443,15 @@ struct nd_step
 				if (src.operands[i] == nullptr) {
 					dst.operands[i] = nullptr;
 				} else {
-					dst.operands[i] = (nd_step<Formula>*) malloc(sizeof(nd_step<Formula>));
-					if (dst.operands[i] == nullptr) {
-						for (unsigned int j = 0; j < i; j++) { if (dst.operands[i] != nullptr) { core::free(*dst.operands[j]); core::free(dst.operands[j]); } }
+					if (!clone(src.operands[i], dst.operands[i], pointer_map)) {
+						for (unsigned int j = 0; j < i; j++) {
+							if (dst.operands[i] != nullptr) {
+								core::free(*dst.operands[j]);
+								if (dst.operands[j]->reference_count == 0)
+									core::free(dst.operands[j]);
+							}
+						}
 						core::free(dst.children); return false;
-					} else if (!clone(*src.operands[i], *dst.operands[i])) {
-						for (unsigned int j = 0; j < i; j++) { if (dst.operands[i] != nullptr) { core::free(*dst.operands[j]); core::free(dst.operands[j]); } }
-						core::free(dst.operands[i]); core::free(dst.children); return false;
 					}
 					dst.operands[i]->children.add(&dst);
 				}
@@ -968,18 +998,18 @@ bool check_proof(proof_state<Formula>& out,
 			if (operand->type != FormulaType::BINARY_APPLICATION
 			 || operand->ternary.first->type != TermType::CONSTANT
 			 || operand->ternary.first->constant != (unsigned int) BuiltInPredicates::GREATER_THAN_OR_EQUAL
-			 || operand->ternary.second->type != TermType::INTEGER
-			 || operand->ternary.third->type != TermType::INTEGER
-			 || operand->ternary.second->integer >= operand->ternary.third->integer)
+			 || operand->ternary.second->type != TermType::NUMBER
+			 || operand->ternary.third->type != TermType::NUMBER
+			 || operand->ternary.third->number <= operand->ternary.second->number)
 				return false;
 		} else {
 			Formula* operand = proof.formula;
 			if (operand->type != FormulaType::BINARY_APPLICATION
 			 || operand->ternary.first->type != TermType::CONSTANT
 			 || operand->ternary.first->constant != (unsigned int) BuiltInPredicates::GREATER_THAN_OR_EQUAL
-			 || operand->ternary.second->type != TermType::INTEGER
-			 || operand->ternary.third->type != TermType::INTEGER
-			 || operand->ternary.second->integer < operand->ternary.third->integer)
+			 || operand->ternary.second->type != TermType::NUMBER
+			 || operand->ternary.third->type != TermType::NUMBER
+			 || operand->ternary.second->number < operand->ternary.third->number)
 				return false;
 		}
 		out.formula = proof.formula;
@@ -2089,7 +2119,7 @@ struct canonicalized_proof_prior
 		}
 
 		template<bool HasPrior = true>
-		inline bool add(const nd_step<Formula>* proof,
+		inline bool add(const nd_step<Formula>* proof, const array<Formula*>& extra_axioms,
 				const canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior)
 		{
 			array_multiset<Formula*, false> proof_axiom_changes(16);
@@ -2099,7 +2129,7 @@ struct canonicalized_proof_prior
 			 || !proof_axioms.counts.check_size(proof_axioms.counts.table.size + proof_axiom_changes.counts.size)
 			 || (HasPrior && !universal_eliminations.add(universal_elimination_changes)))
 				return false;
-			array<Formula*> new_axioms(max((size_t) 1, proof_axiom_changes.counts.size));
+			array<Formula*> new_axioms(max((size_t) 1, proof_axiom_changes.counts.size + extra_axioms.length));
 			for (const auto& pair : proof_axiom_changes.counts) {
 				bool contains; unsigned int bucket;
 				unsigned int& count = proof_axioms.counts.get(pair.key, contains, bucket);
@@ -2113,6 +2143,18 @@ struct canonicalized_proof_prior
 				}
 			}
 			proof_axioms.sum += proof_axiom_changes.sum;
+
+			for (Formula* extra_axiom : extra_axioms) {
+				bool contains = false;
+				for (Formula* existing_axiom : new_axioms) {
+					if (existing_axiom == extra_axiom || *existing_axiom == *extra_axiom) {
+						contains = true;
+						break;
+					}
+				}
+				if (!contains)
+					new_axioms.add(extra_axiom);
+			}
 
 			for (unsigned int i = 0; i < new_axioms.length; i++) {
 				if (!axiom_prior_state.add(new_axioms[i], prior.axiom_prior)) {
@@ -2133,7 +2175,7 @@ struct canonicalized_proof_prior
 		}
 
 		template<bool HasPrior = true>
-		inline void subtract(const nd_step<Formula>* proof,
+		inline void subtract(const nd_step<Formula>* proof, const array<Formula*>& extra_axioms,
 				const canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior)
 		{
 			array_multiset<Formula*, false> proof_axiom_changes(16);
@@ -2143,7 +2185,7 @@ struct canonicalized_proof_prior
 				fprintf(stderr, "canonicalized_proof_prior.prior_state.subtract ERROR: Unable to collect proof changes.\n");
 				return;
 			}
-			array<Formula*> old_axioms(max((size_t) 1, proof_axiom_changes.counts.size));
+			array<Formula*> old_axioms(max((size_t) 1, proof_axiom_changes.counts.size + extra_axioms.length));
 			for (const auto& pair : proof_axiom_changes.counts) {
 				bool contains; unsigned int bucket;
 				unsigned int& count = proof_axioms.counts.get(pair.key, contains, bucket);
@@ -2159,6 +2201,18 @@ struct canonicalized_proof_prior
 				}
 			}
 			proof_axioms.sum -= proof_axiom_changes.sum;
+
+			for (Formula* extra_axiom : extra_axioms) {
+				bool contains = false;
+				for (Formula* existing_axiom : old_axioms) {
+					if (existing_axiom == extra_axiom || *existing_axiom == *extra_axiom) {
+						contains = true;
+						break;
+					}
+				}
+				if (!contains)
+					old_axioms.add(extra_axiom);
+			}
 
 			for (unsigned int i = 0; i < old_axioms.length; i++)
 				axiom_prior_state.subtract(old_axioms[i], prior.axiom_prior);
@@ -2443,6 +2497,7 @@ template<
 	typename TheorySampleCollector>
 double log_probability(
 		const hash_set<nd_step<Formula>*>& proofs,
+		const array<Formula*>& extra_observations,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
 		TheorySampleCollector& theory_sample_collector)
 {
@@ -2511,7 +2566,7 @@ double log_probability(
 
 	if (axioms.counts.size > 1)
 		sort(axioms.counts.keys, axioms.counts.values, axioms.counts.size);
-	return value + log_probability(axioms, prior.axiom_prior);
+	return value + log_probability(axioms, extra_observations, prior.axiom_prior);
 }
 
 template<
@@ -2526,6 +2581,7 @@ template<
 	typename TheorySampleCollector>
 double log_probability_ratio(
 		const array_map<nd_step<Formula>*, proof_substitution<Formula>>& proofs,
+		const array<Formula*>& old_extra_axioms, const array<Formula*>& new_extra_axioms,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
 		const PriorState& prior_state, PriorStateChanges& old_axioms, PriorStateChanges& new_axioms,
 		TheorySampleCollector& theory_sample_collector)
@@ -2561,8 +2617,11 @@ double log_probability_ratio(
 		sort(old_axioms.proof_axioms.counts.keys, old_axioms.proof_axioms.counts.values, old_axioms.proof_axioms.counts.size);
 	if (new_axioms.proof_axioms.counts.size > 1)
 		sort(new_axioms.proof_axioms.counts.keys, new_axioms.proof_axioms.counts.values, new_axioms.proof_axioms.counts.size);
-	return value + log_probability_ratio(prior_state.proof_axioms, old_axioms.proof_axioms, new_axioms.proof_axioms,
-			prior.axiom_prior, prior_state.axiom_prior_state, old_axioms.axiom_prior_state, new_axioms.axiom_prior_state);
+	return value + log_probability_ratio(prior_state.proof_axioms,
+			old_axioms.proof_axioms, new_axioms.proof_axioms,
+			old_extra_axioms, new_extra_axioms,
+			prior.axiom_prior, prior_state.axiom_prior_state,
+			old_axioms.axiom_prior_state, new_axioms.axiom_prior_state);
 }
 
 #endif /* NATURAL_DEDUCTION_H_ */

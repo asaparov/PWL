@@ -1748,6 +1748,10 @@
 
 : # largest
 {(ADJ "large"/"largest")}
+	{?[g]:area(g)[sup]};
+
+: # largest
+{(ADJ "large"/"largest")}
 	{?[g]:population(g)[sup]};
 
 : # longest
@@ -1907,6 +1911,78 @@
 : # point
 {(N "point"/"point")}
 	{location[index:sg]};
+
+: # mile
+{(N "mile"/"mile")}
+	{mile[index:sg]};
+
+: # square
+{(ADJ "square"/"square")}
+	{?[x]:square(x)};
+
+: # The volume of Deimos is 999.78 cubic kilometers.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+						(THE "the")
+						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+							(NOMINAL_R:identity_predicative
+								(NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set,try_add_has_arg2
+									(NOMINAL_L:identity_predicative
+										(N:require_no_correlator_predicative,select_predicate_in_set "volume")
+									)
+								)
+								(OF_FOR "of")
+								(NP:try_remove_correlated,try_remove_wh_minus,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,has_arg2_in_set
+									(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+										(NOMINAL_R:identity_predicative
+											(NOMINAL_L:identity_predicative
+												(STRING:require_no_correlator_predicative,require_predicative_existential,select_name_in_set,require_capitalized "Deimos")
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_universal
+							(Q:try_remove_genitive,select_second_left_set_conjunct_root
+								(NUMBER:size "999 . 78")
+							)
+							(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+								(NOMINAL_L:identity_predicative
+									(ADJP_R:try_remove_genitive,try_remove_wh_minus,select_left_conjunct_in_set,select_right_arg1_of_without_head
+										(ADJP_L:try_remove_is_adjunct
+											(ADJ:require_no_correlator "cubic"/"cubic")
+										)
+									)
+									(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+										(N:require_no_correlator_predicative,select_predicate_in_set "kilometer"/"kilometers")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[y]:(?[d]:(?[n]:(name(n) & (arg1_of(d)=n) & (arg2(n)="Deimos")) & ?[p]:(volume(p) & (arg1(p)=d) & (arg2_of(y)=p))) & ?[k]:(subset(k,^[x]:(?[l]:(cubic(l) & (arg1_of(x)=l)) & kilometer(x))) & (size(k)=999.78) & ?[s]:((arg1(s)=y) & same(s) & present(s) & (arg2(s)=k))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

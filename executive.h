@@ -112,18 +112,19 @@ bool read_sentence(
 			break;
 		} else if (parse_count > 0 && unrecognized_concatenated.length == 1 && unrecognized_concatenated[0] == article_name) {
 			/* this could be a definition so try adding it to the theory */
-			auto* new_proof = T.add_formula(logical_forms[0], new_constant, std::forward<Args>(add_formula_args)...);
+			set_changes<Formula> set_diff;
+			auto* new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 			if (new_proof != nullptr) {
-				if (proof_axioms.add(new_proof, theory_prior)) {
+				if (proof_axioms.add(new_proof, set_diff.new_set_axioms, theory_prior)) {
 					if (!parser.add_definition(s, logical_forms[0], new_constant, names)) {
-						proof_axioms.subtract(new_proof, theory_prior);
-						T.remove_formula(new_proof);
+						proof_axioms.subtract(new_proof, set_diff.new_set_axioms, theory_prior);
+						T.remove_formula(new_proof, set_diff);
 						new_proof = nullptr;
 /* TODO: for debugging; delete this */
 exit(EXIT_FAILURE);
 					}
 				} else {
-					T.remove_formula(new_proof);
+					T.remove_formula(new_proof, set_diff);
 					new_proof = nullptr;
 				}
 			}
@@ -165,9 +166,10 @@ exit(EXIT_FAILURE);
 	}
 
 	/* add the most probable logical form to the theory */
-	auto* new_proof = T.add_formula(logical_forms[0], new_constant, std::forward<Args>(add_formula_args)...);
-	if (new_proof != nullptr && !proof_axioms.add(new_proof, theory_prior)) {
-		T.remove_formula(new_proof);
+	set_changes<Formula> set_diff;
+	auto* new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
+	if (new_proof != nullptr && !proof_axioms.add(new_proof, set_diff.new_set_axioms, theory_prior)) {
+		T.remove_formula(new_proof, set_diff);
 		new_proof = nullptr;
 	}
 	if (new_proof == nullptr) {
@@ -1568,13 +1570,18 @@ inline bool answer_question(array<string>& answers,
 				temp_answers.values[index] = log_probability;
 				temp_answers.size++;
 			}
-		} else if (term->type == TermType::INTEGER) {
-			int length = snprintf(NULL, 0, "%" PRId64, term->integer);
+		} else if (term->type == TermType::NUMBER) {
+			int length;
+			if (term->number.decimal == 0)
+				length = snprintf(NULL, 0, "%" PRId64, term->number.integer);
+			else length = snprintf(NULL, 0, "%" PRId64 ".%" PRIu64, term->number.integer, term->number.decimal);
 			if (!temp_answers.ensure_capacity(temp_answers.size + 1) || length < 0)
 				return;
 
 			string new_name(length + 1);
-			snprintf(new_name.data, length + 1, "%" PRId64, term->integer);
+			if (term->number.decimal == 0)
+				snprintf(new_name.data, length + 1, "%" PRId64, term->number.integer);
+			else snprintf(new_name.data, length + 1, "%" PRId64 ".%" PRIu64, term->number.integer, term->number.decimal);
 			new_name.length = length;
 
 			unsigned int index = temp_answers.index_of(new_name);

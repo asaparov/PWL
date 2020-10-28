@@ -1757,7 +1757,7 @@ DEF_NP -> THE NP':try_remove_correlated,require_predicative_universal,try_add_pl
 
 
 
-NP' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+NP' nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
 # NP {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & f(S) & ...))} -> Q {f(x_1)} NOMINAL_R {^[P]:(?[S]:(g(S=^[x]:f(x)) & ...))}
 # this depends on whether the head predicate of the left conjunct f(S) is one that expresses information about the size of the set

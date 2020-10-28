@@ -920,6 +920,11 @@ inline bool tokenize(
 		return false;
 	}
 
+	if (tokens.length == 0) {
+		fprintf(stderr, "ERROR: Input is empty.\n");
+		return false;
+	}
+
 	unsigned int index = 0;
 	hash_map<string, unsigned int> dummy(1);
 	if (!article_interpret_sentence(tokens, index, out, names, dummy)) {
