@@ -1774,6 +1774,28 @@ T.print_axioms(stderr);
 debug++;
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_set_diff, new_constant, sampler);
 		if (new_proof != NULL) {
+			proof_steps.clear();
+			if (!get_proof_steps<nd_step_type::AXIOM>(new_proof, proof_steps))
+				return false;
+			/* some new set size axioms may actually have already been extra axioms */
+			for (const Proof* step : proof_steps) {
+				if (step->formula->type == FormulaType::EQUALS
+				 && step->formula->binary.left->type == FormulaType::UNARY_APPLICATION
+				 && step->formula->binary.left->binary.left->type == FormulaType::CONSTANT
+				 && step->formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+				 && step->formula->binary.right->type == FormulaType::NUMBER)
+				{
+					bool is_new = false;
+					for (Formula* new_axiom : new_set_diff.new_set_axioms) {
+						if (new_axiom == step->formula) {
+							is_new = true;
+							break;
+						}
+					}
+					if (!is_new)
+						new_set_diff.old_set(step->formula);
+				}
+			}
 			for (Formula* old_axiom : new_set_diff.old_set_axioms)
 				set_diff.old_set(old_axiom);
 			for (Formula* new_axiom : new_set_diff.new_set_axioms)
@@ -1791,30 +1813,9 @@ T.print_axioms(stderr);
 	log_proposal_probability_ratio += inverse_sampler.log_probability;
 	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
 
-	proof_steps.clear();
 	typename theory<natural_deduction<Formula>, Canonicalizer>::changes new_proof_changes;
-	if (!T.get_theory_changes(*new_proof, new_proof_changes)
-	 || !get_proof_steps<nd_step_type::AXIOM>(selected_step.value, proof_steps))
+	if (!T.get_theory_changes(*new_proof, new_proof_changes))
 		return false;
-	/* some new set size axioms may actually have already been extra axioms */
-	for (const Proof* step : proof_steps) {
-		if (step->formula->type == FormulaType::EQUALS
-		 && step->formula->binary.left->type == FormulaType::UNARY_APPLICATION
-		 && step->formula->binary.left->binary.left->type == FormulaType::CONSTANT
-		 && step->formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-		 && step->formula->binary.right->type == FormulaType::NUMBER)
-		{
-			bool is_new = false;
-			for (Formula* new_axiom : set_diff.new_set_axioms) {
-				if (new_axiom == step->formula) {
-					is_new = true;
-					break;
-				}
-			}
-			if (!is_new)
-				set_diff.old_set(step->formula);
-		}
-	}
 
 	/* check if the proposed proof is the same as the original proof */
 	if (*selected_step.value == *new_proof) {
@@ -3103,6 +3104,11 @@ bool get_mergeable_events(
 			 || !are_mergeable(T, first_arg1, second_arg1, first, second)
 			 || !are_mergeable(T, first_arg2, second_arg2, first, second))
 				continue;
+
+			if (first.arg1 == 0 && second.arg1 != 0)
+				first.arg1 = second.arg1;
+			if (first.arg2 == 0 && second.arg2 != 0)
+				first.arg2 = second.arg2;
 
 			if (!mergeable_events.add(make_pair(first, second)))
 				return false;

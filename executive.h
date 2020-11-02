@@ -1654,13 +1654,16 @@ print(entry.value, stderr); print('\n', stderr);
 /* TODO: for debugging; delete this */
 extern const string_map_scribe* debug_terminal_printer;
 debug_terminal_printer = &parser.get_printer();
-	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
+	theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
+	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
 		fprintf(stderr, "ERROR: Failed to answer question.\n");
 		free_logical_forms(logical_forms, parse_count);
 		free(*name_atom); free(name_atom);
 		for (auto entry : temp_answers) free(entry.key);
 		return false;
 	}
+T_map.print_axioms(stderr, *debug_terminal_printer);
+	free(T_map);
 
 	/* check if we are confident enough in the most probable answer to stop looking for more information */
 	if (temp_answers.size > 1)
@@ -1721,10 +1724,13 @@ debug_terminal_printer = &parser.get_printer();
 		bool failure = false;
 		auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, on_new_proof_sample, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
 			if (read_sentence(articles, parser, tokens, length, T, names, visited_articles, theory_prior, proof_axioms)) {
-				if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, on_new_proof_sample)) {
+				theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
+				if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample)) {
 					fprintf(stderr, "ERROR: Failed to answer question.\n");
 					failure = true; return false;
 				}
+T_map.print_axioms(stderr, *debug_terminal_printer);
+				free(T_map);
 
 				if (temp_answers.size > 1) {
 					sort(temp_answers.values, temp_answers.keys, temp_answers.size, default_sorter());

@@ -51,7 +51,7 @@ struct intensional_set_vertex {
 		for (unsigned int parent : src.parents)
 			dst.parents[dst.parents.length++] = parent;
 		for (unsigned int child : src.children)
-			dst.parents[dst.children.length++] = child;
+			dst.children[dst.children.length++] = child;
 		return true;
 	}
 
@@ -853,7 +853,7 @@ struct set_info
 			}
 			dst.size_axioms.length++;
 		} for (unsigned int descendant : src.descendants) {
-			dst.descendants.insert_unique(descendant);
+			dst.descendants.add(descendant);
 		} for (const tuple_element& element : src.elements) {
 			if (!init(dst.elements[dst.elements.length], element)) {
 				core::free(dst);
@@ -1136,7 +1136,7 @@ struct set_reasoning
 					core::free(dst); return false;
 				} else if (!set_info<BuiltInConstants, ProofCalculus>::clone(src.sets[i], dst.sets[i], proof_map)) {
 					dst.extensional_graph.template free_set<false>(i);
-					dst.intensional_graph.free_set<false>(i);
+					dst.intensional_graph.template free_set<false>(i);
 					core::free(dst); return false;
 				}
 			}

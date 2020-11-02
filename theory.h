@@ -2021,6 +2021,15 @@ struct concept
 			return false;
 		}
 
+		if (!Proof::clone(src.definitions[0], dst.definitions[0], proof_map)) {
+			core::free(dst.types); core::free(dst.negated_types);
+			core::free(dst.relations); core::free(dst.negated_relations);
+			core::free(dst.definitions); core::free(dst.existential_intro_nodes);
+			core::free(dst.function_values); return false;
+		}
+		dst.definitions[0]->reference_count++;
+		dst.definitions.length++;
+
 		for (unsigned int i = 0; i < src.types.size; i++) {
 			if (!init(dst.types.keys[dst.types.size], src.types.keys[i])) {
 				core::free(dst); return false;
@@ -2049,7 +2058,7 @@ struct concept
 				return false;
 			}
 			dst.negated_relations.keys[dst.negated_relations.size++] = src.negated_relations.keys[i];
-		} for (unsigned int i = 0; i < src.definitions.length; i++) {
+		} for (unsigned int i = 1; i < src.definitions.length; i++) {
 			if (!Proof::clone(src.definitions[i], dst.definitions[dst.definitions.length], proof_map)) {
 				core::free(dst);
 				return false;
@@ -2486,9 +2495,19 @@ struct theory
 									Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, &Variables<5>::value, &Variables<8>::value)
 								),
 								Formula::new_for_all(9, Formula::new_if_then(
-									Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::SIZE>::value, &Variables<5>::value), &Variables<9>::value),
+									Formula::new_and(
+										Formula::new_apply(&Constants<(unsigned int) built_in_predicates::MEASURE>::value, &Variables<5>::value),
+										Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<5>::value), &Variables<9>::value)
+									),
 									Formula::new_for_all(10, Formula::new_if_then(
-										Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::SIZE>::value, &Variables<8>::value), &Variables<10>::value),
+										Formula::new_and(
+											Formula::new_apply(&Constants<(unsigned int) built_in_predicates::MEASURE>::value, &Variables<8>::value),
+											Formula::new_exists(11, Formula::new_and(
+												Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<5>::value), &Variables<11>::value),
+												Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<8>::value), &Variables<11>::value)
+											)),
+											Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<8>::value), &Variables<10>::value)
+										),
 										Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, &Variables<9>::value, &Variables<10>::value)
 									))
 								))
@@ -2497,11 +2516,11 @@ struct theory
 					))
 				))));
 		if (right == nullptr) exit(EXIT_FAILURE);
-		Constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count += 2;
+		Constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count += 4;
+		Constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count += 4;
 		Constants<(unsigned int) built_in_predicates::NUMBER>::value.reference_count++;
 		Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::SIZE>::value.reference_count += 2;
+		Constants<(unsigned int) built_in_predicates::MEASURE>::value.reference_count += 2;
 		Variables<1>::value.reference_count += 2;
 		Variables<2>::value.reference_count += 2;
 		Variables<3>::value.reference_count += 2;
@@ -2512,6 +2531,7 @@ struct theory
 		Variables<8>::value.reference_count += 3;
 		Variables<9>::value.reference_count += 2;
 		Variables<10>::value.reference_count += 2;
+		Variables<11>::value.reference_count += 2;
 		maximality_axiom = get_subset_axiom<true>(left, right, 3);
 		core::free(*left); if (left->reference_count == 0) core::free(left);
 		core::free(*right); if (right->reference_count == 0) core::free(right);
@@ -2837,7 +2857,7 @@ struct theory
 			} else if (!array_init(dst.atoms.values[bucket].value, entry.value.value.capacity)) {
 				core::free(dst.atoms.values[bucket].key);
 				core::free(dst); return false;
-			} else if (!init(dst.atoms.keys[bucket], entry.key)) {
+			} else if (!::init(dst.atoms.table.keys[bucket], entry.key)) {
 				core::free(dst.atoms.values[bucket].key);
 				core::free(dst.atoms.values[bucket].value);
 				core::free(dst); return false;
@@ -2855,7 +2875,7 @@ struct theory
 				core::free(dst.relations.values[bucket].key);
 				core::free(dst); return false;
 			}
-			dst.relations.keys[bucket] = entry.key;
+			dst.relations.table.keys[bucket] = entry.key;
 			dst.relations.table.size++;
 			for (unsigned int id : entry.value.key)
 				dst.relations.values[bucket].key[dst.relations.values[bucket].key.length++] = id;
@@ -2863,7 +2883,7 @@ struct theory
 				dst.relations.values[bucket].value[dst.relations.values[bucket].value.length++] = id;
 		} for (unsigned int i = 0; i < src.ground_concept_capacity; i++) {
 			if (src.ground_concepts[i].types.keys == nullptr) continue;
-			if (!concept<ProofCalculus>::clone(dst.ground_concepts[i], src.ground_concepts[i], proof_map)) {
+			if (!concept<ProofCalculus>::clone(src.ground_concepts[i], dst.ground_concepts[i], proof_map)) {
 				core::free(dst);
 				return false;
 			}
@@ -2874,30 +2894,30 @@ struct theory
 				core::free(dst);
 				return false;
 			}
-			dst.observations.insert(new_observation);
+			dst.observations.add(new_observation);
 		} for (auto& entry : src.disjunction_intro_nodes) {
-			if (!Proof::clone(dst.disjunction_intro_nodes[dst.disjunction_intro_nodes.length].value, entry.value, proof_map)) {
+			if (!Proof::clone(entry.value, dst.disjunction_intro_nodes[dst.disjunction_intro_nodes.length].value, proof_map)) {
 				core::free(dst);
 				return false;
 			}
 			dst.disjunction_intro_nodes[dst.disjunction_intro_nodes.length++].key = entry.key;
 			entry.key->reference_count++;
 		} for (auto& entry : src.negated_conjunction_nodes) {
-			if (!Proof::clone(dst.negated_conjunction_nodes[dst.negated_conjunction_nodes.length].value, entry.value, proof_map)) {
+			if (!Proof::clone(entry.value, dst.negated_conjunction_nodes[dst.negated_conjunction_nodes.length].value, proof_map)) {
 				core::free(dst);
 				return false;
 			}
 			dst.negated_conjunction_nodes[dst.negated_conjunction_nodes.length++].key = entry.key;
 			entry.key->reference_count++;
 		} for (auto& entry : src.implication_intro_nodes) {
-			if (!Proof::clone(dst.implication_intro_nodes[dst.implication_intro_nodes.length].value, entry.value, proof_map)) {
+			if (!Proof::clone(entry.value, dst.implication_intro_nodes[dst.implication_intro_nodes.length].value, proof_map)) {
 				core::free(dst);
 				return false;
 			}
 			dst.implication_intro_nodes[dst.implication_intro_nodes.length++].key = entry.key;
 			entry.key->reference_count++;
 		} for (auto& entry : src.existential_intro_nodes) {
-			if (!Proof::clone(dst.existential_intro_nodes[dst.existential_intro_nodes.length].value, entry.value, proof_map)) {
+			if (!Proof::clone(entry.value, dst.existential_intro_nodes[dst.existential_intro_nodes.length].value, proof_map)) {
 				core::free(dst);
 				return false;
 			}
@@ -10901,6 +10921,7 @@ bool log_joint_probability_of_lambda(
 		theory<ProofCalculus, Canonicalizer>& T,
 		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
 		typename ProofCalculus::Language* logical_form, unsigned int num_samples,
+		theory<ProofCalculus, Canonicalizer>& T_map,
 		OnProofSampleFunction on_new_proof_sample, Args&&... add_formula_args)
 {
 	typedef typename ProofCalculus::Language Formula;
@@ -10931,8 +10952,15 @@ T.print_axioms(stderr, *debug_terminal_printer);
 	}
 	set_diff.clear();
 
+	if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_map)) {
+		proof_axioms.template subtract<false>(new_proof, set_diff.old_set_axioms, proof_prior);
+		T.remove_formula(new_proof, set_diff);
+		return false;
+	}
+
 	auto new_proof_sample_delegate = make_lambda_proof_sample_delegate<typename ProofCalculus::ProofCanonicalizer>(on_new_proof_sample);
 	auto collector = make_provability_collector(T, proof_prior, new_proof, new_proof_sample_delegate);
+	double max_log_probability = collector.internal_collector.current_log_probability;
 	for (unsigned int t = 0; t < num_samples; t++)
 {
 fprintf(stderr, "DEBUG: t = %u\n", t);
@@ -10951,12 +10979,21 @@ bool print_debug = false;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_existential_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof);
+		if (collector.internal_collector.current_log_probability > max_log_probability) {
+			free(T_map);
+			if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_map)) {
+				proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
+				T.remove_formula(collector.internal_collector.test_proof, set_diff);
+				return false;
+			}
+			max_log_probability = collector.internal_collector.current_log_probability;
+		}
 if (t % 1000 == 0)
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 }
 
-	T.remove_formula(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
+	T.remove_formula(collector.internal_collector.test_proof, set_diff);
 	return true;
 }
 
