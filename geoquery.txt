@@ -6,4 +6,5 @@ Pittsburgh: Pittsburgh (spelled as "Pittsburg" from 1891-1911), is a city in the
 Arizona: Arizona is a state in the United States of America.;
 #Texas: Texas is the second largest state in the United States by both area and population.;
 Alabama: Alabama is a state in the United States.;
-#California: California is a state in the western United States.;
+California: California is a state in the western United States.;
+San Antonio: San Antonio is a large city in southern Texas, USA.;

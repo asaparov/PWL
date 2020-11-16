@@ -79,7 +79,12 @@ struct extensional_set_vertex
 	array_map<unsigned int, array<Proof*>> parents;
 	array_map<unsigned int, array<Proof*>> children;
 
-	static inline bool clone(
+	/* NOTE: we can't properly implement a `clone` function because this struct
+	   only owns the memory of the proofs in `children` and not those in
+	   `parents`, so to correctly clone an extensional graph, we first need to
+	   clone all of the proofs in `children` across all vertices, and then
+	   clone the proofs in `parents`. */
+	static inline bool clone_except_parents(
 			const extensional_set_vertex<ProofCalculus>& src,
 			extensional_set_vertex<ProofCalculus>& dst,
 			array_map<const Proof*, Proof*>& proof_map)
@@ -90,23 +95,7 @@ struct extensional_set_vertex
 			core::free(dst.parents);
 			return false;
 		}
-		for (const auto& entry : src.parents) {
-			dst.parents.keys[dst.parents.size] = entry.key;
-			array<Proof*>& dst_proofs = dst.parents.values[dst.parents.size];
-			if (!array_init(dst_proofs, entry.value.capacity)) {
-				core::free(dst);
-				return false;
-			}
-			dst.parents.size++;
-
-			for (Proof* proof : entry.value) {
-				if (!Proof::clone(proof, dst_proofs[dst_proofs.length], proof_map)) {
-					core::free(dst);
-					return false;
-				}
-				dst_proofs.length++;
-			}
-		} for (const auto& entry : src.children) {
+		for (const auto& entry : src.children) {
 			dst.children.keys[dst.children.size] = entry.key;
 			array<Proof*>& dst_proofs = dst.children.values[dst.children.size];
 			if (!array_init(dst_proofs, entry.value.capacity)) {
@@ -126,7 +115,33 @@ struct extensional_set_vertex
 		return true;
 	}
 
+	static inline bool clone_only_parents(
+			const extensional_set_vertex<ProofCalculus>& src,
+			extensional_set_vertex<ProofCalculus>& dst,
+			array_map<const Proof*, Proof*>& proof_map)
+	{
+		for (const auto& entry : src.parents) {
+			dst.parents.keys[dst.parents.size] = entry.key;
+			array<Proof*>& dst_proofs = dst.parents.values[dst.parents.size];
+			if (!array_init(dst_proofs, entry.value.capacity))
+				return false;
+			dst.parents.size++;
+
+			for (Proof* proof : entry.value) {
+				unsigned int index = proof_map.index_of(proof);
+#if !defined(NDEBUG)
+				if (index == proof_map.size)
+					fprintf(stderr, "extensional_set_vertex.clone_only_parents WARNING: Given proof does not exist in `proof_map`.\n");
+#endif
+				dst_proofs[dst_proofs.length++] = proof_map.values[index];
+			}
+		}
+		return true;
+	}
+
 	static inline void free(extensional_set_vertex<ProofCalculus>& vertex) {
+		for (auto entry : vertex.parents)
+			core::free(entry.value);
 		for (auto entry : vertex.children) {
 			for (Proof* proof : entry.value) {
 				core::free(*proof); if (proof->reference_count == 0) core::free(proof);
@@ -1128,7 +1143,7 @@ struct set_reasoning
 
 		for (unsigned int i = 1; i < dst.set_count + 1; i++) {
 			if (src.sets[i].size_axioms.data != nullptr) {
-				if (!extensional_set_vertex<ProofCalculus>::clone(src.extensional_graph.vertices[i], dst.extensional_graph.vertices[i], proof_map)) {
+				if (!extensional_set_vertex<ProofCalculus>::clone_except_parents(src.extensional_graph.vertices[i], dst.extensional_graph.vertices[i], proof_map)) {
 					core::free(dst);
 					return false;
 				} else if (!intensional_set_vertex::clone(src.intensional_graph.vertices[i], dst.intensional_graph.vertices[i])) {
@@ -1138,6 +1153,13 @@ struct set_reasoning
 					dst.extensional_graph.template free_set<false>(i);
 					dst.intensional_graph.template free_set<false>(i);
 					core::free(dst); return false;
+				}
+			}
+		} for (unsigned int i = 1; i < dst.set_count + 1; i++) {
+			if (src.sets[i].size_axioms.data != nullptr) {
+				if (!extensional_set_vertex<ProofCalculus>::clone_only_parents(src.extensional_graph.vertices[i], dst.extensional_graph.vertices[i], proof_map)) {
+					core::free(dst);
+					return false;
 				}
 			}
 		} for (const auto& entry : src.set_ids) {

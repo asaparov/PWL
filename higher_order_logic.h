@@ -10006,10 +10006,16 @@ bool is_reduceable(
 		hol_term*& second_node,
 		unsigned int& prefix_index)
 {
-	if (first_src->type != second_src->type) {
+	if (first_src->type != second_src->type
+	 && !(first_src->type == hol_term_type::ANY_RIGHT && second_src->type == hol_term_type::ANY_RIGHT_ONLY)
+	 && !(first_src->type == hol_term_type::ANY_RIGHT_ONLY && second_src->type == hol_term_type::ANY_RIGHT))
+	{
 		if (first_node != nullptr) {
 			return false;
-		} else if (first_src->type == hol_term_type::ANY || second_src->type == hol_term_type::ANY) {
+		} else if (first_src->type == hol_term_type::ANY || second_src->type == hol_term_type::ANY
+				|| first_src->type == hol_term_type::ANY_RIGHT || second_src->type == hol_term_type::ANY_RIGHT
+				|| first_src->type == hol_term_type::ANY_RIGHT_ONLY || second_src->type == hol_term_type::ANY_RIGHT_ONLY)
+		{
 			first_node = first_src;
 			second_node = second_src;
 			return true;
@@ -10786,7 +10792,7 @@ bool is_subset(hol_term* first, hol_term* second)
 		return is_subset<BuiltInPredicates>(first, second->any_array.all);
 	} else if (first->type == hol_term_type::ANY_CONSTANT) {
 		if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
-			return has_intersection(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
+			return !has_intersection(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
 		} else if (second->type == hol_term_type::ANY_CONSTANT) {
 			return is_subset(first->any_constant.constants, first->any_constant.length, second->any_constant.constants, second->any_constant.length);
 		} else {
@@ -12572,7 +12578,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 
 	} else if (second->type == hol_term_type::ANY_CONSTANT_EXCEPT) {
-		if (first->type == hol_term_type::CONSTANT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) < second->any_constant.length) {
+		if (first->type == hol_term_type::CONSTANT && index_of(first->constant, second->any_constant.constants, second->any_constant.length) == second->any_constant.length) {
 			return false;
 		} else {
 			return add<false, MapSecondVariablesToFirst>(dst, first);

@@ -407,6 +407,50 @@ debug_terminal_printer = &parser.get_printer();
 		print(*logical_forms[i], stderr, parser.get_printer()); print(" with log probability ", stderr); print(log_probabilities[i], stderr); print('\n', stderr);
 	}
 
+	if (parse_count != 0) {
+		unsigned int generated_derivation_count;
+		constexpr unsigned int max_generated_derivation_count = 12;
+		double log_likelihoods[max_generated_derivation_count];
+		syntax_node<typename Parser::logical_form_type>* generated_derivations =
+				(syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>) * max_generated_derivation_count);
+		if (!parser.template generate<max_generated_derivation_count>(generated_derivations, log_likelihoods, generated_derivation_count, logical_forms[0], names) || generated_derivation_count == 0) {
+			fprintf(stderr, "parse_sentence ERROR: Failed to generate derivation.\n");
+			for (unsigned int i = 0; i < parse_count; i++) {
+				free(*logical_forms[i]);
+				if (logical_forms[i]->reference_count == 0)
+					free(logical_forms[i]);
+			}
+			free(sentence);
+			return false;
+		}
+
+		const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
+		string_map_scribe nonterminal_printer = { nonterminal_name_map, parser.G.nonterminal_names.table.size + 1 };
+		fprintf(stderr, "Generated %u derivations:\n", generated_derivation_count);
+		for (unsigned int i = 0; i < generated_derivation_count; i++) {
+			/* compute the yield of the derivation */
+			sequence new_sentence = sequence(NULL, 0);
+			if (!parser.yield(generated_derivations[i], logical_forms[0], new_sentence)) {
+				for (unsigned int i = 0; i < parse_count; i++) {
+					free(*logical_forms[i]);
+					if (logical_forms[i]->reference_count == 0)
+						free(logical_forms[i]);
+				} for (unsigned int i = 0; i < generated_derivation_count; i++)
+					free(generated_derivations[i]);
+				free(sentence); free(nonterminal_name_map);
+				return false;
+			}
+			print('"', stderr); print(new_sentence, stderr, parser.get_printer());
+			print("\" with log likelihood ", stderr); print(log_likelihoods[i], stderr);
+			print(" and derivation tree:\n", stderr);
+			print(generated_derivations[i], stderr, nonterminal_printer, parser.get_printer());
+			print('\n', stderr);
+		}
+		free(nonterminal_name_map);
+		for (unsigned int i = 0; i < generated_derivation_count; i++)
+			free(generated_derivations[i]);
+	}
+
 	for (unsigned int i = 0; i < parse_count; i++) {
 		free(*logical_forms[i]);
 		if (logical_forms[i]->reference_count == 0)
@@ -1185,6 +1229,8 @@ bool get_website(const string& address, array<char>& response, unsigned long lon
 			free(query); free(fragment);
 			free(redirect); redirect.length = 0;
 
+			path += " "; path[--path.length] = '\0';
+
 			if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
 			 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header)))
 			{
@@ -1452,6 +1498,24 @@ bool read_sentence(
 	return result;
 }
 
+struct string_array_sorter { };
+
+inline bool less_than(
+		const array<string>& first,
+		const array<string>& second,
+		const string_array_sorter& sorter)
+{
+	unsigned int i = 0;
+	while (i < first.length && i < second.length) {
+		if (first[i] < second[i]) return true;
+		else if (second[i] < first[i]) return false;
+		i++;
+	}
+	if (i < second.length) return true;
+	else if (i < first.length) return false;
+	return false;
+}
+
 #include <grammar/grammar.h>
 
 template<bool LookupUnknownWords, typename ArticleSource,
@@ -1468,7 +1532,6 @@ inline bool answer_question(array<string>& answers,
 		Args&&... add_formula_args)
 {
 	typedef typename ProofCalculus::Language Formula;
-	typedef typename ProofCalculus::Proof Proof;
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
@@ -1545,17 +1608,10 @@ inline bool answer_question(array<string>& answers,
 	}
 	free(sentence);
 
-	Term* name_atom = Term::new_apply(Term::new_constant((unsigned int) built_in_predicates::NAME), &Term::template variables<1>::value);
-	if (name_atom == nullptr) {
-		free_logical_forms(logical_forms, parse_count);
-		return false;
-	}
-	Term::template variables<1>::value.reference_count++;
-
 	constexpr const char* UNKNOWN_CONCEPT_NAME = "<unknown concept>";
 
 	array_map<string, double> temp_answers(8);
-	auto on_new_proof_sample = [&T, &temp_answers, name_atom, UNKNOWN_CONCEPT_NAME](const Term* term, double log_probability)
+	auto on_new_proof_sample = [&T, &temp_answers, &parser, UNKNOWN_CONCEPT_NAME](const Term* term, double log_probability)
 	{
 		/* get the name of the term */
 		if (term->type == TermType::STRING) {
@@ -1594,43 +1650,257 @@ inline bool answer_question(array<string>& answers,
 				temp_answers.size++;
 			}
 		} else if (term->type == TermType::CONSTANT) {
-			bool contains;
-			bool named_constant = false;
-			for (Proof* definition : T.ground_concepts[term->constant - T.new_constant_offset].definitions) {
-				if (definition->formula->binary.right->type != TermType::UNARY_APPLICATION
-				 || definition->formula->binary.right->binary.left->type != TermType::CONSTANT
-				 || definition->formula->binary.right->binary.left->constant != (unsigned int) built_in_predicates::ARG1
-				 || definition->formula->binary.right->binary.right->type != TermType::CONSTANT)
-					continue;
-
-				unsigned int event = definition->formula->binary.right->binary.right->constant;
-				if (!T.ground_concepts[event - T.new_constant_offset].types.contains(*name_atom))
-					continue;
-
-				Proof* function_value_axiom = T.ground_concepts[event - T.new_constant_offset].function_values.get((unsigned int) built_in_predicates::ARG2, contains);
-				if (!contains || function_value_axiom->formula->binary.right->type != TermType::STRING)
-					continue;
-
+			/* check if the constant is named */
+			bool named_constant_or_set;
+			if (T.new_constant_offset > term->constant) {
+				const string_map_scribe& printer = parser.get_printer();
+				if (printer.length > term->constant) {
+					named_constant_or_set = true;
+					if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+						return;
+					unsigned int index = temp_answers.index_of(*printer.map[term->constant]);
+					if (index < temp_answers.size) {
+						temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+					} else {
+						if (!init(temp_answers.keys[index], *printer.map[term->constant]))
+							return;
+						temp_answers.values[index] = log_probability;
+						temp_answers.size++;
+					}
+				} else {
+					named_constant_or_set = false;
+				}
+			} else {
+				array<Term*> name_terms(2);
+				if (!T.get_concept_names(term->constant, name_terms))
+					return;
+				named_constant_or_set = (name_terms.length != 0);
+				for (Term* name_term : name_terms) {
 print(term->constant, stderr); print(": \"", stderr);
-print(function_value_axiom->formula->binary.right->str, stderr);
+print(name_term->str, stderr);
 print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);
 T.print_axioms(stderr); print('\n', stderr);
-				named_constant = true;
-				unsigned int index = temp_answers.index_of(function_value_axiom->formula->binary.right->str);
+					if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+						return;
+					unsigned int index = temp_answers.index_of(name_term->str);
+					if (index < temp_answers.size) {
+						temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+					} else {
+						if (!init(temp_answers.keys[index], name_term->str))
+							return;
+						temp_answers.values[index] = log_probability;
+						temp_answers.size++;
+					}
+				}
+			}
+
+			/* check if the constant is a set */
+			Term* set_formula = Term::new_apply(Term::new_constant(term->constant), Term::new_variable(1));
+			if (set_formula == nullptr) return;
+			bool contains;
+			unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
+			free(*set_formula); free(set_formula);
+			if (contains) {
+				hash_set<tuple> provable_elements(16);
+				if (!T.sets.get_provable_elements(set_id, provable_elements))
+					return;
+				array<array<string>> element_names(provable_elements.size + 1);
+				bool has_unnamed_elements = (provable_elements.size < T.sets.sets[set_id].set_size);
+				named_constant_or_set = true;
+				for (const tuple& tup : provable_elements) {
+					array<string>& current_element_names = element_names[element_names.length];
+					if (!array_init(current_element_names, max(1, tup.length))) {
+						for (array<string>& name_array : element_names) {
+							for (string& str : name_array) free(str);
+							free(name_array);
+						} for (tuple& tup : provable_elements) free(tup);
+						return;
+					}
+					element_names.length++;
+					for (unsigned int i = 0; i < tup.length; i++) {
+						int length;
+						string& next_name = current_element_names[current_element_names.length];
+						switch (tup[i].type) {
+						case tuple_element_type::NUMBER:
+							if (tup[i].number.decimal == 0)
+								length = snprintf(NULL, 0, "%" PRId64, tup[i].number.integer);
+							else length = snprintf(NULL, 0, "%" PRId64 ".%" PRIu64, tup[i].number.integer, tup[i].number.decimal);
+							if (!init(next_name, length)) {
+								for (array<string>& name_array : element_names) {
+									for (string& str : name_array) free(str);
+									free(name_array);
+								} for (tuple& tup : provable_elements) free(tup);
+								return;
+							}
+							current_element_names.length++;
+							if (tup[i].number.decimal == 0)
+								snprintf(next_name.data, length + 1, "%" PRId64, tup[i].number.integer);
+							else snprintf(next_name.data, length + 1, "%" PRId64 ".%" PRIu64, tup[i].number.integer, tup[i].number.decimal);
+							next_name.length = length;
+							break;
+						case tuple_element_type::STRING:
+							if (!init(next_name, tup[i].str)) {
+								for (array<string>& name_array : element_names) {
+									for (string& str : name_array) free(str);
+									free(name_array);
+								} for (tuple& tup : provable_elements) free(tup);
+								return;
+							}
+							current_element_names.length++;
+							break;
+						case tuple_element_type::CONSTANT:
+							if (tup[i].constant < T.new_constant_offset) {
+								const string_map_scribe& printer = parser.get_printer();
+								if (tup[i].constant < printer.length) {
+									if (!init(next_name, *printer.map[tup[i].constant])) {
+										for (array<string>& name_array : element_names) {
+											for (string& str : name_array) free(str);
+											free(name_array);
+										} for (tuple& tup : provable_elements) free(tup);
+										return;
+									}
+									current_element_names.length++;
+								} else if (tup.length == 1) {
+									if (!init(next_name, UNKNOWN_CONCEPT_NAME)) {
+										for (array<string>& name_array : element_names) {
+											for (string& str : name_array) free(str);
+											free(name_array);
+										} for (tuple& tup : provable_elements) free(tup);
+										return;
+									}
+									current_element_names.length++;
+								} else {
+									has_unnamed_elements = true;
+								}
+							} else {
+								array<Term*> name_terms(2);
+								if (!T.get_concept_names(tup[i].constant, name_terms))
+									return;
+								if (name_terms.length == 0) {
+									if (tup.length == 1) {
+										if (!init(next_name, UNKNOWN_CONCEPT_NAME)) {
+											for (array<string>& name_array : element_names) {
+												for (string& str : name_array) free(str);
+												free(name_array);
+											} for (tuple& tup : provable_elements) free(tup);
+											return;
+										}
+										current_element_names.length++;
+									} else {
+										has_unnamed_elements = true;
+									}
+								} else {
+									insertion_sort(name_terms, pointer_sorter());
+									unsigned int name_length = (name_terms.length - 1);
+									for (Term* name_term : name_terms)
+										name_length += name_term->str.length;
+									if (!init(next_name, name_length)) {
+										for (array<string>& name_array : element_names) {
+											for (string& str : name_array) free(str);
+											free(name_array);
+										} for (tuple& tup : provable_elements) free(tup);
+										return;
+									}
+									current_element_names.length++;
+									name_length = 0;
+									for (unsigned int i = 0; i < name_terms.length; i++) {
+										if (i != 0) next_name[name_length++] = '/';
+										for (unsigned int j = 0; j < name_terms[i]->str.length; j++)
+											next_name[name_length++] = name_terms[i]->str[j];
+									}
+								}
+							}
+							break;
+						}
+					}
+					if (current_element_names.length == 0) {
+						free(current_element_names);
+						element_names.length--;
+					}
+				}
+				for (tuple& tup : provable_elements) free(tup);
+
+				string& new_name = *((string*) alloca(sizeof(string)));
+				if (element_names.length == 0) {
+					if (!init(new_name, (has_unnamed_elements ? "{...}" : "{}"))) {
+						for (array<string>& name_array : element_names) {
+							for (string& str : name_array) free(str);
+							free(name_array);
+						}
+						return;
+					}
+				} else {
+					for (array<string>& name_array : element_names) {
+						if (name_array.length > 1)
+							insertion_sort(name_array);
+					}
+					insertion_sort(element_names, string_array_sorter());
+
+					unsigned int string_length = 2 + (element_names.length - 1);
+					for (const array<string>& name_array : element_names) {
+						if (name_array.length > 1)
+							string_length += 2 + name_array.length - 1;
+						for (const string& str : name_array)
+							string_length += str.length;
+					}
+					if (has_unnamed_elements)
+						string_length += 4;
+
+					if (!init(new_name, string_length)) {
+						for (array<string>& name_array : element_names) {
+							for (string& str : name_array) free(str);
+							free(name_array);
+						}
+						return;
+					}
+					string_length = 0;
+					new_name[string_length++] = '{';
+					for (unsigned int i = 0; i < element_names.length; i++) {
+						if (i != 0) new_name[string_length++] = ',';
+						const array<string>& name_array = element_names[i];
+						if (name_array.length > 1)
+							new_name[string_length++] = '(';
+						for (unsigned int j = 0; j < name_array.length; j++) {
+							if (j != 0) new_name[string_length++] = ',';
+							const string& src = name_array[j];
+							for (unsigned int k = 0; k < src.length; k++)
+								new_name[string_length++] = src[k];
+						}
+						if (name_array.length > 1)
+							new_name[string_length++] = ')';
+					}
+					if (has_unnamed_elements) {
+						new_name[string_length++] = ',';
+						new_name[string_length++] = '.';
+						new_name[string_length++] = '.';
+						new_name[string_length++] = '.';
+					}
+					new_name[string_length++] = '}';
+					for (array<string>& name_array : element_names) {
+						for (string& str : name_array) free(str);
+						free(name_array);
+					}
+				}
+
+				if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+					return;
+				unsigned int index = temp_answers.index_of(new_name);
 				if (index < temp_answers.size) {
+					free(new_name);
 					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
 				} else {
-					if (!init(temp_answers.keys[index], function_value_axiom->formula->binary.right->str))
-						return;
+					move(new_name, temp_answers.keys[index]);
 					temp_answers.values[index] = log_probability;
 					temp_answers.size++;
 				}
 			}
 
-			if (!named_constant) {
+			if (!named_constant_or_set) {
 print(term->constant, stderr); print(": <unnamed>, log probability: ", stderr);
 print(log_probability, stderr); print('\n', stderr);
 T.print_axioms(stderr); print('\n', stderr);
+				if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+					return;
 				unsigned int index = temp_answers.index_of(UNKNOWN_CONCEPT_NAME);
 				if (index < temp_answers.size) {
 					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
@@ -1658,7 +1928,6 @@ debug_terminal_printer = &parser.get_printer();
 	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
 		fprintf(stderr, "ERROR: Failed to answer question.\n");
 		free_logical_forms(logical_forms, parse_count);
-		free(*name_atom); free(name_atom);
 		for (auto entry : temp_answers) free(entry.key);
 		return false;
 	}
@@ -1678,13 +1947,13 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 
 		/* generate a search query */
 		unsigned int generated_derivation_count;
+		double generated_log_likelihood;
 		syntax_node<typename Parser::logical_form_type>& generated_derivation =
 				*((syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>)));
 		/* TODO: disable the production rules that govern wh-movement */
-		if (!parser.template generate<1>(&generated_derivation, generated_derivation_count, logical_forms[0], names) || generated_derivation_count == 0) {
+		if (!parser.template generate<1>(&generated_derivation, &generated_log_likelihood, generated_derivation_count, logical_forms[0], names) || generated_derivation_count == 0) {
 			fprintf(stderr, "ERROR: Failed to generate search query derivation.\n");
 			free_logical_forms(logical_forms, parse_count);
-			free(*name_atom); free(name_atom);
 			/* TODO: re-enable the production rules that govern wh-movement */
 			return false;
 		}
@@ -1694,7 +1963,6 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 		sequence search_query = sequence(NULL, 0);
 		if (!parser.yield_search_query(generated_derivation, logical_forms[0], search_query)) {
 			free_logical_forms(logical_forms, parse_count);
-			free(*name_atom); free(name_atom);
 			free(generated_derivation); return false;
 		}
 		free(generated_derivation);
@@ -1753,7 +2021,6 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 			 || !init(query[i], out.buffer, out.position))
 			{
 				free_logical_forms(logical_forms, parse_count);
-				free(*name_atom); free(name_atom);
 				for (unsigned int j = 0; j < i; j++) free(query[j]);
 				free(query); free(search_query); return false;
 			}
@@ -1763,12 +2030,10 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 
 		if (!search_google(query, search_query.length, TIMEOUT_MS, process_search_result)) {
 			free_logical_forms(logical_forms, parse_count);
-			free(*name_atom); free(name_atom);
 			for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
 			free(query); free(search_query); return false;
 		}
 		free_logical_forms(logical_forms, parse_count);
-		free(*name_atom); free(name_atom);
 		for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
 		free(query); free(search_query);
 
@@ -1776,7 +2041,6 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 
 	} else {
 		free_logical_forms(logical_forms, parse_count);
-		free(*name_atom); free(name_atom);
 	}
 
 	/* keep only the answers with highest probability */

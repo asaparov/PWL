@@ -676,6 +676,11 @@ struct simple_constant_distribution
 
 		prior_state() : types(16) { }
 
+		~prior_state() {
+			for (auto entry : types)
+				free(entry.value);
+		}
+
 		inline bool add(const prior_state_changes& changes) {
 			if (!constants.add(changes.constants)) {
 				return false;
@@ -2116,14 +2121,14 @@ set_seed(1356941742);
 		}
 	}
 
-/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
 }
 for (auto entry : names) free(entry.key);
 if (seed_training_set.length > 0)
-return EXIT_SUCCESS;*/
+return EXIT_SUCCESS;
 
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
@@ -2185,11 +2190,10 @@ return EXIT_SUCCESS;*/
 
 	/* read the articles */
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
-	typedef decltype(T) TheoryType;
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), chinese_restaurant_process<hol_term>(1.0e-10, 0.0));
-	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2), 0.1099999, 0.0000001, 0.29, 0.1, 0.1, 0.2, 0.2, 0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.000000001);
+	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2), 0.1099999, 0.0000001, 0.29, 0.1, 0.1, 0.2, 0.2, 0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
@@ -2296,44 +2300,52 @@ T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "The area of Oklahoma is 69899 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
 T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "The area of New Mexico is 121590 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
+T.print_axioms(stderr, *debug_terminal_printer);*/
 
+	read_sentence(corpus, parser, "The Red River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The Canadian River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The Rio Grande is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The Pecos River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The Washita River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "There are 5 rivers in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+
+typedef decltype(T) TheoryType;
 TheoryType& T_map = *((TheoryType*) alloca(sizeof(TheoryType)));
 TheoryType::clone(T, T_map);
-null_collector collector;
-auto compute_current_log_probability = [&](const TheoryType& T) {
-	array<hol_term*> extra_axioms(16);
-	T.get_extra_axioms(extra_axioms);
-	return log_probability(T.observations, extra_axioms, proof_prior, collector);
-};
-double max_log_probability = compute_current_log_probability(T);
+auto collector = make_log_probability_collector(T, proof_prior);
+double max_log_probability = collector.current_log_probability;
 for (unsigned int t = 0; t < 20000; t++) {
 	bool print_debug = false;
 	if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 	if (print_debug) T.print_existential_introductions(stderr, *debug_terminal_printer);
 	do_mh_step(T, proof_prior, proof_axioms, collector);
-	double new_log_probability = compute_current_log_probability(T);
-	if (new_log_probability > max_log_probability) {
+	if (collector.current_log_probability > max_log_probability) {
 		free(T_map);
 		TheoryType::clone(T, T_map);
-		max_log_probability = new_log_probability;
+		max_log_probability = collector.current_log_probability;
 	}
 }
 T_map.print_axioms(stderr, *debug_terminal_printer);
-free(T_map);*/
+free(T_map);
 
 	array<string> answers(4);
 	/*if (answer_question<true>(answers, "Pittsburgh is in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Des Moines is located in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "The population of Arizona is what?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "The population of Arizona is what?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} /*if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} if (answer_question<true>(answers, "What is the state with the highest population?", 10000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What is the state with the highest population?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/
+	} if (answer_question<true>(answers, "Which is the longest river in the USA?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	} if (answer_question<true>(answers, "San Antonio is in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	}*/ if (answer_question<true>(answers, "What are all the rivers in Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+	}
 for (string& str : answers) free(str);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;

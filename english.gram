@@ -886,7 +886,7 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 S'' -> VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
 
 
-VP_R nonterminal {} {100.0} {0.1} {} 10 1.0 {}
+VP_R nonterminal {head_predicate} {100.0, 1.0} {0.1, 1.0} {} 10 1.0 {}
 
 # VP_R {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
@@ -902,9 +902,9 @@ VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjun
 # cat is in the tree". `fi` contains verb-specific terms such as `present` as
 # well as any adjuncts or other arguments of y whereas `f` contains everything
 # else, such as the argument.
-VP_R -> VP_R:select_left_predicate_and_tense,set_predicate_empty,factor V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+VP_R -> VP_R:select_left_predicate_and_tense,set_predicate_empty,factor V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,add_empty_verb
 # for subject-auxiliary inversion where the main verb precedes the subject
-VP_R -> VP_L:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_to_infinitive,set_predicate_empty,remove_left_conjunct,factor V_ADJUNCT:try_remove_correlated,try_remove_correlator,remove_req_aux,try_remove_wh_minus,try_remove_number,select_left_conjunct
+VP_R -> VP_L:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_to_infinitive,set_predicate_empty,remove_left_conjunct,factor V_ADJUNCT:try_remove_correlated,try_remove_correlator,remove_req_aux,try_remove_wh_minus,try_remove_number,add_empty_verb,select_left_conjunct
 
 # comparative constructions
 # VP_R {... & ?[x,r]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & ?[y]:(... & arg1(y)=x & ... & h(r) & ...))}
@@ -1053,7 +1053,7 @@ VP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #VP_COORDINATION -> COMMA:require_comma NOR:require_nor VP_R:add_req_aux,remove_coordinator,remove_comma,add_negative,try_has_arg2
 
 
-V_ADJUNCT nonterminal {} {0.1} {10.0} {} 10 1.0 {}
+V_ADJUNCT nonterminal {head_predicate} {100.0, 0.1} {0.1, 10.0} {} 10 1.0 {}
 
 # V_ADJUNCT {... & ?[y1]:(... & f(y1)) & ... & ?[yn]:(... & f(yn))}
 #  -> ADJP_R/PP {... & f'}
@@ -1068,21 +1068,21 @@ V_ADJUNCT nonterminal {} {0.1} {10.0} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,add_modifies_event,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
-#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg1_of_without_head # for arg1
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,add_modifies_event,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
-#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,select_right_arg2_of_without_head # for arg2
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head # for arg1
+#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head # for arg1
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_predicate_same,require_no_empty_verb,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA PP:remove_wide_scope,require_no_preposition,try_remove_correlator,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg2_of_without_head # for arg2
+#V_ADJUNCT -> COMMA ADJP_R:remove_wide_scope,require_no_preposition,try_remove_correlator,require_no_predicate_same,require_no_empty_verb,select_right_arg2_of_without_head # for arg2
 
 # predicative complements
 # V_ADJUNCT {A} -> PP/ADJP_R/ADVP_R {A}
 # e.g. "Sirius is brighter than Vega", "the cat is in the house"
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_preposition
-V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition
-V_ADJUNCT -> ADVP_R:remove_wide_scope,add_is_adjunct,require_no_preposition
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
+V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
+V_ADJUNCT -> ADVP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
 
 # for prepositional verbs (i.e. "look forward to", etc)
 # V_ADJUNCT {... & ?[y]:(U(i,y) & p(y) & f(y))}
@@ -1090,7 +1090,7 @@ V_ADJUNCT -> ADVP_R:remove_wide_scope,add_is_adjunct,require_no_preposition
 # where `p` is the predicate, `fi` contains verb-specific terms such as
 # `present` as well as any adjuncts of y whereas `f` contains everything else,
 # such as the arguments.
-V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,add_modifies_event
+V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,require_no_empty_verb,add_modifies_event
 
 # V_ADJUNCT {... & ?[y1]:(inverse(own)(y1) & arg2(y1)=a) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=a)}
 #  -> NP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1103,7 +1103,7 @@ V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,add_modifie
 # V_ADJUNCT {... & ?[X]:(f(X) & ?[y1]:(inverse(own)(y1) & arg2(y1)=X) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=X))} if X is a set variable
 #  -> NP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
 # e.g. "the pencil is Emma's", "the pencils are the students'"
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,remove_empty_verb,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 
 # V_ADJUNCT {... & ?[y1]:(... & arg1/arg2/arg3(y1)=a) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=a)}
 #  -> NP/ADJP_R {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1139,14 +1139,14 @@ V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,add_modifie
 # This rule requires that `arg1(y)=r` and `arg1(y)=x` appear in both
 # consequents (or `arg2(y)=r` and `arg2(y)=x`, etc).
 # NOTE: The ADJP_R transformations don't have `^[P]`.
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set # for arg1
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,try_remove_req_subject,select_right_arg1_without_head,factor # for arg1
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg2_without_head,factor # for arg2
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_left_predicate_exist,select_right_arg3_without_head,factor # for arg3 (NOTE: we could make this semantic and have only two args)
-V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
-V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_remove_correlated,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
+V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set # for arg1
+V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
+V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head,factor # for arg1
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head,factor # for arg2
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg3_without_head,factor # for arg3 (NOTE: we could make this semantic and have only two args)
+V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
+V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
 
 # V_ADJUNCT {... & ?[y1]:(... & f(y1)) & ... & ?[yn]:(... & f(yn))}
 #  -> (COMMA) (THAT) S' {... & f'}
@@ -1162,52 +1162,52 @@ V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_rem
 # NOTE: The arg1 version is for postposing/it-cleft constructions such as "it
 # didn't worry him that she was early".
 # e.g. "he wants to fly"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_nullable_subject,select_right_arg1_possibility,factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_to_infinitive,add_nullable_subject,select_right_arg1_possibility,factor
 # e.g. "he wants for Jason to fly"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_for,select_right_arg1_possibility,factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_to_infinitive,add_for,select_right_arg1_possibility,factor
 # e.g. "i bought it to give to Martha"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_to_infinitive,add_for,select_right_arg1_without_head,require_left_predicate_purpose,select_right_arg2_possibility,factor # for `purpose` predicates
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_to_infinitive,add_for,select_right_arg1_without_head,require_left_predicate_purpose,select_right_arg2_possibility,factor # for `purpose` predicates
 # e.g. "he insists she be here", "he insists that she be here"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_subjunctive,add_nullable_subject,select_right_arg1_possibility,factor
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_subjunctive,add_nullable_subject,try_remove_correlator,select_right_arg1_possibility,factor
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_subjunctive,add_nullable_subject,select_right_arg1_possibility,factor,add_that
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_subjunctive,add_nullable_subject,select_right_arg1_possibility,factor
+#V_ADJUNCT -> COMMA S':require_no_preposition,require_no_empty_verb,add_subjunctive,add_nullable_subject,try_remove_correlator,select_right_arg1_possibility,factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_subjunctive,add_nullable_subject,select_right_arg1_possibility,factor,add_that
 # e.g. "i think Emma returned the books yesterday", "i think that Emma returned the books yesterday"
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,select_right_arg1_possibility,factor # TODO: remove grammatical features from S'
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,select_right_arg1_possibility,factor,add_that # TODO: remove grammatical features from S'
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,select_right_arg1_possibility,factor # TODO: remove grammatical features from S'
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,select_right_arg1_possibility,factor,add_that # TODO: remove grammatical features from S'
 # e.g. "he didn't like it that the barn was destroyed"
-#V_ADJUNCT -> IT S':require_no_preposition,add_that,select_right_arg1_without_head # TODO: remove grammatical features from S'
+#V_ADJUNCT -> IT S':require_no_preposition,require_no_empty_verb,add_that,select_right_arg1_without_head # TODO: remove grammatical features from S'
 # e.g. "we must stop him coming back tomorrow"
 # NOTE: The following rule requires a subject to avoid spurious ambiguity with
 # gerund noun phrases (i.e. "i opposed destroying the barn").
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_present_participle,select_right_arg1_without_head,require_arg1 # TODO: remove grammatical features from S'
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_present_participle,select_right_arg1_without_head,require_arg1 # TODO: remove grammatical features from S'
 
 # V_ADJUNCT {... & ?[y1]:(... & ?[r]:(arg1(r)=y1 & reason(r) & ?[z]:(h(z) & arg2(r)=z))) & ... & ?[yn]:(... & ?[r]:(arg1(r)=yn & reason(r) & ?[z]:(h(z) & arg2(r)=z)))}
 #  -> (COMMA) BECAUSE/FOR S' {?[z]:h(z)}
-#V_ADJUNCT -> COMMA S':add_because,try_remove_correlator,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
-#V_ADJUNCT -> S':add_is_adjunct,add_because,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
-#V_ADJUNCT -> COMMA FOR S':try_remove_correlated,try_remove_correlator,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
-#V_ADJUNCT -> FOR S':try_remove_correlated,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
+#V_ADJUNCT -> COMMA S':require_no_empty_verb,add_because,try_remove_correlator,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
+#V_ADJUNCT -> S':require_no_empty_verb,add_is_adjunct,add_because,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
+#V_ADJUNCT -> COMMA FOR S':require_no_empty_verb,try_remove_correlated,try_remove_correlator,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
+#V_ADJUNCT -> FOR S':require_no_empty_verb,try_remove_correlated,select_right_arg1_without_head,require_left_predicate_reason,select_right_arg2_possibility,factor
 
 # (non-conditional) closed interrogative finite subordinate clause
 # V_ADJUNCT {... & ?[y1]:(... & f(y1)) & ... & ?[yn]:(... & f(yn))}
 #  -> (COMMA) IF/WHETHER S' {... & f'} (COMMA)
 # where f(y) = arg2(y)=^[x]:A and f' = ^[x]:A
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether,try_remove_correlator COMMA
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if,try_remove_correlator COMMA
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether,add_subjunctive
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if,add_subjunctive
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether,add_subjunctive,try_remove_correlator COMMA
-#V_ADJUNCT -> COMMA S':require_no_preposition,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if,add_subjunctive,try_remove_correlator COMMA
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if
+#V_ADJUNCT -> COMMA S':require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether,try_remove_correlator COMMA
+#V_ADJUNCT -> COMMA S':require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if,try_remove_correlator COMMA
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether,add_subjunctive
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if,add_subjunctive
+#V_ADJUNCT -> COMMA S':require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_whether,add_subjunctive,try_remove_correlator COMMA
+#V_ADJUNCT -> COMMA S':require_no_preposition,require_no_empty_verb,add_req_no_aux,select_right_arg2_without_head,factor,require_lambda,add_if,add_subjunctive,try_remove_correlator COMMA
 
 # open interrogative finite subordinate clause
 # V_ADJUNCT {... & ?[y1]:(U(i1,y1) & p(y1) & f(y1)) & ... & ?[yn]:(U(in,yn) & p(yn) & f(yn))}
 #  -> S' {... & f'}
 # where f(y) = arg1/arg2(y)=^[x]:A and f' = ^[x]:A
 # NOTE: The `arg1` form is for subject-auxiliary inversion.
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_subordinate,select_right_arg1_without_head,factor
-#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,add_req_no_aux,add_subordinate,select_right_arg2_without_head,factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_req_no_aux,add_subordinate,select_right_arg1_without_head,factor
+#V_ADJUNCT -> S':add_is_adjunct,require_no_preposition,require_no_empty_verb,add_req_no_aux,add_subordinate,select_right_arg2_without_head,factor
 
 # comparative constructions
 # V_ADJUNCT {... & ?[r]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg2(gn)=r) & ... & ?[y]:(p(y) & h(r)))}
@@ -1227,7 +1227,7 @@ V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_rem
 # least one). The term `f(size(X),size(R))` handles comparative constructions
 # where sizes of sets are compared.
 # e.g. "you can see a brighter star with the telescope than without it", "i saw more people at the party than last time", "there were more girls but fewer boys at the event than last time"
-#V_ADJUNCT -> COMP:comparator_predicate V_ADJUNCT:try_remove_correlated,select_comparator_arg
+#V_ADJUNCT -> COMP:require_no_empty_verb,comparator_predicate V_ADJUNCT:try_remove_correlated,select_comparator_arg
 
 # comparative constructions
 # V_ADJUNCT {... & ?[r]:(?[g]:(U(i,g) & p(f)(g) & arg2(g)=r) & ... & ?[y]:(p(y) & h(r)))}
@@ -1244,7 +1244,7 @@ V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,try_rem
 # The term `f(size(R))` handles comparative constructions where sizes of sets
 # are compared.
 # e.g. "a brighter star could be seen with the telescope than without it", "more people came than last time", "more girls but fewer boys came to the event than last time"
-#V_ADJUNCT -> COMP:comparator_predicate V_ADJUNCT:try_remove_correlated,select_comparator_arg
+#V_ADJUNCT -> COMP:require_no_empty_verb,comparator_predicate V_ADJUNCT:try_remove_correlated,select_comparator_arg
 
 # for correlated coordination
 # NOTE: For the following rules, the coordination doesn't have to be at head
@@ -1843,6 +1843,12 @@ NOMINAL_R -> NOMINAL_L:identity_predicative
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:f(x)) & ...))}
 #     N_ADJUNCT {... & ?[x]:(p(x) & A(x))}
 NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
+
+# NOMINAL_R {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[f]:(f=^[x,y]:(v(x) & ?[h]:(w(x,h) & (arg2(h)=y))) & ?[X]:(X=^[x]:?[m]:(greatest(f)(m) & (arg1(f)=A) & (arg2(f)=x)) & ?[x]:(X(x) & P(x))))))}
+#  -> NOMINAL_R {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[x]:(A(x) & P(x))))}
+#     N_ADJUNCT {... & ?[x]:(v(x) & ?[h]:w(x,h))}
+# e.g. "side facing the building with the tallest antenna", "state that borders the Mississippi with the tallest mountain shorter than 5000 ft"
+#NOMINAL_R -> NOMINAL_R:try_remove_genitive N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure
 
 # NOMINAL_R {^[P]:(... & ?[T]:(... & ?[S]:(F(S,^[x]:(... & T(x))) & ![x]:(S(x) => A(x)) & ...)))}
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:(...)) & ...))}
@@ -2873,7 +2879,7 @@ ADVP_L -> BOTH ADVP_L:remove_both
 ADVP_L -> NEITHER ADVP_L:remove_neither,add_negative
 
 
-V preterminal {predicate, has_arg2} {10.0, 10.0, 0.1} {1.0, 1.0, 10.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.99 verb {"through"}
+V preterminal {predicate, has_arg2} {10000.0, 10.0, 0.1} {1.0, 1.0, 10.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.99 verb {"through"}
 
 N preterminal {constant, has_arg2, measure} {10000.0, 16.0, 10.0, 0.1} {1.0, 1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.99 noun {}
 
