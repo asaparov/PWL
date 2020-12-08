@@ -18141,6 +18141,7 @@ bool tptp_interpret_quantifier(
 			return false;
 		}
 		quantified->quantifier.variable = variables.values[i];
+		quantified->quantifier.variable_type = hol_term_type::VARIABLE;
 		quantified->quantifier.operand = inner;
 		quantified->type = QuantifierType;
 		quantified->reference_count = 1;

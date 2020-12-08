@@ -445,6 +445,7 @@ debug_terminal_printer = &parser.get_printer();
 			print(" and derivation tree:\n", stderr);
 			print(generated_derivations[i], stderr, nonterminal_printer, parser.get_printer());
 			print('\n', stderr);
+			free(new_sentence);
 		}
 		free(nonterminal_name_map);
 		for (unsigned int i = 0; i < generated_derivation_count; i++)

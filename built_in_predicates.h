@@ -12,7 +12,7 @@ enum class built_in_predicates : unsigned int {
 	ARG3_OF,
 	SIZE,
 	INVERSE,
-	OWN,
+	HAS,
 	EXIST,
 	PRESENT,
 	PRESENT_PROGRESSIVE,
@@ -30,6 +30,7 @@ enum class built_in_predicates : unsigned int {
 	EMPTY_REF,
 	WIDE_SCOPE,
 	GAP,
+	TRACE,
 	GREATER,
 	GREATEST,
 	GREATER_THAN_OR_EQUAL,
@@ -175,7 +176,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("arg2_of", (unsigned int) built_in_predicates::ARG2_OF)
 		&& names.put("arg3_of", (unsigned int) built_in_predicates::ARG3_OF)
 		&& names.put("inverse", (unsigned int) built_in_predicates::INVERSE)
-		&& names.put("own", (unsigned int) built_in_predicates::OWN)
+		&& names.put("has", (unsigned int) built_in_predicates::HAS)
 		&& names.put("exist", (unsigned int) built_in_predicates::EXIST)
 		&& names.put("size", (unsigned int) built_in_predicates::SIZE)
 		&& names.put("present", (unsigned int) built_in_predicates::PRESENT)
@@ -194,6 +195,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("empty_ref", (unsigned int) built_in_predicates::EMPTY_REF)
 		&& names.put("W", (unsigned int) built_in_predicates::WIDE_SCOPE)
 		&& names.put("GAP", (unsigned int) built_in_predicates::GAP)
+		&& names.put("TRACE", (unsigned int) built_in_predicates::TRACE)
 		&& names.put("greater", (unsigned int) built_in_predicates::GREATER)
 		&& names.put("greatest", (unsigned int) built_in_predicates::GREATEST)
 		&& names.put("≥", (unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL)

@@ -116,7 +116,7 @@
 #  ?[X]:(?[C]:(subset(C,^[x]:(U(0,x) & cat(x))) & size(C)=4 & ?[D]:(subset(D,^[x]:(U(1,x) & dog(x))) & size(D)=2 & ?[b]:(U(2,b) & bird(b) & X=^[x]:(x=C | x=D | x=^[y]:y=b)))) & ![Y]:(X(Y) => ![x]:(Y(x) => ?[s]:(arg1(s)=x & U(3,s) & sleep(s) & present(s)))))
 #
 #  "a man and his dog were walking in the park."
-#  ?[X]:(?[m]:(U(0,m) & man(m) & ?[h]:(U(1,h) & male_ref(0,h) & ?[d]:(U(2,d) & dog(d) & ?[o]:(arg1(o)=h & U(3,o) & own(o) & arg2(o)=d) & X=^[x]:(x=m | x=d)))) & ![x]:(X(x) => ?[w]:(arg1(w)=x & U(4,w) & walk(w) & past_progressive(w) & ?[p]:(U(5,p) & park(p) & arg2(w)=p))))
+#  ?[X]:(?[m]:(U(0,m) & man(m) & ?[h]:(U(1,h) & male_ref(0,h) & ?[d]:(U(2,d) & dog(d) & ?[o]:(arg1(o)=h & U(3,o) & has(o) & arg2(o)=d) & X=^[x]:(x=m | x=d)))) & ![x]:(X(x) => ?[w]:(arg1(w)=x & U(4,w) & walk(w) & past_progressive(w) & ?[p]:(U(5,p) & park(p) & arg2(w)=p))))
 # where `male_ref` is defined in the pragmatics model. We could supervise the
 # pragmatics model by specifying that h and m refer to the same object. We
 # similarly define `female_ref` for grammatically female anaphora and `ref` for
@@ -160,15 +160,15 @@
 #  ?[p]:(?[c]:(U(0,c) & cat(c) & arg1(p)=c) & U(1,p) & purr(p) & progressive(p) & ?[s]:(arg1(s)=p & U(2,s) & sooth(s) & progressive(s)))
 #
 #  "Joan's pen is good."
-#  ?[p]:(U(0,p) & pen(p) & ?[o]:(arg1(o)=joan & U(1,o) & own(o) & arg2(o)=p) & ?[g]:(arg1(g)=p & U(2,g) & good(g) & present(g)))
+#  ?[p]:(U(0,p) & pen(p) & ?[o]:(arg1(o)=joan & U(1,o) & has(o) & arg2(o)=p) & ?[g]:(arg1(g)=p & U(2,g) & good(g) & present(g)))
 #
 #  "Joan's pens are good."
-#  ![x]:(U(0,x) & pen(x) & ?[o]:(arg1(o)=joan & U(1,o) & own(o) & arg2(o)=x) => ?[g]:(arg1(g)=x & U(2,g) & good(g) & present(g)))
+#  ![x]:(U(0,x) & pen(x) & ?[o]:(arg1(o)=joan & U(1,o) & has(o) & arg2(o)=x) => ?[g]:(arg1(g)=x & U(2,g) & good(g) & present(g)))
 #    [OR]
-#  ?[X]:(X=^[p]:(U(0,p) & pen(p) & ?[o]:(arg1(o)=joan & U(1,o) & own(o) & arg2(o)=p)) & ![x]:(X(x) => ?[g]:(arg1(g)=x & U(2,g) & good(g) & present(g))))
+#  ?[X]:(X=^[p]:(U(0,p) & pen(p) & ?[o]:(arg1(o)=joan & U(1,o) & has(o) & arg2(o)=p)) & ![x]:(X(x) => ?[g]:(arg1(g)=x & U(2,g) & good(g) & present(g))))
 #
 #  "the students' pens are good."
-#  ?[X]:(?[Y]:(Y=^[y]:(U(0,y) & student(y)) & X=^[x]:(U(1,x) & pen(x) & ?[y]:(Y(y) & ?[o]:(U(2,o) & own(o) & arg2(o)=x & arg1(o)=y)))) & ![x]:(X(x) => ?[g]:(arg1(g)=x & U(3,g) & good(g) & present(g))))
+#  ?[X]:(?[Y]:(Y=^[y]:(U(0,y) & student(y)) & X=^[x]:(U(1,x) & pen(x) & ?[y]:(Y(y) & ?[o]:(U(2,o) & has(o) & arg2(o)=x & arg1(o)=y)))) & ![x]:(X(x) => ?[g]:(arg1(g)=x & U(3,g) & good(g) & present(g))))
 #
 #  "i saw the trees by all the cats."
 #  ?[X]:(X=^[x]:(U(0,x) & cat(x)) & ?[Y]:(Y=^[y]:(U(1,y) & tree(y) & ![x]:(X(x) => ?[n]:(U(2,n) & near(n) & arg2(n)=y & arg1(n)=x))) & ![y]:(Y(y) => ?[s]:(arg1(s)=me & U(3,s) & see(s) & past(s) & arg2(s)=y))))
@@ -211,7 +211,7 @@
 # where we could define ![x,p]:(while(p)(x) = ?[s]:(p(s) & arg1(s)=arg1(x) & ![t]:(time(x)(t) => time(s)(t))))
 #
 #  "she helped me with my homework."
-#  ?[s]:(U(0,s) & female_ref(0,s) & ?[h]:(arg1(h)=s & U(1,h) & help(h) & past(h) & arg2(h)=me & ?[o]:(U(2,o) & own(o) & arg2(o)=x & arg1(o)=me) & ?[w]:(U(3,w) & with(w) & ?[x]:(U(4,x) & homework(x) & arg2(w)=x & arg1(w)=h))))
+#  ?[s]:(U(0,s) & female_ref(0,s) & ?[h]:(arg1(h)=s & U(1,h) & help(h) & past(h) & arg2(h)=me & ?[o]:(U(2,o) & has(o) & arg2(o)=x & arg1(o)=me) & ?[w]:(U(3,w) & with(w) & ?[x]:(U(4,x) & homework(x) & arg2(w)=x & arg1(w)=h))))
 #
 #  "he stayed for two weeks."
 #  ?[h]:(U(0,h) & male_ref(0,h) & ?[s]:(arg1(s)=h & U(1,s) & stay(s) & past(s) & ?[d]:(U(2,d) & duration(d) & arg2(d)=(2*week) & arg1(d)=s)))
@@ -297,13 +297,13 @@
 #  ?[w]:(arg1(w)=john & U(0,w) & want(w) & present(w) & arg2(w)=possibility(?[s]:(U(1,s) & swim(s)) & ?[d]:(U(2,s) & dance(d)))) & ?[c]:(arg1(c)=john & U(3,c) & capable_of(c) & present(c) & arg2(c)=possibility(?[s]:(U(4,s) & swim(s)) & ?[d]:(U(5,s) & dance(d))))
 #
 #  "the house is Kim's."
-#  ?[h]:(U(0,h) & house(h) & ?[o]:(arg1(o)=h & U(1,o) & inverse(own)(o) & present(o) & arg2(o)=kim))
+#  ?[h]:(U(0,h) & house(h) & ?[o]:(arg1(o)=h & U(1,o) & inverse(has)(o) & present(o) & arg2(o)=kim))
 #
 #  "the pencils are the students'."
-#  ?[X]:(X=^[x]:(U(0,x) & pencil(x)) & ?[Y]:(Y=^[y]:(Y(1,y) & student(y)) & ![x,y]:(X(x) & Y(y) => ?[o]:(arg1(o)=x & U(2,o) & inverse(own)(o) & present(o) & arg2(o)=y))))
+#  ?[X]:(X=^[x]:(U(0,x) & pencil(x)) & ?[Y]:(Y=^[y]:(Y(1,y) & student(y)) & ![x,y]:(X(x) & Y(y) => ?[o]:(arg1(o)=x & U(2,o) & inverse(has)(o) & present(o) & arg2(o)=y))))
 #
 #  "flower seller has carnations."
-#  ?[C]:(subset(C,^[x]:(U(0,x) & carnation(x))) & ?[x]:(?[s]:(?[f]:(U(1,f) & flower(f) & arg2(s)=f) & U(2,s) & sell(s) & arg1(s)=x) & U(3,x) & ![c]:(C(c) => ?[o]:(arg1(o)=x & U(4,o) & own(o) & present(o) & arg2(o)=c))))
+#  ?[C]:(subset(C,^[x]:(U(0,x) & carnation(x))) & ?[x]:(?[s]:(?[f]:(U(1,f) & flower(f) & arg2(s)=f) & U(2,s) & sell(s) & arg1(s)=x) & U(3,x) & ![c]:(C(c) => ?[o]:(arg1(o)=x & U(4,o) & has(o) & present(o) & arg2(o)=c))))
 #
 #  "John swam extremely quickly."
 #  ?[s]:(arg1(s)=john & U(0,s) & swim(s) & past(s) & ?[q]:(?[e]:(U(1,e) & extreme(e) & arg1(e)=q) & U(2,q) & quick(q) & arg1(q)=s))
@@ -584,7 +584,7 @@
 #
 # "Kim and Pat's children are cute."
 # "Kim's and Pat's children are cute."
-# ?[X]:(X=^[x]:(?[P]:(P=^[p]:(p=kim | p=pat) & ![p]:(P(p) => ?[o]:(arg1(o)=p & U(0,o) & own(o) & arg2(o)=x))) & U(1,x) & child(x)) & ![x]:(X(x) => ?[c]:(arg1(c)=x & U(2,c) & cute(c) & present(c))))
+# ?[X]:(X=^[x]:(?[P]:(P=^[p]:(p=kim | p=pat) & ![p]:(P(p) => ?[o]:(arg1(o)=p & U(0,o) & has(o) & arg2(o)=x))) & U(1,x) & child(x)) & ![x]:(X(x) => ?[c]:(arg1(c)=x & U(2,c) & cute(c) & present(c))))
 # TODO: implement this in the grammar
 #
 # "in the tree and afraid, the cat and dog are."
@@ -807,6 +807,15 @@ S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_c
 #S'' -> V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct_and_negation VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct_and_negation,require_no_predicate_empty,has_arg2
 # TODO: do we need an arg2 version of this rule?
 
+# S'' {... & ?[a]:(u(a) & ?[f]:(f=^[x,y]:?[z]:((arg1(z)=x) & F(?[h]:(... & (arg2(h)=y)))) & ?[m]:(greatest(f)(m) & (arg1(f)=A) & (arg2_of(x)=b))))}
+#  -> V_ADJUNCT {... & ?[z]:(p(z) & arg1/arg2(z)=b)}
+#     VP_R {... & ?[z]:F(?[h]:(... & <TRACE>))}
+# NOTE: The `h` and `z` scopes could be the same, and A may not necessarily be
+# defined. In fact,  the term `arg1(f)=A` is defined iff b is a lambda variable
+# (such as in an interrogative clause) and there is a `A(a)` term.
+# e.g. "the antenna of the northern building is the tallest", "what state that borders the Mississippi has the tallest mountain shorter than 5000 ft"
+S'' -> V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_substitution,select_left_conjunct VP_R:try_remove_correlated,try_remove_wh_minus,try_remove_measure,add_superlative,select_function_with_substitution,remove_left_conjunct,has_arg2
+
 # open interrogative clauses with movement
 # S'' {^[x]:(... ?[X]:(... & X(x) & ... & ?[r]:(f(r) & arg1/arg2/arg3(r)=x)))} note that X is not quantified here; `X(x)` kind of plays the role of a quantifier
 #  -> V_ADJUNCT {^[x]:(... ?[X]:(... & X(x) & ... & ?[r]:(p(r) & arg1/arg2/arg3(r)=x)))}
@@ -962,7 +971,7 @@ VP_R -> VP_L:require_no_future,require_no_perfect,require_no_progressive,require
 # from each student").
 # In this case, the universal quantifiers are also moved into f'.
 # e.g. "i lent the book to Kim with all the information she needs", "Kim lent a book to Ed that contained all the information he needed"
-#VP_R -> VP_R N_ADJUNCT:remove_wide_scope,try_remove_correlated,try_remove_correlator,try_remove_wh_minus
+#VP_R -> VP_R V_ADJUNCT:remove_wide_scope,try_remove_correlated,try_remove_correlator,try_remove_wh_minus
 
 # for gapping and stripping
 # VP_R {... & (~)?[y1]:(U(i1,y1) & empty_ref(j1,y1) & f(y1)) & ... & (~)?[yn]:(U(in,yn) & empty_ref(jn,yn) & f(yn))}
@@ -1092,18 +1101,18 @@ V_ADJUNCT -> ADVP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remo
 # such as the arguments.
 V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,require_no_empty_verb,add_modifies_event
 
-# V_ADJUNCT {... & ?[y1]:(inverse(own)(y1) & arg2(y1)=a) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=a)}
+# V_ADJUNCT {... & ?[y1]:(inverse(has)(y1) & arg2(y1)=a) & ... & ?[yn]:(inverse(has)(yn) & arg2(yn)=a)}
 #  -> NP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
-# V_ADJUNCT {... & (~)?[x]:(f(x) & ?[y1]:(inverse(own)(y1) & arg2(y1)=x) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=x))} if x is not a set variable
+# V_ADJUNCT {... & (~)?[x]:(f(x) & ?[y1]:(inverse(has)(y1) & arg2(y1)=x) & ... & ?[yn]:(inverse(has)(yn) & arg2(yn)=x))} if x is not a set variable
 #  -> NP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)?[x]:(X(x) & P(x))))}
-# V_ADJUNCT {... & (~)![x]:(f(x) => ?[y1]:(inverse(own)(y1) & arg2(y1)=x) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=x))}
+# V_ADJUNCT {... & (~)![x]:(f(x) => ?[y1]:(inverse(has)(y1) & arg2(y1)=x) & ... & ?[yn]:(inverse(has)(yn) & arg2(yn)=x))}
 #  -> NP {^[P]:(... & ?[X]:(X=^[x]:f(x) & (~)![x]:(X(x) => P(x))))}
-# V_ADJUNCT {... & ?[X]:(f(X) & (~)![x]:(X(x) => ?[y1]:(inverse(own)(y1) & arg2(y1)=x) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=x)))}
+# V_ADJUNCT {... & ?[X]:(f(X) & (~)![x]:(X(x) => ?[y1]:(inverse(has)(y1) & arg2(y1)=x) & ... & ?[yn]:(inverse(has)(yn) & arg2(yn)=x)))}
 #  -> NP {^[P]:(... & ?[X]:(f(X) & (~)![x]:(X(x) => P(x))))}
-# V_ADJUNCT {... & ?[X]:(f(X) & ?[y1]:(inverse(own)(y1) & arg2(y1)=X) & ... & ?[yn]:(inverse(own)(yn) & arg2(yn)=X))} if X is a set variable
+# V_ADJUNCT {... & ?[X]:(f(X) & ?[y1]:(inverse(has)(y1) & arg2(y1)=X) & ... & ?[yn]:(inverse(has)(yn) & arg2(yn)=X))} if X is a set variable
 #  -> NP {^[P]:(... & ?[X]:(f(X) & ![x]:(X(x) => P(x))))}
 # e.g. "the pencil is Emma's", "the pencils are the students'"
-#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_own,remove_empty_verb,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+#V_ADJUNCT -> NP:require_no_preposition,add_genitive,require_left_predicate_inverse_has,remove_empty_verb,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 
 # V_ADJUNCT {... & ?[y1]:(... & arg1/arg2/arg3(y1)=a) & ... & ?[yn]:(... & arg1/arg2/arg3(yn)=a)}
 #  -> NP/ADJP_R {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
@@ -1139,14 +1148,15 @@ V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,require_no_
 # This rule requires that `arg1(y)=r` and `arg1(y)=x` appear in both
 # consequents (or `arg2(y)=r` and `arg2(y)=x`, etc).
 # NOTE: The ADJP_R transformations don't have `^[P]`.
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set # for arg1
-V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
+V_ADJUNCT -> NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set # for arg1
+V_ADJUNCT -> NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
+# e.g. "he was shown the new computer by the salesman"
 V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head,factor # for arg1
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head,factor # for arg2
-#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg3_without_head,factor # for arg3 (NOTE: we could make this semantic and have only two args)
-V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
-V_ADJUNCT -> BY NP:require_no_preposition,require_left_predicate_inverse,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head,factor # for arg1
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head,factor # for arg2
+#V_ADJUNCT -> ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg3_without_head,factor # for arg3 (NOTE: we could make this semantic and have only two args)
+V_ADJUNCT -> BY NP:require_no_preposition,remove_passive,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
+V_ADJUNCT -> BY NP:require_no_preposition,remove_passive,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
 
 # V_ADJUNCT {... & ?[y1]:(... & f(y1)) & ... & ?[yn]:(... & f(yn))}
 #  -> (COMMA) (THAT) S' {... & f'}
@@ -1339,8 +1349,8 @@ VP_L -> HAVE:identity VP_L:try_remove_correlated,require_no_future,remove_perfec
 VP_L -> BE:identity VP_L:try_remove_correlated,require_no_future,require_no_perfect,remove_progressive,add_present_participle,add_aux # progressive aspect
 VP_L -> DO:identity VP_L:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,add_infinitive,add_aux,require_no_subjunctive # do-support
 VP_L -> NOT VP_L:try_remove_correlated,require_aux_or_subjunctive_or_infinitive_or_to_infinitive,remove_not,require_no_req_subject,try_remove_req_aux,add_negative
-VP_L -> BE:identity VP_L:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux # passive voice
-VP_L -> GET:identity VP_L:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux # passive voice
+VP_L -> BE:identity VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive # passive voice
+VP_L -> GET:identity VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive # passive voice
 VP_L -> TO VP_L:try_remove_correlated,remove_to_infinitive,add_infinitive,require_no_future,require_no_req_subject,require_no_req_aux
 #VP_L -> MODAL:try_remove_correlator VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive
 
@@ -1712,16 +1722,16 @@ DEF_NP -> THE NP':try_remove_correlated,require_predicative_universal,try_add_pl
 # TODO: make `THAT` into a special nonterminal that can yield either "that" or "those", depending on grammatical number
 #DEF_NP -> THAT NP':try_remove_correlated
 
-# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(own(o) & arg2(o)=x & arg1(o)=a) & f(x))) & ![x]:(X(x) => P(x))))}
+# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(has(o) & arg2(o)=x & arg1(o)=a) & f(x))) & ![x]:(X(x) => P(x))))}
 #  -> NP {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))}
 #     NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
-# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(own(o) & arg2(o)=x & ?[y]:(g(y) & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
+# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[o]:(has(o) & arg2(o)=x & ?[y]:(g(y) & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
 #  -> NP {^[P]:(... & ?[X]:(X=^[x]:g(x) & ?[x]:(X(x) & P(x))))}
 #     NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
-# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[y]:(g(y) & ?[o]:(own(o) & arg2(o)=x & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
+# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(?[y]:(g(y) & ?[o]:(has(o) & arg2(o)=x & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
 #  -> NP {^[P]:(... & ?[X]:(X=^[x]:g(x) & ![x]:(X(x) => P(x))))}
 #     NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
-# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(![y]:(g(y) => ?[o]:(own(o) & arg2(o)=x & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
+# DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:(![y]:(g(y) => ?[o]:(has(o) & arg2(o)=x & arg1(o)=y)) & f(x))) & ![x]:(X(x) => P(x))))}
 #  -> NP {^[P]:(... & ?[X]:(X=^[x]:g(x) & ![x]:(X(x) => P(x))))}
 #     NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NOTE: In the last two rules, if `g(y)` is just a set membership test `Y(y)`,
@@ -1730,7 +1740,7 @@ DEF_NP -> THE NP':try_remove_correlated,require_predicative_universal,try_add_pl
 # NOTE: This rule also works if X is existentially-quantified.
 #DEF_NP -> NP:try_remove_wh_minus,add_genitive,has_arg2_in_set,try_add_singular NP':try_remove_correlated
 #DEF_NP -> NP:try_remove_wh_minus,add_genitive,has_arg2_in_set,try_add_plural NP':try_remove_correlated
-# TODO: the above rule can also be used for `inverse(intended_for)` in addition to `own`
+# TODO: the above rule can also be used for `inverse(intended_for)` in addition to `has`
 
 # DEF_NP {^[P]:(... & ?[S]:(F(S=^[x]:(arg1/arg2(x)=a & f(x))) & ![x]:(S(x) => P(x))))}
 #  -> NP {^[P]:?[S]:(S=^[x]:(x=a) & ?[x]:(S(x) & P(x)))}
@@ -1751,13 +1761,13 @@ DEF_NP -> THE NP':try_remove_correlated,require_predicative_universal,try_add_pl
 #DEF_NP -> NP:try_remove_wh_minus,add_genitive,has_arg2_in_set,try_add_plural NP':try_remove_correlated # for arg1
 #DEF_NP -> NP:try_remove_wh_minus,add_genitive,has_arg2_in_set,try_add_plural NP':try_remove_correlated # for arg2
 
-# DEF_NP {^[P]:(... ?[X]:(X=^[x]:(?[o]:(arg1(o)=a & own(o) & arg2(o)=x)) & ![x]:(X(x) => P(x))))}
+# DEF_NP {^[P]:(... ?[X]:(X=^[x]:(?[o]:(arg1(o)=a & has(o) & arg2(o)=x)) & ![x]:(X(x) => P(x))))}
 #  -> NP {^[P]:(... ?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y))))}
-# DEF_NP {^[P]:(... ?[y]:(f(y) & ... & ?[X]:(X=^[x]:(?[o]:(arg1(o)=y & own(o) & arg2(o)=x)) & ![x]:(X(x) => P(x)))))}
+# DEF_NP {^[P]:(... ?[y]:(f(y) & ... & ?[X]:(X=^[x]:(?[o]:(arg1(o)=y & has(o) & arg2(o)=x)) & ![x]:(X(x) => P(x)))))}
 #  -> NP {^[P]:(... ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) => P(y))))}
-# DEF_NP {^[P]:(... ?[Y]:(F(Y) & ... & ?[X]:(X=^[x]:(?[y]:(Y(y) & ?[o]:(arg1(o)=y & own(o) & arg2(o)=x))) & ![x]:(X(x) => P(x)))))}
+# DEF_NP {^[P]:(... ?[Y]:(F(Y) & ... & ?[X]:(X=^[x]:(?[y]:(Y(y) & ?[o]:(arg1(o)=y & has(o) & arg2(o)=x))) & ![x]:(X(x) => P(x)))))}
 #  -> NP {^[P]:(... ?[Y]:(F(Y) & ?[y]:(Y(y) & P(y))))}
-# DEF_NP {^[P]:(... ?[Y]:(F(Y) & ... & ?[X]:(X=^[x]:(![y]:(Y(y) => ?[o]:(arg1(o)=y & own(o) & arg2(o)=x))) & ![x]:(X(x) => P(x)))))}
+# DEF_NP {^[P]:(... ?[Y]:(F(Y) & ... & ?[X]:(X=^[x]:(![y]:(Y(y) => ?[o]:(arg1(o)=y & has(o) & arg2(o)=x))) & ![x]:(X(x) => P(x)))))}
 #  -> NP {^[P]:(... ?[Y]:(F(Y) & ![y]:(Y(y) => P(y))))}
 # NOTE: This rule also works if X is existentially-quantified.
 # e.g. "Jason's is better"
@@ -1844,11 +1854,12 @@ NOMINAL_R -> NOMINAL_L:identity_predicative
 #     N_ADJUNCT {... & ?[x]:(p(x) & A(x))}
 NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
 
-# NOMINAL_R {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[f]:(f=^[x,y]:(v(x) & ?[h]:(w(x,h) & (arg2(h)=y))) & ?[X]:(X=^[x]:?[m]:(greatest(f)(m) & (arg1(f)=A) & (arg2(f)=x)) & ?[x]:(X(x) & P(x))))))}
+# NOMINAL_R {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[f]:(f=^[x,y]:?[z]:((arg1(z)=x) & F(?[h]:(... & (arg2(h)=y)))) & ?[X]:(X=^[x]:?[m]:(greatest(f)(m) & (arg1(f)=A) & (arg2_of(x)=f)) & ?[x]:(X(x) & P(x))))))}
 #  -> NOMINAL_R {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[x]:(A(x) & P(x))))}
-#     N_ADJUNCT {... & ?[x]:(v(x) & ?[h]:w(x,h))}
+#     N_ADJUNCT {... & ?[x]:(empty(x) & ?[z]:((arg1(z)=x) & F(?[h]:(... & <TRACE>))))}
+# NOTE: the `h` and `z` scopes could be the same
 # e.g. "side facing the building with the tallest antenna", "state that borders the Mississippi with the tallest mountain shorter than 5000 ft"
-#NOMINAL_R -> NOMINAL_R:try_remove_genitive N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_with_empty_substitution
 
 # NOMINAL_R {^[P]:(... & ?[T]:(... & ?[S]:(F(S,^[x]:(... & T(x))) & ![x]:(S(x) => A(x)) & ...)))}
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:(...)) & ...))}
@@ -2156,7 +2167,7 @@ N_ADJUNCT -> VP_R:select_right_arg1_of_without_head,require_no_future,require_no
 # N_ADJUNCT {... & ?[x]:(p(x) & ?[g1]:(p1(g1) & ... & arg2(g1)=x) & ... & ?[gn]:(pn(gn) & ... & arg2(gn)=x))}
 #  -> VP_R {?[g1]:(inverse(p1)(g1) & ...) & ... & ?[gn]:(inverse(pn)(gn) & ...)}
 # e.g. "the letter written by me"
-#N_ADJUNCT -> VP_R:invert_predicate,require_past_participle,require_no_predicate_empty,has_arg2
+N_ADJUNCT -> VP_R:select_right_arg1_of_without_head,require_past,remove_inverse,add_past_participle,require_no_predicate_empty,has_arg2,add_passive
 
 # N_ADJUNCT {... & ?[x]:(p(x) & ?[g1]:(... & arg1(g1)=x) & ... & ?[gn]:(... & arg1(gn)=x))}
 #  -> VP_R {?[g1]:(...) & ... & ?[gn]:(...)}
@@ -2328,12 +2339,13 @@ NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,s
 # NOTE: This rule also works if X is existentially-quantified or used collectively.
 #NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure NOMINAL_L:try_remove_correlated
 
-# NOMINAL_L {^[P]:(... & ?[X]:(F(X) & ... & ?[Y]:(Y=^[y]:?[g]:(greatest/least(f)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ...)))}
-#  -> ADJP_R {^[P]:(... & ?[g]:(greatest/least(f)(g)))}
-#     NOMINAL_L {^[P]:(... & ?[X]:(F(X) & ...))}
-# e.g. "closest and brightest star"
-NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
-NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest NOMINAL_R:try_add_plural,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,has_arg2_in_set
+# NOMINAL_L {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[f]:(f=^[x,y]:?[z]:((arg1(z)=x) & F(?[h]:(... & (arg2(h)=y)))) & ?[X]:(X=^[x]:?[m]:(greatest(f)(m) & (arg1(f)=A) & (arg2_of(x)=f)) & ?[x]:(X(x) & P(x))))))}
+#  -> ADJP {... & ?[z]:F(?[h]:(... & <TRACE>))}
+#     NOMINAL_R {^[P]:(... & ?[A]:(A=^[a]:u(a) & ?[x]:(A(x) & P(x))))}
+# NOTE: the `h` and `z` scopes could be the same
+# e.g. "tallest mountain", "closest and brightest star"
+NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
+NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution NOMINAL_R:try_add_plural,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(arg2(s)=a & ... & arg1(s)=x) & U(0,x)))) & ...)}
 #  -> NOMINAL_L {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
@@ -2687,12 +2699,12 @@ ADJP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # ADJP_L {?[g]:(U(0,g) & p(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
 ADJP_L -> ADJ:require_no_correlator
 
-# ADJP_L {?[g]:(U(0,g) & greatest/least(p)(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
-ADJP_L -> ADJ:require_no_correlator,remove_greatest,add_superlative
+# ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJ {?[g]:(U(0,g) & p(g))}
+ADJP_L -> ADJ:require_no_correlator,require_superlative,remove_right_trace
 
-# ADJP_L {?[g]:(U(0,g) & greatest/least(p)(g))} -> ADJP_L {?[g]:(U(0,g) & p(g))}
-#ADJP_L -> MOST ADJP_L:try_remove_correlated # for `greatest` only
-#ADJP_L -> LEAST ADJP_L:try_remove_correlated # for `least` only
+# ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJP_L {?[g]:(U(0,g) & p(g))}
+#ADJP_L -> MOST ADJP_L:try_remove_correlated,remove_superlative,remove_right_trace # for `greatest` only
+#ADJP_L -> LEAST ADJP_L:try_remove_correlated,remove_superlative,remove_right_trace # for `least` only
 
 # ADJP_L {?[g]:(U(0,g) & greater/less(p)(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
 #ADJP_L -> ADJ:require_no_correlator,add_comparative
@@ -2970,7 +2982,7 @@ BOTH -> "both"
 WILL preterminal {} {1.0} {1.0} {} 10 1.0 {}
 WILL -> "will"
 
-HAVE preterminal {} {1.0} {1.0} {} 10 1.0 {}
+HAVE preterminal {} {1.0} {1.0} {} 10 1.0 verb {}
 HAVE -> "have"
 
 BE preterminal {} {1.0} {1.0} {} 10 1.0 verb {}

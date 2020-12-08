@@ -1057,27 +1057,44 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (function->type == hol_term_type::UNARY_APPLICATION) {
-		if (function->binary.left->type != hol_term_type::CONSTANT
-		 || function->binary.right->type != hol_term_type::CONSTANT)
-		{
-			return -std::numeric_limits<double>::infinity();
+		double value = 0.0;
+		if (Quantified && arg1->type == hol_term_type::VARIABLE) {
+			value = prior.log_binary_probability;
+		} else if (!Quantified && arg1->type == hol_term_type::CONSTANT) {
+			constants.add_constant(arg1->constant);
+			value = prior.log_binary_probability;
 		} else {
-			constants.add_predicate(function->binary.left->constant);
-			constants.add_predicate(function->binary.right->constant);
-			if (Quantified && arg1->type == hol_term_type::VARIABLE) {
-				return prior.log_binary_probability;
-			} else if (!Quantified && arg1->type == hol_term_type::CONSTANT) {
-				constants.add_constant(arg1->constant);
-				return prior.log_binary_probability;
+			return -std::numeric_limits<double>::infinity();
+		}
+
+		/* TODO: make sure this is a proper prior (for higher arity
+		   applications, the arguments can be a mix of constants and
+		   variables) */
+		const hol_term* left = function;
+		while (left->type == hol_term_type::UNARY_APPLICATION) {
+			if (Quantified && left->binary.right->type == hol_term_type::VARIABLE) {
+				value += prior.log_binary_probability;
+			} else if (left->binary.right->type == hol_term_type::CONSTANT) {
+				constants.add_predicate(left->binary.right->constant);
+				value += prior.log_binary_probability;
 			} else {
 				return -std::numeric_limits<double>::infinity();
 			}
+			left = left->binary.left;
 		}
-	} else if (function->type != hol_term_type::CONSTANT) {
-		return -std::numeric_limits<double>::infinity();
+		if (left->type == hol_term_type::CONSTANT) {
+			constants.add_predicate(left->constant);
+		} else if (!Quantified) {
+			return -std::numeric_limits<double>::infinity();
+		}
+		return value;
 	}
 
-	constants.add_predicate(function->constant);
+	if (function->type == hol_term_type::CONSTANT) {
+		constants.add_predicate(function->constant);
+	} else if (!Quantified) {
+		return -std::numeric_limits<double>::infinity();
+	}
 	if (Quantified && arg1->type == hol_term_type::VARIABLE) {
 		return prior.log_unary_probability;
 	} else if (!Quantified && arg1->type == hol_term_type::CONSTANT) {
@@ -1193,6 +1210,8 @@ double log_probability_helper(const hol_term* term,
 		{
 			value = prior.log_set_size_axiom_probability;
 			hol_term* operand = term->binary.left->binary.right->quantifier.operand;
+			while (operand->type == hol_term_type::LAMBDA)
+				operand = operand->quantifier.operand;
 			if (operand->type == hol_term_type::AND) {
 				value += (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 				for (unsigned int i = 0; i < operand->array.length; i++)
@@ -2121,14 +2140,14 @@ set_seed(1356941742);
 		}
 	}
 
-run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
 }
 for (auto entry : names) free(entry.key);
 if (seed_training_set.length > 0)
-return EXIT_SUCCESS;
+return EXIT_SUCCESS;*/
 
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
@@ -2283,38 +2302,29 @@ initializer.expected_constants.add(instance_constant(1000000000 + 2));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 
-	/*read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
+	read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "Arkansas is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "Oklahoma is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "New Mexico is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "There are 4 states that border Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "The area of Louisiana is 52069 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "The area of Arkansas is 53179 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "The area of Oklahoma is 69899 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);
 	read_sentence(corpus, parser, "The area of New Mexico is 121590 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
-T.print_axioms(stderr, *debug_terminal_printer);*/
 
-	read_sentence(corpus, parser, "The Red River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	/*read_sentence(corpus, parser, "The Red River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The Canadian River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The Rio Grande is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The Pecos River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The Washita River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
-	read_sentence(corpus, parser, "There are 5 rivers in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "There are 5 rivers in Texas.", T, names, seed_entities, proof_prior, proof_axioms);*/
 
 typedef decltype(T) TheoryType;
 TheoryType& T_map = *((TheoryType*) alloca(sizeof(TheoryType)));
 TheoryType::clone(T, T_map);
 auto collector = make_log_probability_collector(T, proof_prior);
 double max_log_probability = collector.current_log_probability;
-for (unsigned int t = 0; t < 20000; t++) {
+for (unsigned int t = 0; t < 200 /*20000*/; t++) {
 	bool print_debug = false;
 	if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 	if (print_debug) T.print_existential_introductions(stderr, *debug_terminal_printer);
@@ -2335,17 +2345,17 @@ free(T_map);
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "The population of Arizona is what?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	}*/ if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} if (answer_question<true>(answers, "What is the state with the highest population?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} /*if (answer_question<true>(answers, "What is the state with the highest population?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Which is the longest river in the USA?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "San Antonio is in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "What are all the rivers in Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What are all the rivers in Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}
+	}*/
 for (string& str : answers) free(str);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;

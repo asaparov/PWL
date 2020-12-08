@@ -3,7 +3,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_universal
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -20,7 +20,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_wide_scope,require_no_string_or_number_or_name_in_set
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_L:identity_predicative
@@ -43,7 +43,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -60,7 +60,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(A "a")
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity_predicative
@@ -102,7 +102,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -147,7 +147,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -164,7 +164,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_singleton
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
@@ -266,7 +266,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_universal
 							(Q:try_remove_genitive,select_second_left_set_conjunct_root,size
 								(NUMBER:identity_root "four"/"four")
@@ -298,7 +298,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "each")
 					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
 						(NOMINAL_L:identity_predicative
@@ -314,7 +314,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(A "a")
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity_predicative
@@ -337,7 +337,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "each")
 					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
 						(NOMINAL_L:identity_predicative
@@ -383,7 +383,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_singleton
 						(Q:try_remove_genitive,select_second_left_set_conjunct_root,size
 							(NUMBER:identity_root "one")
@@ -403,7 +403,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_L:identity_predicative
@@ -425,7 +425,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -630,7 +630,7 @@
 		(S':require_conjunction,select_left_operand
 			(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 				(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_L:identity_predicative
@@ -647,7 +647,7 @@
 						)
 					)
 					(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-						(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(A "a")
 							(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 								(NOMINAL_R:identity_predicative
@@ -666,7 +666,7 @@
 			(S':remove_and,require_no_comma
 				(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 					(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-						(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 							(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 								(NOMINAL_R:identity_predicative
 									(NOMINAL_L:identity_predicative
@@ -683,7 +683,7 @@
 							)
 						)
 						(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-							(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+							(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 								(A "a")
 								(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 									(NOMINAL_R:identity_predicative
@@ -708,7 +708,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NO "no")
 					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,add_negative,remove_predicative_not,require_predicative_existential
 						(NOMINAL_L:identity_predicative
@@ -724,7 +724,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(A "a")
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity_predicative
@@ -747,7 +747,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(A "a")
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 						(NOMINAL_R:identity_predicative
@@ -765,7 +765,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(EACH "every")
 						(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
 							(NOMINAL_L:identity_predicative
@@ -786,7 +786,7 @@
 	(S':require_no_lambda,mark_wide_scope 
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NO:empty "no")
 					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,add_negative,remove_predicative_not,require_predicative_existential
 						(NOMINAL_L:identity_predicative
@@ -795,7 +795,7 @@
 					)
 				)
 			)
-			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2	# ?[x]:(eukaryote(x) & present(x)) & ?[x]:(prokaryote(x) & present(x)))
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
 				(VP_R:select_left_predicate_and_tense,set_predicate_empty,factor
 					(VP_L:identity
 						(BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,empty_and_tense "be"/"is")
@@ -842,7 +842,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_universal
 							(Q:try_remove_genitive,select_second_left_set_conjunct_root,size
 								(NUMBER:identity_root "8"/"8")
@@ -884,7 +884,7 @@
 	(S':require_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
@@ -897,7 +897,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 							(THE "the")
 							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -934,7 +934,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_or_number_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -951,7 +951,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(A "a")
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity_predicative
@@ -987,7 +987,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1004,7 +1004,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(A "a")
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity_predicative
@@ -1068,7 +1068,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 						(THE "the")
 						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1082,24 +1082,26 @@
 				)
 			)
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
-				(VP_R:remove_right_conjunct
-					(VP_L:identity
-						(BE:identity "be"/"is")
-						(VP_L:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux
-							(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "locate"/"located")
+				(VP_L:identity
+					(BE:identity "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive
+						(VP_R:remove_right_conjunct
+							(VP_L:identity
+								(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "locate"/"located")
+							)
 						)
-					)
-				)
-				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head
-						(P:require_no_preposition,remove_right_conjunct "in")
-						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
-							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
-								(THE "the")
-								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
-									(NOMINAL_R:identity_predicative
-										(NOMINAL_L:identity_predicative
-											(N:require_no_correlator_predicative,select_predicate_in_set "solar system"/"solar system")
+						(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+							(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head
+								(P:require_no_preposition,remove_right_conjunct "in")
+								(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+									(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+										(THE "the")
+										(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+											(NOMINAL_R:identity_predicative
+												(NOMINAL_L:identity_predicative
+													(N:require_no_correlator_predicative,select_predicate_in_set "solar system"/"solar system")
+												)
+											)
 										)
 									)
 								)
@@ -1119,7 +1121,7 @@
 	(S':require_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1130,21 +1132,23 @@
 				)
 			)
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
-				(VP_R:remove_right_conjunct
-					(VP_L:identity
-						(BE:identity "be"/"is")
-						(VP_L:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux
-							(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "orbit"/"orbited")
+				(VP_L:identity
+					(BE:identity "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive
+						(VP_R:remove_right_conjunct
+							(VP_L:identity
+								(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "orbit"/"orbited")
+							)
 						)
-					)
-				)
-				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(BY "by")
-					(NP:require_no_preposition,require_left_predicate_inverse,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
-						(WHICH:require_no_wh_minus "which")
-						(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
-							(NOMINAL_L:identity_predicative
-								(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
+						(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+							(BY "by")
+							(NP:require_no_preposition,remove_passive,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+								(WHICH:require_no_wh_minus "which")
+								(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+									(NOMINAL_L:identity_predicative
+										(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
+									)
+								)
 							)
 						)
 					)
@@ -1161,7 +1165,7 @@
 	(S':require_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1172,22 +1176,24 @@
 				)
 			)
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
-				(VP_R:remove_right_conjunct
-					(VP_L:identity
-						(BE:identity "be"/"is")
-						(VP_L:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux
-							(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "locate"/"located")
+				(VP_L:identity
+					(BE:identity "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive
+						(VP_R:remove_right_conjunct
+							(VP_L:identity
+								(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "locate"/"located")
+							)
 						)
-					)
-				)
-				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head
-						(P:require_no_preposition,remove_right_conjunct "in")
-						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
-							(WHAT:require_no_wh_minus "what")
-							(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
-								(NOMINAL_L:identity_predicative
-									(N:require_no_correlator_predicative,select_predicate_in_set "constellation"/"constellation")
+						(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+							(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head
+								(P:require_no_preposition,remove_right_conjunct "in")
+								(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+									(WHAT:require_no_wh_minus "what")
+									(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+										(NOMINAL_L:identity_predicative
+											(N:require_no_correlator_predicative,select_predicate_in_set "constellation"/"constellation")
+										)
+									)
 								)
 							)
 						)
@@ -1205,7 +1211,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 						(THE "the")
 						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1225,7 +1231,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(A "a")
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
 							(NOMINAL_R:identity_predicative
@@ -1289,7 +1295,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 						(THE "the")
 						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1324,7 +1330,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_or_number_in_set
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_L:identity_predicative
@@ -1364,7 +1370,7 @@
 #					)
 #				)
 #				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,add_empty_verb
-#					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+#					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 #						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 #							(NOMINAL_R:identity_predicative
 #								(NOMINAL_L:identity_predicative
@@ -1386,7 +1392,7 @@
 #	(S':require_lambda,mark_wide_scope		# ^[x]:?[m]:((arg1(m)=mars) & mass(m) & present(m) & (arg2(m)=x))
 #		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct		# ^[x]:?[m]:((arg1(m)=mars) & mass(m) & present(m) & (arg2(m)=x))
 #			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct		# ?[m]:(mass(m) & (arg1(m)=mars))
-#				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+#				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 #					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 #						(NOMINAL_R:identity_predicative
 #							(NOMINAL_L:identity_predicative
@@ -1468,7 +1474,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1525,7 +1531,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1542,18 +1548,18 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 							(THE "the")
 							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
 								(NOMINAL_R:identity_predicative
 									(NOMINAL_L:identity_predicative
-										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest
+										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 											(ADJP_L:try_remove_is_adjunct
-												(ADJ:require_no_correlator,remove_greatest,add_superlative "bright"/"brightest")
+												(ADJ:require_no_correlator,require_superlative,remove_right_trace "bright"/"brightest")
 											)
 										)
-										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
+										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
 											(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
 												(NOMINAL_L:identity_predicative
 													(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
@@ -1567,7 +1573,7 @@
 														)
 													)
 													(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-														(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+														(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 															(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 																(NOMINAL_R:identity_predicative
 																	(NOMINAL_L:identity_predicative
@@ -1591,14 +1597,14 @@
 	)
 	(PERIOD ".")
 )}
-	{?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[y]:(?[g]:(greatest(brightness)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))};
+	{?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[y]:(?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y)))))))};
 
 : # Titan is the brightest moon that orbits Saturn.
 {(S
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1615,18 +1621,18 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 							(THE "the")
 							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
 								(NOMINAL_R:identity_predicative
 									(NOMINAL_L:identity_predicative
-										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest
+										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 											(ADJP_L:try_remove_is_adjunct
-												(ADJ:require_no_correlator,remove_greatest,add_superlative "bright"/"brightest")
+												(ADJ:require_no_correlator,require_superlative,remove_right_trace "bright"/"brightest")
 											)
 										)
-										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
+										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
 											(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
 												(NOMINAL_L:identity_predicative
 													(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
@@ -1644,7 +1650,7 @@
 																	)
 																)
 																(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-																	(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+																	(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 																		(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 																			(NOMINAL_R:identity_predicative
 																				(NOMINAL_L:identity_predicative
@@ -1671,14 +1677,14 @@
 	)
 	(PERIOD ".")
 )}
-	{?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[y]:(?[g]:(greatest(brightness)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))};
+	{?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[y]:(?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y)))))))};
 
 : # What is the brightest moon orbiting Saturn?
 {(S
 	(S':require_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
@@ -1691,18 +1697,18 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 							(THE "the")
 							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
 								(NOMINAL_R:identity_predicative
 									(NOMINAL_L:identity_predicative
-										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set_without_predicative,factor,require_left_greatest
+										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 											(ADJP_L:try_remove_is_adjunct
-												(ADJ:require_no_correlator,remove_greatest,add_superlative "bright"/"brightest")
+												(ADJ:require_no_correlator,require_superlative,remove_right_trace "bright"/"brightest")
 											)
 										)
-										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
+										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
 											(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
 												(NOMINAL_L:identity_predicative
 													(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
@@ -1716,7 +1722,7 @@
 														)
 													)
 													(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-														(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+														(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 															(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 																(NOMINAL_R:identity_predicative
 																	(NOMINAL_L:identity_predicative
@@ -1740,7 +1746,7 @@
 	)
 	(QUESTION "?")
 )}
-	{^[q]:?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[y]:(?[g]:(greatest(brightness)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:((arg1(z)=q) & same(z) & present(z) & (arg2(z)=y)))))};
+	{^[q]:?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[y]:(?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[z]:((arg1(z)=q) & same(z) & present(z) & (arg2(z)=y))))))};
 
 : # border
 {(V "border"/"borders")}
@@ -1775,7 +1781,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1793,7 +1799,7 @@
 						)
 					)
 					(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-						(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 							(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 								(NOMINAL_R:identity_predicative
 									(NOMINAL_L:identity_predicative
@@ -1831,7 +1837,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 						(NOMINAL_R:identity_predicative
 							(NOMINAL_L:identity_predicative
@@ -1848,7 +1854,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
 							(NOMINAL_R:identity_predicative
 								(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
@@ -1882,7 +1888,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[M]:(subset(M,^[m]:moon(m)) & (size(M)=4) & ?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ![m]:(M(m) => ?[o]:(own(o) & (arg2(o)=m) & (arg1_of(j)=o))) & ?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j)))))};
+	{?[M]:(subset(M,^[m]:moon(m)) & (size(M)=4) & ?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ![m]:(M(m) => ?[o]:(has(o) & (arg2(o)=m) & (arg1_of(j)=o))) & ?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j)))))};
 
 : # butterfly
 {(N "butterfly"/"butterfly")}
@@ -1910,7 +1916,7 @@
 
 : # have
 {(V "have"/"has")}
-	{?[o]:(own(o) & present(o))[index:sg,arg2]};
+	{?[o]:(has(o) & present(o))[index:sg,arg2]};
 
 : # point
 {(N "point"/"point")}
@@ -1929,7 +1935,7 @@
 	(S':require_no_lambda,mark_wide_scope
 		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
-				(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
 						(THE "the")
 						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
@@ -1961,7 +1967,7 @@
 					)
 				)
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
-					(NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(Q:try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_measure_in_set,select_second_left_conjunct_in_set,right_arg1
 							(NUMBER:identity_root "999 . 78")
 						)
@@ -1985,6 +1991,143 @@
 	(PERIOD ".")
 )}
 	{?[y]:(?[d]:(?[n]:(name(n) & (arg1_of(d)=n) & (arg2(n)="Deimos")) & ?[p]:(volume(p) & (arg1(p)=d) & (arg2_of(y)=p))) & ?[x]:(?[l]:(cubic(l) & (arg1_of(x)=l)) & kilometer(x) & ?[q]:(measure(q) & (arg1(q)=999.78) & (arg2(q)=x) & ?[s]:((arg1(s)=y) & same(s) & present(s) & (arg2(s)=q)))))};
+
+: # Earth is the inner planet orbited by the brightest moon.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity_predicative
+							(NOMINAL_L:identity_predicative
+								(STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Earth")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+							(THE "the")
+							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+								(NOMINAL_R:identity_predicative
+									(NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential
+										(NOMINAL_L:identity_predicative
+											(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
+												(ADJP_L:try_remove_is_adjunct
+													(ADJ:require_no_correlator "inner"/"inner")
+												)
+											)
+											(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+												(N:require_no_correlator_predicative,select_predicate_in_set "planet"/"planet")
+											)
+										)
+									)
+									(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_with_empty_substitution
+										(VP_R:select_right_arg1_of_without_head,require_past,remove_inverse,add_past_participle,require_no_predicate_empty,has_arg2,add_passive
+											(VP_R:remove_right_conjunct
+												(VP_L:identity
+													(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "orbit"/"orbited")
+												)
+											)
+											(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+												(BY "by")
+												(NP:require_no_preposition,remove_passive,require_no_empty_verb,try_remove_correlated,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+													(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+														(THE "the")
+														(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+															(NOMINAL_R:identity_predicative
+																(NOMINAL_L:identity_predicative
+																	(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
+																		(ADJP_L:try_remove_is_adjunct
+																			(ADJ:require_no_correlator,require_superlative,remove_right_trace "bright"/"brightest")
+																		)
+																	)
+																	(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+																		(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
+																	)
+																)
+															)
+														)
+													)
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[X]:((X=^[x]:(?[i]:(inner(i) & (arg1_of(x)=i)) & planet(x))) & ?[f]:((f=^[x,v]:?[m]:(?[y]:(brightness(y) & (arg2(y)=v) & (arg1_of(m)=y)) & moon(m) & ?[o]:(inverse(orbit)(o) & past(o) & (arg2(o)=m) & (arg1_of(x)=o)))) & ?[y]:(?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g)) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[z]:((arg1(z)=e) & same(z) & present(z) & (arg2(z)=y))))))};
+
+: # Which inner planet has the brightest moon?
+{(S
+	(S':require_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_substitution,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(WHICH:require_no_wh_minus "which")
+					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+						(NOMINAL_L:identity_predicative
+							(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
+								(ADJP_L:try_remove_is_adjunct
+									(ADJ:require_no_correlator "inner"/"inner")
+								)
+							)
+							(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+								(N:require_no_correlator_predicative,select_predicate_in_set "planet"/"planet")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_correlated,try_remove_wh_minus,try_remove_measure,add_superlative,select_function_with_substitution,remove_left_conjunct,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "have"/"has")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+							(THE "the")
+							(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+								(NOMINAL_R:identity_predicative
+									(NOMINAL_L:identity_predicative
+										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
+											(ADJP_L:try_remove_is_adjunct
+												(ADJ:require_no_correlator,require_superlative,remove_right_trace "bright"/"brightest")
+											)
+										)
+										(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+											(N:require_no_correlator_predicative,select_predicate_in_set "moon"/"moon")
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(QUESTION "?")
+)}
+	{^[z]:?[X]:((X=^[x]:(?[i]:(inner(i) & (arg1_of(x)=i)) & planet(x))) & X(z) & ?[f]:((f=^[x,v]:?[m]:(?[y]:(brightness(y) & (arg2(y)=v) & (arg1_of(m)=y)) & moon(m) & ?[h]:((arg1(h)=x) & has(h) & present(h) & (arg2(h)=m)))) & ?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2(g)=z))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
