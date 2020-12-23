@@ -1,8 +1,7 @@
 #include "higher_order_logic.h"
 #include "hdp_parser.h"
 #include "executive.h"
-
-#include <boost/math/special_functions/gamma.hpp>
+#include "ruletaker.h"
 
 struct poisson_distribution {
 	typedef unsigned int ObservationType;
@@ -72,8 +71,18 @@ struct default_array {
 
 	default_array() : a(16) { }
 
+	default_array(const default_array<T>& src) = delete;
+
 	inline bool add(const T& item) {
 		return a.add(item);
+	}
+
+	inline auto begin() -> decltype(a.begin()) {
+		return a.begin();
+	}
+
+	inline auto end() -> decltype(a.end()) {
+		return a.end();
 	}
 
 	inline auto begin() const -> decltype(a.begin()) {
@@ -114,6 +123,8 @@ struct default_array_multiset {
 
 	default_array_multiset() : a(16) { }
 
+	default_array_multiset(const default_array_multiset<T>& src) = delete;
+
 	inline bool add(const T& item) {
 		return a.add(item);
 	}
@@ -137,6 +148,13 @@ struct default_hash_multiset {
 	hash_multiset<T, true> a;
 
 	default_hash_multiset() : a(16) { }
+
+	default_hash_multiset(const default_hash_multiset<T>& src) : a(src.a.counts.table.capacity)
+	{
+		for (const auto& entry : src.a.counts)
+			a.counts.put(entry.key, entry.value);
+		a.sum = src.a.sum;
+	}
 
 	inline bool add(const T& item) {
 		return a.add(item);
@@ -162,6 +180,16 @@ struct default_hash_multiset {
 template<typename T>
 inline bool init(default_hash_multiset<T>& multiset) {
 	return init(multiset.a, 16);
+}
+
+template<typename T>
+inline bool init(default_hash_multiset<T>& multiset, const default_hash_multiset<T>& src) {
+	if (!init(multiset.a, src.a.counts.table.capacity))
+		return false;
+	for (const auto& entry : src.a.counts)
+		multiset.a.counts.put(entry.key, entry.value);
+	multiset.a.sum = src.a.sum;
+	return true;
 }
 
 template<typename T>
@@ -228,6 +256,8 @@ struct iid_uniform_distribution
 {
 	typedef empty_prior_state PriorState;
 	typedef default_array<T> PriorStateChanges;
+	typedef T ObservationType;
+	typedef default_array<T> ObservationCollection;
 
 	unsigned int n;
 	double log_n;
@@ -261,6 +291,18 @@ inline double log_probability_ratio(
 		const ObservationCollection& old_observations,
 		const ObservationCollection& new_observations,
 		const iid_uniform_distribution<T>& prior)
+{
+	return (size(old_observations) * prior.log_n) - (size(new_observations) * prior.log_n);
+}
+
+template<typename T, typename ObservationCollection>
+inline double log_probability_ratio(
+		const empty_prior_state& dummy,
+		const ObservationCollection& old_observations,
+		const ObservationCollection& new_observations,
+		const iid_uniform_distribution<T>& prior,
+		const default_array<T>& old_prior_changes,
+		const default_array<T>& new_prior_changes)
 {
 	return (size(old_observations) * prior.log_n) - (size(new_observations) * prior.log_n);
 }
@@ -488,6 +530,9 @@ struct dirichlet_process
 	struct prior_state {
 		typename BaseDistribution::PriorState base_prior_state;
 
+		prior_state() { }
+		prior_state(const prior_state& src) : base_prior_state(src.base_prior_state) { }
+
 		inline bool add(const typename BaseDistribution::PriorStateChanges& changes) {
 			return base_prior_state.add(changes);
 		}
@@ -534,6 +579,15 @@ inline dirichlet_process<BaseDistribution> make_dirichlet_process(
 	return dirichlet_process<BaseDistribution>(alpha, base_distribution);
 }
 
+template<typename T, typename std::enable_if<std::is_pointer<T>::value>::type* = nullptr>
+inline void free_all(const default_array<T>& a) { }
+
+template<typename T, typename std::enable_if<!std::is_pointer<T>::value>::type* = nullptr>
+inline void free_all(default_array<T>& a) {
+	for (T& element : a)
+		free(element);
+}
+
 template<typename MultisetType, typename BaseDistribution>
 double log_probability(
 		const MultisetType& restaurant_tables,
@@ -542,8 +596,10 @@ double log_probability(
 	typedef typename BaseDistribution::ObservationCollection Clusters;
 
 	Clusters clusters;
-	return log_probability(restaurant_tables, prior.restaurant, clusters)
-		 + log_probability(clusters, prior.base_distribution);
+	double value = log_probability(restaurant_tables, prior.restaurant, clusters);
+	value += log_probability(clusters, prior.base_distribution);
+	free_all(clusters);
+	return value;
 }
 
 template<typename MultisetType, typename BaseDistribution>
@@ -567,7 +623,9 @@ double log_probability(
 		if (!contains)
 			clusters.add(extra_observation);
 	}
-	return value + log_probability(clusters, prior.base_distribution);
+	value += log_probability(clusters, prior.base_distribution);
+	free_all(clusters);
+	return value;
 }
 
 template<typename MultisetType, typename T, bool AutomaticallyFree, typename BaseDistribution>
@@ -583,8 +641,11 @@ double log_probability_ratio(
 	typedef typename BaseDistribution::ObservationCollection Clusters;
 
 	Clusters old_clusters, new_clusters;
-	return log_probability_ratio(restaurant_tables, old_observations, new_observations, prior.restaurant, old_clusters, new_clusters)
-		 + log_probability_ratio(old_clusters, new_clusters, prior.base_distribution, prior_state.base_prior_state, old_prior_changes, new_prior_changes);
+	double value = log_probability_ratio(restaurant_tables, old_observations, new_observations, prior.restaurant, old_clusters, new_clusters);
+	value += log_probability_ratio(prior_state.base_prior_state, old_clusters, new_clusters, prior.base_distribution, old_prior_changes, new_prior_changes);
+	free_all(old_clusters);
+	free_all(new_clusters);
+	return value;
 }
 
 template<typename MultisetType, typename T, bool AutomaticallyFree, typename BaseDistribution>
@@ -624,7 +685,10 @@ double log_probability_ratio(
 		if (!contains)
 			new_clusters.add(extra_observation);
 	}
-	return value + log_probability_ratio(old_clusters, new_clusters, prior.base_distribution, prior_state.base_prior_state, old_prior_changes, new_prior_changes);
+	value += log_probability_ratio(prior_state.base_prior_state, old_clusters, new_clusters, prior.base_distribution, old_prior_changes, new_prior_changes);
+	free_all(old_clusters);
+	free_all(new_clusters);
+	return value;
 }
 
 template<typename ConstantDistribution, typename PredicateDistribution, typename TypeDistribution>
@@ -633,7 +697,7 @@ struct simple_constant_distribution
 	struct prior_state_changes {
 		typename ConstantDistribution::PriorStateChanges constants;
 		typename PredicateDistribution::PriorStateChanges predicates;
-		array_map<unsigned int, typename TypeDistribution::PriorStateChanges> types;
+		array_map<unsigned int, array_multiset<hol_term>> types;
 
 		prior_state_changes() : types(8) { }
 		~prior_state_changes() {
@@ -653,7 +717,7 @@ struct simple_constant_distribution
 				return false;
 			unsigned int index = types.index_of(constant);
 			if (index == types.size) {
-				if (!init(types.values[index])) {
+				if (!init(types.values[index], 4)) {
 					return false;
 				} else if (!types.values[index].add(*type)) {
 					free(types.values[index]);
@@ -672,9 +736,22 @@ struct simple_constant_distribution
 	struct prior_state {
 		typename ConstantDistribution::PriorState constants;
 		typename PredicateDistribution::PriorState predicates;
-		hash_map<unsigned int, typename TypeDistribution::PriorState> types;
+		hash_map<unsigned int, hash_multiset<hol_term>> types;
 
 		prior_state() : types(16) { }
+
+		prior_state(const prior_state& src) : constants(src.constants), predicates(src.predicates), types(src.types.table.capacity) {
+			for (const auto& entry : src.types) {
+				bool contains; unsigned int bucket;
+				types.get(entry.key, contains, bucket);
+				if (!init(types.values[bucket], entry.value.counts.table.capacity))
+					exit(EXIT_FAILURE);
+				types.values[bucket].counts.put_all(entry.value.counts);
+				types.values[bucket].sum = entry.value.sum;
+				types.table.keys[bucket] = entry.key;
+				types.table.size++;
+			}
+		}
 
 		~prior_state() {
 			for (auto entry : types)
@@ -696,9 +773,9 @@ struct simple_constant_distribution
 			}
 			for (unsigned int i = 0; i < changes.types.size; i++) {
 				bool contains; unsigned int index;
-				typename TypeDistribution::PriorState& value = types.get(changes.types.keys[i], contains, index);
+				hash_multiset<hol_term>& value = types.get(changes.types.keys[i], contains, index);
 				if (!contains) {
-					if (!init(types.values[index])) {
+					if (!init(types.values[index], 4)) {
 						constants.subtract(changes.constants);
 						predicates.subtract(changes.predicates);
 						for (unsigned int j = 0; j < i; j++)
@@ -730,13 +807,13 @@ struct simple_constant_distribution
 			predicates.subtract(changes.predicates);
 			for (unsigned int i = 0; i < changes.types.size; i++) {
 				bool contains; unsigned int index;
-				typename TypeDistribution::PriorState& value = types.get(changes.types.keys[i], contains, index);
+				hash_multiset<hol_term>& value = types.get(changes.types.keys[i], contains, index);
 #if !defined(NDEBUG)
 				if (!contains)
 					fprintf(stderr, "simple_constant_distribution.prior_state.subtract WARNING: The given key does not exist in `types`.\n");
 #endif
-				value.subtract(changes.types.values[i]);
-				if (size(value) == 0) {
+				value.subtract<true>(changes.types.values[i]);
+				if (value.sum == 0) {
 					free(value);
 					types.remove_at(index);
 				}
@@ -806,50 +883,52 @@ inline double log_probability_ratio(const ObservationCollection& existing_consta
 	double value = log_probability_ratio(existing_constants.constants, old_constants.constants, new_constants.constants, prior.constant_distribution)
 				 + log_probability_ratio(existing_constants.predicates, old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
 
-	static typename TypeDistribution::PriorState empty_type_prior_state;
-	static typename TypeDistribution::PriorStateChanges empty_type_prior_state_changes;
+	static typename TypeDistribution::PriorState type_prior_state;
+	static hash_multiset<hol_term> empty_type_prior_state(1);
+	static array_multiset<hol_term> empty_type_prior_state_changes(1);
 
 	unsigned int i = 0, j = 0; bool contains;
+	default_array<hol_term> old_prior_changes, new_prior_changes;
 	while (i < old_constants.types.size && j < new_constants.types.size) {
 		if (old_constants.types.keys[i] == new_constants.types.keys[j]) {
-			const typename TypeDistribution::PriorState& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
+			const hash_multiset<hol_term>& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
 			if (contains) {
-				value += log_probability_ratio(existing, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution);
+				value += log_probability_ratio(existing, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 			} else {
-				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution);
+				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 			}
 			i++; j++;
 		} else if (old_constants.types.keys[i] < new_constants.types.keys[j]) {
-			const typename TypeDistribution::PriorState& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
+			const hash_multiset<hol_term>& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
 			if (contains) {
-				value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+				value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 			} else {
-				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 			}
 			i++;
 		} else {
-			const typename TypeDistribution::PriorState& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
+			const hash_multiset<hol_term>& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
 			if (contains) {
-				value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+				value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 			} else {
-				value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+				value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 			}
 			j++;
 		}
 	} while (i < old_constants.types.size) {
-		const typename TypeDistribution::PriorState& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
+		const hash_multiset<hol_term>& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
 		if (contains) {
-			value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+			value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 		} else {
-			value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution);
+			value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 		}
 		i++;
 	} while (j < new_constants.types.size) {
-		const typename TypeDistribution::PriorState& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
+		const hash_multiset<hol_term>& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
 		if (contains) {
-			value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+			value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 		} else {
-			value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution);
+			value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
 		}
 		j++;
 	}
@@ -873,6 +952,18 @@ struct simple_hol_term_distribution
 		array_map<unsigned int, string*> arg2_string_map;
 
 		prior_state() : arg1_map(16), arg2_string_map(16) { }
+
+		prior_state(const prior_state& src) : constant_prior_state(src.constant_prior_state), arg1_map(src.arg1_map.capacity), arg2_string_map(src.arg2_string_map.capacity) {
+			for (unsigned int i = 0; i < src.arg1_map.size; i++) {
+				arg1_map.keys[i] = src.arg1_map.keys[i];
+				arg1_map.values[i] = src.arg1_map.values[i];
+				arg1_map.size++;
+			} for (unsigned int i = 0; i < src.arg2_string_map.size; i++) {
+				arg2_string_map.keys[i] = src.arg2_string_map.keys[i];
+				arg2_string_map.values[i] = src.arg2_string_map.values[i];
+				arg2_string_map.size++;
+			}
+		}
 
 		inline bool add(const prior_state_changes& changes) {
 			for (const auto& entry : changes.arg1_map) {
@@ -935,12 +1026,24 @@ struct simple_hol_term_distribution
 	typedef prior_state_changes PriorStateChanges;
 
 	double log_ground_literal_probability;
+	double log_negated_expression_probability;
 	double log_universal_probability;
 	double log_existential_probability;
+	double log_conjunction_probability;
 	double log_disjunction_probability;
 	double log_set_size_axiom_probability;
 	double log_arg1_probability;
 	double log_arg2_probability;
+
+	double log_quantified_ground_literal_probability;
+	double log_quantified_negated_expression_probability;
+	double log_quantified_universal_probability;
+	double log_quantified_existential_probability;
+	double log_quantified_conjunction_probability;
+	double log_quantified_disjunction_probability;
+	double log_quantified_set_size_axiom_probability;
+	double log_quantified_arg1_probability;
+	double log_quantified_arg2_probability;
 
 	double log_arg_constant_probability;
 	double log_arg_number_probability;
@@ -965,21 +1068,38 @@ struct simple_hol_term_distribution
 	simple_hol_term_distribution(
 			const ConstantDistribution& constant_distribution,
 			const SetSizeDistribution& set_size_distribution,
-			double ground_literal_probability, double universal_probability,
-			double existential_probability, double disjunction_probability,
+			double ground_literal_probability, double negated_expression_probability,
+			double universal_probability, double existential_probability,
+			double conjunction_probability, double disjunction_probability,
 			double set_size_axiom_probability, double arg1_probability,
-			double arg2_probability, double arg_constant_probability,
-			double arg_number_probability, double arg_string_probability,
-			double negation_probability, double unary_probability,
-			double antecedent_stop_probability, double consequent_stop_probability,
-			double name_count_parameter) :
+			double arg2_probability,
+			double quantified_ground_literal_probability, double quantified_negated_expression_probability,
+			double quantified_universal_probability, double quantified_existential_probability,
+			double quantified_conjunction_probability, double quantified_disjunction_probability,
+			double quantified_set_size_axiom_probability, double quantified_arg1_probability,
+			double quantified_arg2_probability,
+			double arg_constant_probability, double arg_number_probability,
+			double arg_string_probability, double negation_probability,
+			double unary_probability, double antecedent_stop_probability,
+			double consequent_stop_probability, double name_count_parameter) :
 		log_ground_literal_probability(log(ground_literal_probability)),
+		log_negated_expression_probability(log(negated_expression_probability)),
 		log_universal_probability(log(universal_probability)),
 		log_existential_probability(log(existential_probability)),
+		log_conjunction_probability(log(conjunction_probability)),
 		log_disjunction_probability(log(disjunction_probability)),
 		log_set_size_axiom_probability(log(set_size_axiom_probability)),
 		log_arg1_probability(log(arg1_probability)),
 		log_arg2_probability(log(arg2_probability)),
+		log_quantified_ground_literal_probability(log(quantified_ground_literal_probability)),
+		log_quantified_negated_expression_probability(log(quantified_negated_expression_probability)),
+		log_quantified_universal_probability(log(quantified_universal_probability)),
+		log_quantified_existential_probability(log(quantified_existential_probability)),
+		log_quantified_conjunction_probability(log(quantified_conjunction_probability)),
+		log_quantified_disjunction_probability(log(quantified_disjunction_probability)),
+		log_quantified_set_size_axiom_probability(log(quantified_set_size_axiom_probability)),
+		log_quantified_arg1_probability(log(quantified_arg1_probability)),
+		log_quantified_arg2_probability(log(quantified_arg2_probability)),
 		log_arg_constant_probability(log(arg_constant_probability)),
 		log_arg_number_probability(log(arg_number_probability)),
 		log_arg_string_probability(log(arg_string_probability)),
@@ -995,20 +1115,33 @@ struct simple_hol_term_distribution
 		constant_distribution(constant_distribution),
 		set_size_distribution(set_size_distribution)
 	{
-		if (fabs(ground_literal_probability + universal_probability + existential_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability - 1.0) > 1.0e-12)
-			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + universal_probability + existential_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability` is not 1.\n");
+		if (fabs(ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability` is not 1.\n");
+		if (fabs(log_ground_literal_probability + log_negated_expression_probability + log_universal_probability + log_existential_probability + log_conjunction_probability + log_disjunction_probability + log_set_size_axiom_probability + log_arg1_probability + log_arg2_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `log_ground_literal_probability + log_negated_expression_probability + log_universal_probability + log_existential_probability + log_conjunction_probability + log_disjunction_probability + log_set_size_axiom_probability + log_arg1_probability + log_arg2_probability` is not 1.\n");
 		if (fabs(arg_constant_probability + arg_number_probability + arg_string_probability - 1.0) > 1.0e-12)
 			fprintf(stderr, "simple_hol_term_distribution WARNING: `arg_constant_probability + arg_number_probability + arg_string_probability` is not 1.\n");
 	}
 
 	simple_hol_term_distribution(const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& src) :
 		log_ground_literal_probability(src.log_ground_literal_probability),
+		log_negated_expression_probability(src.log_negated_expression_probability),
 		log_universal_probability(src.log_universal_probability),
 		log_existential_probability(src.log_existential_probability),
+		log_conjunction_probability(src.log_conjunction_probability),
 		log_disjunction_probability(src.log_disjunction_probability),
 		log_set_size_axiom_probability(src.log_set_size_axiom_probability),
 		log_arg1_probability(src.log_arg1_probability),
 		log_arg2_probability(src.log_arg2_probability),
+		log_quantified_ground_literal_probability(src.log_quantified_ground_literal_probability),
+		log_quantified_negated_expression_probability(src.log_quantified_negated_expression_probability),
+		log_quantified_universal_probability(src.log_quantified_universal_probability),
+		log_quantified_existential_probability(src.log_quantified_existential_probability),
+		log_quantified_conjunction_probability(src.log_quantified_conjunction_probability),
+		log_quantified_disjunction_probability(src.log_quantified_disjunction_probability),
+		log_quantified_set_size_axiom_probability(src.log_quantified_set_size_axiom_probability),
+		log_quantified_arg1_probability(src.log_quantified_arg1_probability),
+		log_quantified_arg2_probability(src.log_quantified_arg2_probability),
 		log_arg_constant_probability(src.log_arg_constant_probability),
 		log_arg_number_probability(src.log_arg_number_probability),
 		log_arg_string_probability(src.log_arg_string_probability),
@@ -1030,25 +1163,37 @@ template<typename BuiltInPredicates, typename ConstantDistribution, typename Set
 inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution> make_simple_hol_term_distribution(
 		const ConstantDistribution& constant_distribution,
 		const SetSizeDistribution set_size_distribution,
-		double ground_literal_probability, double universal_probability,
-		double existential_probability, double disjunction_probability,
+		double ground_literal_probability, double negated_expression_probability,
+		double universal_probability, double existential_probability,
+		double conjunction_probability, double disjunction_probability,
 		double set_size_axiom_probability, double arg1_probability,
-		double arg2_probability, double arg_constant_probability,
-		double arg_number_probability, double arg_string_probability,
-		double negation_probability, double unary_probability,
-		double antecedent_stop_probability, double consequent_stop_probability,
-		double name_count_parameter)
+		double arg2_probability,
+		double quantified_ground_literal_probability, double quantified_negated_expression_probability,
+		double quantified_universal_probability, double quantified_existential_probability,
+		double quantified_conjunction_probability, double quantified_disjunction_probability,
+		double quantified_set_size_axiom_probability, double quantified_arg1_probability,
+		double quantified_arg2_probability,
+		double arg_constant_probability, double arg_number_probability,
+		double arg_string_probability, double negation_probability,
+		double unary_probability, double antecedent_stop_probability,
+		double consequent_stop_probability, double name_count_parameter)
 {
 	return simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>(
 			constant_distribution, set_size_distribution,
-			ground_literal_probability, universal_probability,
-			existential_probability, disjunction_probability,
+			ground_literal_probability, negated_expression_probability,
+			universal_probability, existential_probability,
+			conjunction_probability, disjunction_probability,
 			set_size_axiom_probability, arg1_probability,
-			arg2_probability, arg_constant_probability,
-			arg_number_probability, arg_string_probability,
-			negation_probability, unary_probability,
-			antecedent_stop_probability, consequent_stop_probability,
-			name_count_parameter);
+			arg2_probability,
+			quantified_ground_literal_probability, quantified_negated_expression_probability,
+			quantified_universal_probability, quantified_existential_probability,
+			quantified_conjunction_probability, quantified_disjunction_probability,
+			quantified_set_size_axiom_probability, quantified_arg1_probability,
+			quantified_arg2_probability,
+			arg_constant_probability, arg_number_probability,
+			arg_string_probability, negation_probability,
+			unary_probability, antecedent_stop_probability,
+			consequent_stop_probability, name_count_parameter);
 }
 
 template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
@@ -1170,14 +1315,14 @@ double log_probability_helper(const hol_term* term,
 		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& changes)
 {
 	if (is_literal(term))
-		return prior.log_ground_literal_probability + log_probability_literal<Quantified, IsRoot>(term, prior, changes.constants);
+		return (Quantified ? prior.log_quantified_ground_literal_probability : prior.log_ground_literal_probability) + log_probability_literal<Quantified, IsRoot>(term, prior, changes.constants);
 
 	double value;
 	const hol_term* antecedent;
 	const hol_term* consequent;
 	switch (term->type) {
 	case hol_term_type::FOR_ALL:
-		value = prior.log_universal_probability;
+		value = (Quantified ? prior.log_quantified_universal_probability : prior.log_universal_probability);
 		if (term->quantifier.operand->type == hol_term_type::IF_THEN) {
 			antecedent = term->quantifier.operand->binary.left;
 			consequent = term->quantifier.operand->binary.right;
@@ -1208,7 +1353,7 @@ double log_probability_helper(const hol_term* term,
 		 && term->binary.left->binary.right->type == hol_term_type::LAMBDA
 		 && term->binary.right->type == hol_term_type::NUMBER)
 		{
-			value = prior.log_set_size_axiom_probability;
+			value = (Quantified ? prior.log_quantified_set_size_axiom_probability : prior.log_set_size_axiom_probability);
 			hol_term* operand = term->binary.left->binary.right->quantifier.operand;
 			while (operand->type == hol_term_type::LAMBDA)
 				operand = operand->quantifier.operand;
@@ -1228,16 +1373,18 @@ double log_probability_helper(const hol_term* term,
 				 && term->binary.left->binary.left->type == hol_term_type::CONSTANT
 				 && term->binary.left->binary.left->constant == (unsigned int) BuiltInPredicates::ARG1))
 		{
-			value = prior.log_arg1_probability;
+			value = (Quantified ? prior.log_quantified_arg1_probability : prior.log_arg1_probability);
 			hol_term* left = term->binary.left;
 			hol_term* right = term->binary.right;
 			if (left->type != hol_term_type::UNARY_APPLICATION)
 				swap(left, right);
-			changes.constants.add_constant(left->binary.right->constant);
+			if (left->binary.right->type == hol_term_type::CONSTANT)
+				changes.constants.add_constant(left->binary.right->constant);
 			if (right->type == hol_term_type::CONSTANT) {
 				value += prior.log_arg_constant_probability;
 				changes.constants.add_constant(right->constant);
-				changes.arg1_map.put(left->binary.right->constant, right->constant);
+				if (left->binary.right->type == hol_term_type::CONSTANT)
+					changes.arg1_map.put(left->binary.right->constant, right->constant);
 			} else if (right->type == hol_term_type::NUMBER) {
 				value += prior.log_arg_number_probability;
 				/* TODO: implement this */
@@ -1255,7 +1402,7 @@ double log_probability_helper(const hol_term* term,
 				 && term->binary.left->binary.left->type == hol_term_type::CONSTANT
 				 && term->binary.left->binary.left->constant == (unsigned int) BuiltInPredicates::ARG2))
 		{
-			value = prior.log_arg2_probability;
+			value = (Quantified ? prior.log_quantified_arg2_probability : prior.log_arg2_probability);
 			hol_term* left = term->binary.left;
 			hol_term* right = term->binary.right;
 			if (left->type != hol_term_type::UNARY_APPLICATION)
@@ -1275,13 +1422,13 @@ double log_probability_helper(const hol_term* term,
 			return value;
 		} else {
 			// TODO: implement this (we also have definition axioms for constants)
-			return prior.log_set_size_axiom_probability;
+			return (Quantified ? prior.log_quantified_set_size_axiom_probability : prior.log_set_size_axiom_probability);
 			/*fprintf(stderr, "log_probability_helper WARNING: Found equality term that is not a set size axiom: ");
 			print(*term, stderr); print('\n', stderr);
 			return -std::numeric_limits<double>::infinity();*/
 		}
 	case hol_term_type::EXISTS:
-		value = prior.log_existential_probability;
+		value = (Quantified ? prior.log_quantified_existential_probability : prior.log_existential_probability);
 		if (term->quantifier.operand->type == hol_term_type::AND) {
 			hol_term* operand = term->quantifier.operand;
 			value += (operand->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
@@ -1291,16 +1438,24 @@ double log_probability_helper(const hol_term* term,
 			value += prior.log_antecedent_stop_probability + log_probability_helper<true, false>(term->quantifier.operand, prior, changes);
 		}
 		return value;
-	case hol_term_type::OR:
-		value = prior.log_disjunction_probability;
+	case hol_term_type::AND:
+		value = (Quantified ? prior.log_quantified_conjunction_probability : prior.log_conjunction_probability);
 		value += (term->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
 		for (unsigned int i = 0; i < term->array.length; i++)
 			value += log_probability_helper<Quantified, false>(term->array.operands[i], prior, changes);
 		return value;
+	case hol_term_type::OR:
+		value = (Quantified ? prior.log_quantified_disjunction_probability : prior.log_disjunction_probability);
+		value += (term->array.length - 1) * prior.log_antecedent_continue_probability + prior.log_antecedent_stop_probability;
+		for (unsigned int i = 0; i < term->array.length; i++)
+			value += log_probability_helper<Quantified, false>(term->array.operands[i], prior, changes);
+		return value;
+	case hol_term_type::NOT:
+		value = (Quantified ? prior.log_quantified_negated_expression_probability : prior.log_negated_expression_probability);
+		value += log_probability_helper<Quantified, false>(term->unary.operand, prior, changes);
+		return value;
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
-	case hol_term_type::NOT:
-	case hol_term_type::AND:
 	case hol_term_type::IF_THEN:
 	case hol_term_type::IFF:
 	case hol_term_type::TRUE:
@@ -1401,10 +1556,10 @@ template<typename BuiltInPredicates,
 	typename SetSizeDistribution,
 	template<typename> class Collection>
 double log_probability_ratio(
+		const typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state& prior_state,
 		const Collection<hol_term*>& old_clusters,
 		const Collection<hol_term*>& new_clusters,
 		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
-		const typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state& prior_state,
 		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& old_prior_changes,
 		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& new_prior_changes)
 {
@@ -2011,6 +2166,28 @@ inline void on_free_set(unsigned int set_id,
 	on_free_set(set_id, sets);
 }
 
+inline bool negate_head(
+		hol_term* src, hol_term*& dst)
+{
+	array<hol_term*> siblings(8);
+	array<unsigned int> dst_variables(8);
+	bool removed_quantifier, remove_wide_scope_marker = false, remove_negations;
+	return apply_head<true>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, find_head<built_in_predicates>,
+			[](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
+			{
+				if (head->type == hol_term_type::NOT) {
+					head->unary.operand->reference_count++;
+					return head->unary.operand;
+				} else {
+					hol_term* new_head = hol_term::new_not(head);
+					if (new_head == nullptr)
+						return (hol_term*) nullptr;
+					head->reference_count++;
+					return new_head;
+				}
+			}, no_op()) && dst != nullptr;
+}
+
 
 unsigned int constant_offset = 0;
 
@@ -2146,6 +2323,7 @@ for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_
 	free(paragraph);
 }
 for (auto entry : names) free(entry.key);
+// to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
 return EXIT_SUCCESS;*/
 
@@ -2211,20 +2389,160 @@ return EXIT_SUCCESS;*/
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
-			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), chinese_restaurant_process<hol_term>(1.0e-10, 0.0));
-	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2), 0.1099999, 0.0000001, 0.29, 0.1, 0.1, 0.2, 0.2, 0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
+			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, iid_uniform_distribution<hol_term>(100000)));
+	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
+			0.1099999, 0.01, 0.0000001, 0.27, 0.01, 0.1, 0.2, 0.2, 0.2,
+			0.1099999, 0.01, 0.0000001, 0.27, 0.1099999, 0.1, 0.0000001, 0.2, 0.2,
+			0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(5.0));
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 1.0e-20);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
 	}
+
+/* run RuleTaker experiments */
+unsigned int total = 0;
+unsigned int answered = 0;
+double correct = 0;
+unsigned int context_index = 0;
+std::minstd_rand prng_engine = core::engine;
+auto process_ruletaker_questions = [&parser,&corpus,&names,&T,&seed_entities,&proof_prior,&proof_axioms,&total,&answered,&correct,&context_index,&prng_engine](char* context, array<pair<string, bool>>& questions)
+{
+	context_index++;
+
+	/* for reproducibility, reset the PRNG state */
+	core::engine = prng_engine;
+
+	/* clone the original theory */
+	typedef decltype(T) TheoryType;
+	typedef decltype(proof_axioms) PriorStateType;
+	TheoryType& T_copy = *((TheoryType*) alloca(sizeof(TheoryType)));
+	PriorStateType proof_axioms_copy(proof_axioms);
+	if (!TheoryType::clone(T, T_copy))
+		return false;
+
+	/* read the context sentences */
+	unsigned int start = 0;
+	for (unsigned int i = 0; context[i] != '\0'; i++) {
+		if (context[i] == '.') {
+			const char old_next = context[i + 1];
+			context[i + 1] = '\0';
+			if (!read_sentence(corpus, parser, context + start, T_copy, names, seed_entities, proof_prior, proof_axioms_copy, 10, UINT_MAX)) {
+				context[i + 1] = old_next;
+				free(T_copy);
+				total += questions.length;
+				return true;
+			}
+			context[i + 1] = old_next;
+			start = i + 1;
+			while (isspace(context[start])) start++;
+
+			TheoryType& T_MAP = *((TheoryType*) alloca(sizeof(TheoryType)));
+			TheoryType::clone(T_copy, T_MAP);
+			auto collector = make_log_probability_collector(T_copy, proof_prior);
+			double max_log_probability = collector.current_log_probability;
+			for (unsigned int t = 0; t < 4000; t++) {
+				bool print_debug = false;
+				if (print_debug) T_copy.print_axioms(stderr, *debug_terminal_printer);
+				if (print_debug) T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
+				do_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
+				if (collector.current_log_probability > max_log_probability) {
+					free(T_MAP);
+					TheoryType::clone(T_copy, T_MAP);
+					max_log_probability = collector.current_log_probability;
+				}
+			}
+			T_MAP.print_axioms(stderr, *debug_terminal_printer);
+			free(T_MAP);
+		}
+	}
+
+	std::minstd_rand prng_engine_copy = core::engine;
+	for (unsigned int i = 0; i < questions.length; i++) {
+		const pair<string, bool>& question = questions[i];
+		core::engine = prng_engine_copy;
+
+		TheoryType& T_current = *((TheoryType*) alloca(sizeof(TheoryType)));
+		PriorStateType proof_axioms_current(proof_axioms_copy);
+		if (!TheoryType::clone(T_copy, T_current)) {
+			free(T_copy);
+			return false;
+		}
+
+		unsigned int parse_count;
+		constexpr unsigned int max_parse_count = 2;
+		hol_term* logical_forms[max_parse_count];
+		double log_probabilities[max_parse_count];
+		if (!parse_sentence(parser, question.key.data, names, logical_forms, log_probabilities, parse_count)) {
+			free(T_copy); free(T_current);
+			total++;
+			continue;
+		}
+
+		double log_probability_true = log_joint_probability_of_truth(T_current, proof_prior, proof_axioms_current, logical_forms[0], 10000);
+		for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
+			null_collector collector;
+			for (unsigned int t = 0; t < 10; t++)
+				do_exploratory_mh_step(T_current, proof_prior, proof_axioms_current, collector);
+			log_probability_true = log_joint_probability_of_truth(T_current, proof_prior, proof_axioms_current, logical_forms[0], 10000);
+		}
+
+		hol_term* negated;
+		if (!negate_head(logical_forms[0], negated) || negated == nullptr) {
+			free_logical_forms(logical_forms, parse_count);
+			free(T_copy); free(T_current);
+			return false;
+		}
+
+		free(T_current);
+		PriorStateType new_proof_axioms_current(proof_axioms_copy);
+		if (!TheoryType::clone(T_copy, T_current)) {
+			free(*negated); if (negated->reference_count == 0) free(negated);
+			free_logical_forms(logical_forms, parse_count);
+			free(T_copy);
+			return false;
+		}
+
+		double log_probability_false = log_joint_probability_of_truth(T_current, proof_prior, new_proof_axioms_current, negated, 10000);
+		for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
+			null_collector collector;
+			for (unsigned int t = 0; t < 10; t++)
+				do_exploratory_mh_step(T_current, proof_prior, new_proof_axioms_current, collector);
+			log_probability_false = log_joint_probability_of_truth(T_current, proof_prior, new_proof_axioms_current, negated, 10000);
+		}
+		free(*negated); if (negated->reference_count == 0) free(negated);
+		if (log_probability_true > log_probability_false) {
+			if (question.value) correct++;
+		} else if (log_probability_false > log_probability_true) {
+			if (!question.value) correct++;
+		} else {
+			correct += 0.5;
+		}
+		total++;
+		answered++;
+
+		free_logical_forms(logical_forms, parse_count);
+		free(T_current);
+	}
+	free(T_copy);
+	return true;
+};
+read_ruletaker_data("ruletaker/birds-electricity/test.jsonl", process_ruletaker_questions);
+for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+	free(paragraph);
+}
+for (auto entry : names) free(entry.key);
+// to avoid breakpoints being moved due to eliminated code
+if (seed_training_set.length > 0)
+return EXIT_SUCCESS;
 
 	/*read_sentence(corpus, parser, "A butterfly has a spot.", T, names, seed_entities, proof_prior, proof_axioms);
 
@@ -2327,7 +2645,7 @@ double max_log_probability = collector.current_log_probability;
 for (unsigned int t = 0; t < 200 /*20000*/; t++) {
 	bool print_debug = false;
 	if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
-	if (print_debug) T.print_existential_introductions(stderr, *debug_terminal_printer);
+	if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 	do_mh_step(T, proof_prior, proof_axioms, collector);
 	if (collector.current_log_probability > max_log_probability) {
 		free(T_map);

@@ -2277,6 +2277,24 @@ inline void on_free_set(unsigned int set_id,
 	on_free_set(set_id, sets, std::forward<Args>(visitor)...);
 }
 
+template<typename Proof, typename... Args>
+inline bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const required_set_size& required,
+		Args&&... visitor)
+{
+	return on_new_size_axiom(new_size_axiom, std::forward<Args>(visitor)...);
+}
+
+template<typename Proof, typename... Args>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const required_set_size& required,
+		Args&&... visitor)
+{
+	on_old_size_axiom(old_size_axiom, std::forward<Args>(visitor)...);
+}
+
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, typename... Args>
 inline bool compute_new_set_size(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
@@ -2294,6 +2312,24 @@ inline void on_free_set(unsigned int set_id,
 		Args&&... visitor)
 {
 	on_free_set(set_id, sets, std::forward<Args>(visitor)...);
+}
+
+template<typename Proof, typename... Args>
+inline bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const array<Proof*>& freeable_axioms,
+		Args&&... visitor)
+{
+	return on_new_size_axiom(new_size_axiom, std::forward<Args>(visitor)...);
+}
+
+template<typename Proof, typename... Args>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const array<Proof*>& freeable_axioms,
+		Args&&... visitor)
+{
+	on_old_size_axiom(old_size_axiom, std::forward<Args>(visitor)...);
 }
 
 template<typename Formula>
@@ -2377,8 +2413,7 @@ inline bool compute_new_set_size(
 		set_changes<typename ProofCalculus::Language>& set_diff,
 		Args&&... visitor)
 {
-	return compute_new_set_size(set_id, sets, out, min_set_size, max_set_size, std::forward<Args>(visitor)...)
-		&& set_diff.new_set(sets.sets[set_id].size_axioms[0]->formula);
+	return compute_new_set_size(set_id, sets, out, min_set_size, max_set_size, std::forward<Args>(visitor)...);
 }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, typename... Args>
@@ -2388,7 +2423,26 @@ inline void on_free_set(unsigned int set_id,
 		Args&&... visitor)
 {
 	on_free_set(set_id, sets, std::forward<Args>(visitor)...);
-	set_diff.old_set(sets.sets[set_id].size_axioms[0]->formula);
+}
+
+template<typename Proof, typename... Args>
+inline bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		set_changes<typename Proof::FormulaType>& set_diff,
+		Args&&... visitor)
+{
+	return on_new_size_axiom(new_size_axiom, std::forward<Args>(visitor)...)
+		&& set_diff.new_set(new_size_axiom->formula);
+}
+
+template<typename Proof, typename... Args>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		set_changes<typename Proof::FormulaType>& set_diff,
+		Args&&... visitor)
+{
+	on_old_size_axiom(old_size_axiom, std::forward<Args>(visitor)...);
+	set_diff.old_set(old_size_axiom->formula);
 }
 
 template<typename Formula, typename... Args>
@@ -2679,6 +2733,7 @@ struct theory
 		core::free(T.negated_conjunction_nodes);
 		core::free(T.implication_intro_nodes);
 		core::free(T.existential_intro_nodes);
+		core::free(T.built_in_sets);
 	}
 
 	unsigned int get_free_concept_id(unsigned int start = 0) {
@@ -2766,14 +2821,14 @@ struct theory
 	}
 
 	template<typename Stream, typename... Printer>
-	bool print_existential_introduction(const Proof* proof, Stream& out, Printer&&... printer) const {
+	bool print_disjunction_introduction(const Proof* proof, Stream& out, Printer&&... printer) const {
 		if (proof->type == ProofType::EXISTENTIAL_INTRODUCTION) {
 			/* find the formula corresponding to this node */
 			unsigned int index;
 			for (index = 0; index < existential_intro_nodes.length; index++)
 				if (existential_intro_nodes[index].value == proof) break;
 			if (index == existential_intro_nodes.length) {
-				fprintf(stderr, "print_existential_introduction WARNING: Found existential introduction in proof that is not an element of `theory.existential_intro_nodes`.\n");
+				fprintf(stderr, "print_disjunction_introduction WARNING: Found existential introduction in proof that is not an element of `theory.existential_intro_nodes`.\n");
 				if (!print("  Existential introduction instantiated with ", out)
 				 || !print(*proof->operands[2]->term, out, std::forward<Printer>(printer)...)
 				 || !print(".\n", out))
@@ -2787,6 +2842,64 @@ struct theory
 				 || !print(".\n", out))
 					return false;
 			}
+		} else if (proof->type == ProofType::IMPLICATION_INTRODUCTION) {
+			unsigned int index;
+			for (index = 0; index < implication_intro_nodes.length; index++)
+				if (implication_intro_nodes[index].value == proof) break;
+			if (index == implication_intro_nodes.length) {
+				fprintf(stderr, "print_disjunction_introduction WARNING: Found implication introduction in proof that is not an element of `theory.implication_intro_nodes`.\n");
+				if (!print("  Implication introduction", out)
+				 || !print((proof->operands[0]->type == ProofType::FALSITY_ELIMINATION) ?
+					" proved via the negation of the antecedent.\n" :
+					" proved via the consequent.\n", out))
+					return false;
+			} else {
+				if (!print("  Implication introduction at index ", out)
+				 || !print(index, out) || !print(": ", out)
+				 || !print(*implication_intro_nodes[index].key, out, std::forward<Printer>(printer)...)
+				 || !print((proof->operands[0]->type == ProofType::FALSITY_ELIMINATION) ?
+					" proved via the negation of the antecedent.\n" :
+					" proved via the consequent.\n", out))
+					return false;
+			}
+		} else if (proof->type == ProofType::DISJUNCTION_INTRODUCTION) {
+			unsigned int index;
+			for (index = 0; index < disjunction_intro_nodes.length; index++)
+				if (disjunction_intro_nodes[index].value == proof) break;
+			if (index == disjunction_intro_nodes.length) {
+				fprintf(stderr, "print_disjunction_introduction WARNING: Found disjunction introduction in proof that is not an element of `theory.disjunction_intro_nodes`.\n");
+				if (!print("  Disjunction introduction instantiated with disjunct at index ", out)
+				 || !print(proof->operands[2]->parameter, out) || print(".\n", out))
+					return false;
+			} else {
+				if (!print("  Disjunction introduction at index ", out)
+				 || !print(index, out) || !print(": ", out)
+				 || !print(*disjunction_intro_nodes[index].key, out, std::forward<Printer>(printer)...)
+				 || !print(" instantiated with disjunct at index ", out)
+				 || !print(proof->operands[2]->parameter, out) || !print(".\n", out))
+					return false;
+			}
+		} else if (proof->type == ProofType::PROOF_BY_CONTRADICTION
+				&& proof->operands[0]->type == ProofType::NEGATION_ELIMINATION
+				&& proof->operands[0]->operands[0]->type == ProofType::CONJUNCTION_ELIMINATION
+				&& proof->operands[0]->operands[0]->operands[0] == proof->operands[1])
+		{
+			unsigned int index;
+			for (index = 0; index < negated_conjunction_nodes.length; index++)
+				if (negated_conjunction_nodes[index].value == proof) break;
+			if (index == negated_conjunction_nodes.length) {
+				fprintf(stderr, "print_disjunction_introduction WARNING: Found proof of negated conjunction in proof that is not an element of `theory.negated_conjunction_nodes`.\n");
+				if (!print("  Negated conjunction instantiated with conjunct at indices ", out)
+				 || !print(proof->operands[0]->operands[0]->operands[1]->parameters[0], out) || print(".\n", out))
+					return false;
+			} else {
+				if (!print("  Negated conjunction at index ", out)
+				 || !print(index, out) || !print(": ", out)
+				 || !print(*negated_conjunction_nodes[index].key, out, std::forward<Printer>(printer)...)
+				 || !print(" instantiated with conjunct at indices ", out)
+				 || !print(proof->operands[0]->operands[0]->operands[1]->parameters[0], out) || !print(".\n", out))
+					return false;
+			}
 		}
 
 		unsigned int operand_count;
@@ -2794,30 +2907,78 @@ struct theory
 		proof->get_subproofs(operands, operand_count);
 		for (unsigned int i = 0; i < operand_count; i++) {
 			if (operands[i] == NULL) continue;
-			if (!print_existential_introduction(operands[i], out, std::forward<Printer>(printer)...))
+			if (!print_disjunction_introduction(operands[i], out, std::forward<Printer>(printer)...))
 				return false;
 		}
 		return true;
 	}
 
 	template<typename Stream, typename... Printer>
-	bool print_existential_introductions(Stream& out, Printer&&... printer) const {
+	bool print_disjunction_introductions(Stream& out, Printer&&... printer) const {
 		for (const Proof* observation : observations) {
-			unsigned int index;
-			for (index = 0; index < existential_intro_nodes.length; index++)
-				if (existential_intro_nodes[index].value == observation) break;
-			if (observation->type == ProofType::EXISTENTIAL_ELIMINATION && index == existential_intro_nodes.length) {
-				fprintf(stderr, "print_existential_introduction WARNING: Found existential introduction in proof that is not an element of `theory.existential_intro_nodes`.\n");
-				if (fprintf(out, "Proof at address 0x%lx:\n", (size_t) observation) < 0)
-					return false;
-			} else {
-				if (!print("Proof of ", out)
-				 || !print(*existential_intro_nodes[index].key, out, std::forward<Printer>(printer)...)
-				 || fprintf(out, " at address 0x%lx:\n", (size_t) observation) < 0)
-					return false;
+			if (observation->type == ProofType::EXISTENTIAL_INTRODUCTION) {
+				unsigned int index;
+				for (index = 0; index < existential_intro_nodes.length; index++)
+					if (existential_intro_nodes[index].value == observation) break;
+				if (index == existential_intro_nodes.length) {
+					fprintf(stderr, "print_disjunction_introductions WARNING: Found existential introduction in proof that is not an element of `theory.existential_intro_nodes`.\n");
+					if (fprintf(out, "Proof at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				} else {
+					if (!print("Proof of ", out)
+					 || !print(*existential_intro_nodes[index].key, out, std::forward<Printer>(printer)...)
+					 || fprintf(out, " at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				}
+			} else if (observation->type == ProofType::IMPLICATION_INTRODUCTION) {
+				unsigned int index;
+				for (index = 0; index < implication_intro_nodes.length; index++)
+					if (implication_intro_nodes[index].value == observation) break;
+				if (index == implication_intro_nodes.length) {
+					fprintf(stderr, "print_disjunction_introductions WARNING: Found implication introduction in proof that is not an element of `theory.implication_intro_nodes`.\n");
+					if (fprintf(out, "Proof at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				} else {
+					if (!print("Proof of ", out)
+					 || !print(*implication_intro_nodes[index].key, out, std::forward<Printer>(printer)...)
+					 || fprintf(out, " at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				}
+			} else if (observation->type == ProofType::DISJUNCTION_INTRODUCTION) {
+				unsigned int index;
+				for (index = 0; index < disjunction_intro_nodes.length; index++)
+					if (disjunction_intro_nodes[index].value == observation) break;
+				if (index == disjunction_intro_nodes.length) {
+					fprintf(stderr, "print_disjunction_introductions WARNING: Found disjunction introduction in proof that is not an element of `theory.disjunction_intro_nodes`.\n");
+					if (fprintf(out, "Proof at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				} else {
+					if (!print("Proof of ", out)
+					 || !print(*disjunction_intro_nodes[index].key, out, std::forward<Printer>(printer)...)
+					 || fprintf(out, " at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				}
+			} else if (observation->type == ProofType::PROOF_BY_CONTRADICTION
+					&& observation->operands[0]->type == ProofType::NEGATION_ELIMINATION
+					&& observation->operands[0]->operands[0]->type == ProofType::CONJUNCTION_ELIMINATION
+					&& observation->operands[0]->operands[0]->operands[0] == observation->operands[1])
+			{
+				unsigned int index;
+				for (index = 0; index < negated_conjunction_nodes.length; index++)
+					if (negated_conjunction_nodes[index].value == observation) break;
+				if (index == negated_conjunction_nodes.length) {
+					fprintf(stderr, "print_disjunction_introductions WARNING: Found proof of negated conjunction in proof that is not an element of `theory.negated_conjunction_nodes`.\n");
+					if (fprintf(out, "Proof at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				} else {
+					if (!print("Proof of ", out)
+					 || !print(*negated_conjunction_nodes[index].key, out, std::forward<Printer>(printer)...)
+					 || fprintf(out, " at address 0x%lx:\n", (size_t) observation) < 0)
+						return false;
+				}
 			}
 
-			if (!print_existential_introduction(observation, out, std::forward<Printer>(printer)...))
+			if (!print_disjunction_introduction(observation, out, std::forward<Printer>(printer)...))
 				return false;
 		}
 		return true;
@@ -2852,9 +3013,11 @@ struct theory
 		for (unsigned int i = 2; i < sets.set_count + 1; i++) {
 			if (built_in_sets.contains(i) || sets.sets[i].size_axioms.data == nullptr)
 				continue;
-			if (!extra_axioms.contains(sets.sets[i].size_axioms[0]->formula)
-			 && !extra_axioms.add(sets.sets[i].size_axioms[0]->formula))
-				return false;
+			for (Proof* size_axiom : sets.sets[i].size_axioms) {
+				if (!extra_axioms.contains(size_axiom->formula)
+				 && !extra_axioms.add(size_axiom->formula))
+					return false;
+			}
 		}
 		return true;
 	}
@@ -2884,16 +3047,16 @@ struct theory
 			return false;
 		}
 		array_map<const Proof*, Proof*> proof_map(64);
-		proof_map.keys[0] = src.empty_set_axiom;
-		proof_map.values[0] = src.empty_set_axiom;
+		proof_map.keys[proof_map.size] = src.empty_set_axiom;
+		proof_map.values[proof_map.size++] = src.empty_set_axiom;
 		dst.empty_set_axiom = src.empty_set_axiom;
 		dst.empty_set_axiom->reference_count++;
-		proof_map.keys[1] = src.maximality_axiom;
-		proof_map.values[1] = src.maximality_axiom;
+		proof_map.keys[proof_map.size] = src.maximality_axiom;
+		proof_map.values[proof_map.size++] = src.maximality_axiom;
 		dst.maximality_axiom = src.maximality_axiom;
 		dst.maximality_axiom->reference_count++;
-		proof_map.keys[2] = src.function_axiom;
-		proof_map.values[2] = src.function_axiom;
+		proof_map.keys[proof_map.size] = src.function_axiom;
+		proof_map.values[proof_map.size++] = src.function_axiom;
 		dst.function_axiom = src.function_axiom;
 		dst.function_axiom->reference_count++;
 		dst.NAME_ATOM = src.NAME_ATOM;
@@ -2933,6 +3096,17 @@ struct theory
 			core::free(dst.implication_intro_nodes);
 			core::free(dst.negated_conjunction_nodes);
 			core::free(dst.disjunction_intro_nodes);
+			core::free(dst.sets); core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
+			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			return false;
+		} else if (!array_init(dst.built_in_sets, src.built_in_sets.capacity)) {
+			core::free(dst.implication_intro_nodes);
+			core::free(dst.negated_conjunction_nodes);
+			core::free(dst.disjunction_intro_nodes);
+			core::free(dst.existential_intro_nodes);
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
@@ -3058,6 +3232,8 @@ struct theory
 				}
 			}
 		}
+		for (unsigned int built_in_set : src.built_in_sets)
+			dst.built_in_sets[dst.built_in_sets.length++] = built_in_set;
 		return true;
 	}
 
@@ -3083,8 +3259,10 @@ if (new_proof != NULL) {
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
-if (!check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer>(*new_proof, expected_conclusion))
+if (!check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer>(*new_proof, expected_conclusion)) {
+check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer>(*new_proof, expected_conclusion);
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
+}
 core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0) core::free(expected_conclusion);
 }
 		core::free(*canonicalized);
@@ -3834,7 +4012,7 @@ private:
 					}
 					bool is_new;
 					if (!sets.get_set_id(set_formula, arity, set_id, is_new, set_diff, std::forward<Args>(visitor)...)
-					 || !sets.sets[set_id].set_size_axiom(c.axiom)
+					 || !sets.sets[set_id].set_size_axiom(c.axiom, set_diff, std::forward<Args>(visitor)...)
 					 || (is_new && !check_new_set_membership<false>(set_id, std::forward<Args>(visitor)...)))
 						return false;
 				}
@@ -3956,6 +4134,8 @@ private:
 					c.axiom->reference_count = old_ref_count;
 					if (is_freeable) {
 						check_old_set_membership(set_id, std::forward<Args>(visitor)...);
+						for (Proof* size_axiom : sets.sets[set_id].size_axioms)
+							on_old_size_axiom(size_axiom, set_diff, std::forward<Args>(visitor)...);
 						on_free_set(set_id, sets, set_diff, std::forward<Args>(visitor)...);
 						sets.free_set(set_id);
 					}
@@ -4016,7 +4196,7 @@ private:
 #if !defined(NDEBUG)
 		bool contains;
 		unsigned int reference_count = reference_counts.get(&proof, contains);
-		if (!contains) fprintf(stderr, "theory.remove_proof WARNING: The given proof is not in the map `reference_counts`.\n");
+		if (!contains) fprintf(stderr, "theory.get_theory_changes WARNING: The given proof is not in the map `reference_counts`.\n");
 #else
 		unsigned int reference_count = reference_counts.get(&proof);
 #endif
@@ -8328,9 +8508,10 @@ private:
 							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
 						}
 						core::free(*operand); if (operand->reference_count == 0) core::free(operand);
-						proof->reference_count++;
 						/* record the formula with this negated conjunction node */
 						negated_conjunction_nodes[negated_conjunction_nodes.length++] = { negated_conjunction, proof };
+						negated_conjunction->reference_count++;
+						proof->reference_count++;
 						return proof;
 					}
 
@@ -8536,7 +8717,7 @@ private:
 			if (sample_uniform(2) == 1)
 				swap(indices[0], indices[1]);
 			if (!filter_operands(canonicalized, indices, std::forward<Args>(args)...)) return NULL;
-			for (unsigned int i = 0; i < 2; i++) {
+			for (unsigned int i = 0; i < indices.length; i++) {
 				if (indices[i] == 1) {
 					Proof* left = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.left, set_diff, new_constant, std::forward<Args>(args)...);
 					if (left == NULL) {
@@ -8630,7 +8811,7 @@ private:
 				} else if (is_set_new) {
 					if (!check_new_set_membership<ResolveInconsistencies>(set_id, std::forward<Args>(args)...)) {
 						core::free(*lambda_formula); if (lambda_formula->reference_count == 0) core::free(lambda_formula);
-						sets.try_free_set(set_id, std::forward<Args>(args)...); return NULL;
+						sets.try_free_set(set_id, set_diff, std::forward<Args>(args)...); return NULL;
 					}
 				}
 
@@ -8778,7 +8959,7 @@ private:
 					return nullptr;
 				} else if (is_set_new) {
 					if (!check_new_set_membership<ResolveInconsistencies>(set_id, std::forward<Args>(args)...)) {
-						sets.try_free_set(set_id, std::forward<Args>(args)...);
+						sets.try_free_set(set_id, set_diff, std::forward<Args>(args)...);
 						return nullptr;
 					}
 				}
@@ -9303,9 +9484,13 @@ private:
 		core::free(*consequent); if (consequent->reference_count == 0) core::free(consequent);
 		check_old_subset_membership(antecedent_set, consequent_set, std::forward<Args>(visitor)...);
 		if (sets.is_freeable(consequent_set, std::forward<Args>(visitor)...)) {
+			for (Proof* size_axiom : sets.sets[consequent_set].size_axioms)
+				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(consequent_set, sets, std::forward<Args>(visitor)...);
 			sets.free_set(consequent_set);
 		} if (sets.is_freeable(antecedent_set, std::forward<Args>(visitor)...)) {
+			for (Proof* size_axiom : sets.sets[antecedent_set].size_axioms)
+				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(antecedent_set, sets, std::forward<Args>(visitor)...);
 			sets.free_set(antecedent_set);
 		}
@@ -9434,25 +9619,27 @@ private:
 		if (!ground_concepts[constant->constant - new_constant_offset].definitions.add(definition)) {
 			/* undo the changes we've made so far */
 			on_subtract_changes(std::forward<Args>(args)...);
-			for (unsigned int j = 0; j < ground_concepts[constant->constant - new_constant_offset].definitions.length; j++) {
-				unsigned int antecedent_set, consequent_set;
-				bool is_antecedent_new, is_consequent_new;
-				Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
-				if (definition->formula->binary.right->type != FormulaType::LAMBDA) continue;
-				Formula* other_set_formula = definition->formula->binary.right->quantifier.operand;
-				while (other_set_formula->type == FormulaType::LAMBDA)
-					other_set_formula = other_set_formula->quantifier.operand;
-				Proof* axiom = get_subset_axiom<false>(new_set_formula, other_set_formula, arity,
-						antecedent_set, consequent_set, is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
-				core::free(*axiom);
-				if (axiom->reference_count == 1)
-					free_subset_axiom(new_set_formula, other_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
+			if (new_definition->type == FormulaType::LAMBDA) {
+				for (unsigned int j = 0; j < ground_concepts[constant->constant - new_constant_offset].definitions.length; j++) {
+					unsigned int antecedent_set, consequent_set;
+					bool is_antecedent_new, is_consequent_new;
+					Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
+					if (definition->formula->binary.right->type != FormulaType::LAMBDA) continue;
+					Formula* other_set_formula = definition->formula->binary.right->quantifier.operand;
+					while (other_set_formula->type == FormulaType::LAMBDA)
+						other_set_formula = other_set_formula->quantifier.operand;
+					Proof* axiom = get_subset_axiom<false>(new_set_formula, other_set_formula, arity,
+							antecedent_set, consequent_set, is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
+					core::free(*axiom);
+					if (axiom->reference_count == 1)
+						free_subset_axiom(new_set_formula, other_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
 
-				axiom = get_subset_axiom<false>(other_set_formula, new_set_formula, arity,
-						antecedent_set, consequent_set, is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
-				core::free(*axiom);
-				if (axiom->reference_count == 1)
-					free_subset_axiom(other_set_formula, new_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
+					axiom = get_subset_axiom<false>(other_set_formula, new_set_formula, arity,
+							antecedent_set, consequent_set, is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
+					core::free(*axiom);
+					if (axiom->reference_count == 1)
+						free_subset_axiom(other_set_formula, new_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
+				}
 			}
 			return NULL;
 		}
@@ -11010,15 +11197,21 @@ struct log_probability_collector
 		/* initialize `current_log_probability` */
 		array<Formula*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		null_collector collector;
-		current_log_probability = log_probability(T.observations, extra_axioms, proof_prior, collector);
 #if !defined(NDEBUG)
 		compute_current_log_probability = [&]() {
 			null_collector collector;
 			array<Formula*> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
-			return log_probability(T.observations, extra_axioms, proof_prior, collector);
+			double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
+fprintf(stderr, "log probability of theory: %lf\n", value);
+T.print_axioms(stderr, *debug_terminal_printer);
+T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+			return value;
 		};
+		current_log_probability = compute_current_log_probability();
+#else
+		null_collector collector;
+		current_log_probability = log_probability(T.observations, extra_axioms, proof_prior, collector);
 #endif
 	}
 
@@ -11085,23 +11278,22 @@ struct model_evidence_collector
 			OnProofSampleFunction on_new_proof_sample = no_op()) :
 		samples(1024), observation_count(T.observations.size), test_proof(test_proof), on_new_proof_sample(on_new_proof_sample)
 	{
-#if !defined(NDEBUG)
-		if (test_proof->type != ProofType::EXISTENTIAL_INTRODUCTION) {
-			fprintf(stderr, "model_evidence_collector ERROR: `test_proof` is not an existential introduction.\n");
-			throw std::runtime_error("`test_proof` is not an existential introduction.");
-		}
-#endif
-
 		/* initialize `current_log_probability` */
 		array<Formula*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		current_log_probability = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
 #if !defined(NDEBUG)
 		compute_current_log_probability = [&]() {
 			array<Formula*> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
-			return log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
+			double value = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
+fprintf(stderr, "log probability of theory: %lf\n", value);
+T.print_axioms(stderr, *debug_terminal_printer);
+T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+			return value;
 		};
+		current_log_probability = compute_current_log_probability();
+#else
+		current_log_probability = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
 #endif
 
 		/* add the first sample */
@@ -11256,16 +11448,19 @@ double log_joint_probability_of_observation(
 		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
 		typename ProofCalculus::Language* logical_form, unsigned int num_samples)
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
 
 	unsigned int new_constant;
-	Proof* new_proof = T.add_formula(logical_form, new_constant);
+	set_changes<Formula> set_diff;
+	Proof* new_proof = T.add_formula(logical_form, set_diff, new_constant);
 	if (new_proof == nullptr) {
 		return -std::numeric_limits<double>::infinity();
-	} else if (!proof_axioms.template add<false>(new_proof, proof_prior)) {
-		T.template remove_formula<true>(new_proof);
+	} else if (!proof_axioms.template add<false>(new_proof, set_diff.new_set_axioms, proof_prior)) {
+		T.template remove_formula<true>(new_proof, set_diff);
 		return -std::numeric_limits<double>::infinity();
 	}
+	set_diff.clear();
 
 	model_evidence_collector<ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	for (unsigned int t = 0; t < num_samples; t++)
@@ -11286,8 +11481,8 @@ if (print_debug) T.print_existential_introductions(stderr, *debug_terminal_print
 		do_mh_step(T, proof_prior, proof_axioms, collector);
 }
 
-	T.template remove_formula<false>(collector.test_proof);
-	proof_axioms.template subtract<false>(collector.test_proof, proof_prior);
+	T.template remove_formula<false>(collector.test_proof, set_diff);
+	proof_axioms.template subtract<false>(collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.test_proof);
 	if (collector.test_proof->reference_count == 0)
 		free(collector.test_proof);
@@ -11300,23 +11495,41 @@ double log_joint_probability_of_truth(
 		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
 		typename ProofCalculus::Language* logical_form, unsigned int num_samples)
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
 
 	unsigned int new_constant;
-	Proof* new_proof = T.add_formula(logical_form, new_constant);
+	set_changes<Formula> set_diff;
+	Proof* new_proof = T.add_formula(logical_form, set_diff, new_constant);
 	if (new_proof == nullptr) {
 		return -std::numeric_limits<double>::infinity();
-	} else if (!proof_axioms.template add<false>(new_proof, proof_prior)) {
-		T.template remove_formula<true>(new_proof);
+	} else if (!proof_axioms.template add<false>(new_proof, set_diff.new_set_axioms, proof_prior)) {
+		T.template remove_formula<true>(new_proof, set_diff);
 		return -std::numeric_limits<double>::infinity();
 	}
+	set_diff.clear();
 
 	provability_collector<ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	for (unsigned int t = 0; t < num_samples; t++)
+{
+/*fprintf(stderr, "DEBUG: t = %u\n", t);
+proof_axioms.check_proof_axioms(T);
+proof_axioms.check_universal_eliminations(T, collector);
+T.check_concept_axioms();
+T.check_disjunction_introductions();
+T.are_elements_provable();
+T.sets.check_freeable_sets();
+T.sets.are_descendants_valid();
+T.sets.are_set_sizes_valid();
+T.sets.check_set_ids();
+bool print_debug = false;
+if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
+if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		do_mh_step(T, proof_prior, proof_axioms, collector);
+}
 
-	T.template remove_formula<false>(collector.internal_collector.test_proof);
-	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, proof_prior);
+	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
+	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.internal_collector.test_proof);
 	if (collector.internal_collector.test_proof->reference_count == 0)
 		free(collector.internal_collector.test_proof);
@@ -11416,7 +11629,7 @@ if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
 bool print_debug = false;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
-if (print_debug) T.print_existential_introductions(stderr, *debug_terminal_printer);
+if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof);
 		if (collector.internal_collector.current_log_probability > max_log_probability) {
 			free(T_map);

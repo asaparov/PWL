@@ -46,8 +46,11 @@ bool read_sentence(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		unsigned int article_name, hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior,
-		typename TheoryPrior::PriorState& proof_axioms, Args&&... add_formula_args)
+		typename TheoryPrior::PriorState& proof_axioms,
+		unsigned int mcmc_iterations_per_retry = 100,
+		unsigned int max_retries = 0, Args&&... add_formula_args)
 {
+	null_collector collector;
 	unsigned int parse_count, new_constant;
 	Formula* logical_forms[2];
 	double log_probabilities[2];
@@ -114,6 +117,12 @@ bool read_sentence(
 			/* this could be a definition so try adding it to the theory */
 			set_changes<Formula> set_diff;
 			auto* new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
+			for (unsigned int i = 0; new_proof == nullptr && i < max_retries; i++) {
+				set_diff.clear();
+				for (unsigned int t = 0; t < mcmc_iterations_per_retry; t++)
+					do_exploratory_mh_step(T, theory_prior, proof_axioms, collector);
+				new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
+			}
 			if (new_proof != nullptr) {
 				if (proof_axioms.add(new_proof, set_diff.new_set_axioms, theory_prior)) {
 					if (!parser.add_definition(s, logical_forms[0], new_constant, names)) {
@@ -138,7 +147,7 @@ exit(EXIT_FAILURE);
 			free_logical_forms(logical_forms, parse_count);
 
 			//for (unsigned int t = 0; t < 10; t++)
-			//	if (!do_mh_step(T, theory_prior)) return false;
+			//	do_mh_step(T, theory_prior, proof_axioms, collector);
 			return true;
 		}
 
@@ -168,6 +177,13 @@ exit(EXIT_FAILURE);
 	/* add the most probable logical form to the theory */
 	set_changes<Formula> set_diff;
 	auto* new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
+	for (unsigned int i = 0; new_proof == nullptr && i < max_retries; i++) {
+		set_diff.clear();
+auto collector = make_log_probability_collector(T, theory_prior);
+		for (unsigned int t = 0; t < mcmc_iterations_per_retry; t++)
+			do_exploratory_mh_step(T, theory_prior, proof_axioms, collector);
+		new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
+	}
 	if (new_proof != nullptr && !proof_axioms.add(new_proof, set_diff.new_set_axioms, theory_prior)) {
 		T.remove_formula(new_proof, set_diff);
 		new_proof = nullptr;
@@ -181,7 +197,7 @@ exit(EXIT_FAILURE);
 	}
 
 	//for (unsigned int t = 0; t < 10; t++)
-	//	if (!do_mh_step(T, theory_prior)) return false;
+	//	do_mh_step(T, theory_prior, proof_axioms, collector);
 
 	free_logical_forms(logical_forms, parse_count);
 	return true;
@@ -194,7 +210,8 @@ bool read_article(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
 		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms,
-		Args&&... add_formula_args)
+		unsigned int mcmc_iterations_per_retry = 100,
+		unsigned int max_retries = 0, Args&&... add_formula_args)
 {
 	print("Reading article: '", stdout); print(article_name, stdout, parser.get_printer()); print("'\n", stdout);
 
@@ -208,7 +225,7 @@ bool read_article(
 	}
 
 	for (unsigned int i = 0; i < doc.sentence_count; i++) {
-		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
+		if (!read_sentence(articles, parser, doc.sentences[i], T, article_name, names, visited_articles, theory_prior, proof_axioms, mcmc_iterations_per_retry, max_retries, std::forward<Args>(add_formula_args)...))
 			return false;
 	}
 	return true;
@@ -221,14 +238,15 @@ inline bool read_sentence(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
 		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms,
-		Args&&... add_formula_args)
+		unsigned int mcmc_iterations_per_retry = 100,
+		unsigned int max_retries = 0, Args&&... add_formula_args)
 {
 	typename Parser::SentenceType sentence;
 	if (!tokenize(input_sentence, sentence, names)
 	 || !parser.invert_name_map(names))
 		return false;
 
-	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...);
+	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms, mcmc_iterations_per_retry, max_retries, std::forward<Args>(add_formula_args)...);
 	free(sentence);
 	return result;
 }
@@ -1485,7 +1503,9 @@ bool read_sentence(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior,
-		typename TheoryPrior::PriorState& proof_axioms)
+		typename TheoryPrior::PriorState& proof_axioms,
+		unsigned int mcmc_iterations_per_retry = 100,
+		unsigned int max_retries = 0)
 {
 	typename Parser::SentenceType sentence;
 	if (!tokenize(tokens, length, sentence, names)) {
@@ -1494,7 +1514,7 @@ bool read_sentence(
 		free(sentence);
 		return false;
 	}
-	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms);
+	bool result = read_sentence(articles, parser, sentence, T, UINT_MAX, names, visited_articles, theory_prior, proof_axioms, mcmc_iterations_per_retry, max_retries);
 	free(sentence);
 	return result;
 }
@@ -1680,7 +1700,6 @@ inline bool answer_question(array<string>& answers,
 print(term->constant, stderr); print(": \"", stderr);
 print(name_term->str, stderr);
 print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);
-T.print_axioms(stderr); print('\n', stderr);
 					if (!temp_answers.ensure_capacity(temp_answers.size + 1))
 						return;
 					unsigned int index = temp_answers.index_of(name_term->str);

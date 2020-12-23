@@ -567,6 +567,20 @@ inline void on_free_set(unsigned int set_id,
 		const unfixed_set_counter& visitor)
 { }
 
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const unfixed_set_counter& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const unfixed_set_counter& visitor)
+{ }
+
 template<
 	bool Negated, typename Formula, typename Canonicalizer,
 	typename ProofPrior, typename TheorySampleCollector,
@@ -1537,6 +1551,20 @@ inline void on_free_set(unsigned int set_id,
 		const undo_remove_sets& visitor)
 { }
 
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const undo_remove_sets& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const undo_remove_sets& visitor)
+{ }
+
 template<typename Formula, typename Canonicalizer>
 bool undo_proof_changes(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
@@ -1638,6 +1666,20 @@ inline void on_free_set(unsigned int set_id,
 	visitor.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const inverse_set_size_log_probability& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const inverse_set_size_log_probability& visitor)
+{ }
+
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline bool compute_new_set_size(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
@@ -1677,6 +1719,20 @@ inline void on_free_set(unsigned int set_id,
 	sampler.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const proof_sampler& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const proof_sampler& visitor)
+{ }
+
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline bool compute_new_set_size(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
@@ -1704,6 +1760,20 @@ inline void on_free_set(unsigned int set_id,
 	visitor.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const inverse_proof_sampler& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const inverse_proof_sampler& visitor)
+{ }
+
 template<typename Formula, typename Canonicalizer,
 	typename ProofPrior, typename TheorySampleCollector,
 	typename ProposalDistribution>
@@ -1717,41 +1787,35 @@ bool propose_disjunction_intro(
 	const ProposalDistribution& proposal_distribution)
 {
 	typedef nd_step<Formula> Proof;
-	typedef typename Formula::Type FormulaType;
+	typedef theory<natural_deduction<Formula>, Canonicalizer> Theory;
 
 	set_changes<Formula> set_diff;
 	inverse_proof_sampler inverse_sampler;
-	typename theory<natural_deduction<Formula>, Canonicalizer>::changes old_proof_changes;
-	array<const Proof*> proof_steps(16);
-	if (!T.get_theory_changes(*selected_step.value, old_proof_changes)
-	 || !get_proof_steps<nd_step_type::AXIOM>(selected_step.value, proof_steps))
+	typename Theory::changes old_proof_changes;
+	if (!T.get_theory_changes(*selected_step.value, old_proof_changes))
 		return false;
 	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
 	/*for (const typename Theory::change& c : old_proof_changes.list)
 		if (c.type == Theory::change_type::SUBSET_AXIOM) return true;*/
 	T.subtract_changes(old_proof_changes, set_diff, inverse_sampler);
 	/* some removed set size axioms may actually become extra axioms */
-	for (const Proof* step : proof_steps) {
-		if (step->formula->type == FormulaType::EQUALS
-		 && step->formula->binary.left->type == FormulaType::UNARY_APPLICATION
-		 && step->formula->binary.left->binary.left->type == FormulaType::CONSTANT
-		 && step->formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-		 && step->formula->binary.right->type == FormulaType::NUMBER)
-		{
+	for (const typename Theory::change& change : old_proof_changes.list) {
+		if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 			bool was_removed = false;
 			for (Formula* old_axiom : set_diff.old_set_axioms) {
-				if (old_axiom == step->formula) {
+				if (old_axiom == change.axiom->formula) {
 					was_removed = true;
 					break;
 				}
 			}
 			if (!was_removed)
-				set_diff.new_set(step->formula);
+				set_diff.new_set(change.axiom->formula);
 		}
 	}
 
 	nd_step<Formula>* new_proof;
 	proof_sampler sampler;
+	set_changes<Formula> new_set_diff;
 unsigned int debug = 0;
 bool debug_flag = false;
 if (debug_flag) {
@@ -1762,7 +1826,6 @@ print(*selected_step.key, stderr); print('\n', stderr);
 		   and avoiding paths that we've previously proved to be inconsistent,
 		   also compute the log probability of the new path */
 		unsigned int new_constant = 0;
-		set_changes<Formula> new_set_diff;
 		sampler.log_probability = 0.0;
 		sampler.set_size_log_probability = 0.0;
 		sampler.removed_set_sizes.clear();
@@ -1772,36 +1835,10 @@ fprintf(stderr, "INNER DEBUG: %u\n", debug);
 T.print_axioms(stderr);
 }
 debug++;
+		new_set_diff.clear();
 		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_set_diff, new_constant, sampler);
-		if (new_proof != NULL) {
-			proof_steps.clear();
-			if (!get_proof_steps<nd_step_type::AXIOM>(new_proof, proof_steps))
-				return false;
-			/* some new set size axioms may actually have already been extra axioms */
-			for (const Proof* step : proof_steps) {
-				if (step->formula->type == FormulaType::EQUALS
-				 && step->formula->binary.left->type == FormulaType::UNARY_APPLICATION
-				 && step->formula->binary.left->binary.left->type == FormulaType::CONSTANT
-				 && step->formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-				 && step->formula->binary.right->type == FormulaType::NUMBER)
-				{
-					bool is_new = false;
-					for (Formula* new_axiom : new_set_diff.new_set_axioms) {
-						if (new_axiom == step->formula) {
-							is_new = true;
-							break;
-						}
-					}
-					if (!is_new)
-						new_set_diff.old_set(step->formula);
-				}
-			}
-			for (Formula* old_axiom : new_set_diff.old_set_axioms)
-				set_diff.old_set(old_axiom);
-			for (Formula* new_axiom : new_set_diff.new_set_axioms)
-				set_diff.new_set(new_axiom);
+		if (new_proof != NULL)
 			break;
-		}
 	}
 if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
@@ -1813,7 +1850,7 @@ T.print_axioms(stderr);
 	log_proposal_probability_ratio += inverse_sampler.log_probability;
 	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
 
-	typename theory<natural_deduction<Formula>, Canonicalizer>::changes new_proof_changes;
+	typename Theory::changes new_proof_changes;
 	if (!T.get_theory_changes(*new_proof, new_proof_changes))
 		return false;
 
@@ -1823,6 +1860,25 @@ T.print_axioms(stderr);
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 		return true;
 	}
+
+	/* some new set size axioms may actually have already been extra axioms */
+	for (const typename Theory::change& change : new_proof_changes.list) {
+		if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
+			bool is_new = false;
+			for (Formula* new_axiom : new_set_diff.new_set_axioms) {
+				if (new_axiom == change.axiom->formula) {
+					is_new = true;
+					break;
+				}
+			}
+			if (!is_new)
+				new_set_diff.old_set(change.axiom->formula);
+		}
+	}
+	for (Formula* old_axiom : new_set_diff.old_set_axioms)
+		set_diff.old_set(old_axiom);
+	for (Formula* new_axiom : new_set_diff.new_set_axioms)
+		set_diff.new_set(new_axiom);
 
 	/* propose `new_proof` to substitute `selected_step.value` */
 	array<pair<Proof*, Proof*>> observation_changes(8);
@@ -2043,6 +2099,20 @@ inline void on_free_set(unsigned int set_id,
 	initializer.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const proof_initializer& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const proof_initializer& visitor)
+{ }
+
 template<typename Formula>
 inline bool get_proof_initializer(nd_step<Formula>* proof, proof_initializer& initializer)
 {
@@ -2146,7 +2216,6 @@ inline bool do_split_merge(
 {
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
-	typedef typename Formula::Type FormulaType;
 	typedef theory<natural_deduction<Formula>, Canonicalizer> Theory;
 	typedef typename Theory::changes TheoryChanges;
 	typedef natural_deduction<Formula> ProofCalculus;
@@ -2234,7 +2303,6 @@ inline bool do_split_merge(
 	}
 
 	set_changes<Formula> set_diff;
-	array<const Proof*> proof_steps(16);
 	inverse_set_size_log_probability set_size_log_probability;
 	array_map<const Proof*, unsigned int> reference_counts(32);
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
@@ -2262,9 +2330,7 @@ inline bool do_split_merge(
 			reference_counts.size++;
 		}
 		reference_counts.values[index]--;
-		proof_steps.clear();
-		if (!T.get_theory_changes(*old_proofs[i].value, discharged_axioms, reference_counts, old_proof_changes[i])
-		 || !get_proof_steps<nd_step_type::AXIOM>(old_proofs[i].value, proof_steps))
+		if (!T.get_theory_changes(*old_proofs[i].value, discharged_axioms, reference_counts, old_proof_changes[i]))
 			return false;
 		/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
 		/*for (const typename Theory::change& c : old_proof_changes[i].list) {
@@ -2281,22 +2347,17 @@ inline bool do_split_merge(
 		}*/
 		T.subtract_changes(old_proof_changes[i], set_diff, set_size_log_probability);
 		/* some removed set size axioms may actually become extra axioms */
-		for (const Proof* step : proof_steps) {
-			if (step->formula->type == FormulaType::EQUALS
-			 && step->formula->binary.left->type == FormulaType::UNARY_APPLICATION
-			 && step->formula->binary.left->binary.left->type == FormulaType::CONSTANT
-			 && step->formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-			 && step->formula->binary.right->type == FormulaType::NUMBER)
-			{
+		for (const typename Theory::change& change : old_proof_changes[i].list) {
+			if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 				bool was_removed = false;
 				for (Formula* old_axiom : set_diff.old_set_axioms) {
-					if (old_axiom == step->formula) {
+					if (old_axiom == change.axiom->formula) {
 						was_removed = true;
 						break;
 					}
 				}
 				if (!was_removed)
-					set_diff.new_set(step->formula);
+					set_diff.new_set(change.axiom->formula);
 			}
 		}
 	}
@@ -2335,10 +2396,7 @@ inline bool do_split_merge(
 
 		log_proposal_probability_ratio -= initializers[i].set_size_log_probability;
 
-		proof_steps.clear();
-		if (!T.get_theory_changes(*new_proofs[i], new_proof_changes[i])
-		 || !get_proof_steps<nd_step_type::AXIOM>(new_proofs[i], proof_steps))
-		{
+		if (!T.get_theory_changes(*new_proofs[i], new_proof_changes[i])) {
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
@@ -2346,22 +2404,17 @@ inline bool do_split_merge(
 			free(initializers); free(new_proofs); return true;
 		}
 		/* some new set size axioms may actually have already been extra axioms */
-		for (const Proof* step : proof_steps) {
-			if (step->formula->type == FormulaType::EQUALS
-			 && step->formula->binary.left->type == FormulaType::UNARY_APPLICATION
-			 && step->formula->binary.left->binary.left->type == FormulaType::CONSTANT
-			 && step->formula->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-			 && step->formula->binary.right->type == FormulaType::NUMBER)
-			{
+		for (const typename Theory::change& change : new_proof_changes[i].list) {
+			if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 				bool is_new = false;
 				for (Formula* new_axiom : new_set_diff.new_set_axioms) {
-					if (new_axiom == step->formula) {
+					if (new_axiom == change.axiom->formula) {
 						is_new = true;
 						break;
 					}
 				}
 				if (!is_new)
-					new_set_diff.old_set(step->formula);
+					new_set_diff.old_set(change.axiom->formula);
 			}
 		}
 
@@ -3302,6 +3355,75 @@ inline double log_probability(
 	return proposal_distribution.log_split_weight - log(normalization);
 }
 
+struct exploration_proposal { };
+
+template<typename Formula, typename Canonicalizer>
+inline unsigned int sample(
+		exploration_proposal& proposal_distribution,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		array<extensional_edge<Formula>>& eliminable_extensional_edges,
+		array<unsigned int>& unfixed_sets,
+		array<pair<relation, relation>>& mergeable_events,
+		array<relation>& splittable_events,
+		double& log_proposal_probability_ratio)
+{
+	unsigned int axiom_count = unfixed_sets.length
+			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
+			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+#if !defined(NDEBUG)
+	if (axiom_count == 0)
+		fprintf(stderr, "sample WARNING: `axiom_count` is 0.\n");
+#endif
+	return T.ground_axiom_count + eliminable_extensional_edges.length + sample_uniform(axiom_count);
+}
+
+inline double log_probability(
+		const exploration_proposal& proposal_distribution,
+		int delta_atom_count, int delta_extensional_edges,
+		int delta_unfixed_set_count)
+{
+	return 1.0e100;
+}
+
+template<typename Formula, typename Canonicalizer>
+inline double log_probability(
+		const exploration_proposal& proposal_distribution,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		array<extensional_edge<Formula>>& eliminable_extensional_edges,
+		array<unsigned int>& unfixed_sets,
+		array<pair<relation, relation>>& mergeable_events,
+		array<relation>& splittable_events,
+		const pair<Formula*, nd_step<Formula>*>& selected_disjunction_intro)
+{
+	return 1.0e100;
+}
+
+template<typename Formula, typename Canonicalizer>
+inline double log_probability(
+		const exploration_proposal& proposal_distribution,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		array<extensional_edge<Formula>>& eliminable_extensional_edges,
+		array<unsigned int>& unfixed_sets,
+		array<pair<relation, relation>>& mergeable_events,
+		array<relation>& splittable_events,
+		const pair<relation, relation>& selected_merge_event)
+{
+	return 1.0e100;
+}
+
+template<typename Formula, typename Canonicalizer>
+inline double log_probability(
+		const exploration_proposal& proposal_distribution,
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		array<extensional_edge<Formula>>& eliminable_extensional_edges,
+		array<unsigned int>& unfixed_sets,
+		array<pair<relation, relation>>& mergeable_events,
+		array<relation>& splittable_events,
+		const relation& selected_split_event)
+{
+	return 1.0e100;
+}
+
 template<typename Formula, typename FallbackProposal>
 struct query_proposal {
 	double sample_query_probability;
@@ -3525,6 +3647,18 @@ inline bool do_mh_step(
 {
 	static uniform_proposal default_proposal(2.0, 0.001);
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, default_proposal);
+}
+
+template<typename Formula, typename Canonicalizer,
+	typename ProofPrior, typename TheorySampleCollector>
+inline bool do_exploratory_mh_step(
+		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		ProofPrior& proof_prior,
+		typename ProofPrior::PriorState& proof_axioms,
+		TheorySampleCollector& sample_collector)
+{
+	static exploration_proposal proposal_distribution;
+	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }
 
 template<typename Formula, typename Canonicalizer,

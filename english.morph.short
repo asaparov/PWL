@@ -128,3 +128,18 @@ foot	n\feet	v
 cubic	adj\-	n
 volume	n\~	v\volum
 height	n\~
+do	v\does\doing\did\done	n	n	adv\-
+circuit	n	v
+switch	n\es	v\es	adj\-
+complete	v\complet	adj\er\more	n
+light bulb	n
+lightbulb	n\head=[[light]][[bulb]]	n
+radio	n\~	v
+play	v	n\~
+on	adj\-	adv\-	v	n\?
+off	adv\-	adj	v	n\-
+spin	v\spins\spinning\spun\past2=span\past2_qual=archaic\spun	n\~
+glow	v\glows\glowing\glowed\glowed\past2=glew\past_ptc2=glown\past2_qual=nonstandard\past_ptc2_qual=nonstandard	n\~
+bell	n	v	v	n
+ring	n	v	n	v\rings\ringing\rang\past2=rung\past2_qual=nonstandard\rung	n
+freeze	v\freezes\freezing\froze\frozen	n	n

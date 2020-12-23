@@ -43,6 +43,7 @@ enum class built_in_predicates : unsigned int {
 	NAME,
 	NAMED_ENTITY, /* this is only used in parsing */
 	MEASURE,
+	REF,
 
 AREA, /* TODO: for debugging; delete this */
 SQUARE, /* TODO: for debugging; delete this */
@@ -161,6 +162,11 @@ unsigned int TENSE_PREDICATES[] = {
 	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
 };
 
+unsigned int ASPECT_PREDICATES[2][3] = {
+	{(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE, (unsigned int) built_in_predicates::PRESENT_PERFECT, (unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE},
+	{(unsigned int) built_in_predicates::PAST_PROGRESSIVE, (unsigned int) built_in_predicates::PAST_PERFECT, (unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE}
+};
+
 inline bool is_tense_predicate(unsigned int predicate) {
 	return index_of(predicate, TENSE_PREDICATES, array_length(TENSE_PREDICATES)) < array_length(TENSE_PREDICATES);
 }
@@ -207,6 +213,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("number", (unsigned int) built_in_predicates::NUMBER)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)
 		&& names.put("measure", (unsigned int) built_in_predicates::MEASURE)
+		&& names.put("ref", (unsigned int) built_in_predicates::REF)
 		&& names.put("area", (unsigned int) built_in_predicates::AREA)
 		&& names.put("square", (unsigned int) built_in_predicates::SQUARE)
 		&& names.put("mile", (unsigned int) built_in_predicates::MILE);

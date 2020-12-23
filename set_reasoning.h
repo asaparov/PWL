@@ -913,7 +913,8 @@ struct set_info
 			size_axiom->formula->binary.right->number.integer = new_size;
 	}
 
-	inline Proof* get_size_axiom(Formula* set_formula) {
+	template<typename... Args>
+	inline Proof* get_size_axiom(Formula* set_formula, Args&&... visitor) {
 		if (!size_axioms.ensure_capacity(size_axioms.length + 1))
 			return nullptr;
 		for (Proof* size_axiom : size_axioms) {
@@ -946,11 +947,13 @@ struct set_info
 		if (new_size_axiom == nullptr) return nullptr;
 		new_size_axiom->reference_count++;
 		size_axioms[size_axioms.length++] = new_size_axiom;
+		on_new_size_axiom(new_size_axiom, std::forward<Args>(visitor)...);
 		return new_size_axiom;
 	}
 
 	/* NOTE: this function does not check the consistency of the new size */
-	inline bool set_size_axiom(Proof* axiom) {
+	template<typename... Args>
+	inline bool set_size_axiom(Proof* axiom, Args&&... visitor) {
 		if (!size_axioms.ensure_capacity(size_axioms.length + 1))
 			return false;
 		set_size = axiom->formula->binary.right->number.integer;
@@ -970,6 +973,7 @@ struct set_info
 		axiom->reference_count++;
 		for (unsigned int j = 0; j + 1 < size_axioms.length; j++)
 			size_axioms[j]->formula->binary.right->number.integer = set_size;
+		on_new_size_axiom(axiom, std::forward<Args>(visitor)...);
 		return true;
 	}
 
@@ -980,11 +984,12 @@ struct set_info
 	}
 };
 
-template<typename BuiltInConstants, typename ProofCalculus>
+template<typename BuiltInConstants, typename ProofCalculus, typename... Args>
 inline bool init(
 		set_info<BuiltInConstants, ProofCalculus>& info,
 		unsigned int arity, unsigned int set_size,
-		typename ProofCalculus::Language* set_formula)
+		typename ProofCalculus::Language* set_formula,
+		Args&&... visitor)
 {
 	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
@@ -1026,6 +1031,7 @@ inline bool init(
 		free(*initial_size_axiom); free(initial_size_axiom); free(info.size_axioms);
 		free(info.descendants); return false;
 	}
+	on_new_size_axiom(initial_size_axiom, std::forward<Args>(visitor)...);
 	return true;
 }
 
@@ -1041,6 +1047,16 @@ inline bool compute_new_set_size(unsigned int set_id,
 {
 	out = (max_set_size == UINT_MAX) ? (min_set_size + 20) : ((min_set_size + max_set_size + 1) / 2);
 	return true;
+}
+
+template<typename Proof>
+constexpr bool on_new_size_axiom(Proof* new_size_axiom) {
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(Proof* old_size_axiom) {
+	return;
 }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
@@ -1224,6 +1240,8 @@ struct set_reasoning
 	template<typename... Args>
 	inline void try_free_set(unsigned int set_id, Args&&... visitor) {
 		if (is_freeable(set_id, std::forward<Args>(visitor)...)) {
+			for (Proof* size_axiom : sets[set_id].size_axioms)
+				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(set_id, *this, std::forward<Args>(visitor)...);
 			free_set(set_id);
 		}
@@ -1352,7 +1370,7 @@ struct set_reasoning
 		}
 
 		/* initialize the set_info structure and the set size */
-		if (!init(sets[set_id], arity, 1, set_formula)) {
+		if (!init(sets[set_id], arity, 1, set_formula, std::forward<Args>(visitor)...)) {
 			intensional_graph.template free_set<true>(set_id);
 			extensional_graph.template free_set<true>(set_id);
 			return false;
@@ -2098,9 +2116,13 @@ struct set_reasoning
 		if (!extensional_graph.add_edge(consequent_set, antecedent_set, axiom)) {
 			/* if either the antecedent or consequent sets have no references, free them */
 			if (is_freeable(consequent_set)) {
+				for (Proof* size_axiom : sets[consequent_set].size_axioms)
+					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 				on_free_set(consequent_set, *this);
 				free_set(consequent_set);
 			} if (is_freeable(antecedent_set)) {
+				for (Proof* size_axiom : sets[antecedent_set].size_axioms)
+					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 				on_free_set(antecedent_set, *this);
 				free_set(antecedent_set);
 			}
@@ -2467,9 +2489,13 @@ struct set_reasoning
 
 		/* if either the antecedent or consequent sets have no references, free them */
 		if (FreeSets && is_freeable(consequent_set, std::forward<Args>(visitor)...)) {
+			for (Proof* size_axiom : sets[consequent_set].size_axioms)
+				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(consequent_set, *this, std::forward<Args>(visitor)...);
 			if (!free_set(consequent_set)) return false;
 		} if (FreeSets && is_freeable(antecedent_set, std::forward<Args>(visitor)...)) {
+			for (Proof* size_axiom : sets[antecedent_set].size_axioms)
+				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(antecedent_set, *this, std::forward<Args>(visitor)...);
 			if (!free_set(antecedent_set)) return false;
 		}
@@ -2587,7 +2613,7 @@ struct set_reasoning
 		if (!get_set_id(formula, arity, set_id, is_set_new, std::forward<Args>(visitor)...)
 		 || !set_size_axiom<ResolveInconsistencies>(set_id, new_size))
 			return nullptr;
-		return sets[set_id].get_size_axiom(formula);
+		return sets[set_id].get_size_axiom(formula, std::forward<Args>(visitor)...);
 	}
 
 	inline bool get_provable_elements(unsigned int set_id,
