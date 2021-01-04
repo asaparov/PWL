@@ -1117,8 +1117,8 @@ struct simple_hol_term_distribution
 	{
 		if (fabs(ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability - 1.0) > 1.0e-12)
 			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability` is not 1.\n");
-		if (fabs(log_ground_literal_probability + log_negated_expression_probability + log_universal_probability + log_existential_probability + log_conjunction_probability + log_disjunction_probability + log_set_size_axiom_probability + log_arg1_probability + log_arg2_probability - 1.0) > 1.0e-12)
-			fprintf(stderr, "simple_hol_term_distribution WARNING: `log_ground_literal_probability + log_negated_expression_probability + log_universal_probability + log_existential_probability + log_conjunction_probability + log_disjunction_probability + log_set_size_axiom_probability + log_arg1_probability + log_arg2_probability` is not 1.\n");
+		if (fabs(quantified_ground_literal_probability + quantified_negated_expression_probability + quantified_universal_probability + quantified_existential_probability + quantified_conjunction_probability + quantified_disjunction_probability + quantified_set_size_axiom_probability + quantified_arg1_probability + quantified_arg2_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `quantified_ground_literal_probability + quantified_negated_expression_probability + quantified_universal_probability + quantified_existential_probability + quantified_conjunction_probability + quantified_disjunction_probability + quantified_set_size_axiom_probability + quantified_arg1_probability + quantified_arg2_probability` is not 1.\n");
 		if (fabs(arg_constant_probability + arg_number_probability + arg_string_probability - 1.0) > 1.0e-12)
 			fprintf(stderr, "simple_hol_term_distribution WARNING: `arg_constant_probability + arg_number_probability + arg_string_probability` is not 1.\n");
 	}
@@ -2391,7 +2391,7 @@ return EXIT_SUCCESS;*/
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, iid_uniform_distribution<hol_term>(100000)));
 	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
-			0.1099999, 0.01, 0.0000001, 0.27, 0.01, 0.1, 0.2, 0.2, 0.2,
+			0.1099999, 0.01, 0.0000001, 0.17, 0.01, 0.1, 0.2, 0.2, 0.2,
 			0.1099999, 0.01, 0.0000001, 0.27, 0.1099999, 0.1, 0.0000001, 0.2, 0.2,
 			0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
@@ -2410,10 +2410,11 @@ return EXIT_SUCCESS;*/
 /* run RuleTaker experiments */
 unsigned int total = 0;
 unsigned int answered = 0;
-double correct = 0;
+array<pair<unsigned int, unsigned int>> incorrect(16);
+array<pair<unsigned int, unsigned int>> half_correct(16);
 unsigned int context_index = 0;
 std::minstd_rand prng_engine = core::engine;
-auto process_ruletaker_questions = [&parser,&corpus,&names,&T,&seed_entities,&proof_prior,&proof_axioms,&total,&answered,&correct,&context_index,&prng_engine](char* context, array<pair<string, bool>>& questions)
+auto process_ruletaker_questions = [&parser,&corpus,&names,&T,&seed_entities,&proof_prior,&proof_axioms,&total,&answered,&incorrect,&half_correct,&context_index,&prng_engine](char* context, array<pair<string, bool>>& questions)
 {
 	context_index++;
 
@@ -2519,11 +2520,11 @@ auto process_ruletaker_questions = [&parser,&corpus,&names,&T,&seed_entities,&pr
 		}
 		free(*negated); if (negated->reference_count == 0) free(negated);
 		if (log_probability_true > log_probability_false) {
-			if (question.value) correct++;
+			if (!question.value) incorrect.add(make_pair(context_index, i + 1));
 		} else if (log_probability_false > log_probability_true) {
-			if (!question.value) correct++;
+			if (question.value) incorrect.add(make_pair(context_index, i + 1));
 		} else {
-			correct += 0.5;
+			half_correct.add(make_pair(context_index, i + 1));
 		}
 		total++;
 		answered++;
