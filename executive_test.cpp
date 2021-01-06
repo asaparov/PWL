@@ -2166,28 +2166,6 @@ inline void on_free_set(unsigned int set_id,
 	on_free_set(set_id, sets);
 }
 
-inline bool negate_head(
-		hol_term* src, hol_term*& dst)
-{
-	array<hol_term*> siblings(8);
-	array<unsigned int> dst_variables(8);
-	bool removed_quantifier, remove_wide_scope_marker = false, remove_negations;
-	return apply_head<true>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, find_head<built_in_predicates>,
-			[](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
-			{
-				if (head->type == hol_term_type::NOT) {
-					head->unary.operand->reference_count++;
-					return head->unary.operand;
-				} else {
-					hol_term* new_head = hol_term::new_not(head);
-					if (new_head == nullptr)
-						return (hol_term*) nullptr;
-					head->reference_count++;
-					return new_head;
-				}
-			}, no_op()) && dst != nullptr;
-}
-
 
 unsigned int constant_offset = 0;
 
@@ -2408,134 +2386,7 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-unsigned int total = 0;
-unsigned int answered = 0;
-array<pair<unsigned int, unsigned int>> incorrect(16);
-array<pair<unsigned int, unsigned int>> half_correct(16);
-unsigned int context_index = 0;
-std::minstd_rand prng_engine = core::engine;
-auto process_ruletaker_questions = [&parser,&corpus,&names,&T,&seed_entities,&proof_prior,&proof_axioms,&total,&answered,&incorrect,&half_correct,&context_index,&prng_engine](char* context, array<pair<string, bool>>& questions)
-{
-	context_index++;
-
-	/* for reproducibility, reset the PRNG state */
-	core::engine = prng_engine;
-
-	/* clone the original theory */
-	typedef decltype(T) TheoryType;
-	typedef decltype(proof_axioms) PriorStateType;
-	TheoryType& T_copy = *((TheoryType*) alloca(sizeof(TheoryType)));
-	PriorStateType proof_axioms_copy(proof_axioms);
-	if (!TheoryType::clone(T, T_copy))
-		return false;
-
-	/* read the context sentences */
-	unsigned int start = 0;
-	for (unsigned int i = 0; context[i] != '\0'; i++) {
-		if (context[i] == '.') {
-			const char old_next = context[i + 1];
-			context[i + 1] = '\0';
-			if (!read_sentence(corpus, parser, context + start, T_copy, names, seed_entities, proof_prior, proof_axioms_copy, 10, UINT_MAX)) {
-				context[i + 1] = old_next;
-				free(T_copy);
-				total += questions.length;
-				return true;
-			}
-			context[i + 1] = old_next;
-			start = i + 1;
-			while (isspace(context[start])) start++;
-
-			TheoryType& T_MAP = *((TheoryType*) alloca(sizeof(TheoryType)));
-			TheoryType::clone(T_copy, T_MAP);
-			auto collector = make_log_probability_collector(T_copy, proof_prior);
-			double max_log_probability = collector.current_log_probability;
-			for (unsigned int t = 0; t < 4000; t++) {
-				bool print_debug = false;
-				if (print_debug) T_copy.print_axioms(stderr, *debug_terminal_printer);
-				if (print_debug) T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
-				do_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-				if (collector.current_log_probability > max_log_probability) {
-					free(T_MAP);
-					TheoryType::clone(T_copy, T_MAP);
-					max_log_probability = collector.current_log_probability;
-				}
-			}
-			T_MAP.print_axioms(stderr, *debug_terminal_printer);
-			free(T_MAP);
-		}
-	}
-
-	std::minstd_rand prng_engine_copy = core::engine;
-	for (unsigned int i = 0; i < questions.length; i++) {
-		const pair<string, bool>& question = questions[i];
-		core::engine = prng_engine_copy;
-
-		TheoryType& T_current = *((TheoryType*) alloca(sizeof(TheoryType)));
-		PriorStateType proof_axioms_current(proof_axioms_copy);
-		if (!TheoryType::clone(T_copy, T_current)) {
-			free(T_copy);
-			return false;
-		}
-
-		unsigned int parse_count;
-		constexpr unsigned int max_parse_count = 2;
-		hol_term* logical_forms[max_parse_count];
-		double log_probabilities[max_parse_count];
-		if (!parse_sentence(parser, question.key.data, names, logical_forms, log_probabilities, parse_count)) {
-			free(T_copy); free(T_current);
-			total++;
-			continue;
-		}
-
-		double log_probability_true = log_joint_probability_of_truth(T_current, proof_prior, proof_axioms_current, logical_forms[0], 10000);
-		for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
-			null_collector collector;
-			for (unsigned int t = 0; t < 10; t++)
-				do_exploratory_mh_step(T_current, proof_prior, proof_axioms_current, collector);
-			log_probability_true = log_joint_probability_of_truth(T_current, proof_prior, proof_axioms_current, logical_forms[0], 10000);
-		}
-
-		hol_term* negated;
-		if (!negate_head(logical_forms[0], negated) || negated == nullptr) {
-			free_logical_forms(logical_forms, parse_count);
-			free(T_copy); free(T_current);
-			return false;
-		}
-
-		free(T_current);
-		PriorStateType new_proof_axioms_current(proof_axioms_copy);
-		if (!TheoryType::clone(T_copy, T_current)) {
-			free(*negated); if (negated->reference_count == 0) free(negated);
-			free_logical_forms(logical_forms, parse_count);
-			free(T_copy);
-			return false;
-		}
-
-		double log_probability_false = log_joint_probability_of_truth(T_current, proof_prior, new_proof_axioms_current, negated, 10000);
-		for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
-			null_collector collector;
-			for (unsigned int t = 0; t < 10; t++)
-				do_exploratory_mh_step(T_current, proof_prior, new_proof_axioms_current, collector);
-			log_probability_false = log_joint_probability_of_truth(T_current, proof_prior, new_proof_axioms_current, negated, 10000);
-		}
-		free(*negated); if (negated->reference_count == 0) free(negated);
-		if (log_probability_true > log_probability_false) {
-			if (!question.value) incorrect.add(make_pair(context_index, i + 1));
-		} else if (log_probability_false > log_probability_true) {
-			if (question.value) incorrect.add(make_pair(context_index, i + 1));
-		} else {
-			half_correct.add(make_pair(context_index, i + 1));
-		}
-		total++;
-		answered++;
-
-		free_logical_forms(logical_forms, parse_count);
-		free(T_current);
-	}
-	free(T_copy);
-	return true;
-};
-read_ruletaker_data("ruletaker/birds-electricity/test.jsonl", process_ruletaker_questions);
+run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test.jsonl", 1);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
@@ -2640,7 +2491,8 @@ initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 
 typedef decltype(T) TheoryType;
 TheoryType& T_map = *((TheoryType*) alloca(sizeof(TheoryType)));
-TheoryType::clone(T, T_map);
+hash_map<const hol_term*, hol_term*> formula_map(128);
+TheoryType::clone(T, T_map, formula_map);
 auto collector = make_log_probability_collector(T, proof_prior);
 double max_log_probability = collector.current_log_probability;
 for (unsigned int t = 0; t < 200 /*20000*/; t++) {
@@ -2649,8 +2501,8 @@ for (unsigned int t = 0; t < 200 /*20000*/; t++) {
 	if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 	do_mh_step(T, proof_prior, proof_axioms, collector);
 	if (collector.current_log_probability > max_log_probability) {
-		free(T_map);
-		TheoryType::clone(T, T_map);
+		free(T_map); formula_map.clear();
+		TheoryType::clone(T, T_map, formula_map);
 		max_log_probability = collector.current_log_probability;
 	}
 }

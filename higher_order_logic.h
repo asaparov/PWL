@@ -1981,6 +1981,84 @@ inline bool clone_uint_list(const sequence& src_list, sequence& dst_list) {
 }
 
 template<typename... Cloner>
+inline bool clone(const hol_term* src, hol_term*& dst, Cloner&&... cloner)
+{
+	if (!new_hol_term(dst)) {
+		return false;
+	} else if (!clone(*src, *dst, std::forward<Cloner>(cloner)...)) {
+		free(dst);
+		return false;
+	}
+	return true;
+}
+
+template<typename... Cloner>
+inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant,
+		const hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	return clone_constant(src_constant, dst_constant, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+inline bool clone_variable(unsigned int src_variable, unsigned int& dst_variable,
+		const hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	return clone_variable(src_variable, dst_variable, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+inline bool clone_parameter(unsigned int src_parameter, unsigned int& dst_parameter,
+		const hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	return clone_parameter(src_parameter, dst_parameter, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+inline bool clone_number(const hol_number& src_number, hol_number& dst_number,
+		const hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	return clone_number(src_number, dst_number, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+inline bool clone_string(const string& src_str, string& dst_str,
+		const hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	return clone_string(src_str, dst_str, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+inline bool clone_uint_list(const sequence& src_list, sequence& dst_list,
+		const hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	return clone_uint_list(src_list, dst_list, std::forward<Cloner>(cloner)...);
+}
+
+template<typename... Cloner>
+inline bool clone(const hol_term* src, hol_term*& dst,
+		hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
+{
+	if (!term_map.check_size())
+		return false;
+	bool contains; unsigned int bucket;
+	dst = term_map.get(src, contains, bucket);
+	if (contains) {
+		dst->reference_count++;
+	} else {
+		if (!new_hol_term(dst)) {
+			return false;
+		} else if (!clone(*src, *dst, term_map, std::forward<Cloner>(cloner)...)) {
+			free(dst);
+			return false;
+		}
+		term_map.values[bucket] = dst;
+		term_map.table.keys[bucket] = src;
+		term_map.table.size++;
+	}
+	return true;
+}
+
+template<typename... Cloner>
 inline bool clone(const hol_array_term& src, hol_array_term& dst, Cloner&&... cloner)
 {
 	dst.length = src.length;
@@ -1991,13 +2069,10 @@ inline bool clone(const hol_array_term& src, hol_array_term& dst, Cloner&&... cl
 	dst.operands = (hol_term**) malloc(sizeof(hol_term*) * src.length);
 	if (dst.operands == NULL) return false;
 	for (unsigned int i = 0; i < src.length; i++) {
-		if (!new_hol_term(dst.operands[i])
-		 || !clone(*src.operands[i], *dst.operands[i], std::forward<Cloner>(cloner)...))
-		{
+		if (!clone(src.operands[i], dst.operands[i], std::forward<Cloner>(cloner)...)) {
 			for (unsigned int j = 0; j < i; j++) {
-				free(*dst.operands[j]); free(dst.operands[j]);
+				free(*dst.operands[j]); if (dst.operands[j]->reference_count == 0) free(dst.operands[j]);
 			}
-			if (dst.operands[i] != NULL) free(dst.operands[i]);
 			free(dst.operands); return false;
 		}
 	}
@@ -2024,44 +2099,27 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 	case hol_term_type::UINT_LIST:
 		return clone_uint_list(src.uint_list, dst.uint_list, std::forward<Cloner>(cloner)...);
 	case hol_term_type::NOT:
-		if (!new_hol_term(dst.unary.operand)) return false;
-		if (!clone(*src.unary.operand, *dst.unary.operand, std::forward<Cloner>(cloner)...)) {
-			free(dst.unary.operand);
-			return false;
-		}
-		return true;
+		return clone(src.unary.operand, dst.unary.operand, std::forward<Cloner>(cloner)...);
 	case hol_term_type::IF_THEN:
 	case hol_term_type::EQUALS:
 	case hol_term_type::UNARY_APPLICATION:
-		if (!new_hol_term(dst.binary.left)) {
+		if (!clone(src.binary.left, dst.binary.left, std::forward<Cloner>(cloner)...)) {
 			return false;
-		} else if (!new_hol_term(dst.binary.right)) {
-			free(dst.binary.left); return false;
-		} else if (!clone(*src.binary.left, *dst.binary.left, std::forward<Cloner>(cloner)...)) {
-			free(dst.binary.left); free(dst.binary.right);
+		} else if (!clone(src.binary.right, dst.binary.right, std::forward<Cloner>(cloner)...)) {
+			free(*dst.binary.left); if (dst.binary.left->reference_count == 0) free(dst.binary.left);
 			return false;
-		} else if (!clone(*src.binary.right, *dst.binary.right, std::forward<Cloner>(cloner)...)) {
-			free(*dst.binary.left); free(dst.binary.left);
-			free(dst.binary.right); return false;
 		}
 		return true;
 	case hol_term_type::BINARY_APPLICATION:
-		if (!new_hol_term(dst.ternary.first)) {
+		if (!clone(src.ternary.first, dst.ternary.first, std::forward<Cloner>(cloner)...)) {
 			return false;
-		} else if (!new_hol_term(dst.ternary.second)) {
-			free(dst.ternary.first); return false;
-		} else if (!new_hol_term(dst.ternary.third)) {
-			free(dst.ternary.first); free(dst.ternary.second); return false;
-		} else if (!clone(*src.ternary.first, *dst.ternary.first, std::forward<Cloner>(cloner)...)) {
-			free(dst.ternary.first); free(dst.ternary.second);
-			free(dst.ternary.third); return false;
-		} else if (!clone(*src.ternary.second, *dst.ternary.second, std::forward<Cloner>(cloner)...)) {
-			free(*dst.ternary.first); free(dst.ternary.first);
-			free(dst.ternary.second); free(dst.ternary.third); return false;
-		} else if (!clone(*src.ternary.third, *dst.ternary.third, std::forward<Cloner>(cloner)...)) {
-			free(*dst.ternary.first); free(dst.ternary.first);
-			free(*dst.ternary.second); free(dst.ternary.second);
-			free(dst.ternary.third); return false;
+		} else if (!clone(src.ternary.second, dst.ternary.second, std::forward<Cloner>(cloner)...)) {
+			free(*dst.ternary.first); if (dst.ternary.first->reference_count == 0) free(dst.ternary.first);
+			return false;
+		} else if (!clone(src.ternary.third, dst.ternary.third, std::forward<Cloner>(cloner)...)) {
+			free(*dst.ternary.first); if (dst.ternary.first->reference_count == 0) free(dst.ternary.first);
+			free(*dst.ternary.second); if (dst.ternary.second->reference_count == 0) free(dst.ternary.second);
+			return false;
 		}
 		return true;
 	case hol_term_type::AND:
@@ -2072,24 +2130,15 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		dst.quantifier.variable_type = src.quantifier.variable_type;
-		if (!clone_variable(src.quantifier.variable, dst.quantifier.variable, std::forward<Cloner>(cloner)...)
-		 || !new_hol_term(dst.quantifier.operand))
-			return false;
-		if (!clone(*src.quantifier.operand, *dst.quantifier.operand, std::forward<Cloner>(cloner)...)) {
-			free(dst.quantifier.operand); return false;
-		}
-		return true;
+		return clone_variable(src.quantifier.variable, dst.quantifier.variable, std::forward<Cloner>(cloner)...)
+			&& clone(src.quantifier.operand, dst.quantifier.operand, std::forward<Cloner>(cloner)...);
 	case hol_term_type::ANY:
 	case hol_term_type::ANY_RIGHT:
 	case hol_term_type::ANY_RIGHT_ONLY:
 		dst.any.excluded_tree_count = src.any.excluded_tree_count;
 		if (src.any.included != nullptr) {
-			if (!new_hol_term(dst.any.included)
-			 || !clone(*src.any.included, *dst.any.included, std::forward<Cloner>(cloner)...))
-			{
-				if (dst.any.included != nullptr) free(dst.any.included);
+			if (!clone(src.any.included, dst.any.included, std::forward<Cloner>(cloner)...))
 				return false;
-			}
 		} else {
 			dst.any.included = nullptr;
 		}
@@ -2098,22 +2147,22 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 			if (dst.any.excluded_trees == nullptr) {
 				if (dst.any.included != nullptr) {
 					core::free(*dst.any.included);
-					core::free(dst.any.included);
+					if (dst.any.included->reference_count == 0)
+						core::free(dst.any.included);
 				}
 				return false;
 			}
 			for (unsigned int i = 0; i < dst.any.excluded_tree_count; i++) {
-				if (!new_hol_term(dst.any.excluded_trees[i])
-				 || !clone(*src.any.excluded_trees[i], *dst.any.excluded_trees[i], std::forward<Cloner>(cloner)...))
+				if (!clone(src.any.excluded_trees[i], dst.any.excluded_trees[i], std::forward<Cloner>(cloner)...))
 				{
-					if (dst.any.excluded_trees[i] != nullptr) core::free(dst.any.excluded_trees[i]);
 					for (unsigned int j = 0; j < i; j++) {
-						core::free(*dst.any.excluded_trees[j]); core::free(dst.any.excluded_trees[j]);
+						core::free(*dst.any.excluded_trees[j]); if (dst.any.excluded_trees[j]->reference_count == 0) core::free(dst.any.excluded_trees[j]);
 					}
 					free(dst.any.excluded_trees);
 					if (dst.any.included != nullptr) {
 						core::free(*dst.any.included);
-						core::free(dst.any.included);
+						if (dst.any.included->reference_count == 0)
+							core::free(dst.any.included);
 					}
 					return false;
 				}
@@ -2124,10 +2173,7 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return true;
 	case hol_term_type::ANY_ARRAY:
 		dst.any_array.oper = src.any_array.oper;
-		if (!new_hol_term(dst.any_array.all)
-		 || !clone(*src.any_array.all, *dst.any_array.all, std::forward<Cloner>(cloner)...))
-		{
-			if (dst.any_array.all != nullptr) core::free(dst.any_array.all);
+		if (!clone(src.any_array.all, dst.any_array.all, std::forward<Cloner>(cloner)...)) {
 			return false;
 		} if (!clone(src.any_array.left, dst.any_array.left, std::forward<Cloner>(cloner)...)) {
 			core::free(*dst.any_array.all); if (dst.any_array.all->reference_count == 0) core::free(dst.any_array.all);
@@ -2156,26 +2202,13 @@ bool clone(const hol_term& src, hol_term& dst, Cloner&&... cloner)
 		return true;
 	case hol_term_type::ANY_QUANTIFIER:
 		dst.any_quantifier.quantifier = src.any_quantifier.quantifier;
-		if (!new_hol_term(dst.any_quantifier.operand)
-		 || !clone(*src.any_quantifier.operand, *dst.any_quantifier.operand, std::forward<Cloner>(cloner)...))
-		{
-			if (dst.any_quantifier.operand != nullptr) core::free(dst.any_quantifier.operand);
-			return false;
-		}
-		return true;
+		return clone(src.any_quantifier.operand, dst.any_quantifier.operand, std::forward<Cloner>(cloner)...);
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
 		return true;
 	}
 	fprintf(stderr, "clone ERROR: Unrecognized hol_term_type.\n");
 	return false;
-}
-
-template<typename... Cloner>
-inline bool clone(const hol_term* src, hol_term* dst, Cloner&&... cloner)
-{
-	if (!new_hol_term(dst)) return false;
-	return clone(*src, *dst, std::forward<Cloner>(cloner)...);
 }
 
 struct constant_relabeler {
@@ -7876,8 +7909,6 @@ bool canonicalize_equals_scope(
 				if (!init(out, hol_term_type::EQUALS)) {
 					free(*left); free(left);
 					free(*right); free(right); return false;
-				} else if (compare(*left, *right) > 0) {
-					swap(left, right);
 				}
 				out.binary.operands[0] = left;
 				out.binary.operands[1] = right;

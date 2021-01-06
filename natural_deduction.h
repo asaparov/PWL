@@ -344,7 +344,8 @@ struct nd_step
 	}
 
 	static inline bool clone(const nd_step<Formula>* src, nd_step<Formula>*& dst,
-			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map)
+			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		if (!pointer_map.ensure_capacity(pointer_map.size + 1))
 			return false;
@@ -361,7 +362,7 @@ struct nd_step
 			pointer_map.keys[index] = src;
 			pointer_map.values[index] = dst;
 			pointer_map.size++;
-			if (!clone(*src, *dst, pointer_map)) {
+			if (!clone(*src, *dst, pointer_map, formula_map)) {
 				core::free(dst);
 				pointer_map.remove_at(pointer_map.index_of(src));
 				return false;
@@ -371,7 +372,8 @@ struct nd_step
 	}
 
 	static inline bool clone(const nd_step<Formula>& src, nd_step<Formula>& dst,
-			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map)
+			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		dst.type = src.type;
 		dst.reference_count = 1;
@@ -391,15 +393,11 @@ struct nd_step
 			dst.parameters.length = src.parameters.length;
 			return true;
 		case nd_step_type::TERM_PARAMETER:
-			dst.term = src.term;
-			dst.term->reference_count++;
-			return true;
+			return ::clone(src.term, dst.term, formula_map);
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
-			dst.formula = src.formula;
-			dst.formula->reference_count++;
-			return true;
+			return ::clone(src.formula, dst.formula, formula_map);
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
 		case nd_step_type::DISJUNCTION_ELIMINATION:
 			if (!array_init(dst.operand_array, src.operand_array.length)) {
@@ -407,7 +405,7 @@ struct nd_step
 				return false;
 			}
 			for (unsigned int i = 0; i < src.operand_array.length; i++) {
-				if (!clone(src.operand_array[i], dst.operand_array[i], pointer_map)) {
+				if (!clone(src.operand_array[i], dst.operand_array[i], pointer_map, formula_map)) {
 					for (unsigned int j = 0; j < i; j++) {
 						core::free(*dst.operand_array[j]);
 						if (dst.operand_array[j]->reference_count == 0)
@@ -443,7 +441,7 @@ struct nd_step
 				if (src.operands[i] == nullptr) {
 					dst.operands[i] = nullptr;
 				} else {
-					if (!clone(src.operands[i], dst.operands[i], pointer_map)) {
+					if (!clone(src.operands[i], dst.operands[i], pointer_map, formula_map)) {
 						for (unsigned int j = 0; j < i; j++) {
 							if (dst.operands[i] != nullptr) {
 								core::free(*dst.operands[j]);
@@ -2101,14 +2099,31 @@ struct canonicalized_proof_prior
 
 		prior_state() : proof_axioms(64), universal_eliminations(16) { }
 
-		prior_state(const prior_state& src) :
+		prior_state(const prior_state& src, const hash_map<const Formula*, Formula*>& formula_map) :
 			proof_axioms(src.proof_axioms.counts.table.capacity),
 			universal_eliminations(src.universal_eliminations.counts.table.capacity),
 			axiom_prior_state(src.axiom_prior_state)
 		{
-			proof_axioms.counts.put_all(src.proof_axioms.counts);
+			for (const auto& entry : src.proof_axioms.counts) {
+#if !defined(NDEBUG)
+				bool contains;
+				Formula* formula = formula_map.get(entry.key, contains);
+				if (!contains)
+					fprintf(stderr, "canonicalized_proof_prior.prior_state WARNING: Formula doesn't exist in `formula_map`.\n");
+				proof_axioms.counts.put(formula, entry.value);
+#else
+				proof_axioms.counts.put(formula_map.get(entry.key), entry.value);
+#endif
+			}
 			proof_axioms.sum = src.proof_axioms.sum;
-			universal_eliminations.counts.put_all(src.universal_eliminations.counts);
+
+			for (const auto& entry : src.universal_eliminations.counts) {
+				unsigned int index = universal_eliminations.counts.table.index_to_insert(entry.key);
+				if (!clone(entry.key, universal_eliminations.counts.table.keys[index], formula_map))
+					exit(EXIT_FAILURE);
+				universal_eliminations.counts.values[index] = entry.value;
+				universal_eliminations.counts.table.size++;
+			}
 			universal_eliminations.sum = src.universal_eliminations.sum;
 		}
 

@@ -199,6 +199,28 @@ inline bool init(noun_root& root, bool is_proper, countability count,
 	return init_string_id_array(root.plural, root.plural_count, plural_forms, plural_form_count, names);
 }
 
+inline bool init(noun_root& dst, const noun_root& src) {
+	dst.count = src.count;
+	dst.is_proper = src.is_proper;
+	dst.plural_count = src.plural_count;
+	if (src.plural_count == 0) {
+		dst.plural = nullptr;
+	} else {
+		dst.plural = (sequence*) malloc(sizeof(sequence) * src.plural_count);
+		if (dst.plural == nullptr) {
+			fprintf(stderr, "init ERROR: Insufficient memory for `noun_root.plural`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.plural_count; i++) {
+			if (!init(dst.plural[i], src.plural[i])) {
+				for (unsigned int j = 0; j < i; j++) free(dst.plural[j]);
+				free(dst.plural); return false;
+			}
+		}
+	}
+	return true;
+}
+
 enum class comparability {
 	COMPARABLE,
 	INCOMPARABLE,
@@ -346,6 +368,35 @@ inline bool init(adjective_root& root, comparability comp,
 	return true;
 }
 
+bool init(adjective_root& dst, const adjective_root& src) {
+	dst.comp = src.comp;
+	dst.inflected_form_count = src.inflected_form_count;
+	if (src.inflected_form_count != 0) {
+		dst.inflected_forms = (pair<sequence, sequence>*) malloc(sizeof(pair<sequence, sequence>) * src.inflected_form_count);
+		if (dst.inflected_forms == nullptr) {
+			fprintf(stderr, "init ERROR: Insufficient memory for `adjective_root.inflected_form_count`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.inflected_form_count; i++) {
+			if (!init(dst.inflected_forms[i].key, src.inflected_forms[i].key)) {
+				for (unsigned int j = 0; j < i; j++) { free(dst.inflected_forms[j].key); free(dst.inflected_forms[j].value); }
+				free(dst.inflected_forms); return false;
+			} else if (!init(dst.inflected_forms[i].value, src.inflected_forms[i].value)) {
+				free(dst.inflected_forms[i].key);
+				for (unsigned int j = 0; j < i; j++) { free(dst.inflected_forms[j].key); free(dst.inflected_forms[j].value); }
+				free(dst.inflected_forms); return false;
+			}
+		}
+	} if (src.adj_root.length == 0) {
+		dst.adj_root.tokens = nullptr;
+		dst.adj_root.length = 0;
+	} else if (!init(dst.adj_root, src.adj_root)) {
+		for (unsigned int j = 0; j < src.inflected_form_count; j++) { free(dst.inflected_forms[j].key); free(dst.inflected_forms[j].value); }
+		free(dst.inflected_forms); return false;
+	}
+	return true;
+}
+
 struct verb_root {
 	sequence* present_3sg;
 	unsigned int present_3sg_count;
@@ -420,6 +471,95 @@ inline bool init(verb_root& root,
 		free(root.present_participle);
 		free(root.simple_past);
 		return false;
+	}
+	return true;
+}
+
+inline bool init(verb_root& dst, const verb_root& src) {
+	dst.present_3sg_count = src.present_3sg_count;
+	dst.present_participle_count = src.present_participle_count;
+	dst.simple_past_count = src.simple_past_count;
+	dst.past_participle_count = src.past_participle_count;
+	if (src.present_3sg_count == 0) {
+		dst.present_3sg = nullptr;
+	} else {
+		dst.present_3sg = (sequence*) malloc(sizeof(sequence) * src.present_3sg_count);
+		if (dst.present_3sg == nullptr) {
+			fprintf(stderr, "init ERROR: Insufficient memory for `verb_root.present_3sg`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.present_3sg_count; i++) {
+			if (!init(dst.present_3sg[i], src.present_3sg[i])) {
+				for (unsigned int j = 0; j < i; j++) free(dst.present_3sg[j]);
+				free(dst.present_3sg); return false;
+			}
+		}
+	}
+	if (src.present_participle_count == 0) {
+		dst.present_participle = nullptr;
+	} else {
+		dst.present_participle = (sequence*) malloc(sizeof(sequence) * src.present_participle_count);
+		if (dst.present_participle == nullptr) {
+			fprintf(stderr, "init ERROR: Insufficient memory for `verb_root.present_participle`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.present_participle_count; i++) {
+			if (!init(dst.present_participle[i], src.present_participle[i])) {
+				if (dst.present_3sg_count != 0) {
+					for (unsigned int j = 0; j < dst.present_3sg_count; j++) free(dst.present_3sg[j]);
+					free(dst.present_3sg);
+				}
+				for (unsigned int j = 0; j < i; j++) free(dst.present_participle[j]);
+				free(dst.present_participle); return false;
+			}
+		}
+	}
+	if (src.simple_past_count == 0) {
+		dst.simple_past = nullptr;
+	} else {
+		dst.simple_past = (sequence*) malloc(sizeof(sequence) * src.simple_past_count);
+		if (dst.simple_past == nullptr) {
+			fprintf(stderr, "init ERROR: Insufficient memory for `verb_root.simple_past`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.simple_past_count; i++) {
+			if (!init(dst.simple_past[i], src.simple_past[i])) {
+				if (dst.present_3sg_count != 0) {
+					for (unsigned int j = 0; j < dst.present_3sg_count; j++) free(dst.present_3sg[j]);
+					free(dst.present_3sg);
+				} if (dst.present_participle_count != 0) {
+					for (unsigned int j = 0; j < dst.present_participle_count; j++) free(dst.present_participle[j]);
+					free(dst.present_participle);
+				}
+				for (unsigned int j = 0; j < i; j++) free(dst.simple_past[j]);
+				free(dst.simple_past); return false;
+			}
+		}
+	}
+	if (src.past_participle_count == 0) {
+		dst.past_participle = nullptr;
+	} else {
+		dst.past_participle = (sequence*) malloc(sizeof(sequence) * src.past_participle_count);
+		if (dst.past_participle == nullptr) {
+			fprintf(stderr, "init ERROR: Insufficient memory for `verb_root.past_participle`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < src.past_participle_count; i++) {
+			if (!init(dst.past_participle[i], src.past_participle[i])) {
+				if (dst.present_3sg_count != 0) {
+					for (unsigned int j = 0; j < dst.present_3sg_count; j++) free(dst.present_3sg[j]);
+					free(dst.present_3sg);
+				} if (dst.present_participle_count != 0) {
+					for (unsigned int j = 0; j < dst.present_participle_count; j++) free(dst.present_participle[j]);
+					free(dst.present_participle);
+				} if (dst.simple_past_count != 0) {
+					for (unsigned int j = 0; j < dst.simple_past_count; j++) free(dst.simple_past[j]);
+					free(dst.simple_past);
+				}
+				for (unsigned int j = 0; j < i; j++) free(dst.past_participle[j]);
+				free(dst.past_participle); return false;
+			}
+		}
 	}
 	return true;
 }
@@ -687,6 +827,14 @@ struct inflected_noun {
 	}
 };
 
+inline bool init(inflected_noun& dst, const inflected_noun& src) {
+	if (!init(dst.root, src.root))
+		return false;
+	dst.is_proper = src.is_proper;
+	dst.number = src.number;
+	return true;
+}
+
 inline bool operator == (const inflected_noun& first, const inflected_noun& second) {
 	return first.root == second.root
 		&& first.number == second.number;
@@ -700,6 +848,13 @@ struct inflected_adjective {
 		core::free(key.root);
 	}
 };
+
+inline bool init(inflected_adjective& dst, const inflected_adjective& src) {
+	if (!init(dst.root, src.root))
+		return false;
+	dst.comp = src.comp;
+	return true;
+}
 
 inline bool operator == (const inflected_adjective& first, const inflected_adjective& second) {
 	return first.root == second.root
@@ -719,6 +874,16 @@ struct inflected_verb {
 		core::free(key.root);
 	}
 };
+
+inline bool init(inflected_verb& dst, const inflected_verb& src) {
+	if (!init(dst.root, src.root))
+		return false;
+	dst.person = src.person;
+	dst.number = src.number;
+	dst.mood = src.mood;
+	dst.tense = src.tense;
+	return true;
+}
 
 inline bool operator == (const inflected_verb& first, const inflected_verb& second) {
 	return first.root == second.root
@@ -764,52 +929,21 @@ struct morphology_en {
 		WAS_SEQ(nullptr, 0), WERE_SEQ(nullptr, 0), BEING_SEQ(nullptr, 0), BEEN_SEQ(nullptr, 0)
 	{ }
 
-	~morphology_en() {
-		for (auto entry : nouns) {
-			free(entry.key);
-			free(entry.value);
-		} for (auto entry : adjectives) {
-			free(entry.key);
-			free(entry.value);
-		} for (auto entry : adverbs) {
-			free(entry.key);
-			free(entry.value);
-		} for (auto entry : verbs) {
-			free(entry.key);
-			free(entry.value);
-		} for (auto entry : inflected_nouns) {
-			for (auto& element : entry.value)
-				free(element);
-			free(entry.value);
-			free(entry.key);
-		} for (auto entry : inflected_adjectives) {
-			for (auto& element : entry.value)
-				free(element);
-			free(entry.value);
-			free(entry.key);
-		} for (auto entry : inflected_adverbs) {
-			for (auto& element : entry.value)
-				free(element);
-			free(entry.value);
-			free(entry.key);
-		} for (auto entry : inflected_verbs) {
-			for (auto& element : entry.value)
-				free(element);
-			free(entry.value);
-			free(entry.key);
-		} for (auto entry : adjective_adverb_map) {
-			for (auto& element : entry.value) free(element);
-			free(entry.value);
-			free(entry.key);
-		}
-		if (BE_SEQ.tokens != nullptr) free(BE_SEQ);
-		if (AM_SEQ.tokens != nullptr) free(AM_SEQ);
-		if (ARE_SEQ.tokens != nullptr) free(ARE_SEQ);
-		if (IS_SEQ.tokens != nullptr) free(IS_SEQ);
-		if (WAS_SEQ.tokens != nullptr) free(WAS_SEQ);
-		if (WERE_SEQ.tokens != nullptr) free(WERE_SEQ);
-		if (BEING_SEQ.tokens != nullptr) free(BEING_SEQ);
-		if (BEEN_SEQ.tokens != nullptr) free(BEEN_SEQ);
+	~morphology_en() { free_helper(); }
+
+	static inline void free(morphology_en& morph) {
+		morph.free_helper();
+		core::free(morph.nouns);
+		core::free(morph.adjectives);
+		core::free(morph.adverbs);
+		core::free(morph.verbs);
+		core::free(morph.inflected_nouns);
+		core::free(morph.inflected_adjectives);
+		core::free(morph.inflected_adverbs);
+		core::free(morph.inflected_verbs);
+		core::free(morph.capitalization_map);
+		core::free(morph.decapitalization_map);
+		core::free(morph.adjective_adverb_map);
 	}
 
 	inline bool initialize(hash_map<string, unsigned int>& names) {
@@ -1145,7 +1279,7 @@ struct morphology_en {
 					if (!array_init(adj_roots, 2)) {
 						return false;
 					} else if (!init(adjective_adverb_map.table.keys[bucket], entry.value.adj_root)) {
-						free(adj_roots);
+						core::free(adj_roots);
 						return false;
 					}
 					adjective_adverb_map.table.size++;
@@ -1169,7 +1303,7 @@ private:
 			const sequence& root_id, T& root)
 	{
 		if (!root_map.check_size()) {
-			free(root);
+			core::free(root);
 			return false;
 		}
 
@@ -1181,10 +1315,10 @@ private:
 			root_map.table.size++;
 		} else {
 			if (!value.merge(root)) {
-				free(root);
+				core::free(root);
 				return false;
 			}
-			free(root);
+			core::free(root);
 		}
 		return true;
 	}
@@ -1295,12 +1429,292 @@ private:
 		}
 		return true;
 	}
+
+	inline void free_helper() {
+		for (auto entry : nouns) {
+			core::free(entry.key);
+			core::free(entry.value);
+		} for (auto entry : adjectives) {
+			core::free(entry.key);
+			core::free(entry.value);
+		} for (auto entry : adverbs) {
+			core::free(entry.key);
+			core::free(entry.value);
+		} for (auto entry : verbs) {
+			core::free(entry.key);
+			core::free(entry.value);
+		} for (auto entry : inflected_nouns) {
+			for (auto& element : entry.value)
+				core::free(element);
+			core::free(entry.value);
+			core::free(entry.key);
+		} for (auto entry : inflected_adjectives) {
+			for (auto& element : entry.value)
+				core::free(element);
+			core::free(entry.value);
+			core::free(entry.key);
+		} for (auto entry : inflected_adverbs) {
+			for (auto& element : entry.value)
+				core::free(element);
+			core::free(entry.value);
+			core::free(entry.key);
+		} for (auto entry : inflected_verbs) {
+			for (auto& element : entry.value)
+				core::free(element);
+			core::free(entry.value);
+			core::free(entry.key);
+		} for (auto entry : adjective_adverb_map) {
+			for (auto& element : entry.value) core::free(element);
+			core::free(entry.value);
+			core::free(entry.key);
+		}
+		if (BE_SEQ.tokens != nullptr) core::free(BE_SEQ);
+		if (AM_SEQ.tokens != nullptr) core::free(AM_SEQ);
+		if (ARE_SEQ.tokens != nullptr) core::free(ARE_SEQ);
+		if (IS_SEQ.tokens != nullptr) core::free(IS_SEQ);
+		if (WAS_SEQ.tokens != nullptr) core::free(WAS_SEQ);
+		if (WERE_SEQ.tokens != nullptr) core::free(WERE_SEQ);
+		if (BEING_SEQ.tokens != nullptr) core::free(BEING_SEQ);
+		if (BEEN_SEQ.tokens != nullptr) core::free(BEEN_SEQ);
+	}
 };
 
 string morphology_en::MORE_COMPARATIVE_STRING = "_more";
 string morphology_en::MOST_SUPERLATIVE_STRING = "_most";
 string morphology_en::FURTHER_COMPARATIVE_STRING = "_further";
 string morphology_en::FURTHEST_SUPERLATIVE_STRING = "_furthest";
+
+bool init(morphology_en& dst, const morphology_en& src) {
+	if (!hash_map_init(dst.nouns, src.nouns.table.capacity)) {
+		return false;
+	} else if (!hash_map_init(dst.adjectives, src.adjectives.table.capacity)) {
+		free(dst.nouns);
+		return false;
+	} else if (!hash_map_init(dst.adverbs, src.adverbs.table.capacity)) {
+		free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.verbs, src.verbs.table.capacity)) {
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.inflected_nouns, src.inflected_nouns.table.capacity)) {
+		free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.inflected_adjectives, src.inflected_adjectives.table.capacity)) {
+		free(dst.inflected_nouns); free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.inflected_adverbs, src.inflected_adverbs.table.capacity)) {
+		free(dst.inflected_adjectives);
+		free(dst.inflected_nouns); free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.inflected_verbs, src.inflected_verbs.table.capacity)) {
+		free(dst.inflected_adverbs); free(dst.inflected_adjectives);
+		free(dst.inflected_nouns); free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.capitalization_map, src.capitalization_map.table.capacity)) {
+		free(dst.inflected_verbs);
+		free(dst.inflected_adverbs); free(dst.inflected_adjectives);
+		free(dst.inflected_nouns); free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.decapitalization_map, src.decapitalization_map.table.capacity)) {
+		free(dst.capitalization_map); free(dst.inflected_verbs);
+		free(dst.inflected_adverbs); free(dst.inflected_adjectives);
+		free(dst.inflected_nouns); free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	} else if (!hash_map_init(dst.adjective_adverb_map, src.adjective_adverb_map.table.capacity)) {
+		free(dst.decapitalization_map);
+		free(dst.capitalization_map); free(dst.inflected_verbs);
+		free(dst.inflected_adverbs); free(dst.inflected_adjectives);
+		free(dst.inflected_nouns); free(dst.verbs);
+		free(dst.adverbs); free(dst.adjectives);
+		free(dst.nouns); return false;
+	}
+	dst.BE_SEQ.tokens = nullptr;
+	dst.AM_SEQ.tokens = nullptr;
+	dst.ARE_SEQ.tokens = nullptr;
+	dst.IS_SEQ.tokens = nullptr;
+	dst.WAS_SEQ.tokens = nullptr;
+	dst.WERE_SEQ.tokens = nullptr;
+	dst.BEING_SEQ.tokens = nullptr;
+	dst.BEEN_SEQ.tokens = nullptr;
+
+	dst.MORE_COMPARATIVE_ID = src.MORE_COMPARATIVE_ID;
+	dst.MOST_SUPERLATIVE_ID = src.MOST_SUPERLATIVE_ID;
+	dst.FURTHER_COMPARATIVE_ID = src.FURTHER_COMPARATIVE_ID;
+	dst.FURTHEST_SUPERLATIVE_ID = src.FURTHEST_SUPERLATIVE_ID;
+	for (const auto& entry : src.nouns) {
+		unsigned int index = dst.nouns.table.index_to_insert(entry.key);
+		if (!init(dst.nouns.values[index], entry.value)) {
+			free(dst);
+			return false;
+		} else if (!init(dst.nouns.table.keys[index], entry.key)) {
+			free(dst.nouns.values[index]);
+			free(dst);
+			return false;
+		}
+		dst.nouns.table.size++;
+	} for (const auto& entry : src.adjectives) {
+		unsigned int index = dst.adjectives.table.index_to_insert(entry.key);
+		if (!init(dst.adjectives.values[index], entry.value)) {
+			free(dst);
+			return false;
+		} else if (!init(dst.adjectives.table.keys[index], entry.key)) {
+			free(dst.adjectives.values[index]);
+			free(dst);
+			return false;
+		}
+		dst.adjectives.table.size++;
+	} for (const auto& entry : src.adverbs) {
+		unsigned int index = dst.adverbs.table.index_to_insert(entry.key);
+		if (!init(dst.adverbs.values[index], entry.value)) {
+			free(dst);
+			return false;
+		} else if (!init(dst.adverbs.table.keys[index], entry.key)) {
+			free(dst.adverbs.values[index]);
+			free(dst);
+			return false;
+		}
+		dst.adverbs.table.size++;
+	} for (const auto& entry : src.verbs) {
+		unsigned int index = dst.verbs.table.index_to_insert(entry.key);
+		if (!init(dst.verbs.values[index], entry.value)) {
+			free(dst);
+			return false;
+		} else if (!init(dst.verbs.table.keys[index], entry.key)) {
+			free(dst.verbs.values[index]);
+			free(dst);
+			return false;
+		}
+		dst.verbs.table.size++;
+	} for (const auto& entry : src.inflected_nouns) {
+		unsigned int index = dst.inflected_nouns.table.index_to_insert(entry.key);
+		array<inflected_noun>& new_array = dst.inflected_nouns.values[index];
+		if (!array_init(new_array, entry.value.length)) {
+			free(dst);
+			return false;
+		}
+		for (const inflected_noun& noun : entry.value) {
+			if (!init(new_array[new_array.length], noun)) {
+				for (inflected_noun& element : new_array) free(element);
+				free(new_array); free(dst);
+				return false;
+			}
+			new_array.length++;
+		}
+		if (!init(dst.inflected_nouns.table.keys[index], entry.key)) {
+			for (inflected_noun& element : new_array) free(element);
+			free(new_array); free(dst);
+			return false;
+		}
+		dst.inflected_nouns.table.size++;
+	} for (const auto& entry : src.inflected_adjectives) {
+		unsigned int index = dst.inflected_adjectives.table.index_to_insert(entry.key);
+		array<inflected_adjective>& new_array = dst.inflected_adjectives.values[index];
+		if (!array_init(new_array, entry.value.length)) {
+			free(dst);
+			return false;
+		}
+		for (const inflected_adjective& adj : entry.value) {
+			if (!init(new_array[new_array.length], adj)) {
+				for (inflected_adjective& element : new_array) free(element);
+				free(new_array); free(dst);
+				return false;
+			}
+			new_array.length++;
+		}
+		if (!init(dst.inflected_adjectives.table.keys[index], entry.key)) {
+			for (inflected_adjective& element : new_array) free(element);
+			free(new_array); free(dst);
+			return false;
+		}
+		dst.inflected_adjectives.table.size++;
+	} for (const auto& entry : src.inflected_adverbs) {
+		unsigned int index = dst.inflected_adverbs.table.index_to_insert(entry.key);
+		array<inflected_adverb>& new_array = dst.inflected_adverbs.values[index];
+		if (!array_init(new_array, entry.value.length)) {
+			free(dst);
+			return false;
+		}
+		for (const inflected_adverb& adv : entry.value) {
+			if (!init(new_array[new_array.length], adv)) {
+				for (inflected_adverb& element : new_array) free(element);
+				free(new_array); free(dst);
+				return false;
+			}
+			new_array.length++;
+		}
+		if (!init(dst.inflected_adverbs.table.keys[index], entry.key)) {
+			for (inflected_adverb& element : new_array) free(element);
+			free(new_array); free(dst);
+			return false;
+		}
+		dst.inflected_adverbs.table.size++;
+	} for (const auto& entry : src.inflected_verbs) {
+		unsigned int index = dst.inflected_verbs.table.index_to_insert(entry.key);
+		array<inflected_verb>& new_array = dst.inflected_verbs.values[index];
+		if (!array_init(new_array, entry.value.length)) {
+			free(dst);
+			return false;
+		}
+		for (const inflected_verb& verb : entry.value) {
+			if (!init(new_array[new_array.length], verb)) {
+				for (inflected_verb& element : new_array) free(element);
+				free(new_array); free(dst);
+				return false;
+			}
+			new_array.length++;
+		}
+		if (!init(dst.inflected_verbs.table.keys[index], entry.key)) {
+			for (inflected_verb& element : new_array) free(element);
+			free(new_array); free(dst);
+			return false;
+		}
+		dst.inflected_verbs.table.size++;
+	} for (const auto& entry : src.adjective_adverb_map) {
+		unsigned int index = dst.adjective_adverb_map.table.index_to_insert(entry.key);
+		array<sequence>& new_array = dst.adjective_adverb_map.values[index];
+		if (!array_init(new_array, entry.value.length)) {
+			free(dst);
+			return false;
+		}
+		for (const sequence& seq : entry.value) {
+			if (!init(new_array[new_array.length], seq)) {
+				for (sequence& element : new_array) free(element);
+				free(new_array); free(dst);
+				return false;
+			}
+			new_array.length++;
+		}
+		if (!init(dst.adjective_adverb_map.table.keys[index], entry.key)) {
+			for (sequence& element : new_array) free(element);
+			free(new_array); free(dst);
+			return false;
+		}
+		dst.adjective_adverb_map.table.size++;
+	}
+
+	dst.capitalization_map.put_all(src.capitalization_map);
+	dst.decapitalization_map.put_all(src.decapitalization_map);
+
+	if ((src.BE_SEQ.tokens != nullptr && !init(dst.BE_SEQ, src.BE_SEQ))
+	 || (src.AM_SEQ.tokens != nullptr && !init(dst.AM_SEQ, src.AM_SEQ))
+	 || (src.ARE_SEQ.tokens != nullptr && !init(dst.ARE_SEQ, src.ARE_SEQ))
+	 || (src.IS_SEQ.tokens != nullptr && !init(dst.IS_SEQ, src.IS_SEQ))
+	 || (src.WAS_SEQ.tokens != nullptr && !init(dst.WAS_SEQ, src.WAS_SEQ))
+	 || (src.WERE_SEQ.tokens != nullptr && !init(dst.WERE_SEQ, src.WERE_SEQ))
+	 || (src.BEING_SEQ.tokens != nullptr && !init(dst.BEING_SEQ, src.BEING_SEQ))
+	 || (src.BEEN_SEQ.tokens != nullptr && !init(dst.BEEN_SEQ, src.BEEN_SEQ)))
+	{
+		free(dst);
+		return false;
+	}
+	return true;
+}
 
 enum class morphology_state {
 	DEFAULT,

@@ -2323,7 +2323,8 @@ struct concept
 
 	static inline bool clone(
 			const concept<ProofCalculus>& src, concept<ProofCalculus>& dst,
-			array_map<const Proof*, Proof*>& proof_map)
+			array_map<const Proof*, Proof*>& proof_map,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		if (!array_map_init(dst.types, src.types.capacity)) {
 			return false;
@@ -2350,7 +2351,7 @@ struct concept
 			return false;
 		}
 
-		if (!Proof::clone(src.definitions[0], dst.definitions[0], proof_map)) {
+		if (!Proof::clone(src.definitions[0], dst.definitions[0], proof_map, formula_map)) {
 			core::free(dst.types); core::free(dst.negated_types);
 			core::free(dst.relations); core::free(dst.negated_relations);
 			core::free(dst.definitions); core::free(dst.existential_intro_nodes);
@@ -2360,35 +2361,35 @@ struct concept
 		dst.definitions.length++;
 
 		for (unsigned int i = 0; i < src.types.size; i++) {
-			if (!init(dst.types.keys[dst.types.size], src.types.keys[i])) {
+			if (!::clone(src.types.keys[i], dst.types.keys[dst.types.size], formula_map)) {
 				core::free(dst); return false;
-			} else if (!Proof::clone(src.types.values[i], dst.types.values[dst.types.size], proof_map)) {
+			} else if (!Proof::clone(src.types.values[i], dst.types.values[dst.types.size], proof_map, formula_map)) {
 				core::free(dst.types.keys[dst.types.size]);
 				core::free(dst); return false;
 			}
 			dst.types.size++;
 		} for (unsigned int i = 0; i < src.negated_types.size; i++) {
-			if (!init(dst.negated_types.keys[dst.negated_types.size], src.negated_types.keys[i])) {
+			if (!::clone(src.negated_types.keys[i], dst.negated_types.keys[dst.negated_types.size], formula_map)) {
 				core::free(dst); return false;
-			} else if (!Proof::clone(src.negated_types.values[i], dst.negated_types.values[dst.negated_types.size], proof_map)) {
+			} else if (!Proof::clone(src.negated_types.values[i], dst.negated_types.values[dst.negated_types.size], proof_map, formula_map)) {
 				core::free(dst.negated_types.keys[dst.negated_types.size]);
 				core::free(dst); return false;
 			}
 			dst.negated_types.size++;
 		} for (unsigned int i = 0; i < src.relations.size; i++) {
-			if (!Proof::clone(src.relations.values[i], dst.relations.values[dst.relations.size], proof_map)) {
+			if (!Proof::clone(src.relations.values[i], dst.relations.values[dst.relations.size], proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
 			dst.relations.keys[dst.relations.size++] = src.relations.keys[i];
 		} for (unsigned int i = 0; i < src.negated_relations.size; i++) {
-			if (!Proof::clone(src.negated_relations.values[i], dst.negated_relations.values[dst.negated_relations.size], proof_map)) {
+			if (!Proof::clone(src.negated_relations.values[i], dst.negated_relations.values[dst.negated_relations.size], proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
 			dst.negated_relations.keys[dst.negated_relations.size++] = src.negated_relations.keys[i];
 		} for (unsigned int i = 1; i < src.definitions.length; i++) {
-			if (!Proof::clone(src.definitions[i], dst.definitions[dst.definitions.length], proof_map)) {
+			if (!Proof::clone(src.definitions[i], dst.definitions[dst.definitions.length], proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
@@ -2402,7 +2403,7 @@ struct concept
 #endif
 			dst.existential_intro_nodes[dst.existential_intro_nodes.length++] = proof_map.values[index];
 		} for (unsigned int i = 0; i < src.function_values.size; i++) {
-			if (!Proof::clone(src.function_values.values[i], dst.function_values.values[dst.function_values.size], proof_map)) {
+			if (!Proof::clone(src.function_values.values[i], dst.function_values.values[dst.function_values.size], proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
@@ -3351,7 +3352,10 @@ struct theory
 		return true;
 	}
 
-	static inline bool clone(const theory<ProofCalculus, Canonicalizer>& src, theory<ProofCalculus, Canonicalizer>& dst)
+	static inline bool clone(
+			const theory<ProofCalculus, Canonicalizer>& src,
+			theory<ProofCalculus, Canonicalizer>& dst,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		dst.new_constant_offset = src.new_constant_offset;
 		if (!hash_map_init(dst.atoms, src.atoms.table.capacity)) {
@@ -3376,41 +3380,66 @@ struct theory
 			return false;
 		}
 		array_map<const Proof*, Proof*> proof_map(64);
-		proof_map.keys[proof_map.size] = src.empty_set_axiom;
-		proof_map.values[proof_map.size++] = src.empty_set_axiom;
-		dst.empty_set_axiom = src.empty_set_axiom;
-		dst.empty_set_axiom->reference_count++;
-		proof_map.keys[proof_map.size] = src.maximality_axiom;
-		proof_map.values[proof_map.size++] = src.maximality_axiom;
-		dst.maximality_axiom = src.maximality_axiom;
-		dst.maximality_axiom->reference_count++;
-		proof_map.keys[proof_map.size] = src.function_axiom;
-		proof_map.values[proof_map.size++] = src.function_axiom;
-		dst.function_axiom = src.function_axiom;
-		dst.function_axiom->reference_count++;
-		dst.NAME_ATOM = src.NAME_ATOM;
-		dst.NAME_ATOM->reference_count++;
-		if (!set_reasoning<built_in_predicates, ProofCalculus, Canonicalizer>::clone(src.sets, dst.sets, proof_map)) {
+		if (!Proof::clone(src.empty_set_axiom, dst.empty_set_axiom, proof_map, formula_map)) {
 			core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
-			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
-			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			return false;
+		} if (!Proof::clone(src.maximality_axiom, dst.maximality_axiom, proof_map, formula_map)) {
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			return false;
+		} if (!Proof::clone(src.function_axiom, dst.function_axiom, proof_map, formula_map)) {
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			return false;
+		} if (!::clone(src.NAME_ATOM, dst.NAME_ATOM, formula_map)) {
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			return false;
+		}
+		proof_map.keys[proof_map.size] = dst.empty_set_axiom;
+		proof_map.values[proof_map.size++] = dst.empty_set_axiom;
+		proof_map.keys[proof_map.size] = src.maximality_axiom;
+		proof_map.values[proof_map.size++] = src.maximality_axiom;
+		proof_map.keys[proof_map.size] = src.function_axiom;
+		proof_map.values[proof_map.size++] = src.function_axiom;
+		if (!set_reasoning<built_in_predicates, ProofCalculus, Canonicalizer>::clone(src.sets, dst.sets, proof_map, formula_map)) {
+			core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.disjunction_intro_nodes, src.disjunction_intro_nodes.capacity)) {
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
-			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
-			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.negated_conjunction_nodes, src.negated_conjunction_nodes.capacity)) {
 			core::free(dst.disjunction_intro_nodes);
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
-			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
-			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.implication_intro_nodes, src.implication_intro_nodes.capacity)) {
 			core::free(dst.negated_conjunction_nodes);
@@ -3418,8 +3447,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
-			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
-			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.existential_intro_nodes, src.existential_intro_nodes.capacity)) {
 			core::free(dst.implication_intro_nodes);
@@ -3428,8 +3459,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
-			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
-			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.built_in_sets, src.built_in_sets.capacity)) {
 			core::free(dst.implication_intro_nodes);
@@ -3439,8 +3472,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
-			core::free(*dst.empty_set_axiom); core::free(*dst.maximality_axiom);
-			core::free(*dst.function_axiom); core::free(*dst.NAME_ATOM);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		}
 
@@ -3451,7 +3486,7 @@ struct theory
 			} else if (!array_init(dst.atoms.values[bucket].value, entry.value.value.capacity)) {
 				core::free(dst.atoms.values[bucket].key);
 				core::free(dst); return false;
-			} else if (!::init(dst.atoms.table.keys[bucket], entry.key)) {
+			} else if (!::clone(entry.key, dst.atoms.table.keys[bucket])) {
 				core::free(dst.atoms.values[bucket].key);
 				core::free(dst.atoms.values[bucket].value);
 				core::free(dst); return false;
@@ -3477,14 +3512,14 @@ struct theory
 				dst.relations.values[bucket].value[dst.relations.values[bucket].value.length++] = id;
 		} for (Proof* observation : src.observations) {
 			Proof* new_observation;
-			if (!Proof::clone(observation, new_observation, proof_map)) {
+			if (!Proof::clone(observation, new_observation, proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
 			dst.observations.add(new_observation);
 		} for (unsigned int i = 0; i < src.ground_concept_capacity; i++) {
 			if (src.ground_concepts[i].types.keys == nullptr) continue;
-			if (!concept<ProofCalculus>::clone(src.ground_concepts[i], dst.ground_concepts[i], proof_map)) {
+			if (!concept<ProofCalculus>::clone(src.ground_concepts[i], dst.ground_concepts[i], proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
@@ -3496,8 +3531,11 @@ struct theory
 				fprintf(stderr, "theory.clone WARNING: Given proof does not exist in `proof_map`.\n");
 #endif
 			dst.disjunction_intro_nodes[dst.disjunction_intro_nodes.length].value = proof_map.values[index];
-			dst.disjunction_intro_nodes[dst.disjunction_intro_nodes.length++].key = entry.key;
-			entry.key->reference_count++;
+			if (!::clone(entry.key, dst.disjunction_intro_nodes[dst.disjunction_intro_nodes.length].key, formula_map)) {
+				core::free(dst);
+				return false;
+			}
+			dst.disjunction_intro_nodes.length++;
 		} for (auto& entry : src.negated_conjunction_nodes) {
 			unsigned int index = proof_map.index_of(entry.value);
 #if !defined(NDEBUG)
@@ -3505,8 +3543,11 @@ struct theory
 				fprintf(stderr, "theory.clone WARNING: Given proof does not exist in `proof_map`.\n");
 #endif
 			dst.negated_conjunction_nodes[dst.negated_conjunction_nodes.length].value = proof_map.values[index];
-			dst.negated_conjunction_nodes[dst.negated_conjunction_nodes.length++].key = entry.key;
-			entry.key->reference_count++;
+			if (!::clone(entry.key, dst.negated_conjunction_nodes[dst.negated_conjunction_nodes.length].key, formula_map)) {
+				core::free(dst);
+				return false;
+			}
+			dst.negated_conjunction_nodes.length++;
 		} for (auto& entry : src.implication_intro_nodes) {
 			unsigned int index = proof_map.index_of(entry.value);
 #if !defined(NDEBUG)
@@ -3514,8 +3555,11 @@ struct theory
 				fprintf(stderr, "theory.clone WARNING: Given proof does not exist in `proof_map`.\n");
 #endif
 			dst.implication_intro_nodes[dst.implication_intro_nodes.length].value = proof_map.values[index];
-			dst.implication_intro_nodes[dst.implication_intro_nodes.length++].key = entry.key;
-			entry.key->reference_count++;
+			if (!::clone(entry.key, dst.implication_intro_nodes[dst.implication_intro_nodes.length].key, formula_map)) {
+				core::free(dst);
+				return false;
+			}
+			dst.implication_intro_nodes.length++;
 		} for (auto& entry : src.existential_intro_nodes) {
 			unsigned int index = proof_map.index_of(entry.value);
 #if !defined(NDEBUG)
@@ -3523,8 +3567,11 @@ struct theory
 				fprintf(stderr, "theory.clone WARNING: Given proof does not exist in `proof_map`.\n");
 #endif
 			dst.existential_intro_nodes[dst.existential_intro_nodes.length].value = proof_map.values[index];
-			dst.existential_intro_nodes[dst.existential_intro_nodes.length++].key = entry.key;
-			entry.key->reference_count++;
+			if (!::clone(entry.key, dst.existential_intro_nodes[dst.existential_intro_nodes.length].key, formula_map)) {
+				core::free(dst);
+				return false;
+			}
+			dst.existential_intro_nodes.length++;
 		}
 
 		for (unsigned int i = 0; i < dst.ground_concept_capacity; i++) {
@@ -3564,6 +3611,14 @@ struct theory
 		for (unsigned int built_in_set : src.built_in_sets)
 			dst.built_in_sets[dst.built_in_sets.length++] = built_in_set;
 		return true;
+	}
+
+	static inline bool is_empty(const theory<ProofCalculus, Canonicalizer>& T) {
+		return (T.ground_concepts == nullptr);
+	}
+
+	static inline void set_empty(theory<ProofCalculus, Canonicalizer>& T) {
+		T.ground_concepts = nullptr;
 	}
 
 	template<typename... Args>
@@ -6242,7 +6297,9 @@ private:
 						if (!core::init(new_tuple[k].str, value.assignment.values[k].str)) {
 							for (tuple& tup : provable_elements) core::free(tup);
 							for (unsigned int l = 0; l < k; l++) core::free(new_tuple[l]);
-							core::free(new_tuple.elements); return false;
+							core::free(new_tuple.elements);
+							for (auto& element : temp_possible_values) core::free(element);
+							return false;
 						}
 					} else if (value.assignment.values[k].type == instantiation_type::ANY || value.assignment.values[k].type == instantiation_type::ANY_NUMBER) {
 						for (unsigned int l = 0; l < k; l++) core::free(new_tuple[l]);
@@ -6261,6 +6318,7 @@ private:
 					 || !prover.get_axiom_instantiation(new_possible_values[new_possible_values.length], value, pushed_axiom_count))
 					{
 						for (tuple& tup : provable_elements) core::free(tup);
+						for (auto& element : temp_possible_values) core::free(element);
 						return false;
 					}
 					new_possible_values.length++;
@@ -6269,6 +6327,7 @@ private:
 				}
 			}
 			prover.pop_axiom(pushed_axiom_count);
+			for (auto& element : temp_possible_values) core::free(element);
 		}
 		if (new_possible_values.length > old_size) {
 			insertion_sort(new_possible_values.data + old_size, new_possible_values.length - old_size, default_sorter());
@@ -7371,9 +7430,11 @@ is_provable_by_exclusion_without_abduction<Contradiction>(formula, quantifiers, 
 			if (Contradiction) {
 				/* TODO: implement this */
 				//fprintf(stderr, "theory.is_provable_without_abduction ERROR: Not implemented.\n");
+				swap(possible_values, new_possible_values);
 				for (auto& element : new_possible_values) core::free(element);
-				for (auto& element : possible_values) core::free(element);
-				possible_values.clear(); return false;
+				for (variable_assignment& assignment : possible_values)
+					if (assignment.matching_axiom == formula) assignment.matching_axiom = nullptr;
+				return possible_values.length != 0;
 			}
 
 			if (!exists_is_provable_without_abduction<false>(formula, quantifiers, possible_values, new_possible_values, prover)) {
@@ -10594,8 +10655,8 @@ is_provable_by_exclusion_without_abduction<Contradiction>(formula, quantifiers, 
 					}
 				}
 			} else if (left->type == TermType::CONSTANT || right->type == TermType::CONSTANT) {
-				if (right->type == TermType::CONSTANT && right->constant != (unsigned int) built_in_predicates::UNKNOWN)
-					swap(left, right);
+				bool swap_order = (right->type == TermType::CONSTANT && right->constant != (unsigned int) built_in_predicates::UNKNOWN);
+				if (swap_order) swap(left, right);
 
 				if (Contradiction) {
 					/* TODO: implement this */
@@ -10700,7 +10761,20 @@ is_provable_by_exclusion_without_abduction<Contradiction>(formula, quantifiers, 
 						core::free(*new_proof);
 						core::free(new_proof);
 					}
-					return definition;
+
+					if (swap_order) {
+						Proof* swapped_proof = ProofCalculus::new_equality_elim(
+								definition, ProofCalculus::new_beta(right, right), make_repeated_array_view(4u, 1));
+						if (swapped_proof == NULL) {
+							free_proof(definition, set_diff);
+							return NULL;
+						}
+						core::free(*definition);
+						swapped_proof->reference_count++;
+						return swapped_proof;
+					} else {
+						return definition;
+					}
 				}
 			} else if ((left->type == TermType::UNARY_APPLICATION && left->binary.left->type == TermType::CONSTANT && left->binary.right->type == TermType::CONSTANT)
 					|| (right->type == TermType::UNARY_APPLICATION && right->binary.left->type == TermType::CONSTANT && right->binary.right->type == TermType::CONSTANT))
@@ -11039,10 +11113,9 @@ private:
 		Formula* constant = definition->formula->binary.left;
 		Formula* new_definition = definition->formula->binary.right;
 
-		unsigned int arity;
-		Formula* new_set_formula;
+		unsigned int arity = 1;
+		Formula* new_set_formula = nullptr;
 		if (new_definition->type == FormulaType::LAMBDA) {
-			arity = 1;
 			new_set_formula = new_definition->quantifier.operand;
 			while (new_set_formula->type == FormulaType::LAMBDA) {
 				new_set_formula = new_set_formula->quantifier.operand;
@@ -12627,8 +12700,9 @@ bool init(theory_sample<Proof>& sample, const hash_set<Proof*>& proofs,
 
 	sample.proof_count = 0;
 	array_map<const Proof*, Proof*> proof_map(32);
+	hash_map<const Formula*, Formula*> formula_map(64);
 	for (Proof* proof : proofs) {
-		if (!Proof::clone(proof, sample.proofs[sample.proof_count], proof_map)) {
+		if (!Proof::clone(proof, sample.proofs[sample.proof_count], proof_map, formula_map)) {
 			for (unsigned int j = 0; j < sample.proof_count; j++) { free(*sample.proofs[j]); free(sample.proofs[j]); }
 			free(sample.proofs);
 			return false;
@@ -13127,7 +13201,7 @@ bool log_joint_probability_of_lambda(
 
 	unsigned int new_constant;
 	set_changes<Formula> set_diff;
-extern const string_map_scribe* debug_terminal_printer;
+extern const thread_local string_map_scribe* debug_terminal_printer;
 T.print_axioms(stderr, *debug_terminal_printer);
 	Proof* new_proof = T.add_formula(existential, set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 	free(*existential); if (existential->reference_count == 0) free(existential);
@@ -13139,7 +13213,8 @@ T.print_axioms(stderr, *debug_terminal_printer);
 	}
 	set_diff.clear();
 
-	if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_map)) {
+	hash_map<const Formula*, Formula*> formula_map(128);
+	if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_map, formula_map)) {
 		T.template remove_formula<false>(new_proof, set_diff);
 		proof_axioms.template subtract<false>(new_proof, set_diff.old_set_axioms, proof_prior);
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
@@ -13168,8 +13243,8 @@ if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof);
 		if (collector.internal_collector.current_log_probability > max_log_probability) {
-			free(T_map);
-			if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_map)) {
+			free(T_map); formula_map.clear();
+			if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_map, formula_map)) {
 				T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 				proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 				free(*collector.internal_collector.test_proof);

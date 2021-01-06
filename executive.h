@@ -366,7 +366,7 @@ inline bool parse_sentence(
 	unsigned int parse_count = 0;
 	bool result = parse_sentence(parser, sentence, names, logical_forms, log_probabilities, parse_count);
 
-extern const string_map_scribe* debug_terminal_printer;
+extern const thread_local string_map_scribe* debug_terminal_printer;
 debug_terminal_printer = &parser.get_printer();
 	for (const auto& paragraph : training_set) {
 		bool found_training_sentence = false;
@@ -1942,7 +1942,7 @@ print(entry.value, stderr); print('\n', stderr);
 	};
 
 /* TODO: for debugging; delete this */
-extern const string_map_scribe* debug_terminal_printer;
+extern const thread_local string_map_scribe* debug_terminal_printer;
 debug_terminal_printer = &parser.get_printer();
 	theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
 	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {

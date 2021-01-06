@@ -2425,15 +2425,18 @@ struct hdp_parser
 		if (!contains) NONTERMINAL_V_ID = 0;
 	}
 
-	~hdp_parser() {
-		if (terminal_printer.map != nullptr)
-			free(terminal_printer.map);
+	~hdp_parser() { free_helper(); }
+
+	static inline void free(hdp_parser<Formula>& p) {
+		p.free_helper();
+		core::free(p.morph);
+		core::free(p.G);
 	}
 
 	bool invert_name_map(hash_map<string, unsigned int>& names) {
 		if (!init_capitalization_map(morph, names))
 			return false;
-		if (terminal_printer.map != NULL) free(terminal_printer.map);
+		if (terminal_printer.map != NULL) core::free(terminal_printer.map);
 		terminal_printer.map = invert(names);
 		if (terminal_printer.map == NULL) return false;
 		terminal_printer.length = names.table.size + 1;
@@ -2455,7 +2458,7 @@ struct hdp_parser
 		terminal_printer.length = names.table.size + 1;
 		const string** nonterminal_name_map = invert(G.nonterminal_names);
 		if (terminal_printer.map == NULL || nonterminal_name_map == NULL) {
-			if (terminal_printer.map != NULL) free(terminal_printer.map);
+			if (terminal_printer.map != NULL) core::free(terminal_printer.map);
 			terminal_printer.map = NULL;
 			return false;
 		}
@@ -2513,10 +2516,10 @@ detect_duplicate_logical_forms = true;
 						return false;
 					} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
 						cleanup(data, nonterminal_name_map, syntax, order);
-						free(seq); return false;
+						core::free(seq); return false;
 					}
 					auto sentence = tokenized_sentence<logical_form_type>(seq);
-					free(seq);
+					core::free(seq);
 					syntax[id][j].tree = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>));
 					/* NOTE: sample can set syntax[id] to null */
 					if (syntax[id][j].tree == NULL || !sample(syntax[id][j].tree, G, logical_form, sentence, morph, *this, syntax[id][j].root) || syntax[id][j].tree == NULL)
@@ -2557,19 +2560,19 @@ detect_duplicate_logical_forms = true;
 						return false;
 					} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
 						cleanup(data, nonterminal_name_map, syntax, order);
-						free(seq); return false;
+						core::free(seq); return false;
 					} if (names.table.size != old_names_size) {
-						free(terminal_printer.map);
+						core::free(terminal_printer.map);
 						terminal_printer.map = invert(names);
 						terminal_printer.length = names.table.size + 1;
 						if (terminal_printer.map == nullptr) {
 							cleanup(data, nonterminal_name_map, syntax, order);
-							free(seq); return false;
+							core::free(seq); return false;
 						}
 						terminal_printer = { terminal_printer.map, names.table.size + 1 };
 					}
 					auto sentence = tokenized_sentence<logical_form_type>(seq);
-					free(seq);
+					core::free(seq);
 					resample(syntax[id][j].tree, G, logical_form, sentence, morph, *this, syntax[id][j].root);
 				}
 			}
@@ -2613,7 +2616,7 @@ detect_duplicate_logical_forms = true;
 		if (!init(seq, s)) {
 			return false;
 		} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
-			free(seq);
+			core::free(seq);
 			return false;
 		}
 		auto sentence = tokenized_sentence<logical_form_type>(seq);
@@ -2628,8 +2631,8 @@ debug_flag = true;
 				logical_form, logical_form_output, G, sentence, morph, *this))
 		{
 /* TODO: for debugging; remove this */
-free(nonterminal_name_map);
-			free(seq);
+core::free(nonterminal_name_map);
+			core::free(seq);
 			return false;
 		}
 
@@ -2651,14 +2654,14 @@ print(parsed_syntax[i], stderr, nonterminal_printer, terminal_printer, logical_f
 					fprintf(stderr, "hdp_parser.parse ERROR: Unable to retrieve unrecognized terminals. This"
 							" is likely due to a bug in a transformation function in the derivation tree.\n");
 					for (unsigned int j = 0; j < i; j++) {
-						free(*logical_forms[j]); free(logical_forms[j]);
+						core::free(*logical_forms[j]); core::free(logical_forms[j]);
 					} for (unsigned int j = 0; j < parse_count; j++) {
-						free(parsed_syntax[j]);
-						free(logical_form_output[j]);
+						core::free(parsed_syntax[j]);
+						core::free(logical_form_output[j]);
 					}
 /* TODO: for debugging; remove this */
-free(nonterminal_name_map);
-					free(seq);
+core::free(nonterminal_name_map);
+					core::free(seq);
 					return false;
 				}
 
@@ -2674,29 +2677,29 @@ free(nonterminal_name_map);
 			if (logical_forms[i] == NULL) {
 				fprintf(stderr, "hdp_parser.parse ERROR: Out of memory.\n");
 				for (unsigned int j = 0; j < i; j++) {
-					free(*logical_forms[j]); free(logical_forms[j]);
+					core::free(*logical_forms[j]); core::free(logical_forms[j]);
 				} for (unsigned int j = 0; j < parse_count; j++) {
-					free(parsed_syntax[j]);
-					free(logical_form_output[j]);
+					core::free(parsed_syntax[j]);
+					core::free(logical_form_output[j]);
 				}
 /* TODO: for debugging; remove this */
-free(nonterminal_name_map);
-				free(seq);
+core::free(nonterminal_name_map);
+				core::free(seq);
 				return false;
 			}
 		}
-		free(seq);
+		core::free(seq);
 /* TODO: for debugging; remove this */
-free(nonterminal_name_map);
+core::free(nonterminal_name_map);
 
 		for (pair<unsigned int, unsigned int> index : ambiguous_terminal_indices) {
 			array<sentence_token>& next_unknown_string = unrecognized[unrecognized.length];
 			if (!array_init(next_unknown_string, index.value)) {
-				for (array<sentence_token>& str : unrecognized) free(str);
+				for (array<sentence_token>& str : unrecognized) core::free(str);
 				unrecognized.clear();
 				for (unsigned int j = 0; j < parse_count; j++) {
-					free(parsed_syntax[j]);
-					free(logical_form_output[j]);
+					core::free(parsed_syntax[j]);
+					core::free(logical_form_output[j]);
 				}
 				return false;
 			}
@@ -2708,8 +2711,8 @@ free(nonterminal_name_map);
 		}
 
 		for (unsigned int j = 0; j < parse_count; j++) {
-			free(parsed_syntax[j]);
-			free(logical_form_output[j]);
+			core::free(parsed_syntax[j]);
+			core::free(logical_form_output[j]);
 		}
 		return true;
 	}
@@ -2729,21 +2732,21 @@ free(nonterminal_name_map);
 		if (constant == nullptr)
 			return false;
 		hol_term* new_definition = substitute(definition, &HOL_UNKNOWN, constant);
-		free(*constant); if (constant->reference_count == 0) free(constant);
+		core::free(*constant); if (constant->reference_count == 0) core::free(constant);
 		if (new_definition == nullptr)
 			return false;
 
 		const logical_form_type logical_form(*new_definition);
-		free(*new_definition); if (new_definition->reference_count == 0) free(new_definition);
+		core::free(*new_definition); if (new_definition->reference_count == 0) core::free(new_definition);
 		sequence& seq = *((sequence*) alloca(sizeof(sequence)));
 		if (!init(seq, s)) {
 			return false;
 		} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
-			free(seq);
+			core::free(seq);
 			return false;
 		}
 		auto sentence = tokenized_sentence<logical_form_type>(seq);
-		free(seq);
+		core::free(seq);
 
 		const string** nonterminal_name_map = invert(G.nonterminal_names);
 		if (nonterminal_name_map == nullptr)
@@ -2761,17 +2764,17 @@ debug_nonterminal_printer = &nonterminal_printer;
 		if (syntax == NULL || !sample(syntax, G, logical_form, sentence, morph, *this) || syntax == NULL)
 		{
 			fprintf(stderr, "hdp_parser.add_definition ERROR: Unable to sample derivation for new sentence.\n");
-			free(nonterminal_name_map); return false;
+			core::free(nonterminal_name_map); return false;
 		}
 		print(*syntax, stdout, nonterminal_printer, printer, 1); print("\n\n", stdout);
 		fflush(stdout);
-		free(nonterminal_name_map);
+		core::free(nonterminal_name_map);
 
 		if (!add_tree(1, *syntax, logical_form, G)) {
-			free(*syntax); free(syntax);
+			core::free(*syntax); core::free(syntax);
 			return false;
 		}
-		free(*syntax); free(syntax);
+		core::free(*syntax); core::free(syntax);
 
 		/* TODO: do some MCMC iterations */
 		return true;
@@ -2791,7 +2794,7 @@ debug_terminal_printer = &terminal_printer;
 debug_nonterminal_printer = &nonterminal_printer;
 		const logical_form_type root_logical_form(*logical_form);
 		bool result = ::generate<K>(generated_derivations, generated_derivation_count, root_logical_form, G, morph, names);
-free(nonterminal_name_map);
+core::free(nonterminal_name_map);
 		for (unsigned int i = 0; i < generated_derivation_count; i++) {
 			double log_likelihood = log_probability(G, generated_derivations[i], root_logical_form, *this);
 			log_likelihoods[i] = log_likelihood;
@@ -2911,20 +2914,52 @@ private:
 			for (unsigned int k = 0; k < data.length; k++) {
 				if (syntax[k] == NULL) continue;
 				for (unsigned int l = 0; l < data[k].size; l++)
-					if (!is_empty(syntax[k][l])) free(syntax[k][l]);
-				free(syntax[k]);
+					if (!is_empty(syntax[k][l])) core::free(syntax[k][l]);
+				core::free(syntax[k]);
 			}
-			free(syntax);
+			core::free(syntax);
 		}
-		if (order != NULL) free(order);
-		if (terminal_printer.map != NULL) free(terminal_printer.map);
-		if (nonterminal_name_map != NULL) free(nonterminal_name_map);
+		if (order != NULL) core::free(order);
+		if (terminal_printer.map != NULL) core::free(terminal_printer.map);
+		if (nonterminal_name_map != NULL) core::free(nonterminal_name_map);
 		terminal_printer.map = NULL;
+	}
+
+	inline void free_helper() {
+		if (terminal_printer.map != nullptr)
+			core::free(terminal_printer.map);
 	}
 };
 
 template<typename Formula>
 constexpr const char* hdp_parser<Formula>::FORBIDDEN_TOKEN_STRS[];
+
+template<typename Formula>
+bool init(hdp_parser<Formula>& dst, const hdp_parser<Formula>& src)
+{
+	dst.LPAREN_ID = src.LPAREN_ID;
+	dst.RPAREN_ID = src.RPAREN_ID;
+	dst.COMMA_ID = src.COMMA_ID;
+	dst.A_ID = src.A_ID;
+	dst.AN_ID = src.AN_ID;
+	dst.ASTERISK_ID = src.ASTERISK_ID;
+	dst.NONTERMINAL_NP_ID = src.NONTERMINAL_NP_ID;
+	dst.NONTERMINAL_V_ID = src.NONTERMINAL_V_ID;
+	for (unsigned int i = 0; i < array_length(src.forbidden_token_ids); i++)
+		dst.forbidden_token_ids[i] = src.forbidden_token_ids[i];
+	dst.number_parser = src.number_parser;
+
+	dst.terminal_printer.map = nullptr;
+	dst.terminal_printer.length = 0;
+
+	if (!init(dst.morph, src.morph)) {
+		return false;
+	} else if (!copy(src.G, dst.G)) {
+		free(dst.morph);
+		return false;
+	}
+	return true;
+}
 
 /* Computes the log joint probability of the grammar and given derivations */
 template<typename Formula>
@@ -2966,7 +3001,7 @@ struct hol_tense_constants {
 	}
 
 	static inline hol_tense_constants<BuiltInPredicates>& get() {
-		static hol_tense_constants<BuiltInPredicates> constants;
+		static thread_local hol_tense_constants<BuiltInPredicates> constants;
 		return constants;
 	}
 };
@@ -2989,7 +3024,7 @@ struct hol_non_head_constants {
 	}
 
 	static inline hol_non_head_constants<BuiltInPredicates>& get() {
-		static hol_non_head_constants<BuiltInPredicates> constants;
+		static thread_local hol_non_head_constants<BuiltInPredicates> constants;
 		return constants;
 	}
 

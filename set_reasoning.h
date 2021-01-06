@@ -74,6 +74,7 @@ inline bool init(intensional_set_vertex& vertex) {
 template<typename ProofCalculus>
 struct extensional_set_vertex
 {
+	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
 
 	array_map<unsigned int, array<Proof*>> parents;
@@ -87,7 +88,8 @@ struct extensional_set_vertex
 	static inline bool clone_except_parents(
 			const extensional_set_vertex<ProofCalculus>& src,
 			extensional_set_vertex<ProofCalculus>& dst,
-			array_map<const Proof*, Proof*>& proof_map)
+			array_map<const Proof*, Proof*>& proof_map,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		if (!array_map_init(dst.parents, src.parents.capacity)) {
 			return false;
@@ -105,7 +107,7 @@ struct extensional_set_vertex
 			dst.children.size++;
 
 			for (Proof* proof : entry.value) {
-				if (!Proof::clone(proof, dst_proofs[dst_proofs.length], proof_map)) {
+				if (!Proof::clone(proof, dst_proofs[dst_proofs.length], proof_map, formula_map)) {
 					core::free(dst);
 					return false;
 				}
@@ -847,7 +849,8 @@ struct set_info
 	static inline bool clone(
 			const set_info<BuiltInConstants, ProofCalculus>& src,
 			set_info<BuiltInConstants, ProofCalculus>& dst,
-			array_map<const Proof*, Proof*>& proof_map)
+			array_map<const Proof*, Proof*>& proof_map,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		dst.arity = src.arity;
 		dst.set_size = src.set_size;
@@ -862,7 +865,7 @@ struct set_info
 			return false;
 		}
 		for (Proof* axiom : src.size_axioms) {
-			if (!Proof::clone(axiom, dst.size_axioms[dst.size_axioms.length], proof_map)) {
+			if (!Proof::clone(axiom, dst.size_axioms[dst.size_axioms.length], proof_map, formula_map)) {
 				core::free(dst);
 				return false;
 			}
@@ -1124,7 +1127,8 @@ struct set_reasoning
 	static inline bool clone(
 			const set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& src,
 			set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& dst,
-			array_map<const Proof*, Proof*>& proof_map)
+			array_map<const Proof*, Proof*>& proof_map,
+			hash_map<const Formula*, Formula*>& formula_map)
 	{
 		dst.capacity = src.capacity;
 		dst.intensional_graph.vertices = (intensional_set_vertex*) malloc(sizeof(intensional_set_vertex) * dst.capacity);
@@ -1159,13 +1163,13 @@ struct set_reasoning
 
 		for (unsigned int i = 1; i < dst.set_count + 1; i++) {
 			if (src.sets[i].size_axioms.data != nullptr) {
-				if (!extensional_set_vertex<ProofCalculus>::clone_except_parents(src.extensional_graph.vertices[i], dst.extensional_graph.vertices[i], proof_map)) {
+				if (!extensional_set_vertex<ProofCalculus>::clone_except_parents(src.extensional_graph.vertices[i], dst.extensional_graph.vertices[i], proof_map, formula_map)) {
 					core::free(dst);
 					return false;
 				} else if (!intensional_set_vertex::clone(src.intensional_graph.vertices[i], dst.intensional_graph.vertices[i])) {
 					dst.extensional_graph.template free_set<false>(i);
 					core::free(dst); return false;
-				} else if (!set_info<BuiltInConstants, ProofCalculus>::clone(src.sets[i], dst.sets[i], proof_map)) {
+				} else if (!set_info<BuiltInConstants, ProofCalculus>::clone(src.sets[i], dst.sets[i], proof_map, formula_map)) {
 					dst.extensional_graph.template free_set<false>(i);
 					dst.intensional_graph.template free_set<false>(i);
 					core::free(dst); return false;
@@ -1181,7 +1185,7 @@ struct set_reasoning
 		} for (const auto& entry : src.set_ids) {
 			unsigned int bucket = dst.set_ids.table.index_to_insert(entry.key);
 			dst.set_ids.values[bucket] = entry.value;
-			if (!init(dst.set_ids.table.keys[bucket], entry.key)) {
+			if (!::clone(entry.key, dst.set_ids.table.keys[bucket], formula_map)) {
 				core::free(dst);
 				return false;
 			}
