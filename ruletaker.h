@@ -293,6 +293,7 @@ void do_ruletaker_experiments(
 		std::mutex& incorrect_question_ids_lock,
 		array<pair<unsigned int, unsigned int>>& incorrect,
 		array<pair<unsigned int, unsigned int>>& half_correct,
+		array<pair<unsigned int, string>>& unparseable_context,
 		std::atomic_uint& total,
 		std::atomic_uint& answered,
 		std::atomic_uint& num_threads_reading_context)
@@ -413,7 +414,7 @@ void do_ruletaker_experiments(
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id >= 9) {
+if (job.context_id != 8 - 1) { //>= 9) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;
@@ -430,6 +431,18 @@ continue;
 					const char old_next = job.context[i + 1];
 					job.context[i + 1] = '\0';
 					if (!read_sentence(corpus, parser, job.context + start, job.T, names, seed_entities, proof_prior, job.proof_axioms, 10, UINT_MAX)) {
+						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
+						if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
+						 || !init(unparseable_context[unparseable_context.length].value, job.context + start))
+						{
+							job.context[i + 1] = old_next;
+							status = false;
+							num_threads_reading_context--;
+							work_queue_cv.notify_all();
+							for (auto entry : names) free(entry.key);
+							free(parser); return;
+						}
+						unparseable_context[unparseable_context.length++].key = job.context_id;
 						job.context[i + 1] = old_next;
 						break;
 					}
@@ -522,8 +535,10 @@ continue;
 
 inline void print_ruletaker_results(
 		const std::atomic_uint& total, const std::atomic_uint& answered,
-		const array<pair<unsigned int, unsigned int>>& incorrect,
-		const array<pair<unsigned int, unsigned int>>& half_correct)
+		array<pair<unsigned int, unsigned int>>& incorrect,
+		array<pair<unsigned int, unsigned int>>& half_correct,
+		array<pair<unsigned int, string>>& unparseable_context,
+		std::mutex& incorrect_question_ids_lock)
 {
 	fprintf(stderr,
 			"Results so far:\n"
@@ -533,14 +548,24 @@ inline void print_ruletaker_results(
 			"  Half-correct questions: %lu\n",
 			total.load(), answered.load(),
 			incorrect.length, half_correct.length);
+	std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 	if (incorrect.length != 0) {
 		fprintf(stderr, "Incorrect questions:\n");
+		insertion_sort(incorrect);
 		for (const auto& entry : incorrect)
 			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
 	} if (half_correct.length != 0) {
 		fprintf(stderr, "Half-correct questions:\n");
+		insertion_sort(half_correct);
 		for (const auto& entry : half_correct)
 			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
+	} if (unparseable_context.length != 0) {
+		fprintf(stderr, "Failed to parse following context sentences:\n");
+		insertion_sort(unparseable_context, default_sorter());
+		for (const auto& entry : unparseable_context) {
+			fprintf(stderr, "  Context ID %u: \"", entry.key + 1);
+			print(entry.value, stderr); print("\"\n", stderr);
+		}
 	}
 }
 
@@ -572,6 +597,7 @@ bool run_ruletaker_experiments(
 	std::mutex incorrect_question_ids_lock;
 	array<pair<unsigned int, unsigned int>> incorrect(64);
 	array<pair<unsigned int, unsigned int>> half_correct(4);
+	array<pair<unsigned int, string>> unparseable_context(4);
 	std::atomic_uint total(0);
 	std::atomic_uint answered(0);
 	std::atomic_uint num_threads_reading_context(0);
@@ -589,6 +615,7 @@ bool run_ruletaker_experiments(
 				std::ref(names), std::ref(seed_entities),
 				std::ref(incorrect_question_ids_lock),
 				std::ref(incorrect), std::ref(half_correct),
+				std::ref(unparseable_context),
 				std::ref(total), std::ref(answered),
 				std::ref(num_threads_reading_context));
 	}
@@ -650,7 +677,7 @@ bool run_ruletaker_experiments(
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
 			std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
-			print_ruletaker_results(total, answered, incorrect, half_correct);
+			print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
 			stopwatch.start();
 		}
 	}
@@ -663,7 +690,7 @@ bool run_ruletaker_experiments(
 			workers[i].join();
 		} catch (...) { }
 	}
-	print_ruletaker_results(total, answered, incorrect, half_correct);
+	print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
 	delete[] workers;
 	for (unsigned int i = 0; i < context_queue_length; i++)
 		free(context_queue[i]);

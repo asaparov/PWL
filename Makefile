@@ -88,22 +88,22 @@ endef
 	$(call make_dependencies,$(CPP),$(CPPFLAGS_DBG),$*,cpp,debug.pic)
 
 executive_test: $(LIBS) $(EXECUTIVE_TEST_OBJS)
-		$(CPP) -o executive_test $(CPPFLAGS) $(LDFLAGS) $(EXECUTIVE_TEST_OBJS)
+		$(CPP) -o executive_test $(CPPFLAGS) $(EXECUTIVE_TEST_OBJS) $(LDFLAGS)
 
 executive_test_dbg: $(LIBS) $(EXECUTIVE_TEST_DBG_OBJS)
-		$(CPP) -o executive_test_dbg $(CPPFLAGS_DBG) $(LDFLAGS_DBG) $(EXECUTIVE_TEST_DBG_OBJS)
+		$(CPP) -o executive_test_dbg $(CPPFLAGS_DBG) $(EXECUTIVE_TEST_DBG_OBJS) $(LDFLAGS_DBG)
 
 extract_wikt_morphology_en: $(LIBS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS)
-		$(CPP) -o extract_wikt_morphology_en $(CPPFLAGS) $(LDFLAGS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS)
+		$(CPP) -o extract_wikt_morphology_en $(CPPFLAGS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS) $(LDFLAGS)
 
 extract_wikt_morphology_en_dbg: $(LIBS) $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS)
-		$(CPP) -o extract_wikt_morphology_en_dbg $(CPPFLAGS_DBG) $(LDFLAGS_DBG) $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS)
+		$(CPP) -o extract_wikt_morphology_en_dbg $(CPPFLAGS_DBG) $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS) $(LDFLAGS_DBG)
 
 set_reasoning_test: $(LIBS) $(SET_REASONING_TEST_OBJS)
-		$(CPP) -o set_reasoning_test $(CPPFLAGS) $(LDFLAGS) $(SET_REASONING_TEST_OBJS)
+		$(CPP) -o set_reasoning_test $(CPPFLAGS) $(SET_REASONING_TEST_OBJS) $(LDFLAGS)
 
 set_reasoning_test_dbg: $(LIBS) $(SET_REASONING_TEST_DBG_OBJS)
-		$(CPP) -o set_reasoning_test_dbg $(CPPFLAGS_DBG) $(LDFLAGS_DBG) $(SET_REASONING_TEST_DBG_OBJS)
+		$(CPP) -o set_reasoning_test_dbg $(CPPFLAGS_DBG) $(SET_REASONING_TEST_DBG_OBJS) $(LDFLAGS_DBG)
 
 clean:
 	    ${RM} -f *.o */*.o */*/*.o *.d */*.d */*/*.d executive_test executive_test.exe executive_test_dbg executive_test_dbg.exe extract_wikt_morphology_en extract_wikt_morphology_en_dbg extract_wikt_morphology_en.exe extract_wikt_morphology_en_dbg.exe set_reasoning_test set_reasoning_test_dbg set_reasoning_test.exe set_reasoning_test_dbg.exe $(LIBS)

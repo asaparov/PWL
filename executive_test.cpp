@@ -2386,7 +2386,7 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test.jsonl", 1);
+run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test.jsonl", 16);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
