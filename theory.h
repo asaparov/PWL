@@ -7586,6 +7586,7 @@ is_provable_by_exclusion_without_abduction<Contradiction>(formula, quantifiers, 
 						return false;
 					}
 					set_definition->reference_count++;
+					Variables<1>::value.reference_count++;
 					bool contains;
 					unsigned int set_id = sets.set_ids.get(*set_formula, contains);
 					core::free(*set_formula); core::free(set_formula);

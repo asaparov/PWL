@@ -336,6 +336,10 @@ void do_ruletaker_experiments(
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
+if (job.question_id != 0) {
+total++;
+continue;
+}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -509,7 +513,7 @@ continue;
 						free(new_question);
 						for (auto entry : names) free(entry.key);
 						free(parser); return;
-					} else if (!new (&new_question.proof_axioms) PriorStateType(job.proof_axioms, formula_map)) {
+					} else if (new (&new_question.proof_axioms) PriorStateType(job.proof_axioms, formula_map) == nullptr) {
 						status = false;
 						num_threads_reading_context--;
 						work_queue_cv.notify_all();
@@ -676,7 +680,6 @@ bool run_ruletaker_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 			print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
 			stopwatch.start();
 		}

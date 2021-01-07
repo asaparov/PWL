@@ -261,14 +261,14 @@ struct hol_term
 		any.excluded_tree_count = 0;
 	}
 
-	hol_term(hol_term_type type) : type(type), reference_count(1) {
+	hol_term(hol_term_type type, unsigned int reference_count) : type(type), reference_count(reference_count) {
 #if !defined(NDEBUG)
 		if (type != hol_term_type::TRUE && type != hol_term_type::FALSE && type != hol_term_type::ANY)
 			fprintf(stderr, "hol_term WARNING: This constructor should only be used if `type` is `TRUE`, `FALSE`, or `ANY`.\n");
 #endif
 	}
 
-	hol_term(hol_term_type type, unsigned int value) : type(type), reference_count(1) {
+	hol_term(hol_term_type type, unsigned int value, unsigned int reference_count) : type(type), reference_count(reference_count) {
 #if !defined(NDEBUG)
 		if (type != hol_term_type::VARIABLE && type != hol_term_type::VARIABLE_PREIMAGE && type != hol_term_type::CONSTANT && type != hol_term_type::PARAMETER)
 			fprintf(stderr, "hol_term WARNING: This constructor should only be used if `type` is `VARIABLE`, `VARIABLE_PREIMAGE`, `CONSTANT`, or `PARAMETER`.\n");
@@ -477,18 +477,18 @@ private:
 	friend bool init(hol_term&, const hol_term&);
 };
 
-thread_local hol_term HOL_TRUE(hol_term_type::TRUE);
-thread_local hol_term HOL_FALSE(hol_term_type::FALSE);
-thread_local hol_term HOL_ANY(hol_term_type::ANY);
+thread_local hol_term HOL_TRUE(hol_term_type::TRUE, 2);
+thread_local hol_term HOL_FALSE(hol_term_type::FALSE, 2);
+thread_local hol_term HOL_ANY(hol_term_type::ANY, 2);
 
 template<unsigned int Value>
-thread_local hol_term hol_term::constants<Value>::value(hol_term_type::CONSTANT, Value);
+thread_local hol_term hol_term::constants<Value>::value(hol_term_type::CONSTANT, Value, 2);
 
 template<unsigned int Value>
-thread_local hol_term hol_term::variables<Value>::value(hol_term_type::VARIABLE, Value);
+thread_local hol_term hol_term::variables<Value>::value(hol_term_type::VARIABLE, Value, 2);
 
 template<unsigned int Value>
-thread_local hol_term hol_term::parameters<Value>::value(hol_term_type::PARAMETER, Value);
+thread_local hol_term hol_term::parameters<Value>::value(hol_term_type::PARAMETER, Value, 2);
 
 inline bool init(hol_term& term, const hol_term& src) {
 	term.type = src.type;
