@@ -346,6 +346,7 @@ void do_ruletaker_experiments(
 			if (!Theory::clone(job.T, T_copy, formula_map)) {
 				status = false;
 				work_queue_cv.notify_all();
+				free(job);
 				for (auto entry : names) free(entry.key);
 				free(parser); return;
 			}
@@ -370,7 +371,7 @@ void do_ruletaker_experiments(
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
 					work_queue_cv.notify_all();
-					free(T_copy);
+					free(job); free(T_copy);
 					total++;
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
@@ -409,12 +410,13 @@ void do_ruletaker_experiments(
 				total++;
 			}
 			free(T_copy);
+			free(job);
 
 		} else {
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id >= 9) {
+if (job.context_id != 2 - 1) { //>= 9) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;
@@ -439,6 +441,7 @@ continue;
 							status = false;
 							num_threads_reading_context--;
 							work_queue_cv.notify_all();
+							free(job);
 							for (auto entry : names) free(entry.key);
 							free(parser); return;
 						}
@@ -480,6 +483,7 @@ continue;
 					status = false;
 					num_threads_reading_context--;
 					work_queue_cv.notify_all();
+					free(job);
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
 				}
@@ -492,6 +496,7 @@ continue;
 						status = false;
 						num_threads_reading_context--;
 						work_queue_cv.notify_all();
+						free(job);
 						for (auto entry : names) free(entry.key);
 						free(parser); return;
 					}
@@ -506,7 +511,7 @@ continue;
 						num_threads_reading_context--;
 						work_queue_cv.notify_all();
 						set_empty(new_question.T);
-						free(new_question);
+						free(new_question); free(job);
 						for (auto entry : names) free(entry.key);
 						free(parser); return;
 					} else if (new (&new_question.proof_axioms) PriorStateType(job.proof_axioms, formula_map) == nullptr) {
@@ -515,7 +520,7 @@ continue;
 						work_queue_cv.notify_all();
 						free(new_question.T);
 						set_empty(new_question.T);
-						free(new_question);
+						free(new_question); free(job);
 						for (auto entry : names) free(entry.key);
 						free(parser); return;
 					}
@@ -526,6 +531,7 @@ continue;
 				total += job.questions.length;
 			}
 			num_threads_reading_context--;
+			free(job);
 		}
 	}
 
@@ -691,9 +697,9 @@ bool run_ruletaker_experiments(
 	}
 	print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
 	delete[] workers;
-	for (unsigned int i = 0; i < context_queue_length; i++)
+	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
-	for (unsigned int i = 0; i < question_queue_length; i++)
+	for (unsigned int i = question_queue_start; i < question_queue_length; i++)
 		free(question_queue[i]);
 	free(context_queue);
 	free(question_queue);
