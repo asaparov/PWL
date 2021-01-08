@@ -6583,13 +6583,6 @@ private:
 			for (auto& element : new_possible_values) core::free(element);
 			return false;
 		}
-for (const variable_assignment& assignment : new_possible_values) {
-if (assignment.assignment.length != quantifiers.length) {
-for (auto& element : new_possible_values) core::free(element);
-new_possible_values.clear();
-is_provable_by_exclusion_without_abduction<Contradiction>(formula, quantifiers, possible_values, new_possible_values, prover);
-}
-}
 		if (!prover.template is_provable_by_axiom_without_abduction<Contradiction>(formula, quantifiers, possible_values, new_possible_values)) {
 			for (auto& element : new_possible_values) core::free(element);
 			for (variable_assignment& assignment : possible_values)
