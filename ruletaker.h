@@ -336,10 +336,6 @@ void do_ruletaker_experiments(
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id != 0) {
-total++;
-continue;
-}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -418,7 +414,7 @@ continue;
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 8 - 1) { //>= 9) {
+if (job.context_id >= 9) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;

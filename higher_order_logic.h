@@ -2038,10 +2038,8 @@ template<typename... Cloner>
 inline bool clone(const hol_term* src, hol_term*& dst,
 		hash_map<const hol_term*, hol_term*>& term_map, Cloner&&... cloner)
 {
-	if (!term_map.check_size())
-		return false;
-	bool contains; unsigned int bucket;
-	dst = term_map.get(src, contains, bucket);
+	bool contains;
+	dst = term_map.get(src, contains);
 	if (contains) {
 		dst->reference_count++;
 	} else {
@@ -2050,7 +2048,11 @@ inline bool clone(const hol_term* src, hol_term*& dst,
 		} else if (!clone(*src, *dst, term_map, std::forward<Cloner>(cloner)...)) {
 			free(dst);
 			return false;
+		} else if (!term_map.check_size()) {
+			free(*dst); free(dst);
+			return false;
 		}
+		unsigned int bucket = term_map.table.index_to_insert(src);
 		term_map.values[bucket] = dst;
 		term_map.table.keys[bucket] = src;
 		term_map.table.size++;

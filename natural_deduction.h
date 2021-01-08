@@ -347,8 +347,6 @@ struct nd_step
 			array_map<const nd_step<Formula>*, nd_step<Formula>*>& pointer_map,
 			hash_map<const Formula*, Formula*>& formula_map)
 	{
-		if (!pointer_map.ensure_capacity(pointer_map.size + 1))
-			return false;
 		unsigned int index = pointer_map.index_of(src);
 		if (index < pointer_map.size) {
 			dst = pointer_map.values[index];
@@ -358,15 +356,16 @@ struct nd_step
 			if (dst == nullptr) {
 				fprintf(stderr, "nd_step.clone ERROR: Out of memory.\n");
 				return false;
-			}
-			pointer_map.keys[index] = src;
-			pointer_map.values[index] = dst;
-			pointer_map.size++;
-			if (!clone(*src, *dst, pointer_map, formula_map)) {
+			} else if (!clone(*src, *dst, pointer_map, formula_map)) {
 				core::free(dst);
-				pointer_map.remove_at(pointer_map.index_of(src));
+				return false;
+			} else if (!pointer_map.ensure_capacity(pointer_map.size + 1)) {
+				core::free(*dst); core::free(dst);
 				return false;
 			}
+			pointer_map.keys[pointer_map.size] = src;
+			pointer_map.values[pointer_map.size] = dst;
+			pointer_map.size++;
 		}
 		return true;
 	}
