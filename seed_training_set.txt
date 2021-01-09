@@ -2329,6 +2329,135 @@
 {(V "ring"/"rings")}
 	{?[x]:(ring(x) & present(x))[index:sg]};
 
+: # run
+{(V "run"/"runs")}
+	{?[x]:(flow(x) & present(x))[index:sg]};
+
+: # current
+{(N "current"/"current")}
+	{current[index:sg]};
+
+: # conducts
+{(V "conduct"/"conducts")}
+	{?[x]:(conduct(x) & present(x))[index:sg]};
+
+: # conducts
+{(V "conduct"/"conducts")}
+	{?[x]:(conduct(x) & present(x))[index:sg,arg2]};
+
+: # wire
+{(N "wire"/"wire")}
+	{wire[index:sg]};
+
+: # power
+{(V "power"/"powers")}
+	{?[x]:(supply_power(x) & present(x))[index:sg,arg2]};
+
+: # battery
+{(N "battery"/"battery")}
+	{battery[index:sg]};
+
+: # metal
+{(ADJ "metal"/"metal")}
+	{?[x]:metal(x)};
+
+: # plastic
+{(ADJ "plastic"/"plastic")}
+	{?[x]:plastic(x)};
+
+: # include
+{(V "include"/"includes")}
+	{?[x]:(contains(x) & present(x))[index:sg,arg2]};
+
+: # flat
+{(ADJ "flat"/"flat")}
+	{?[x]:flat(x)};
+
+: # Oumuamua is moving through the Oort Cloud.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity_predicative
+							(NOMINAL_L:identity_predicative
+								(STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Oumuamua")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:identity
+						(BE:remove_aspect "be"/"is")
+						(VP_L:try_remove_correlated,require_no_future,require_no_perfect,remove_progressive,add_present_participle,add_aux
+							(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "move"/"moving")
+						)
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
+					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head
+						(P:require_no_preposition,remove_right_conjunct "through")
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+								(THE "the")
+								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+									(NOMINAL_R:identity_predicative
+										(NOMINAL_L:identity_predicative
+											(STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Oort Cloud")
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD:empty ".")
+)}
+	{?[v]:(?[n]:(name(n) & (arg1_of(v)=n) & (arg2(n)="Oumuamua")) & ?[o]:(?[n]:(name(n) & (arg1_of(o)=n) & (arg2(n)="Oort Cloud")) & ?[m]:((arg1(m)=v) & move(m) & present_progressive(m) & ?[t]:(through(t) & (arg2(t)=o) & (arg1_of(m)=t)))))};
+
+: # The Sun is not frozen.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+						(THE:empty "the")
+						(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+							(NOMINAL_R:identity_predicative
+								(NOMINAL_L:identity_predicative
+									(STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Sun")
+								)
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_L:identity
+					(BE:identity "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive
+						(VP_L:identity
+							(NOT "not")
+							(VP_L:try_remove_correlated,require_aux_or_subjunctive_or_infinitive_or_to_infinitive,remove_not,require_no_req_subject,try_remove_req_aux,add_negative
+								(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "freeze"/"frozen")
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD:empty ".")
+)}
+	{?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Sun")) & ~?[f]:((arg1(f)=s) & inverse(freeze)(f) & present(f)))};
+
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
 

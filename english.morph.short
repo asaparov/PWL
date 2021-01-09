@@ -143,3 +143,14 @@ glow	v\glows\glowing\glowed\glowed\past2=glew\past_ptc2=glown\past2_qual=nonstan
 bell	n	v	v	n
 ring	n	v	n	v\rings\ringing\rang\past2=rung\past2_qual=nonstandard\rung	n
 freeze	v\freezes\freezing\froze\frozen	n	n
+run	v\runs\running\ran\run	n	adj\-
+move	v\mov	n
+current	n\~	adj\er\more
+conduct	n\~	v
+wire	n\~	v\wir
+power	n\~	v	adj
+battery	n\~\batteries
+metal	n\~	adj	v\metall
+plastic	n\~	adj
+include	v\includ	n
+flat	adj\flatter	adv	n	v\flats\flatting\flatted	n	v\flatt\ing

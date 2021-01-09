@@ -25252,6 +25252,12 @@ inline bool invert_select_only_conjunct_in_set_predicative(
 template<unsigned int Predicate, int_fast8_t PredicateIndex>
 inline hol_term* do_invert_remove_higher_order_predicate(hol_term* second_head)
 {
+	unsigned int negation_count = 0;
+	while (second_head->type == hol_term_type::NOT) {
+		second_head = second_head->unary.operand;
+		negation_count++;
+	}
+
 	unsigned int head_variable;
 	if (second_head->type == hol_term_type::EXISTS) {
 		head_variable = second_head->quantifier.variable;
@@ -25337,6 +25343,15 @@ inline hol_term* do_invert_remove_higher_order_predicate(hol_term* second_head)
 
 	hol_term* new_head = apply_predicate<PredicateIndex>(second_head, head_variable, second_predicate_index, &HOL_ANY, expected_predicate);
 	free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+
+	for (unsigned int i = 0; i < negation_count; i++) {
+		hol_term* temp = hol_term::new_not(new_head);
+		if (temp == nullptr) {
+			free(*new_head); if (new_head->reference_count == 0) free(new_head);
+			return nullptr;
+		}
+		new_head = temp;
+	}
 	return new_head;
 }
 
