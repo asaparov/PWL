@@ -2373,6 +2373,10 @@
 {(ADJ "flat"/"flat")}
 	{?[x]:flat(x)};
 
+: # dead
+{(ADJ "dead"/"dead")}
+	{?[x]:off(x)};
+
 : # Oumuamua is moving through the Oort Cloud.
 {(S
 	(S':require_no_lambda,mark_wide_scope
