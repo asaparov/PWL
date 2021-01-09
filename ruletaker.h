@@ -416,7 +416,7 @@ void do_ruletaker_experiments(
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 2 - 1) { //>= 9) {
+if (job.context_id >= 9) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;
@@ -557,17 +557,17 @@ inline void print_ruletaker_results(
 	std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 	if (incorrect.length != 0) {
 		fprintf(stderr, "Incorrect questions:\n");
-		insertion_sort(incorrect);
+		insertion_sort(incorrect, pair_sorter());
 		for (const auto& entry : incorrect)
 			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
 	} if (half_correct.length != 0) {
 		fprintf(stderr, "Half-correct questions:\n");
-		insertion_sort(half_correct);
+		insertion_sort(half_correct, pair_sorter());
 		for (const auto& entry : half_correct)
 			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
 	} if (unparseable_context.length != 0) {
 		fprintf(stderr, "Failed to parse following context sentences:\n");
-		insertion_sort(unparseable_context, default_sorter());
+		insertion_sort(unparseable_context, pair_sorter());
 		for (const auto& entry : unparseable_context) {
 			fprintf(stderr, "  Context ID %u: \"", entry.key + 1);
 			print(entry.value, stderr); print("\"\n", stderr);
