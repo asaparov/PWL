@@ -42,7 +42,7 @@ endif
 
 WARNING_FLAGS=-Wall -Wpedantic
 override CPPFLAGS_DBG += $(WARNING_FLAGS) -I. -g -march=native -mtune=native -std=c++11
-override CPPFLAGS += $(WARNING_FLAGS) -I. -Ofast -DNDEBUG -march=native -mtune=native -std=c++11 -fno-stack-protector
+override CPPFLAGS += $(WARNING_FLAGS) -I. -Ofast -fno-finite-math-only -DNDEBUG -march=native -mtune=native -std=c++11 -fno-stack-protector
 override LDFLAGS_DBG += -g $(LIB_PATHS) $(PKG_LIBS)
 override LDFLAGS += $(LIB_PATHS) -fwhole-program $(PKG_LIBS)
 

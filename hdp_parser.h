@@ -2485,7 +2485,7 @@ detect_duplicate_logical_forms = true;
 			}
 		}
 		for (unsigned int i = 0; i < data.length; i++) order[i] = i;
-#if defined(NDEBUG)
+#if defined(SHUFFLE_TRAINING_EXAMPLES)
 		shuffle(order, (unsigned int) data.length);
 #else
 		reverse(order, (unsigned int) data.length);
@@ -5265,7 +5265,7 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 		if (first == src->any.included && temp_excluded_trees.length == 0) {
 			new_term = src;
 		} else {
-			array<hol_term*> new_excluded(temp_excluded_trees.length + src->any.excluded_tree_count);
+			array<hol_term*> new_excluded(max(1, temp_excluded_trees.length + src->any.excluded_tree_count));
 			for (unsigned int i = 0; i < temp_excluded_trees.length; i++) {
 				bool contains = false;
 				for (unsigned int j = 0; !contains && j < src->any.excluded_tree_count; j++)

@@ -12807,9 +12807,9 @@ struct log_probability_collector
 			array<Formula*> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
-fprintf(stderr, "log probability of theory: %lf\n", value);
-T.print_axioms(stderr, *debug_terminal_printer);
-T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+//fprintf(stderr, "log probability of theory: %lf\n", value);
+//T.print_axioms(stderr, *debug_terminal_printer);
+//T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			return value;
 		};
 		current_log_probability = compute_current_log_probability();
