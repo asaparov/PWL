@@ -26282,7 +26282,7 @@ inline bool invert_select_arg_without_head_predicative(
 		find_head<built_in_predicates, false, true>, predicative_head_finder<built_in_predicates>(lambda_variable), on_remap_variables,
 		[lambda_variable](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term*& first_head, hol_term* second_head, apply_head_inverter& first_inverter, apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array)
 		{
-			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_predicate_index.position != head_position::NONE)
+			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr)
 				first_head = first_head->any.included;
 			if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) && second_head->any.included != nullptr)
 				second_head = second_head->any.included;
@@ -28812,7 +28812,7 @@ inline bool invert_select_arg_without_head(
 	return invert_apply_head(inverse, inverse_count, flags, first, second,
 		find_head<built_in_predicates>, make_array_finder(find_head_or_universal<built_in_predicates>), on_remap_variables,
 		[](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array) {
-			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_predicate_index.position != head_position::NONE)
+			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr)
 				first_head = first_head->any.included;
 			if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) && second_head->any.included != nullptr)
 				second_head = second_head->any.included;
@@ -32033,7 +32033,7 @@ inline bool invert_select_conjuncts_without_head(
 	return invert_apply_head(inverse, inverse_count, flags, first, second,
 		find_head<built_in_predicates>, find_head<built_in_predicates>, no_op(),
 		[](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array) {
-			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_predicate_index.position != head_position::NONE)
+			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr)
 				first_head = first_head->any.included;
 #if !defined(NDEBUG)
 			if (second_head->type != hol_term_type::EXISTS || (ConjunctCount > 1 && (second_head->quantifier.operand->type != hol_term_type::AND || second_head->quantifier.operand->array.length != ConjunctCount))) {
