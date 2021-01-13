@@ -3635,10 +3635,10 @@ struct theory
 		if (canonicalized == NULL) return nullptr;
 
 /* TODO: for debugging; delete this */
-print_axioms(stderr);
-print("canonicalized: ", stderr); print(*canonicalized, stderr); print('\n', stderr);
+//print_axioms(stderr);
+//print("canonicalized: ", stderr); print(*canonicalized, stderr); print('\n', stderr);
 		Proof* new_proof = make_proof<false, true, true>(canonicalized, set_diff, new_constant, std::forward<Args>(args)...);
-print_axioms(stderr);
+//print_axioms(stderr);
 if (new_proof != NULL) {
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);

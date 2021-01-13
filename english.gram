@@ -744,27 +744,27 @@ S_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # S_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
 # S_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) S' {(~)A1} S_COORDINATION {(~)A2 | ... | (~)An}
-S_COORDINATION -> COMMA S':remove_coord,remove_comma,select_left_operand,mark_wide_scope S_COORDINATION:remove_left_operand
+S_COORDINATION -> COMMA S':remove_comma,select_left_operand,remove_coord,mark_wide_scope S_COORDINATION:remove_left_operand
 # S_COORDINATION {(~)A1} -> (COMMA) S' {(~)A1}
 S_COORDINATION -> COMMA S':remove_coord,remove_comma
 
 # S_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
-S_COORDINATION -> AND S':remove_and,require_no_comma,select_left_operand,mark_wide_scope S_COORDINATION:remove_left_operand
-S_COORDINATION -> COMMA AND S':remove_and,remove_comma,select_left_operand,mark_wide_scope S_COORDINATION:remove_left_operand
+S_COORDINATION -> AND S':require_no_comma,select_left_operand,remove_and,mark_wide_scope S_COORDINATION:remove_left_operand
+S_COORDINATION -> COMMA AND S':remove_comma,select_left_operand,remove_and,mark_wide_scope S_COORDINATION:remove_left_operand
 # S_COORDINATION {(~)A1} -> (COMMA) AND S' {(~)A1}
 S_COORDINATION -> AND S':remove_and,require_no_comma
 S_COORDINATION -> COMMA AND S':remove_and,remove_comma
 
 # S_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR S' {(~)A1} S_COORDINATION {(~)A2 & ... & (~)An}
-S_COORDINATION -> OR S':remove_or,require_no_comma,select_left_operand,mark_wide_scope S_COORDINATION:remove_left_operand
-S_COORDINATION -> COMMA OR S':remove_or,remove_comma,select_left_operand,mark_wide_scope S_COORDINATION:remove_left_operand
+S_COORDINATION -> OR S':require_no_comma,select_left_operand,remove_or,mark_wide_scope S_COORDINATION:remove_left_operand
+S_COORDINATION -> COMMA OR S':remove_comma,select_left_operand,remove_or,mark_wide_scope S_COORDINATION:remove_left_operand
 # S_COORDINATION {(~)A1} -> (COMMA) OR S' {(~)A1}
 S_COORDINATION -> OR S':remove_or,require_no_comma
 S_COORDINATION -> COMMA OR S':remove_or,remove_comma
 
 # S_COORDINATION {~A1 & ... & (~)An} -> (COMMA) NOR VP_R {~A1} S_COORDINATION {(~)A2 & ... & (~)An}
-S_COORDINATION -> NOR VP_R:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand,mark_wide_scope,require_no_predicate_empty,has_arg2 S_COORDINATION:remove_left_operand
-S_COORDINATION -> COMMA NOR VP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand,mark_wide_scope,require_no_predicate_empty,has_arg2 S_COORDINATION:remove_left_operand
+S_COORDINATION -> NOR VP_R:add_req_aux,require_no_comma,add_negative,select_left_operand,remove_nor,mark_wide_scope,require_no_predicate_empty,has_arg2 S_COORDINATION:remove_left_operand
+S_COORDINATION -> COMMA NOR VP_R:add_req_aux,remove_comma,add_negative,select_left_operand,remove_nor,mark_wide_scope,require_no_predicate_empty,has_arg2 S_COORDINATION:remove_left_operand
 # S_COORDINATION {~A1} -> (COMMA) NOR S' {~A1}
 S_COORDINATION -> NOR VP_R:remove_nor,add_req_aux,require_no_comma,add_negative,require_no_predicate_empty,has_arg2
 S_COORDINATION -> COMMA NOR VP_R:remove_nor,add_req_aux,remove_comma,add_negative,require_no_predicate_empty,has_arg2
@@ -1148,7 +1148,7 @@ V_ADJUNCT -> PP:remove_wide_scope,add_is_adjunct,require_preposition,require_no_
 # This rule requires that `arg1(y)=r` and `arg1(y)=x` appear in both
 # consequents (or `arg2(y)=r` and `arg2(y)=x`, etc).
 # NOTE: The ADJP_R transformations don't have `^[P]`.
-V_ADJUNCT -> NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set # for arg1
+V_ADJUNCT -> NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set # for arg1
 V_ADJUNCT -> NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set # for arg2
 # e.g. "he was shown the new computer by the salesman"
 V_ADJUNCT -> NP:require_no_preposition,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg3_without_head_predicative,factor_predicative,has_arg2_in_set # for arg3 (NOTE: we could make this semantic and have only two args)
@@ -1298,27 +1298,27 @@ V_ADJUNCT_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
 # V_ADJUNCT_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-V_ADJUNCT_COORDINATION -> COMMA V_ADJUNCT:remove_coord,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA V_ADJUNCT:remove_comma,select_left_operand,remove_coord V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) V_ADJUNCT {(~)A1}
 V_ADJUNCT_COORDINATION -> COMMA V_ADJUNCT:remove_coord,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-V_ADJUNCT_COORDINATION -> AND V_ADJUNCT:remove_and,require_no_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
-V_ADJUNCT_COORDINATION -> COMMA AND V_ADJUNCT:remove_and,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> AND V_ADJUNCT:require_no_comma,select_left_operand,remove_and V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA AND V_ADJUNCT:remove_comma,select_left_operand,remove_and V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) AND V_ADJUNCT {(~)A1}
 V_ADJUNCT_COORDINATION -> AND V_ADJUNCT:remove_and,require_no_comma
 V_ADJUNCT_COORDINATION -> COMMA AND V_ADJUNCT:remove_and,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 & ... & (~)An}
-V_ADJUNCT_COORDINATION -> OR V_ADJUNCT:remove_or,require_no_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
-V_ADJUNCT_COORDINATION -> COMMA OR V_ADJUNCT:remove_or,remove_comma,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> OR V_ADJUNCT:require_no_comma,select_left_operand,remove_or V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA OR V_ADJUNCT:remove_comma,select_left_operand,remove_or V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) OR V_ADJUNCT {(~)A1}
 V_ADJUNCT_COORDINATION -> OR V_ADJUNCT:remove_or,require_no_comma
 V_ADJUNCT_COORDINATION -> COMMA OR V_ADJUNCT:remove_or,remove_comma
 
 # V_ADJUNCT_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) NOR V_ADJUNCT {(~)A1} V_ADJUNCT_COORDINATION {(~)A2 | ... | (~)An}
-V_ADJUNCT_COORDINATION -> NOR V_ADJUNCT:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
-V_ADJUNCT_COORDINATION -> COMMA NOR V_ADJUNCT:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> NOR V_ADJUNCT:add_req_aux,require_no_comma,add_negative,select_left_operand,remove_nor V_ADJUNCT_COORDINATION:remove_left_operand
+V_ADJUNCT_COORDINATION -> COMMA NOR V_ADJUNCT:add_req_aux,remove_comma,add_negative,select_left_operand,remove_nor V_ADJUNCT_COORDINATION:remove_left_operand
 # V_ADJUNCT_COORDINATION {(~)A1} -> (COMMA) NOR V_ADJUNCT {(~)A1}
 V_ADJUNCT_COORDINATION -> NOR V_ADJUNCT:remove_nor,add_req_aux,require_no_comma,add_negative
 V_ADJUNCT_COORDINATION -> COMMA NOR V_ADJUNCT:remove_nor,add_req_aux,remove_comma,add_negative
@@ -2670,27 +2670,27 @@ ADJP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # ADJP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> COMMA ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
 # ADJP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> COMMA ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADJP_COORDINATION -> COMMA ADJP_R:remove_coord,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> COMMA ADJP_R:remove_comma,select_left_operand,remove_coord ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> COMMA ADJP_R {... & (~)?[x1]:f1(x1)}
 ADJP_COORDINATION -> COMMA ADJP_R:remove_coord,remove_comma
 
 # ADJP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> (COMMA) AND ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
-ADJP_COORDINATION -> AND ADJP_R:remove_and,require_no_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
-ADJP_COORDINATION -> COMMA AND ADJP_R:remove_and,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> AND ADJP_R:require_no_comma,select_left_operand,remove_and ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> COMMA AND ADJP_R:remove_comma,select_left_operand,remove_and ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) AND ADJP_R {... & (~)?[x1]:f1(x1)}
 ADJP_COORDINATION -> AND ADJP_R:remove_and,require_no_comma
 ADJP_COORDINATION -> COMMA AND ADJP_R:remove_and,remove_comma
 
 # ADJP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> (COMMA) OR ADJP_R {... & (~)?[x1]:f1(x1)} ADJP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADJP_COORDINATION -> OR ADJP_R:remove_or,require_no_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
-ADJP_COORDINATION -> COMMA OR ADJP_R:remove_or,remove_comma,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> OR ADJP_R:require_no_comma,select_left_operand,remove_or ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> COMMA OR ADJP_R:remove_comma,select_left_operand,remove_or ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) OR ADJP_R {... & (~)?[x1]:f1(x1)}
 ADJP_COORDINATION -> OR ADJP_R:remove_or,require_no_comma
 ADJP_COORDINATION -> COMMA OR ADJP_R:remove_or,remove_comma
 
 # ADJP_COORDINATION {... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn))} -> (COMMA) NOR ADJP_R {... & ~?[x1]:f1(x1)} ADJP_COORDINATION {... & (~?[x2]:f2(x2) & ... & ~?[xn]:fn(xn))}
-ADJP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand ADJP_COORDINATION:remove_left_operand
-ADJP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> NOR ADJP_R:add_req_aux,require_no_comma,add_negative,select_left_operand,remove_nor ADJP_COORDINATION:remove_left_operand
+ADJP_COORDINATION -> COMMA NOR ADJP_R:add_req_aux,remove_comma,add_negative,select_left_operand,remove_nor ADJP_COORDINATION:remove_left_operand
 # ADJP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) NOR ADJP_R {... & (~)?[x1]:f1(x1)}
 ADJP_COORDINATION -> NOR ADJP_R:remove_nor,add_req_aux,require_no_comma,add_negative
 ADJP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_negative
@@ -2820,27 +2820,27 @@ ADVP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> COMMA ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
 # ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> COMMA ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADVP_COORDINATION -> COMMA ADVP_R:remove_coord,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA ADVP_R:remove_comma,select_left_operand,remove_coord ADVP_COORDINATION:remove_left_operand
 # ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> COMMA ADVP_R {... & (~)?[x1]:f1(x1)}
 ADVP_COORDINATION -> COMMA ADVP_R:remove_coord,remove_comma
 
 # ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) & ... & (~)?[xn]:fn(xn))} -> (COMMA) AND ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) & ... & (~)?[xn]:fn(xn))}
-ADVP_COORDINATION -> AND ADVP_R:remove_and,require_no_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-ADVP_COORDINATION -> COMMA AND ADVP_R:remove_and,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> AND ADVP_R:require_no_comma,select_left_operand,remove_and ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA AND ADVP_R:remove_comma,select_left_operand,remove_and ADVP_COORDINATION:remove_left_operand
 # ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) AND ADVP_R {... & (~)?[x1]:f1(x1)}
 ADVP_COORDINATION -> AND ADVP_R:remove_and,require_no_comma
 ADVP_COORDINATION -> COMMA AND ADVP_R:remove_and,remove_comma
 
 # ADVP_COORDINATION {... & ((~)?[x1]:f1(x1) | ... | (~)?[xn]:fn(xn))} -> (COMMA) OR ADVP_R {... & (~)?[x1]:f1(x1)} ADVP_COORDINATION {... & ((~)?[x2]:f2(x2) | ... | (~)?[xn]:fn(xn))}
-ADVP_COORDINATION -> OR ADVP_R:remove_or,require_no_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
-ADVP_COORDINATION -> COMMA OR ADVP_R:remove_or,remove_comma,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> OR ADVP_R:require_no_comma,select_left_operand,remove_or ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA OR ADVP_R:remove_comma,select_left_operand,remove_or ADVP_COORDINATION:remove_left_operand
 # ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) OR ADVP_R {... & (~)?[x1]:f1(x1)}
 ADVP_COORDINATION -> OR ADVP_R:remove_or,require_no_comma
 ADVP_COORDINATION -> COMMA OR ADVP_R:remove_or,remove_comma
 
 # ADVP_COORDINATION {... & (~?[x1]:f1(x1) & ... & ~?[xn]:fn(xn))} -> (COMMA) NOR ADVP_R {... & ~?[x1]:f1(x1)} ADVP_COORDINATION {... & (~?[x2]:f2(x2) & ... & ~?[xn]:fn(xn))}
-ADVP_COORDINATION -> NOR ADVP_R:remove_nor,add_req_aux,require_no_comma,add_negative,select_left_operand ADVP_COORDINATION:remove_left_operand
-ADVP_COORDINATION -> COMMA NOR ADVP_R:remove_nor,add_req_aux,remove_comma,add_negative,select_left_operand ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> NOR ADVP_R:add_req_aux,require_no_comma,add_negative,select_left_operand,remove_nor ADVP_COORDINATION:remove_left_operand
+ADVP_COORDINATION -> COMMA NOR ADVP_R:add_req_aux,remove_comma,add_negative,select_left_operand,remove_nor ADVP_COORDINATION:remove_left_operand
 # ADVP_COORDINATION {... & (~)?[x1]:f1(x1)} -> (COMMA) NOR ADVP_R {... & (~)?[x1]:f1(x1)}
 ADVP_COORDINATION -> NOR ADVP_R:remove_nor,add_req_aux,require_no_comma,add_negative
 ADVP_COORDINATION -> COMMA NOR ADVP_R:remove_nor,add_req_aux,remove_comma,add_negative
@@ -2893,9 +2893,9 @@ ADVP_L -> BOTH ADVP_L:remove_both
 ADVP_L -> NEITHER ADVP_L:remove_neither,add_negative
 
 
-V preterminal {predicate, has_arg2} {10000.0, 10.0, 0.1} {1.0, 1.0, 10.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000 0.99 verb {"through"}
+V preterminal {predicate, has_arg2} {10000000.0, 10.0, 0.1} {1.0, 1.0, 10.0} {"than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000000 0.99 verb {"through"}
 
-N preterminal {constant, has_arg2, measure} {10000.0, 16.0, 10.0, 0.1} {1.0, 1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000 0.99 noun {}
+N preterminal {constant, has_arg2, measure} {10000000.0, 16.0, 10.0, 0.1} {1.0, 1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000000 0.99 noun {}
 
 ADJ preterminal {predicate_only} {10000.0, 0.1} {1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000 1.0 adjective {}
 
