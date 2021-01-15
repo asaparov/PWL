@@ -3645,7 +3645,7 @@ inline bool do_mh_step(
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector)
 {
-	static uniform_proposal default_proposal(2.0, 0.001);
+	static thread_local uniform_proposal default_proposal(2.0, 0.001);
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, default_proposal);
 }
 
@@ -3657,7 +3657,7 @@ inline bool do_exploratory_mh_step(
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector)
 {
-	static exploration_proposal proposal_distribution;
+	static thread_local exploration_proposal proposal_distribution;
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }
 
@@ -3670,7 +3670,7 @@ inline bool do_mh_step(
 		TheorySampleCollector& sample_collector,
 		nd_step<Formula>* query_proof)
 {
-	static uniform_proposal default_proposal(2.0, 0.001);
+	static thread_local uniform_proposal default_proposal(2.0, 0.001);
 	query_proposal<Formula, uniform_proposal> proposal_distribution(0.01, query_proof, default_proposal);
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }

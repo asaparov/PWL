@@ -358,9 +358,6 @@ void do_ruletaker_experiments(
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
-auto prng_copy = core::engine;
-fprintf(stderr, "[Context ID %u, Question ID %u] core::engine() = %lu\n", job.context_id + 1, job.question_id + 1, core::engine());
-core::engine = prng_copy;
 				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000);
 				for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
 					null_collector collector;
@@ -368,7 +365,6 @@ core::engine = prng_copy;
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
 					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000);
 				}
-fprintf(stderr, "[Context ID %u, Question ID %u] log_probability_true = %lf\n", job.context_id + 1, job.question_id + 1, log_probability_true);
 
 				hol_term* negated;
 				if (!negate_head(logical_forms[0], negated) || negated == nullptr) {
@@ -384,9 +380,6 @@ fprintf(stderr, "[Context ID %u, Question ID %u] log_probability_true = %lf\n", 
 				/* for reproducibility, reset the PRNG state */
 				core::engine = context_queue[job.context_id].prng_engine;
 
-prng_copy = core::engine;
-fprintf(stderr, "[Context ID %u, Question ID %u] core::engine() = %lu\n", job.context_id + 1, job.question_id + 1, core::engine());
-core::engine = prng_copy;
 				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000);
 				for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
 					null_collector collector;
@@ -395,7 +388,6 @@ core::engine = prng_copy;
 					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000);
 				}
 				free(*negated); if (negated->reference_count == 0) free(negated);
-fprintf(stderr, "[Context ID %u, Question ID %u] log_probability_false = %lf\n", job.context_id + 1, job.question_id + 1, log_probability_false);
 				if (log_probability_true > log_probability_false) {
 					if (!job.label) {
 						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
@@ -424,7 +416,7 @@ fprintf(stderr, "[Context ID %u, Question ID %u] log_probability_false = %lf\n",
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id < 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 12 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;
@@ -440,9 +432,6 @@ continue;
 				if (job.context[i] == '.') {
 					const char old_next = job.context[i + 1];
 					job.context[i + 1] = '\0';
-auto prng_copy = core::engine;
-fprintf(stderr, "[Context ID %u, i = %u] core::engine() = %lu\n", job.context_id + 1, i, core::engine());
-core::engine = prng_copy;
 					if (!read_sentence(corpus, parser, job.context + start, job.T, names, seed_entities, proof_prior, job.proof_axioms, 10, UINT_MAX)) {
 						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 						if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
