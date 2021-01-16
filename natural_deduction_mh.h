@@ -1340,7 +1340,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		unsigned int variable, array<instance>& constants,
 		proof_sampler& sampler)
 {
-	if (!filter_constants(T, formula, variable, constants))
+	if (!filter_constants_helper(T, formula, variable, constants))
 		return false;
 
 	if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
@@ -1497,7 +1497,7 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, unsigned in
 		constants[constants.length++].str = str;
 	}
 
-	if (!filter_constants(T, quantified, variable, constants))
+	if (!filter_constants_helper(T, quantified, variable, constants))
 		return false;
 
 	if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
@@ -2025,7 +2025,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		unsigned int variable, array<instance>& constants,
 		proof_initializer& initializer)
 {
-	if (!filter_constants(T, formula, variable, constants))
+	if (!filter_constants_helper(T, formula, variable, constants))
 		return false;
 
 	if (initializer.constant_position == initializer.expected_constants.length) {

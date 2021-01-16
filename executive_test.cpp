@@ -2119,7 +2119,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		unsigned int variable, array<instance>& constants,
 		theory_initializer& initializer)
 {
-	if (!filter_constants(T, formula, variable, constants))
+	if (!filter_constants_helper(T, formula, variable, constants))
 		return false;
 
 	if (initializer.constant_position == initializer.expected_constants.length) {
@@ -2295,7 +2295,7 @@ set_seed(1356941742);
 		}
 	}
 
-run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
@@ -2303,7 +2303,7 @@ for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
-return EXIT_SUCCESS;
+return EXIT_SUCCESS;*/
 
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
@@ -2386,7 +2386,7 @@ return EXIT_SUCCESS;
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test.jsonl", 6);
+run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test.jsonl", 1);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)

@@ -6514,7 +6514,7 @@ private:
 			constants[constants.length++].str = str;
 		}
 
-		if (!filter_constants(*this, quantified, variable, constants))
+		if (!filter_constants_helper(*this, quantified, variable, constants))
 			return true;
 
 		Term* var = Term::new_variable(variable);
@@ -11936,7 +11936,20 @@ inline bool contains_string(const array<instance>& constants, string* str) {
 }
 
 template<typename ProofCalculus, typename Canonicalizer>
-bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+		const typename ProofCalculus::Language* formula,
+		unsigned int variable, array<instance>& constants)
+{
+	unsigned int i = 0;
+	for (; i < constants.length; i++)
+		if (constants[i].type == instance_type::ANY) break;
+	if (i < constants.length)
+		swap(constants[i], constants[0]);
+	return filter_constants_helper(T, formula, variable, constants);
+}
+
+template<typename ProofCalculus, typename Canonicalizer>
+bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants)
 {
@@ -12455,9 +12468,9 @@ bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		}
 	} else if (formula->type == FormulaType::AND) {
 		for (unsigned int i = 0; i < formula->array.length; i++)
-			if (!filter_constants(T, formula->array.operands[i], variable, constants)) return false;
+			if (!filter_constants_helper(T, formula->array.operands[i], variable, constants)) return false;
 	} else if (formula->type == FormulaType::EXISTS || formula->type == FormulaType::FOR_ALL) {
-		return filter_constants(T, formula->quantifier.operand, variable, constants);
+		return filter_constants_helper(T, formula->quantifier.operand, variable, constants);
 	}
 	return (constants.length > 0);
 }
