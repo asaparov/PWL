@@ -1357,7 +1357,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 			if (sample_uniform<double>() < pi)
 				swap(constants[0], constants[index]);
 			if (constants[0].type == instance_type::ANY) {
-				sampler.log_probability += log(NewConceptProbabilityAlpha / (constants.length - 1 + NewConceptProbabilityAlpha));
+				sampler.log_probability += log((double) NewConceptProbabilityAlpha / (constants.length - 1 + NewConceptProbabilityAlpha));
 			} else {
 				sampler.log_probability += -log(constants.length - 1 + NewConceptProbabilityAlpha);
 			}
