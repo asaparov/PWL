@@ -2376,9 +2376,9 @@ return EXIT_SUCCESS;*/
 	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
-	auto term_indices_prior = make_levy_process(poisson_distribution(1.0), poisson_distribution(1.0));
+	auto term_indices_prior = make_levy_process(poisson_distribution(9.0), poisson_distribution(2.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 1.0e-20);
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.5);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
