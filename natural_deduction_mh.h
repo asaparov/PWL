@@ -1280,6 +1280,7 @@ bool propose_change_set_size(
 	return true;
 }
 
+template<unsigned int NewConceptProbabilityAlpha>
 struct proof_sampler {
 	/* this tracking of inconsistent constants may too liberally exclude
 	   constants if the expression contains a set size term, since we don't
@@ -1300,29 +1301,30 @@ struct proof_sampler {
 	}
 };
 
-template<typename Proof>
-inline void visit_node(const Proof& proof, const proof_sampler& visitor) { }
+template<typename Proof, unsigned int NewConceptProbabilityAlpha>
+inline void visit_node(const Proof& proof, const proof_sampler<NewConceptProbabilityAlpha>& visitor) { }
 
-template<bool Negated, typename Term> constexpr bool visit_unary_atom(const Term* term, const proof_sampler& visitor) { return true; }
-template<bool Negated> constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2, const proof_sampler& visitor) { return true; }
-template<typename Proof> constexpr bool visit_subset_axiom(const Proof& proof, const proof_sampler& visitor) { return true; }
-constexpr bool visit_existential_intro(const proof_sampler& visitor) { return true; }
-constexpr bool visit_negated_universal_intro(const proof_sampler& visitor) { return true; }
-constexpr bool visit_negated_conjunction(const proof_sampler& visitor) { return true; }
-constexpr bool visit_disjunction_intro(const proof_sampler& visitor) { return true; }
+template<bool Negated, typename Term, unsigned int NewConceptProbabilityAlpha> constexpr bool visit_unary_atom(const Term* term, const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
+template<bool Negated, unsigned int NewConceptProbabilityAlpha> constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2, const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
+template<typename Proof, unsigned int NewConceptProbabilityAlpha> constexpr bool visit_subset_axiom(const Proof& proof, const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
+template<unsigned int NewConceptProbabilityAlpha> constexpr bool visit_existential_intro(const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
+template<unsigned int NewConceptProbabilityAlpha> constexpr bool visit_negated_universal_intro(const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
+template<unsigned int NewConceptProbabilityAlpha> constexpr bool visit_negated_conjunction(const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
+template<unsigned int NewConceptProbabilityAlpha> constexpr bool visit_disjunction_intro(const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
 
-inline void on_subtract_changes(proof_sampler& visitor) {
+template<unsigned int NewConceptProbabilityAlpha>
+inline void on_subtract_changes(proof_sampler<NewConceptProbabilityAlpha>& visitor) {
 	visitor.undo = true;
 }
 
-template<typename Formula>
-constexpr bool on_undo_filter_operands(const Formula* formula, const proof_sampler& visitor) { return true; }
+template<typename Formula, unsigned int NewConceptProbabilityAlpha>
+constexpr bool on_undo_filter_operands(const Formula* formula, const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
 
-template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, unsigned int variable, const proof_sampler& visitor) { return true; }
+template<typename Theory, typename Formula, unsigned int NewConceptProbabilityAlpha>
+constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, unsigned int variable, const proof_sampler<NewConceptProbabilityAlpha>& visitor) { return true; }
 
-template<typename Formula>
-inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_sampler& sampler)
+template<typename Formula, unsigned int NewConceptProbabilityAlpha>
+inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_sampler<NewConceptProbabilityAlpha>& sampler)
 {
 	if (!filter_operands(formula, indices))
 		return false;
@@ -1334,17 +1336,36 @@ inline bool filter_operands(const Formula* formula, array<unsigned int>& indices
 	return true;
 }
 
-template<typename ProofCalculus, typename Canonicalizer>
+template<typename ProofCalculus, typename Canonicalizer, unsigned int NewConceptProbabilityAlpha>
 inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
-		proof_sampler& sampler)
+		proof_sampler<NewConceptProbabilityAlpha>& sampler)
 {
 	if (!filter_constants_helper(T, formula, variable, constants))
 		return false;
 
-	if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
-	sampler.log_probability += -log_cache<double>::instance().get(constants.length);
+	if (NewConceptProbabilityAlpha == 1) {
+		if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
+		sampler.log_probability += -log_cache<double>::instance().get(constants.length);
+	} else {
+		unsigned int index = 0;
+		for (; index < constants.length; index++)
+			if (constants[index].type == instance_type::ANY) break;
+		if (index < constants.length) {
+			double pi = (NewConceptProbabilityAlpha - 1.0) / (constants.length - 1 + NewConceptProbabilityAlpha);
+			if (sample_uniform<double>() < pi)
+				swap(constants[0], constants[index]);
+			if (constants[0].type == instance_type::ANY) {
+				sampler.log_probability += log(NewConceptProbabilityAlpha / (constants.length - 1 + NewConceptProbabilityAlpha));
+			} else {
+				sampler.log_probability += -log(constants.length - 1 + NewConceptProbabilityAlpha);
+			}
+		} else {
+			if (!log_cache<double>::instance().ensure_size(constants.length + 1)) return false;
+			sampler.log_probability += -log_cache<double>::instance().get(constants.length);
+		}
+	}
 
 	/*if (!sampler.inconsistencies.check_size()) return false;
 	bool contains; unsigned int bucket;
@@ -1372,14 +1393,14 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	return true;
 }
 
-template<typename Formula>
-constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_sampler& sampler) { return true; }
+template<typename Formula, unsigned int NewConceptProbabilityOffset>
+constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_sampler<NewConceptProbabilityOffset>& sampler) { return true; }
 
-template<typename Formula>
-constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler& sampler) { return true; }
+template<typename Formula, unsigned int NewConceptProbabilityOffset>
+constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler<NewConceptProbabilityOffset>& sampler) { return true; }
 
-template<typename Formula>
-inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler& sampler) {
+template<typename Formula, unsigned int NewConceptProbabilityOffset>
+inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler<NewConceptProbabilityOffset>& sampler) {
 	/*bool contains; unsigned int bucket;
 	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
 	sampler.all_descendants_inconsistent = (inconsistent_constants.size == original_constant_count);
@@ -1680,11 +1701,11 @@ inline void on_old_size_axiom(
 		const inverse_set_size_log_probability& visitor)
 { }
 
-template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, unsigned int NewConceptProbabilityOffset>
 inline bool compute_new_set_size(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		unsigned int& out, unsigned int min_set_size, unsigned int max_set_size,
-		proof_sampler& sampler)
+		proof_sampler<NewConceptProbabilityOffset>& sampler)
 {
 	if (sampler.undo) {
 		out = sampler.removed_set_sizes.last();
@@ -1710,27 +1731,25 @@ inline bool compute_new_set_size(unsigned int set_id,
 	return true;
 }
 
-template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, unsigned int NewConceptProbabilityAlpha>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
-		proof_sampler& sampler)
+		proof_sampler<NewConceptProbabilityAlpha>& sampler)
 {
 	if (sampler.undo) return;
 	sampler.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
-template<typename Proof>
-constexpr bool on_new_size_axiom(
-		Proof* new_size_axiom,
-		const proof_sampler& visitor)
+template<typename Proof, unsigned int NewConceptProbabilityAlpha>
+constexpr bool on_new_size_axiom(Proof* new_size_axiom,
+		const proof_sampler<NewConceptProbabilityAlpha>& visitor)
 {
 	return true;
 }
 
-template<typename Proof>
-inline void on_old_size_axiom(
-		Proof* old_size_axiom,
-		const proof_sampler& visitor)
+template<typename Proof, unsigned int NewConceptProbabilityAlpha>
+inline void on_old_size_axiom(Proof* old_size_axiom,
+		const proof_sampler<NewConceptProbabilityAlpha>& visitor)
 { }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
@@ -1814,7 +1833,7 @@ bool propose_disjunction_intro(
 	}
 
 	nd_step<Formula>* new_proof;
-	proof_sampler sampler;
+	proof_sampler<ProposalDistribution::NewConceptProbabilityAlpha> sampler;
 	set_changes<Formula> new_set_diff;
 unsigned int debug = 0;
 bool debug_flag = false;
@@ -3231,6 +3250,8 @@ struct uniform_proposal {
 
 	double old_normalization;
 
+	static constexpr unsigned int NewConceptProbabilityAlpha = 1;
+
 	uniform_proposal(double merge_weight = 1.0, double split_weight = 1.0) :
 			merge_weight(merge_weight), split_weight(split_weight),
 			log_merge_weight(log(merge_weight)), log_split_weight(log(split_weight))
@@ -3355,7 +3376,9 @@ inline double log_probability(
 	return proposal_distribution.log_split_weight - log(normalization);
 }
 
-struct exploration_proposal { };
+struct exploration_proposal {
+	static constexpr unsigned int NewConceptProbabilityAlpha = 10;
+};
 
 template<typename Formula, typename Canonicalizer>
 inline unsigned int sample(
@@ -3433,6 +3456,8 @@ struct query_proposal {
 	bool selected_query;
 	FallbackProposal& fallback_proposal;
 
+	static constexpr unsigned int NewConceptProbabilityAlpha = 1;
+
 	query_proposal(double sample_query_probability, const nd_step<Formula>* query_proof, FallbackProposal& fallback_proposal) :
 		sample_query_probability(sample_query_probability),
 		log_sample_query_probability(log(sample_query_probability)),
@@ -3440,6 +3465,7 @@ struct query_proposal {
 		query_proof(query_proof), fallback_proposal(fallback_proposal)
 	{ }
 };
+
 template<typename Formula, typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
 inline unsigned int sample(
 		query_proposal<Formula, FallbackProposal>& proposal_distribution,
