@@ -2367,18 +2367,19 @@ return EXIT_SUCCESS;*/
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
-			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, iid_uniform_distribution<hol_term>(100000)));
+			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, iid_uniform_distribution<hol_term>(1000000)));
 	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
-			0.1099999, 0.01, 0.0000001, 0.17, 0.01, 0.1, 0.2, 0.2, 0.2,
+			0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.2, 0.2, 0.2,
 			0.1099999, 0.01, 0.0000001, 0.27, 0.1099999, 0.1, 0.0000001, 0.2, 0.2,
 			0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
-	auto conjunction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.1);
+	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.5);
+	auto conjunction_elimination_prior = make_levy_process(poisson_distribution(2.0), poisson_distribution(1.0));
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(9.0), poisson_distribution(2.0));
-	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.5);
+	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.0001);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
