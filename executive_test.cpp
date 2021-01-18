@@ -259,17 +259,27 @@ struct iid_uniform_distribution
 	typedef T ObservationType;
 	typedef default_array<T> ObservationCollection;
 
-	unsigned int n;
 	double log_n;
 
-	iid_uniform_distribution(unsigned int n) : n(n), log_n(log(n)) { }
-	iid_uniform_distribution(const iid_uniform_distribution<T>& src) : n(src.n), log_n(src.log_n) { }
+	iid_uniform_distribution(unsigned int n) : log_n(log(n)) { }
+	iid_uniform_distribution(const iid_uniform_distribution<T>& src) : log_n(src.log_n) { }
 	~iid_uniform_distribution() { }
+
+private:
+	iid_uniform_distribution() { }
+	template<typename A> friend iid_uniform_distribution<A> make_iid_uniform_distribution_from_log_n(double);
 };
 
 template<typename T>
 inline iid_uniform_distribution<T> make_iid_uniform_distribution(unsigned int n) {
 	return iid_uniform_distribution<T>(n);
+}
+
+template<typename T>
+inline iid_uniform_distribution<T> make_iid_uniform_distribution_from_log_n(double log_n) {
+	iid_uniform_distribution<T> dist;
+	dist.log_n = log_n;
+	return dist;
 }
 
 template<typename T, typename ObservationCollection>
@@ -2367,7 +2377,7 @@ return EXIT_SUCCESS;*/
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
-			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, iid_uniform_distribution<hol_term>(1000000)));
+			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, make_iid_uniform_distribution_from_log_n<hol_term>(24.0)));
 	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
 			0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.2, 0.2, 0.2,
 			0.1099999, 0.01, 0.0000001, 0.27, 0.1099999, 0.1, 0.0000001, 0.2, 0.2,
@@ -2379,7 +2389,7 @@ return EXIT_SUCCESS;*/
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(9.0), poisson_distribution(2.0));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.0001);
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.5);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
