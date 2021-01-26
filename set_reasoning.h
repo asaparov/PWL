@@ -1150,7 +1150,7 @@ struct set_reasoning
 		for (unsigned int i = 1; i < dst.capacity; i++)
 			dst.sets[i].size_axioms.data = nullptr;
 		dst.set_count = src.set_count;
-		if (!hash_map_init(dst.set_ids, 16)) {
+		if (!hash_map_init(dst.set_ids, src.set_ids.table.capacity)) {
 			core::free(dst.intensional_graph.vertices);
 			core::free(dst.extensional_graph.vertices);
 			core::free(dst.sets); return false;
@@ -3576,9 +3576,9 @@ bool find_largest_disjoint_clique_with_set(
 				completed_clique_count, min_priority, next.state->ancestor);
 
 		if (completed_clique != NULL) {
-			int priority = sets.sets[next.state->ancestor].set_size;
+			int priority = -sets.sets[next.state->ancestor].set_size;
 			for (unsigned int i = 0; i < completed_clique_count; i++)
-				priority -= sets.sets[completed_clique[i]].set_size;
+				priority += sets.sets[completed_clique[i]].set_size;
 			if (priority > best_clique_score && priority >= min_priority) {
 				if (clique != NULL) free(clique);
 				clique = completed_clique;

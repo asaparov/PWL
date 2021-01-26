@@ -1456,14 +1456,14 @@ NP -> PRO:try_remove_adv
 # NP {^[P]:(... & ?[X]:(f(X) & ~?[x]:(X(x) & P(x))))} -> NEITHER NP {^[P]:?[X]:(f(X) & ?[x]:(X(x) & P(x)))}
 # this depends on whether the head quantifier is negated
 NP -> NO NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,add_negative_predicative,remove_predicative_not,require_predicative_existential
-#NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative_predicative,remove_predicative_not
+NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative_predicative,remove_predicative_not
 #NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative_predicative,remove_predicative_set_complement
 #NP -> NEITHER NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,add_negative_predicative,remove_predicative_not,require_predicative_existential
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> EACH NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-NP -> EACH NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
+NP -> EACH NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_wide_scope,require_predicative_universal
 
 # NP {A} -> A NOMINAL_R {A}
 #   e.g. "A group of students walks down the street."

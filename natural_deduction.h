@@ -7,7 +7,7 @@
 
 #include "array_view.h"
 
-//#define DEBUG_LOG_PROBABILITY
+#define DEBUG_LOG_PROBABILITY
 
 using namespace core;
 
@@ -39,6 +39,7 @@ enum class nd_step_type : uint_fast16_t
 	NEGATION_ELIMINATION,
 	FALSITY_ELIMINATION,
 	COMPARISON_INTRODUCTION,
+	INEQUALITY_INTRODUCTION,
 
 	UNIVERSAL_INTRODUCTION,
 	UNIVERSAL_ELIMINATION,
@@ -89,6 +90,7 @@ struct nd_step
 			return true;
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
 		case nd_step_type::BETA_EQUIVALENCE:
 		case nd_step_type::CONJUNCTION_ELIMINATION:
@@ -123,6 +125,7 @@ struct nd_step
 		switch (type) {
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::PARAMETER:
 		case nd_step_type::TERM_PARAMETER:
 		case nd_step_type::ARRAY_PARAMETER:
@@ -168,6 +171,7 @@ struct nd_step
 		switch (type) {
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::PARAMETER:
 		case nd_step_type::TERM_PARAMETER:
 		case nd_step_type::ARRAY_PARAMETER:
@@ -234,6 +238,7 @@ struct nd_step
 			return;
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			core::free(*formula);
 #if !defined(NDEBUG)
@@ -302,6 +307,7 @@ struct nd_step
 			return type_hash ^ default_hash(key.parameters.data, key.parameters.length);
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			return type_hash ^ Formula::hash(*key.formula);
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -395,6 +401,7 @@ struct nd_step
 			return ::clone(src.term, dst.term, formula_map);
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			return ::clone(src.formula, dst.formula, formula_map);
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -474,6 +481,7 @@ struct nd_step
 			dst.term = src.term; return;
 		case nd_step_type::AXIOM:
 		case nd_step_type::COMPARISON_INTRODUCTION:
+		case nd_step_type::INEQUALITY_INTRODUCTION:
 		case nd_step_type::FORMULA_PARAMETER:
 			dst.formula = src.formula; return;
 		case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -541,6 +549,7 @@ inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>
 		return 0;
 	case nd_step_type::AXIOM:
 	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
 	case nd_step_type::FORMULA_PARAMETER:
 		return compare(*first.formula, *second.formula);
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -619,6 +628,7 @@ inline bool operator == (const nd_step<Formula>& first, const nd_step<Formula>& 
 		return true;
 	case nd_step_type::AXIOM:
 	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
 	case nd_step_type::FORMULA_PARAMETER:
 		return *first.formula == *second.formula;
 	case nd_step_type::CONJUNCTION_INTRODUCTION:
@@ -1006,6 +1016,27 @@ bool check_proof(proof_state<Formula>& out,
 			 || operand->ternary.third->type != TermType::NUMBER
 			 || operand->ternary.second->number < operand->ternary.third->number)
 				return false;
+		}
+		out.formula = proof.formula;
+		out.formula->reference_count++;
+		return true;
+	case nd_step_type::INEQUALITY_INTRODUCTION:
+		if (proof.formula->type != FormulaType::NOT || proof.formula->unary.operand->type != FormulaType::EQUALS)
+			return false;
+		formula = proof.formula->unary.operand;
+		if (formula->binary.right->type != TermType::CONSTANT && formula->binary.right->type != TermType::NUMBER && formula->binary.right->type != TermType::STRING)
+			return false;
+		if (formula->binary.left->type == TermType::CONSTANT) {
+			if (formula->binary.right->type == TermType::CONSTANT && formula->binary.left->constant == formula->binary.right->constant)
+				return false;
+		} else if (formula->binary.left->type == TermType::NUMBER) {
+			if (formula->binary.right->type == TermType::NUMBER && formula->binary.left->number == formula->binary.right->number)
+				return false;
+		} else if (formula->binary.left->type == TermType::STRING) {
+			if (formula->binary.right->type == TermType::STRING && formula->binary.left->str == formula->binary.right->str)
+				return false;
+		} else {
+			return false;
 		}
 		out.formula = proof.formula;
 		out.formula->reference_count++;
@@ -1530,8 +1561,8 @@ bool check_proof(const nd_step<Formula>& proof,
 	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 /* TODO: for debugging; delete this */
-//print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
-//print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr); print('\n', stderr);
+print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
+print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr); print('\n', stderr);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
 	free(*actual_conclusion);
@@ -1573,6 +1604,10 @@ struct natural_deduction
 
 	static inline Proof* new_comparison_introduction(Formula* comparison) {
 		return new_parameterized_step<nd_step_type::COMPARISON_INTRODUCTION>(comparison);
+	}
+
+	static inline Proof* new_inequality_introduction(Formula* inequality) {
+		return new_parameterized_step<nd_step_type::INEQUALITY_INTRODUCTION>(inequality);
 	}
 
 	template<typename... Proofs>
@@ -1981,6 +2016,7 @@ double log_probability(
 		/* the contribution from the axiom_prior is computed at the end */
 		return 0.0;
 	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
 		formula_counter++;
 		return -LOG_ND_RULE_COUNT;
 	case nd_step_type::BETA_EQUIVALENCE:

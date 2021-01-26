@@ -249,26 +249,103 @@ struct ruletaker_question_item
 	}
 };
 
+template<typename BuiltInPredicates>
+inline void find_head_or_not(
+		hol_term* src, hol_term*& head,
+		head_index& predicate_index)
+{
+	if (src->type == hol_term_type::NOT) {
+		head = src;
+		return;
+	}
+	find_head<BuiltInPredicates>(src, head, predicate_index);
+}
+
 inline bool negate_head(
 		hol_term* src, hol_term*& dst)
 {
-	array<hol_term*> siblings(8);
-	array<unsigned int> dst_variables(8);
-	bool removed_quantifier, remove_wide_scope_marker = false, remove_negations;
-	return apply_head<true>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, find_head<built_in_predicates>,
-			[](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
-			{
-				if (head->type == hol_term_type::NOT) {
-					head->unary.operand->reference_count++;
-					return head->unary.operand;
-				} else {
-					hol_term* new_head = hol_term::new_not(head);
-					if (new_head == nullptr)
-						return (hol_term*) nullptr;
-					head->reference_count++;
-					return new_head;
+	array<hol_term*> scopes(8);
+	auto gather_scopes = [&scopes](hol_term* term) {
+		if (term->type == hol_term_type::EXISTS || term->type == hol_term_type::FOR_ALL || term->type == hol_term_type::LAMBDA)
+			return scopes.add(term);
+		return true;
+	};
+
+	head_index predicate_index;
+	hol_term* head = find_head(src, predicate_index, find_head_or_not<built_in_predicates>, gather_scopes);
+	if (head == nullptr)
+		return false;
+
+	hol_term* new_head;
+	if (head->type == hol_term_type::NOT) {
+		new_head = head->unary.operand;
+		new_head->reference_count++;
+	} else {
+		/* check if the head is a `same` event */
+		if (head->type == hol_term_type::EXISTS) {
+			hol_term* operand = head->quantifier.operand;
+			bool is_same = false;
+			if (operand->type == hol_term_type::AND) {
+				for (unsigned int i = 0; !is_same && i < operand->array.length; i++) {
+					hol_term* conjunct = operand->array.operands[i];
+					if (conjunct->type == hol_term_type::UNARY_APPLICATION && *conjunct->binary.left == hol_term::constants<(unsigned int) built_in_predicates::SAME>::value
+					 && conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == head->quantifier.variable)
+					{
+						is_same = true;
+					}
 				}
-			}, no_op()) && dst != nullptr;
+			} else {
+				if (operand->type == hol_term_type::UNARY_APPLICATION && *operand->binary.left == hol_term::constants<(unsigned int) built_in_predicates::SAME>::value
+				 && operand->binary.right->type == hol_term_type::VARIABLE && operand->binary.right->variable == head->quantifier.variable)
+				{
+					is_same = true;
+				}
+			}
+
+			if (is_same && scopes.length > 1) {
+				/* negate the scope immediately preceding `head` */
+				head = scopes[scopes.length - 2];
+			}
+		}
+
+		new_head = hol_term::new_not(head);
+		if (new_head == nullptr) return false;
+		head->reference_count++;
+	}
+
+	dst = substitute_head<any_node_position::NONE>(src, head, new_head);
+	free(*new_head); if (new_head->reference_count == 0) free(new_head);
+	return (dst != nullptr);
+}
+
+template<typename Proof>
+struct dummy_collector {
+	const Proof* test_proof;
+
+	dummy_collector(const Proof* test_proof) : test_proof(test_proof) { }
+
+	constexpr inline bool has_prior(const Proof* proof) const {
+		return (proof != test_proof);
+	}
+};
+
+template<typename Proof>
+dummy_collector<Proof> make_dummy_collector(const Proof* test_proof) {
+	return dummy_collector<Proof>(test_proof);
+}
+
+template<typename Theory, typename ProofPrior>
+inline void print_theory(const Theory& T, const typename Theory::Proof* test_proof, ProofPrior& proof_prior)
+{
+	typedef typename Theory::Formula Formula;
+
+	array<Formula*> extra_axioms(16);
+	T.get_extra_axioms(extra_axioms);
+	auto collector = make_dummy_collector(test_proof);
+	double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
+	fprintf(stderr, "log probability of theory: %lf\n", value);
+	T.print_axioms(stderr, *debug_terminal_printer);
+	T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 }
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
@@ -336,6 +413,11 @@ void do_ruletaker_experiments(
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
+if (job.question_id < 18 - 1)
+{
+total++;
+continue;
+}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -358,12 +440,15 @@ void do_ruletaker_experiments(
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
-				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000);
+				typedef typename Theory::Proof Proof;
+				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
+				Proof* proof_MAP_true; Proof* proof_MAP_false;
+				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000, T_MAP_true, proof_MAP_true);
 				for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000);
+					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000, T_MAP_true, proof_MAP_true);
 				}
 
 				hol_term* negated;
@@ -371,7 +456,7 @@ void do_ruletaker_experiments(
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
 					work_queue_cv.notify_all();
-					free(job); free(T_copy);
+					free(job); free(T_copy); free(T_MAP_true);
 					total++;
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
@@ -380,21 +465,28 @@ void do_ruletaker_experiments(
 				/* for reproducibility, reset the PRNG state */
 				core::engine = context_queue[job.context_id].prng_engine;
 
-				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000);
+				Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
+T_copy.print_axioms(stderr, *debug_terminal_printer);
+T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
+				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000, T_MAP_false, proof_MAP_false);
 				for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000);
+					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000, T_MAP_false, proof_MAP_false);
 				}
 				free(*negated); if (negated->reference_count == 0) free(negated);
 				if (log_probability_true > log_probability_false) {
 					if (!job.label) {
-						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
+						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+ 						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 						incorrect.add(make_pair(job.context_id, job.question_id));
 					}
 				} else if (log_probability_false > log_probability_true) {
 					if (job.label) {
+						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
 						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 						incorrect.add(make_pair(job.context_id, job.question_id));
 					}
@@ -402,6 +494,8 @@ void do_ruletaker_experiments(
 					std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 					half_correct.add(make_pair(job.context_id, job.question_id));
 				}
+				free(T_MAP_true);
+				free(T_MAP_false);
 				answered++;
 				total++;
 
@@ -416,7 +510,7 @@ void do_ruletaker_experiments(
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 12 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;
@@ -459,6 +553,20 @@ continue;
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
 					for (unsigned int t = 0; t < 4000; t++) {
+if (i >= 329) {
+fprintf(stderr, "DEBUG: t = %u\n", t);
+job.proof_axioms.check_proof_axioms(job.T);
+job.proof_axioms.check_universal_eliminations(job.T, collector);
+job.T.check_concept_axioms();
+job.T.check_disjunction_introductions();
+job.T.are_elements_provable();
+job.T.sets.check_freeable_sets();
+job.T.sets.are_descendants_valid();
+job.T.sets.are_set_sizes_valid();
+job.T.sets.check_set_ids();
+job.T.print_axioms(stderr, *debug_terminal_printer);
+job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+}
 						bool print_debug = false;
 						if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
 						if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);

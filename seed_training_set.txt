@@ -300,7 +300,7 @@
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "each")
-					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
+					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_wide_scope,require_predicative_universal
 						(NOMINAL_L:identity_predicative
 							(N:require_no_correlator_predicative,select_predicate_in_set "cat"/"cat")
 						)
@@ -339,7 +339,7 @@
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "each")
-					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
+					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_wide_scope,require_predicative_universal
 						(NOMINAL_L:identity_predicative
 							(N:require_no_correlator_predicative,select_predicate_in_set "mammal"/"mammal")
 						)
@@ -804,7 +804,7 @@
 				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number
 					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 						(EACH "every")
-						(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
+						(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_wide_scope,require_predicative_universal
 							(NOMINAL_L:identity_predicative
 								(N:require_no_correlator_predicative,select_predicate_in_set "eukaryote"/"eukaryote")
 							)
@@ -2498,6 +2498,94 @@
 	(PERIOD:empty ".")
 )}
 	{?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Sun")) & ~?[f]:((arg1(f)=s) & inverse(freeze)(f) & present(f)))};
+
+: # ostrich
+{(N "ostrich"/"ostrich")}
+	{ostrich[index:sg]};
+
+: # abnormal
+{(ADJ "abnormal"/"abnormal")}
+	{?[x]:abnormal(x)};
+
+: # bird
+{(N "bird"/"bird")}
+	{bird[index:sg]};
+
+: # wounds
+{(V "wound"/"wounds")}
+	{?[x]:(wound(x) & present(x))[index:sg,arg2]};
+
+: # fly
+{(V "fly"/"flies")}
+	{?[x]:(fly(x) & present(x))[index:sg]};
+
+: # Every planet that is not terrestrial is in the Outer Solar System.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(EACH:empty "every")
+					(NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_wide_scope,require_predicative_universal
+						(NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set
+							(NOMINAL_L:identity_predicative
+								(N:require_no_correlator_predicative,select_predicate_in_set "planet"/"planet")
+							)
+						)
+						(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_right_conjunct_in_set,remove_wide_scope,try_remove_number
+							(S':select_right_arg1_of_without_head,add_that,add_nullable_subject
+								(THAT:empty "that")
+								(S':try_remove_correlated,try_remove_is_adjunct,remove_that
+									(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+										(VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
+											(VP_L:identity
+												(BE:identity "be"/"is")
+												(VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive
+													(VP_L:identity
+														(NOT "not")
+														(VP_L:try_remove_correlated,require_aux_or_subjunctive_or_infinitive_or_to_infinitive,remove_not,require_no_req_subject,try_remove_req_aux,add_negative
+															(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "freeze"/"frozen")
+														)
+													)
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:select_left_predicate_and_tense,set_predicate_empty,factor
+					(VP_L:identity
+						(BE:require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,empty_and_tense "be"/"is")
+					)
+				)
+				(V_ADJUNCT:remove_second_left_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,add_empty_verb
+					(PP:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
+						(P:require_no_preposition,remove_right_conjunct "in")
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+							(DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+								(THE:empty "the")
+								(NP':try_remove_correlated,require_predicative_existential,try_add_singular
+									(NOMINAL_R:identity_predicative
+										(NOMINAL_L:identity_predicative
+											(STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Inner Solar System")
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD:empty ".")
+)}
+	{![p]:((planet(p) & ~?[f]:(inverse(freeze)(f) & present(f) & (arg1_of(p)=f))) => ?[i]:(?[n]:(name(n) & (arg1_of(i)=n) & (arg2(n)="Inner Solar System")) & ?[l]:((arg1(l)=p) & locate(l) & present(l) & (arg2(l)=i))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

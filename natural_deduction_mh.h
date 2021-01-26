@@ -622,7 +622,7 @@ bool propose_universal_intro(
 		antecedent_set = selected.value;
 		consequent = T.sets.sets[consequent_set].set_formula();
 		antecedent = T.sets.sets[antecedent_set].set_formula();
-		array<nd_step<Formula>*> proofs = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
+		array<nd_step<Formula>*>& proofs = T.sets.extensional_graph.vertices[selected.key].children.get(selected.value);
 		for (nd_step<Formula>* proof : proofs) {
 			Formula* formula = proof->formula->quantifier.operand;
 			if (formula->type == FormulaType::FOR_ALL)
@@ -1218,55 +1218,58 @@ bool propose_change_set_size(
 #endif
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
-		T.sets.template set_size_axiom<false>(selected_set, new_size);
+		T.sets.sets[selected_set].change_size(new_size);
+
+		hash_set<tuple> provable_elements(16);
+		if (!T.sets.get_provable_elements(selected_set, provable_elements)) {
+			T.sets.sets[selected_set].change_size(old_size);
+			return false;
+		}
 
 		bool is_consistent = true;
-		if (T.sets.sets[selected_set].element_count() == new_size) {
+		if (provable_elements.size == new_size) {
 			/* if the set becomes full, check for consistency by calling `check_set_membership_after_addition` */
 			hol_term* set_formula = T.sets.sets[selected_set].set_formula();
 			array<hol_term*> conjuncts(8);
 			if (set_formula->type == hol_term_type::AND) {
-				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length))
+				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
+					for (tuple& tup : provable_elements) core::free(tup);
 					return false;
+				}
 			} else {
 				conjuncts[conjuncts.length++] = set_formula;
 			}
 
 			for (hol_term* conjunct : conjuncts) {
-				if (conjunct->type == hol_term_type::UNARY_APPLICATION
-				 && conjunct->binary.right->type == hol_term_type::VARIABLE
-				 && conjunct->binary.right->variable == 1
-				 && !T.template check_set_membership_after_addition<false>(conjunct))
-				{
+				if (!T.template check_set_membership_after_addition<false>(conjunct)) {
 					is_consistent = false;
 					break;
 				}
 			}
-		} else if (T.sets.sets[selected_set].element_count() == old_size) {
+		} else if (provable_elements.size == old_size) {
 			/* if the set becomes not full, check for consistency by calling `check_set_membership_after_subtraction` */
 			hol_term* set_formula = T.sets.sets[selected_set].set_formula();
 			array<hol_term*> conjuncts(8);
 			if (set_formula->type == hol_term_type::AND) {
-				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length))
+				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
+					for (tuple& tup : provable_elements) core::free(tup);
 					return false;
+				}
 			} else {
 				conjuncts[conjuncts.length++] = set_formula;
 			}
 
 			for (hol_term* conjunct : conjuncts) {
-				if (conjunct->type == hol_term_type::UNARY_APPLICATION
-				 && conjunct->binary.right->type == hol_term_type::VARIABLE
-				 && conjunct->binary.right->variable == 1
-				 && !T.template check_set_membership_after_subtraction(conjunct))
-				{
+				if (!T.template check_set_membership_after_subtraction(conjunct, 0)) {
 					is_consistent = false;
 					break;
 				}
 			}
 		}
+		for (tuple& tup : provable_elements) core::free(tup);
 
 		if (!is_consistent) {
-			T.sets.template set_size_axiom<false>(selected_set, old_size);
+			T.sets.sets[selected_set].change_size(old_size);
 		} else {
 			/* TODO: we could keep track of the extra axioms within `theory` */
 			array<hol_term*> extra_axioms(16);
@@ -1814,8 +1817,8 @@ bool propose_disjunction_intro(
 	if (!T.get_theory_changes(*selected_step.value, old_proof_changes))
 		return false;
 	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
-	/*for (const typename Theory::change& c : old_proof_changes.list)
-		if (c.type == Theory::change_type::SUBSET_AXIOM) return true;*/
+	for (const typename Theory::change& change : old_proof_changes.list)
+		if (change.type == Theory::change_type::SUBSET_AXIOM) return true;
 	T.subtract_changes(old_proof_changes, set_diff, inverse_sampler);
 	/* some removed set size axioms may actually become extra axioms */
 	for (const typename Theory::change& change : old_proof_changes.list) {
@@ -2196,6 +2199,7 @@ inline bool get_proof_initializer(nd_step<Formula>* proof, proof_initializer& in
 	case nd_step_type::EXISTENTIAL_ELIMINATION:
 	case nd_step_type::EQUALITY_ELIMINATION:
 	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
 	case nd_step_type::PARAMETER:
 	case nd_step_type::TERM_PARAMETER:
 	case nd_step_type::ARRAY_PARAMETER:
@@ -2329,11 +2333,13 @@ inline bool do_split_merge(
 		 || !reference_counts.ensure_capacity(reference_counts.size + 1))
 		{
 			set_changes<Formula> dummy;
-			for (unsigned int j = i; j > 0; j--)
+			for (unsigned int j = i; j > 0; j--) {
 				T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+				free(old_proof_changes[j - 1]);
+			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
+			for (unsigned int j = i; j < old_proofs.length; j++) free(old_proof_changes[j]);
 			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return false;
 		}
@@ -2352,18 +2358,20 @@ inline bool do_split_merge(
 		if (!T.get_theory_changes(*old_proofs[i].value, discharged_axioms, reference_counts, old_proof_changes[i]))
 			return false;
 		/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
-		/*for (const typename Theory::change& c : old_proof_changes[i].list) {
+		for (const typename Theory::change& c : old_proof_changes[i].list) {
 			if (c.type == Theory::change_type::SUBSET_AXIOM) {
 				set_changes<Formula> dummy;
-				for (unsigned int j = i; j > 0; j--)
+				for (unsigned int j = i; j > 0; j--) {
 					T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+					free(old_proof_changes[j - 1]);
+				}
 				for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
+				for (unsigned int j = i; j < old_proofs.length; j++) free(old_proof_changes[j]);
 				for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-				for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
 				free(old_proof_changes); free(new_proof_changes);
 				free(initializers); free(new_proofs); return false;
 			}
-		}*/
+		}
 		T.subtract_changes(old_proof_changes[i], set_diff, set_size_log_probability);
 		/* some removed set size axioms may actually become extra axioms */
 		for (const typename Theory::change& change : old_proof_changes[i].list) {
@@ -2386,11 +2394,12 @@ inline bool do_split_merge(
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (!init(proposed_proofs)) {
 		set_changes<Formula> dummy;
-		for (unsigned int j = old_proofs.length; j > 0; j--)
+		for (unsigned int j = old_proofs.length; j > 0; j--) {
 			T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+			free(old_proof_changes[j - 1]);
+		}
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-		for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
 		free(old_proof_changes); free(new_proof_changes);
 		free(initializers); free(new_proofs); return false;
 	}
@@ -2400,26 +2409,39 @@ inline bool do_split_merge(
 		set_changes<Formula> new_set_diff;
 		new_proofs[i] = T.template make_proof<false, true, false>(old_proofs[i].key, new_set_diff, new_constant, initializers[i]);
 		if (new_proofs[i] == nullptr) {
+			free(proposed_proofs);
 			set_changes<Formula> dummy;
 			for (unsigned int j = i; j > 0; j--) {
 				T.subtract_changes(new_proof_changes[j - 1], dummy, undo_remove_sets(initializers[j - 1].removed_set_sizes));
+				free(new_proof_changes[j - 1]);
 				free(*new_proofs[j - 1]); if (new_proofs[j - 1]->reference_count == 0) free(new_proofs[j - 1]);
-			} for (unsigned int j = old_proofs.length; j > 0; j--)
+			} for (unsigned int j = old_proofs.length; j > 0; j--) {
 				T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+				free(old_proof_changes[j - 1]);
+			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
-			free(old_proof_changes); free(new_proof_changes); free(proposed_proofs);
+			for (unsigned int j = i; j < old_proofs.length; j++) free(new_proof_changes[j]);
+			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return true;
 		}
 
 		log_proposal_probability_ratio -= initializers[i].set_size_log_probability;
 
 		if (!T.get_theory_changes(*new_proofs[i], new_proof_changes[i])) {
+			free(proposed_proofs);
+			set_changes<Formula> dummy;
+			free(*new_proofs[i]); if (new_proofs[i]->reference_count == 0) free(new_proofs[i]);
+			for (unsigned int j = i; j > 0; j--) {
+				T.subtract_changes(new_proof_changes[j - 1], dummy, undo_remove_sets(initializers[j - 1].removed_set_sizes));
+				free(new_proof_changes[j - 1]);
+				free(*new_proofs[j - 1]); if (new_proofs[j - 1]->reference_count == 0) free(new_proofs[j - 1]);
+			} for (unsigned int j = old_proofs.length; j > 0; j--) {
+				T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+				free(old_proof_changes[j - 1]);
+			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
-			free(old_proof_changes); free(new_proof_changes); free(proposed_proofs);
+			for (unsigned int j = i; j < old_proofs.length; j++) free(new_proof_changes[j]);
+			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return true;
 		}
 		/* some new set size axioms may actually have already been extra axioms */
@@ -2439,16 +2461,19 @@ inline bool do_split_merge(
 
 		/* propose `new_proofs[i]` to substitute `old_proofs[i].value` */
 		if (!propose_transformation(T, proposed_proofs, observation_changes, old_proofs[i].value, new_proofs[i])) {
+			free(proposed_proofs);
 			set_changes<Formula> dummy;
 			for (unsigned int j = i + 1; j > 0; j--) {
 				T.subtract_changes(new_proof_changes[j - 1], dummy, undo_remove_sets(initializers[j - 1].removed_set_sizes));
+				free(new_proof_changes[j - 1]);
 				free(*new_proofs[j - 1]); if (new_proofs[j - 1]->reference_count == 0) free(new_proofs[j - 1]);
-			} for (unsigned int j = old_proofs.length; j > 0; j--)
+			} for (unsigned int j = old_proofs.length; j > 0; j--) {
 				T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+				free(old_proof_changes[j - 1]);
+			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
-			free(old_proof_changes); free(new_proof_changes); free(proposed_proofs);
+			for (unsigned int j = i + 1; j < old_proofs.length; j++) free(new_proof_changes[j]);
+			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return true;
 		}
 
@@ -2466,16 +2491,18 @@ inline bool do_split_merge(
 	log_proposal_probability_ratio += proof_prior_diff;
 
 	if (!transform_proofs(proposed_proofs)) {
+		free(proposed_proofs);
 		set_changes<Formula> dummy;
 		for (unsigned int j = old_proofs.length; j > 0; j--) {
 			T.subtract_changes(new_proof_changes[j - 1], dummy, undo_remove_sets(initializers[j - 1].removed_set_sizes));
+			free(new_proof_changes[j - 1]);
 			free(*new_proofs[j - 1]); if (new_proofs[j - 1]->reference_count == 0) free(new_proofs[j - 1]);
-		} for (unsigned int j = old_proofs.length; j > 0; j--)
+		} for (unsigned int j = old_proofs.length; j > 0; j--) {
 			T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+			free(old_proof_changes[j]);
+		}
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
-		for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-		for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
-		free(old_proof_changes); free(new_proof_changes); free(proposed_proofs);
+		free(old_proof_changes); free(new_proof_changes);
 		free(initializers); free(new_proofs); return false;
 	}
 
@@ -2503,16 +2530,18 @@ inline bool do_split_merge(
 		}
 		free(inverse_proofs);
 
+		free(proposed_proofs);
 		set_changes<Formula> dummy;
 		for (unsigned int j = old_proofs.length; j > 0; j--) {
 			T.subtract_changes(new_proof_changes[j - 1], dummy, undo_remove_sets(initializers[j - 1].removed_set_sizes));
+			free(new_proof_changes[j - 1]);
 			free(*new_proofs[j - 1]); if (new_proofs[j - 1]->reference_count == 0) free(new_proofs[j - 1]);
-		} for (unsigned int j = old_proofs.length; j > 0; j--)
+		} for (unsigned int j = old_proofs.length; j > 0; j--) {
 			T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
+			free(old_proof_changes[j - 1]);
+		}
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
-		for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-		for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
-		free(old_proof_changes); free(new_proof_changes); free(proposed_proofs);
+		free(old_proof_changes); free(new_proof_changes);
 		free(initializers); free(new_proofs);
 		return true;
 	};
@@ -2563,13 +2592,14 @@ inline bool do_split_merge(
 		return undo_proof_changes();
 	}
 
+	free(proposed_proofs);
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
 		free(*new_proofs[i]); if (new_proofs[i]->reference_count == 0) free(new_proofs[i]);
 	}
 	for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 	for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 	for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
-	free(old_proof_changes); free(new_proof_changes); free(proposed_proofs);
+	free(old_proof_changes); free(new_proof_changes);
 	free(initializers); free(new_proofs);
 	return true;
 }
@@ -2756,6 +2786,7 @@ bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
 				break;
 			case nd_step_type::AXIOM:
 			case nd_step_type::COMPARISON_INTRODUCTION:
+			case nd_step_type::INEQUALITY_INTRODUCTION:
 			case nd_step_type::PARAMETER:
 			case nd_step_type::TERM_PARAMETER:
 			case nd_step_type::ARRAY_PARAMETER:
