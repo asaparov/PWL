@@ -8076,7 +8076,10 @@ private:
 
 				for (unsigned int i = 0; i < possible_values.length; i++) {
 					const variable_assignment& values = possible_values[i];
-					if (!Contradiction && values.assignment.values[left->variable - 1].type == instantiation_type::CONSTANT) {
+					if (!Contradiction
+					 && values.assignment.values[left->variable - 1].type == instantiation_type::CONSTANT
+					 && values.assignment.values[left->variable - 1].constant >= new_constant_offset)
+					{
 						const concept<ProofCalculus>& c = ground_concepts[values.assignment.values[left->variable - 1].constant - new_constant_offset];
 						if (!new_possible_values.ensure_capacity(new_possible_values.length + c.definitions.length)) {
 							for (auto& element : new_possible_values) core::free(element);
@@ -8254,7 +8257,10 @@ private:
 					unsigned int old_size = new_possible_values.length;
 					for (unsigned int i = 0; i < possible_values.length; i++) {
 						const variable_assignment& values = possible_values[i];
-						if (!Contradiction && values.assignment.values[left->binary.right->variable - 1].type == instantiation_type::CONSTANT) {
+						if (!Contradiction
+						 && values.assignment.values[left->binary.right->variable - 1].type == instantiation_type::CONSTANT
+						 && values.assignment.values[left->binary.right->variable - 1].constant >= new_constant_offset)
+						{
 							const concept<ProofCalculus>& c = ground_concepts[values.assignment.values[left->binary.right->variable - 1].constant - new_constant_offset];
 							bool contains;
 							Proof* function_value = c.function_values.get(left->binary.left->constant, contains);
@@ -11910,8 +11916,17 @@ private:
 					atom->binary.left->reference_count++;
 					Variables<1>::value.reference_count++;
 
+					/* make sure the negation of this atom doesn't exist as an axiom */
 					bool contains;
 					concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
+					if (Negated && c.types.contains(*lifted_atom)) {
+						core::free(*lifted_atom); core::free(lifted_atom);
+						return false;
+					} else if (!Negated && c.negated_types.contains(*lifted_atom)) {
+						core::free(*lifted_atom); core::free(lifted_atom);
+						return false;
+					}
+
 					Proof* axiom = (Negated ?
 							c.negated_types.get(*lifted_atom, contains) :
 							c.types.get(*lifted_atom, contains));

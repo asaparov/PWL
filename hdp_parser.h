@@ -2195,7 +2195,7 @@ inline hol_term* apply(hol_term* src, equality_quantifier_normalizer& normalizer
 			return default_apply<Type>(src, normalizer);
 		}
 	} else {
-		hol_term* var;
+		hol_term* var = nullptr;
 		hol_term* substitution = nullptr;
 		array<hol_term*> new_conjuncts(operand->array.length);
 		for (unsigned int i = 0; i < operand->array.length; i++) {
