@@ -11921,10 +11921,10 @@ private:
 					concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
 					if (Negated && c.types.contains(*lifted_atom)) {
 						core::free(*lifted_atom); core::free(lifted_atom);
-						return false;
+						return nullptr;
 					} else if (!Negated && c.negated_types.contains(*lifted_atom)) {
 						core::free(*lifted_atom); core::free(lifted_atom);
-						return false;
+						return nullptr;
 					}
 
 					Proof* axiom = (Negated ?
