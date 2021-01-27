@@ -2377,11 +2377,11 @@ return EXIT_SUCCESS;*/
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
-			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, make_iid_uniform_distribution<hol_term>(1000)));
-	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.02),
-			0.1099999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.01, 0.25, 0.25,
-			0.1099999, 0.01, 0.0000001, 0.17, 0.2099999, 0.1, 0.0000001, 0.2, 0.2,
-			0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.5, 0.4, 0.00000000001);
+			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, make_iid_uniform_distribution<hol_term>(100000)));
+        auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
+                        0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.2, 0.2, 0.2,
+                        0.1099999, 0.01, 0.0000001, 0.27, 0.1099999, 0.1, 0.0000001, 0.2, 0.2,
+                        0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
 	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.5);
 	auto conjunction_elimination_prior = make_levy_process(poisson_distribution(2.0), poisson_distribution(1.0));
@@ -2397,7 +2397,7 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test_rephrased.jsonl");
+run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test_rephrased.jsonl", 16);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)

@@ -418,11 +418,11 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 29 - 1)
+/*if (job.question_id < 29 - 1)
 {
 total++;
 continue;
-}
+}*/
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -561,20 +561,6 @@ continue;
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
 					for (unsigned int t = 0; t < 4000; t++) {
-if (i >= 329) {
-fprintf(stderr, "DEBUG: t = %u\n", t);
-job.proof_axioms.check_proof_axioms(job.T);
-job.proof_axioms.check_universal_eliminations(job.T, collector);
-job.T.check_concept_axioms();
-job.T.check_disjunction_introductions();
-job.T.are_elements_provable();
-job.T.sets.check_freeable_sets();
-job.T.sets.are_descendants_valid();
-job.T.sets.are_set_sizes_valid();
-job.T.sets.check_set_ids();
-job.T.print_axioms(stderr, *debug_terminal_printer);
-job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
-}
 						bool print_debug = false;
 						if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
 						if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
@@ -727,7 +713,7 @@ bool run_ruletaker_experiments(
 	array<pair<unsigned int, string>> unparseable_context(4);
 	std::atomic_uint total(0);
 	std::atomic_uint answered(0);
-	std::atomic_uint num_threads_reading_context(0);
+	std::atomic_uint num_threads_reading_context(1);
 	std::atomic_uint num_threads_running(0);
 
 	std::thread* workers = new std::thread[thread_count];
@@ -797,6 +783,7 @@ bool run_ruletaker_experiments(
 
 	if (!read_ruletaker_data(data_filepath, process_ruletaker_questions))
 		status = false;
+	num_threads_reading_context--;
 
 	timer stopwatch;
 	while (status) {
@@ -812,7 +799,7 @@ bool run_ruletaker_experiments(
 
 	work_queue_cv.notify_all();
 	while (status) {
-		if (num_threads_running != 0)
+		if (num_threads_running == 0)
 			break;
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
