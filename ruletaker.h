@@ -352,8 +352,7 @@ constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
-void do_ruletaker_experiments(
-		bool& status, bool& running,
+void do_ruletaker_experiments(bool& status,
 		ruletaker_context_item<Theory, PriorStateType>* context_queue,
 		ruletaker_question_item<Theory, PriorStateType>* question_queue,
 		unsigned int& context_queue_start,
@@ -373,11 +372,14 @@ void do_ruletaker_experiments(
 		array<pair<unsigned int, string>>& unparseable_context,
 		std::atomic_uint& total,
 		std::atomic_uint& answered,
-		std::atomic_uint& num_threads_reading_context)
+		std::atomic_uint& num_threads_reading_context,
+		std::atomic_uint& num_threads_running)
 {
+	num_threads_running++;
 	Parser& parser = *((Parser*) alloca(sizeof(Parser)));
 	if (!init(parser, parser_src)) {
 		status = false;
+		num_threads_running--;
 		work_queue_cv.notify_all();
 		return;
 	}
@@ -386,6 +388,7 @@ void do_ruletaker_experiments(
 		unsigned int index = names.table.index_to_insert(entry.key);
 		if (!init(names.table.keys[index], entry.key)) {
 			status = false;
+			num_threads_running--;
 			work_queue_cv.notify_all();
 			for (auto entry : names) free(entry.key);
 			free(parser); return;
@@ -395,17 +398,19 @@ void do_ruletaker_experiments(
 	}
 	if (!parser.invert_name_map(names)) {
 		status = false;
+		num_threads_running--;
 		work_queue_cv.notify_all();
 		for (auto entry : names) free(entry.key);
 		free(parser); return;
 	}
 
-	while (status && running)
+	while (status)
 	{
 		std::unique_lock<std::mutex> lock(work_queue_lock);
-		while (status && running && context_queue_length == context_queue_start && question_queue_length == question_queue_start)
+		while (status && context_queue_length == context_queue_start && question_queue_length == question_queue_start && num_threads_reading_context != 0)
 			work_queue_cv.wait(lock);
-		if (!status || !running) {
+		if (!status || (num_threads_reading_context == 0 && context_queue_start == context_queue_length && question_queue_start == question_queue_length)) {
+			num_threads_running--;
 			for (auto entry : names) free(entry.key);
 			free(parser); return;
 		}
@@ -413,7 +418,7 @@ void do_ruletaker_experiments(
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 18 - 1)
+if (job.question_id < 29 - 1)
 {
 total++;
 continue;
@@ -427,6 +432,7 @@ continue;
 			hash_map<const hol_term*, hol_term*> formula_map(128);
 			if (!Theory::clone(job.T, T_copy, formula_map)) {
 				status = false;
+				num_threads_running--;
 				work_queue_cv.notify_all();
 				free(job);
 				for (auto entry : names) free(entry.key);
@@ -455,6 +461,7 @@ continue;
 				if (!negate_head(logical_forms[0], negated) || negated == nullptr) {
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
+					num_threads_running--;
 					work_queue_cv.notify_all();
 					free(job); free(T_copy); free(T_MAP_true);
 					total++;
@@ -533,6 +540,7 @@ continue;
 						{
 							job.context[i + 1] = old_next;
 							status = false;
+							num_threads_running--;
 							num_threads_reading_context--;
 							work_queue_cv.notify_all();
 							free(job);
@@ -589,6 +597,7 @@ job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 				if (question_queue_length + job.questions.length > MAX_QUESTION_COUNT) {
 					fprintf(stderr, "do_ruletaker_experiments ERROR: Requested question queue length exceeds `MAX_QUESTION_COUNT`.\n");
 					status = false;
+					num_threads_running--;
 					num_threads_reading_context--;
 					work_queue_cv.notify_all();
 					free(job);
@@ -602,6 +611,7 @@ job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 					new_question.question_id = j;
 					if (!init(new_question.question, job.questions[j].key.length + 1)) {
 						status = false;
+						num_threads_running--;
 						num_threads_reading_context--;
 						work_queue_cv.notify_all();
 						free(job);
@@ -616,6 +626,7 @@ job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 					hash_map<const hol_term*, hol_term*> formula_map(128);
 					if (!Theory::clone(job.T, new_question.T, formula_map)) {
 						status = false;
+						num_threads_running--;
 						num_threads_reading_context--;
 						work_queue_cv.notify_all();
 						set_empty(new_question.T);
@@ -624,6 +635,7 @@ job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 						free(parser); return;
 					} else if (new (&new_question.proof_axioms) PriorStateType(job.proof_axioms, formula_map) == nullptr) {
 						status = false;
+						num_threads_running--;
 						num_threads_reading_context--;
 						work_queue_cv.notify_all();
 						free(new_question.T);
@@ -643,6 +655,7 @@ job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		}
 	}
 
+	num_threads_running--;
 	for (auto entry : names) free(entry.key);
 	free(parser);
 }
@@ -693,7 +706,7 @@ bool run_ruletaker_experiments(
 		const char* data_filepath,
 		unsigned int thread_count)
 {
-	bool status = true; bool running = true;
+	bool status = true;
 	ruletaker_context_item<Theory, PriorStateType>* context_queue = (ruletaker_context_item<Theory, PriorStateType>*) malloc(sizeof(ruletaker_context_item<Theory, PriorStateType>) * MAX_CONTEXT_COUNT);
 	if (context_queue == nullptr) return false;
 	ruletaker_question_item<Theory, PriorStateType>* question_queue = (ruletaker_question_item<Theory, PriorStateType>*) malloc(sizeof(ruletaker_question_item<Theory, PriorStateType>) * MAX_QUESTION_COUNT);
@@ -715,12 +728,13 @@ bool run_ruletaker_experiments(
 	std::atomic_uint total(0);
 	std::atomic_uint answered(0);
 	std::atomic_uint num_threads_reading_context(0);
+	std::atomic_uint num_threads_running(0);
 
 	std::thread* workers = new std::thread[thread_count];
 	for (unsigned int i = 0; i < thread_count; i++) {
 		workers[i] = std::thread(
 				do_ruletaker_experiments<ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
-				std::ref(status), std::ref(running), context_queue, question_queue,
+				std::ref(status), context_queue, question_queue,
 				std::ref(context_queue_start), std::ref(question_queue_start),
 				std::ref(context_queue_length), std::ref(question_queue_length),
 				std::ref(work_queue_lock), std::ref(work_queue_cv),
@@ -731,7 +745,8 @@ bool run_ruletaker_experiments(
 				std::ref(incorrect), std::ref(half_correct),
 				std::ref(unparseable_context),
 				std::ref(total), std::ref(answered),
-				std::ref(num_threads_reading_context));
+				std::ref(num_threads_reading_context),
+				std::ref(num_threads_running));
 	}
 
 	unsigned int context_id = 0;
@@ -795,8 +810,17 @@ bool run_ruletaker_experiments(
 		}
 	}
 
-	running = false;
 	work_queue_cv.notify_all();
+	while (status) {
+		if (num_threads_running != 0)
+			break;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		if (stopwatch.milliseconds() > 1000) {
+			print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
+			stopwatch.start();
+		}
+	}
 	for (unsigned int i = 0; i < thread_count; i++) {
 		if (!workers[i].joinable()) continue;
 		try {
@@ -805,6 +829,106 @@ bool run_ruletaker_experiments(
 	}
 	print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
 	delete[] workers;
+	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
+		free(context_queue[i]);
+	for (unsigned int i = question_queue_start; i < question_queue_length; i++)
+		free(question_queue[i]);
+	free(context_queue);
+	free(question_queue);
+	return status;
+}
+
+template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+bool run_ruletaker_experiments_single_threaded(
+		ArticleSource& corpus, Parser& parser,
+		Theory& T, PriorStateType& proof_axioms,
+		ProofPrior& proof_prior,
+		hash_map<string, unsigned int>& names,
+		hash_set<unsigned int>& seed_entities,
+		const char* data_filepath)
+{
+	bool status = true;
+	ruletaker_context_item<Theory, PriorStateType>* context_queue = (ruletaker_context_item<Theory, PriorStateType>*) malloc(sizeof(ruletaker_context_item<Theory, PriorStateType>) * MAX_CONTEXT_COUNT);
+	if (context_queue == nullptr) return false;
+	ruletaker_question_item<Theory, PriorStateType>* question_queue = (ruletaker_question_item<Theory, PriorStateType>*) malloc(sizeof(ruletaker_question_item<Theory, PriorStateType>) * MAX_QUESTION_COUNT);
+	if (question_queue == nullptr) {
+		free(context_queue);
+		return false;
+	}
+	unsigned int context_queue_start = 0;
+	unsigned int question_queue_start = 0;
+	unsigned int context_queue_length = 0;
+	unsigned int question_queue_length = 0;
+	std::mutex work_queue_lock;
+	std::condition_variable work_queue_cv;
+	std::minstd_rand prng_engine = core::engine;
+	std::mutex incorrect_question_ids_lock;
+	array<pair<unsigned int, unsigned int>> incorrect(64);
+	array<pair<unsigned int, unsigned int>> half_correct(4);
+	array<pair<unsigned int, string>> unparseable_context(4);
+	std::atomic_uint total(0);
+	std::atomic_uint answered(0);
+	std::atomic_uint num_threads_reading_context(0);
+	std::atomic_uint num_threads_running(0);
+
+	unsigned int context_id = 0;
+	auto process_ruletaker_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, bool>>& questions)
+	{
+		if (context_queue_length + 1 > MAX_CONTEXT_COUNT) {
+			fprintf(stderr, "run_ruletaker_experiments_single_threaded ERROR: Requested context queue length exceeds `MAX_CONTEXT_COUNT`.\n");
+			return false;
+		}
+
+		std::unique_lock<std::mutex> lock(work_queue_lock);
+		ruletaker_context_item<Theory, PriorStateType>& new_context = context_queue[context_queue_length];
+		set_empty(new_context.T);
+		new_context.context_id = context_id++;
+		new_context.context = (char*) malloc(sizeof(char) * (strlen(context) + 1));
+		if (new_context.context == nullptr) {
+			fprintf(stderr, "run_ruletaker_experiments_single_threaded ERROR: Out of memory.\n");
+			return false;
+		} else if (!array_init(new_context.questions, questions.length)) {
+			free(new_context.context);
+			return false;
+		}
+		unsigned int i;
+		for (i = 0; context[i] != '\0'; i++)
+			new_context.context[i] = context[i];
+		new_context.context[i] = '\0';
+		for (const auto& entry : questions) {
+			if (!init(new_context.questions[new_context.questions.length].key, entry.key)) {
+				free(new_context);
+				return false;
+			}
+			new_context.questions[new_context.questions.length].value = entry.value;
+			new_context.questions.length++;
+		}
+		hash_map<const hol_term*, hol_term*> formula_map(128);
+		if (!Theory::clone(T, new_context.T, formula_map)) {
+			set_empty(new_context.T);
+			free(new_context);
+			return false;
+		} else if (new (&new_context.proof_axioms) PriorStateType(proof_axioms, formula_map) == nullptr) {
+			free(new_context.T); set_empty(new_context.T);
+			free(new_context); return false;
+		}
+		context_queue_length++;
+		work_queue_cv.notify_one();
+		return true;
+	};
+
+	if (!read_ruletaker_data(data_filepath, process_ruletaker_questions))
+		status = false;
+
+	do_ruletaker_experiments(status, context_queue, question_queue,
+			context_queue_start, question_queue_start, context_queue_length,
+			question_queue_length, work_queue_lock, work_queue_cv, prng_engine,
+			corpus, parser, proof_prior, names, seed_entities,
+			incorrect_question_ids_lock, incorrect, half_correct,
+			unparseable_context, total, answered, num_threads_reading_context,
+			num_threads_running);
+
+	print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
 	for (unsigned int i = question_queue_start; i < question_queue_length; i++)

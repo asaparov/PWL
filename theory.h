@@ -6383,7 +6383,10 @@ private:
 				break;
 			}
 			for (unification& u : unifications) core::free(u);
-			if (!has_valid_unification) continue;
+			if (!has_valid_unification) {
+				for (tuple& tup : provable_elements) core::free(tup);
+				continue;
+			}
 
 			unsigned int pushed_axiom_count;
 			if (!prover.template push_axiom<!Contradiction>(i, formula, possible_values, pushed_axiom_count)) {
@@ -6437,13 +6440,15 @@ private:
 						}
 					} else if (value.assignment.values[k].type == instantiation_type::ANY || value.assignment.values[k].type == instantiation_type::ANY_NUMBER) {
 						/* we assume the universe has sufficiently many concepts that `provable_elements` is not a superset of the universe */
+						for (unsigned int l = 0; l < k; l++) core::free(new_tuple[l]);
+						core::free(new_tuple.elements);
 						has_any = true;
 						break;
 					}
 				}
 
 				if (has_any || !provable_elements.contains(new_tuple)) {
-					core::free(new_tuple);
+					if (!has_any) core::free(new_tuple);
 					/* (when Contradiction is false) if `formula` is false, then we have a contradiction, so `formula` must be true;
 					   (when Contradiction is true) if `formula` is true, then we have a contradiction, so `formula` must be false */
 					if (!new_possible_values.ensure_capacity(new_possible_values.length + 1)
@@ -6459,6 +6464,7 @@ private:
 				}
 			}
 			prover.pop_axiom(pushed_axiom_count);
+			for (tuple& tup : provable_elements) core::free(tup);
 			for (auto& element : temp_possible_values) core::free(element);
 		}
 		if (new_possible_values.length > old_size) {
@@ -11365,11 +11371,13 @@ private:
 			for (Proof* size_axiom : sets.sets[consequent_set].size_axioms)
 				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(consequent_set, sets, std::forward<Args>(visitor)...);
+			check_old_set_membership(consequent_set, std::forward<Args>(visitor)...);
 			sets.free_set(consequent_set);
 		} if (sets.is_freeable(antecedent_set, std::forward<Args>(visitor)...)) {
 			for (Proof* size_axiom : sets.sets[antecedent_set].size_axioms)
 				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
 			on_free_set(antecedent_set, sets, std::forward<Args>(visitor)...);
+			check_old_set_membership(antecedent_set, std::forward<Args>(visitor)...);
 			sets.free_set(antecedent_set);
 		}
 	}
