@@ -6612,12 +6612,15 @@ private:
 			array<variable_assignment>& new_possible_values,
 			Prover& prover) const
 	{
-		unsigned int quantifier_count = 0;
 		hol_term* operand = formula;
+		unsigned int old_quantifier_length = quantifiers.length;
 		while (operand->type == FormulaType::EXISTS) {
-			if (!quantifiers.add(operand)) return false;
+			if (!quantifiers.ensure_capacity(operand->quantifier.variable))
+				return false;
+			while (operand->quantifier.variable - 1 >= quantifiers.length)
+				quantifiers[quantifiers.length++] = nullptr;
+			quantifiers[operand->quantifier.variable - 1] = operand;
 			operand = operand->quantifier.operand;
-			quantifier_count++;
 		}
 
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
@@ -6648,13 +6651,13 @@ private:
 				const variable_assignment& values = possible_values[i];
 				variable_assignment& new_values = temp_possible_values[temp_possible_values.length];
 				if (!::init(new_values, values)) {
-					quantifiers.length -= quantifier_count;
+					quantifiers.length = old_quantifier_length;
 					return false;
 				}
 
 				bool unifies = true;
 				for (const auto& unification : first_unifications) {
-					if (unification.key->quantifier.variable <= quantifiers.length - quantifier_count
+					if (unification.key->quantifier.variable <= old_quantifier_length
 					 && !new_values.unify_value(unification.key->quantifier.variable - 1, unification.value))
 					{
 						unifies = false;
@@ -6676,7 +6679,7 @@ private:
 				for (auto& element : temp) core::free(element);
 			}
 		}
-		quantifiers.length -= quantifier_count;
+		quantifiers.length = old_quantifier_length;
 		return true;
 	}
 
@@ -10717,14 +10720,12 @@ private:
 						make_repeated_array_view(0u, 1));
 				core::free(*beta_left); if (beta_left->reference_count == 0) core::free(beta_left);
 				core::free(*beta_right); if (beta_right->reference_count == 0) core::free(beta_right);
-				core::free(*lambda_formula); if (lambda_formula->reference_count == 0) core::free(lambda_formula);
 				if (proof == NULL) {
 					if (is_set_new) {
 						check_old_set_membership(set_id, std::forward<Args>(args)...);
 					}
 					sets.try_free_set(set_id, std::forward<Args>(args)...); return NULL;
 				}
-				lambda_formula->reference_count++;
 				proof->reference_count++;
 				return proof;
 			} else {
