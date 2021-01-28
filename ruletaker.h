@@ -13,10 +13,10 @@
 #include "json.h"
 
 enum class ruletaker_key {
-	CONTEXT,
+	THEORY,
 	QUESTIONS,
-	TEXT,
-	LABEL,
+	QUESTION,
+	ANSWER,
 	OTHER
 };
 
@@ -27,21 +27,27 @@ enum class ruletaker_reader_state {
 	QUESTION
 };
 
+enum class ruletaker_label : uint_fast8_t {
+	FALSE,
+	TRUE,
+	UNKNOWN
+};
+
 struct ruletaker_reader {
 	ruletaker_reader_state state;
 	ruletaker_key current_key;
 	char* context;
-	pair<char*, bool> next_question;
-	array<pair<string, bool>> questions;
+	pair<char*, ruletaker_label> next_question;
+	array<pair<string, ruletaker_label>> questions;
 
-	ruletaker_reader() : state(ruletaker_reader_state::START), context(nullptr), next_question(nullptr, false), questions(44) { }
+	ruletaker_reader() : state(ruletaker_reader_state::START), context(nullptr), next_question(nullptr, ruletaker_label::UNKNOWN), questions(44) { }
 
 	~ruletaker_reader() {
 		if (context != nullptr)
 			free(context);
 		if (next_question.key != nullptr)
 			free(next_question.key);
-		for (pair<string, bool>& question : questions)
+		for (pair<string, ruletaker_label>& question : questions)
 			free(question.key);
 	}
 };
@@ -49,6 +55,8 @@ struct ruletaker_reader {
 inline bool begin_object(const position& pos, ruletaker_reader& reader) {
 	if (reader.state == ruletaker_reader_state::START) {
 		reader.state = ruletaker_reader_state::ROOT_OBJECT;
+	} else if (reader.current_key == ruletaker_key::QUESTIONS) {
+		reader.state = ruletaker_reader_state::QUESTIONS;
 	} else if (reader.state == ruletaker_reader_state::QUESTIONS) {
 		reader.state = ruletaker_reader_state::QUESTION;
 	}
@@ -66,41 +74,34 @@ inline bool end_object(const position& pos, ruletaker_reader& reader) {
 		reader.questions[reader.questions.length++].value = reader.next_question.value;
 		reader.next_question.key = nullptr;
 		reader.state = ruletaker_reader_state::QUESTIONS;
+	} else if (reader.state == ruletaker_reader_state::QUESTIONS) {
+		reader.state = ruletaker_reader_state::ROOT_OBJECT;
 	}
 	return true;
 }
 
 inline bool emit_key(const array<char>& key_name, const position& pos, ruletaker_reader& reader) {
-	if (compare_strings(key_name, "context")) {
-		reader.current_key = ruletaker_key::CONTEXT;
+	if (compare_strings(key_name, "theory")) {
+		reader.current_key = ruletaker_key::THEORY;
 	} else if (compare_strings(key_name, "questions")) {
 		reader.current_key = ruletaker_key::QUESTIONS;
-	} else if (compare_strings(key_name, "text")) {
-		reader.current_key = ruletaker_key::TEXT;
-	} else if (compare_strings(key_name, "label")) {
-		reader.current_key = ruletaker_key::LABEL;
+	} else if (compare_strings(key_name, "question")) {
+		reader.current_key = ruletaker_key::QUESTION;
+	} else if (compare_strings(key_name, "answer")) {
+		reader.current_key = ruletaker_key::ANSWER;
 	} else {
 		reader.current_key = ruletaker_key::OTHER;
 	}
 	return true;
 }
 
-inline bool begin_list(const position& pos, ruletaker_reader& reader) {
-	if (reader.current_key == ruletaker_key::QUESTIONS)
-		reader.state = ruletaker_reader_state::QUESTIONS;
-	return true;
-}
-
-inline bool end_list(const position& pos, ruletaker_reader& reader) {
-	if (reader.state == ruletaker_reader_state::QUESTIONS)
-		reader.state = ruletaker_reader_state::ROOT_OBJECT;
-	return true;
-}
+inline constexpr bool begin_list(const position& pos, ruletaker_reader& reader) { return true; }
+inline constexpr bool end_list(const position& pos, ruletaker_reader& reader) { return true; }
 
 inline bool emit_string(const array<char>& str, const position& pos, ruletaker_reader& reader) {
-	if (reader.current_key == ruletaker_key::CONTEXT) {
+	if (reader.current_key == ruletaker_key::THEORY) {
 		if (reader.context != nullptr) {
-			read_error("Found duplicate `context` entry", pos);
+			read_error("Found duplicate `theory` entry", pos);
 			return false;
 		}
 		reader.context = (char*) malloc(sizeof(char) * (str.length + 1));
@@ -111,9 +112,9 @@ inline bool emit_string(const array<char>& str, const position& pos, ruletaker_r
 		for (unsigned int i = 0; i < str.length; i++)
 			reader.context[i] = str[i];
 		reader.context[str.length] = '\0';
-	} else if (reader.current_key == ruletaker_key::TEXT) {
+	} else if (reader.current_key == ruletaker_key::QUESTION) {
 		if (reader.next_question.key != nullptr) {
-			read_error("Found duplicate `text` entry for question", pos);
+			read_error("Found duplicate `question` entry", pos);
 			return false;
 		}
 		reader.next_question.key = (char*) malloc(sizeof(char) * (str.length + 1));
@@ -124,19 +125,26 @@ inline bool emit_string(const array<char>& str, const position& pos, ruletaker_r
 		for (unsigned int i = 0; i < str.length; i++)
 			reader.next_question.key[i] = str[i];
 		reader.next_question.key[str.length] = '\0';
+	} else if (reader.current_key == ruletaker_key::ANSWER) {
+		if (compare_strings(str, "Unknown")) {
+			reader.next_question.value = ruletaker_label::UNKNOWN;
+		} else {
+			read_error("Label must be either `true`, `false`, or \"Unknown\"", pos);
+			return false;
+		}
 	}
 	return true;
 }
 
 inline bool emit_true(const position& pos, ruletaker_reader& reader) {
-	if (reader.current_key == ruletaker_key::LABEL)
-		reader.next_question.value = true;
+	if (reader.current_key == ruletaker_key::ANSWER)
+		reader.next_question.value = ruletaker_label::TRUE;
 	return true;
 }
 
 inline bool emit_false(const position& pos, ruletaker_reader& reader) {
-	if (reader.current_key == ruletaker_key::LABEL)
-		reader.next_question.value = false;
+	if (reader.current_key == ruletaker_key::ANSWER)
+		reader.next_question.value = ruletaker_label::FALSE;
 	return true;
 }
 
@@ -216,7 +224,7 @@ struct ruletaker_context_item
 	unsigned int context_id;
 	std::minstd_rand prng_engine;
 	char* context;
-	array<pair<string, bool>> questions;
+	array<pair<string, ruletaker_label>> questions;
 
 	static inline void free(ruletaker_context_item<Theory, PriorStateType>& item) {
 		core::free(item.context);
@@ -238,7 +246,7 @@ struct ruletaker_question_item
 	unsigned int context_id;
 	unsigned int question_id;
 	string question;
-	bool label;
+	ruletaker_label label;
 
 	static inline void free(ruletaker_question_item& item) {
 		core::free(item.question);
@@ -350,6 +358,7 @@ inline void print_theory(const Theory& T, const typename Theory::Proof* test_pro
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
+constexpr double PREDICT_UNKNOWN_THRESHOLD = 20.0;
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_ruletaker_experiments(bool& status,
@@ -368,7 +377,6 @@ void do_ruletaker_experiments(bool& status,
 		hash_set<unsigned int>& seed_entities,
 		std::mutex& incorrect_question_ids_lock,
 		array<pair<unsigned int, unsigned int>>& incorrect,
-		array<pair<unsigned int, unsigned int>>& half_correct,
 		array<pair<unsigned int, string>>& unparseable_context,
 		std::atomic_uint& total,
 		std::atomic_uint& answered,
@@ -449,12 +457,12 @@ continue;
 				typedef typename Theory::Proof Proof;
 				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
 				Proof* proof_MAP_true; Proof* proof_MAP_false;
-				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000, T_MAP_true, proof_MAP_true);
+				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 2000, T_MAP_true, proof_MAP_true);
 				for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 10000, T_MAP_true, proof_MAP_true);
+					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 2000, T_MAP_true, proof_MAP_true);
 				}
 
 				hol_term* negated;
@@ -475,31 +483,35 @@ continue;
 				Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
 T_copy.print_axioms(stderr, *debug_terminal_printer);
 T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
-				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000, T_MAP_false, proof_MAP_false);
+				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 2000, T_MAP_false, proof_MAP_false);
 				for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 10000, T_MAP_false, proof_MAP_false);
+					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 2000, T_MAP_false, proof_MAP_false);
 				}
 				free(*negated); if (negated->reference_count == 0) free(negated);
-				if (log_probability_true > log_probability_false) {
-					if (!job.label) {
+				if (fabs(log_probability_true - log_probability_false) < PREDICT_UNKNOWN_THRESHOLD) {
+					if (job.label != ruletaker_label::UNKNOWN) {
+						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
+						incorrect.add(make_pair(job.context_id, job.question_id));
+					}
+				} else if (log_probability_true > log_probability_false) {
+					if (job.label != ruletaker_label::TRUE) {
 						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
 						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
  						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 						incorrect.add(make_pair(job.context_id, job.question_id));
 					}
 				} else if (log_probability_false > log_probability_true) {
-					if (job.label) {
+					if (job.label != ruletaker_label::FALSE) {
 						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
 						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
 						std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 						incorrect.add(make_pair(job.context_id, job.question_id));
 					}
-				} else {
-					std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
-					half_correct.add(make_pair(job.context_id, job.question_id));
 				}
 				free(T_MAP_true);
 				free(T_MAP_false);
@@ -517,7 +529,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id == 140 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 continue;
@@ -560,7 +572,7 @@ continue;
 					Theory::clone(job.T, T_MAP, formula_map);
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
-					for (unsigned int t = 0; t < 4000; t++) {
+					for (unsigned int t = 0; t < 2000; t++) {
 						bool print_debug = false;
 						if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
 						if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
@@ -649,7 +661,6 @@ continue;
 inline void print_ruletaker_results(
 		const std::atomic_uint& total, const std::atomic_uint& answered,
 		array<pair<unsigned int, unsigned int>>& incorrect,
-		array<pair<unsigned int, unsigned int>>& half_correct,
 		array<pair<unsigned int, string>>& unparseable_context,
 		std::mutex& incorrect_question_ids_lock)
 {
@@ -657,20 +668,14 @@ inline void print_ruletaker_results(
 			"Results so far:\n"
 			"  Total questions: %u\n"
 			"  Answered questions: %u\n"
-			"  Incorrect questions: %lu\n"
-			"  Half-correct questions: %lu\n",
+			"  Incorrect questions: %lu\n",
 			total.load(), answered.load(),
-			incorrect.length, half_correct.length);
+			incorrect.length);
 	std::unique_lock<std::mutex> lock(incorrect_question_ids_lock);
 	if (incorrect.length != 0) {
 		fprintf(stderr, "Incorrect questions:\n");
 		insertion_sort(incorrect, pair_sorter());
 		for (const auto& entry : incorrect)
-			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
-	} if (half_correct.length != 0) {
-		fprintf(stderr, "Half-correct questions:\n");
-		insertion_sort(half_correct, pair_sorter());
-		for (const auto& entry : half_correct)
 			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
 	} if (unparseable_context.length != 0) {
 		fprintf(stderr, "Failed to parse following context sentences:\n");
@@ -709,7 +714,6 @@ bool run_ruletaker_experiments(
 	std::minstd_rand prng_engine = core::engine;
 	std::mutex incorrect_question_ids_lock;
 	array<pair<unsigned int, unsigned int>> incorrect(64);
-	array<pair<unsigned int, unsigned int>> half_correct(4);
 	array<pair<unsigned int, string>> unparseable_context(4);
 	std::atomic_uint total(0);
 	std::atomic_uint answered(0);
@@ -728,15 +732,14 @@ bool run_ruletaker_experiments(
 				std::ref(parser), std::ref(proof_prior),
 				std::ref(names), std::ref(seed_entities),
 				std::ref(incorrect_question_ids_lock),
-				std::ref(incorrect), std::ref(half_correct),
-				std::ref(unparseable_context),
+				std::ref(incorrect), std::ref(unparseable_context),
 				std::ref(total), std::ref(answered),
 				std::ref(num_threads_reading_context),
 				std::ref(num_threads_running));
 	}
 
 	unsigned int context_id = 0;
-	auto process_ruletaker_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, bool>>& questions)
+	auto process_ruletaker_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, ruletaker_label>>& questions)
 	{
 		if (context_queue_length + 1 > MAX_CONTEXT_COUNT) {
 			fprintf(stderr, "run_ruletaker_experiments ERROR: Requested context queue length exceeds `MAX_CONTEXT_COUNT`.\n");
@@ -792,7 +795,7 @@ bool run_ruletaker_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
+			print_ruletaker_results(total, answered, incorrect, unparseable_context, incorrect_question_ids_lock);
 			stopwatch.start();
 		}
 	}
@@ -804,7 +807,7 @@ bool run_ruletaker_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
+			print_ruletaker_results(total, answered, incorrect, unparseable_context, incorrect_question_ids_lock);
 			stopwatch.start();
 		}
 	}
@@ -814,7 +817,7 @@ bool run_ruletaker_experiments(
 			workers[i].join();
 		} catch (...) { }
 	}
-	print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
+	print_ruletaker_results(total, answered, incorrect, unparseable_context, incorrect_question_ids_lock);
 	delete[] workers;
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
@@ -851,7 +854,6 @@ bool run_ruletaker_experiments_single_threaded(
 	std::minstd_rand prng_engine = core::engine;
 	std::mutex incorrect_question_ids_lock;
 	array<pair<unsigned int, unsigned int>> incorrect(64);
-	array<pair<unsigned int, unsigned int>> half_correct(4);
 	array<pair<unsigned int, string>> unparseable_context(4);
 	std::atomic_uint total(0);
 	std::atomic_uint answered(0);
@@ -911,11 +913,10 @@ bool run_ruletaker_experiments_single_threaded(
 			context_queue_start, question_queue_start, context_queue_length,
 			question_queue_length, work_queue_lock, work_queue_cv, prng_engine,
 			corpus, parser, proof_prior, names, seed_entities,
-			incorrect_question_ids_lock, incorrect, half_correct,
-			unparseable_context, total, answered, num_threads_reading_context,
-			num_threads_running);
+			incorrect_question_ids_lock, incorrect, unparseable_context, total,
+			answered, num_threads_reading_context, num_threads_running);
 
-	print_ruletaker_results(total, answered, incorrect, half_correct, unparseable_context, incorrect_question_ids_lock);
+	print_ruletaker_results(total, answered, incorrect, unparseable_context, incorrect_question_ids_lock);
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
 	for (unsigned int i = question_queue_start; i < question_queue_length; i++)

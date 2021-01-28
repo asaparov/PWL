@@ -2397,7 +2397,7 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "ruletaker/birds-electricity/test_rephrased.jsonl", 16);
+run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl", 16);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
