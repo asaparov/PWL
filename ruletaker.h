@@ -24,7 +24,12 @@ enum class ruletaker_reader_state {
 	START,
 	ROOT_OBJECT,
 	QUESTIONS,
-	QUESTION
+	QUESTION,
+	TRIPLES,
+	TRIPLE,
+	PROOFS_WITH_INTERMEDIATES,
+	INTERMEDIATES,
+	INTERMEDIATE
 };
 
 enum class ruletaker_label : uint_fast8_t {
@@ -59,6 +64,16 @@ inline bool begin_object(const position& pos, ruletaker_reader& reader) {
 		reader.state = ruletaker_reader_state::QUESTIONS;
 	} else if (reader.state == ruletaker_reader_state::QUESTIONS) {
 		reader.state = ruletaker_reader_state::QUESTION;
+	} else if (reader.state == ruletaker_reader_state::QUESTION) {
+		reader.state = ruletaker_reader_state::PROOFS_WITH_INTERMEDIATES;
+	} else if (reader.state == ruletaker_reader_state::PROOFS_WITH_INTERMEDIATES) {
+		reader.state = ruletaker_reader_state::INTERMEDIATES;
+	} else if (reader.state == ruletaker_reader_state::INTERMEDIATES) {
+		reader.state = ruletaker_reader_state::INTERMEDIATE;
+	} else if (reader.state == ruletaker_reader_state::ROOT_OBJECT) {
+		reader.state = ruletaker_reader_state::TRIPLES;
+	} else if (reader.state == ruletaker_reader_state::TRIPLES) {
+		reader.state = ruletaker_reader_state::TRIPLE;
 	}
 	return true;
 }
@@ -76,6 +91,16 @@ inline bool end_object(const position& pos, ruletaker_reader& reader) {
 		reader.state = ruletaker_reader_state::QUESTIONS;
 	} else if (reader.state == ruletaker_reader_state::QUESTIONS) {
 		reader.state = ruletaker_reader_state::ROOT_OBJECT;
+	} else if (reader.state == ruletaker_reader_state::PROOFS_WITH_INTERMEDIATES) {
+		reader.state = ruletaker_reader_state::QUESTION;
+	} else if (reader.state == ruletaker_reader_state::INTERMEDIATES) {
+		reader.state = ruletaker_reader_state::PROOFS_WITH_INTERMEDIATES;
+	} else if (reader.state == ruletaker_reader_state::INTERMEDIATE) {
+		reader.state = ruletaker_reader_state::INTERMEDIATES;
+	} else if (reader.state == ruletaker_reader_state::TRIPLES) {
+		reader.state = ruletaker_reader_state::ROOT_OBJECT;
+	} else if (reader.state == ruletaker_reader_state::TRIPLE) {
+		reader.state = ruletaker_reader_state::TRIPLES;
 	}
 	return true;
 }
@@ -861,7 +886,7 @@ bool run_ruletaker_experiments_single_threaded(
 	std::atomic_uint num_threads_running(0);
 
 	unsigned int context_id = 0;
-	auto process_ruletaker_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, bool>>& questions)
+	auto process_ruletaker_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, ruletaker_label>>& questions)
 	{
 		if (context_queue_length + 1 > MAX_CONTEXT_COUNT) {
 			fprintf(stderr, "run_ruletaker_experiments_single_threaded ERROR: Requested context queue length exceeds `MAX_CONTEXT_COUNT`.\n");
