@@ -1243,7 +1243,10 @@ struct instantiation_tuple {
 			}
 		}
 
-		if (first_root == second_root) return true;
+		if (first_root == second_root) {
+			core::free(dummy[1]);
+			return true;
+		}
 
 		/* check if a cycle is created in the greater-than-or-equal graph */
 		array<bool> new_component(length);

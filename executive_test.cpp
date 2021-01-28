@@ -2379,17 +2379,17 @@ return EXIT_SUCCESS;*/
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, make_iid_uniform_distribution<hol_term>(100000)));
         auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
-                        0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.2, 0.2, 0.2,
-                        0.1099999, 0.01, 0.0000001, 0.27, 0.1099999, 0.1, 0.0000001, 0.2, 0.2,
+                        0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.58, 0.01, 0.01,
+                        0.1099999, 0.01, 0.0000001, 0.1999999, 0.27, 0.01, 0.0000001, 0.2, 0.2,
                         0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.00000000001);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
 	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.5);
 	auto conjunction_elimination_prior = make_levy_process(poisson_distribution(2.0), poisson_distribution(1.0));
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
-	auto term_indices_prior = make_levy_process(poisson_distribution(9.0), poisson_distribution(2.0));
+	auto term_indices_prior = make_levy_process(poisson_distribution(4.0), poisson_distribution(1.5));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.5);
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 1.0e-12);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
@@ -2397,7 +2397,7 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl", 16);
+run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl");
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
