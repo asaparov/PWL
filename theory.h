@@ -38,7 +38,7 @@ template<typename Formula>
 constexpr bool on_undo_filter_operands(const Formula* formula) { return true; }
 
 template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, unsigned int variable) { return true; }
+constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable) { return true; }
 
 enum class instance_type {
 	ANY,
@@ -54,6 +54,8 @@ struct instance {
 		hol_number number;
 		string* str;
 	};
+	unsigned int matching_types;
+	unsigned int mismatching_types;
 
 	static inline void swap(instance& first, instance& second) {
 		char* first_data = (char*) &first;
@@ -64,6 +66,8 @@ struct instance {
 
 	static inline void move(const instance& src, instance& dst) {
 		dst.type = src.type;
+		dst.matching_types = src.matching_types;
+		dst.mismatching_types = src.mismatching_types;
 		switch (src.type) {
 		case instance_type::ANY: return;
 		case instance_type::CONSTANT: dst.constant = src.constant; return;
@@ -93,6 +97,8 @@ inline bool operator == (const instance& first, const instance& second) {
 inline instance instance_any() {
 	instance i;
 	i.type = instance_type::ANY;
+	i.matching_types = 0;
+	i.mismatching_types = 0;
 	return i;
 }
 
@@ -100,6 +106,8 @@ inline instance instance_constant(unsigned int constant) {
 	instance i;
 	i.type = instance_type::CONSTANT;
 	i.constant = constant;
+	i.matching_types = 0;
+	i.mismatching_types = 0;
 	return i;
 }
 
@@ -107,6 +115,8 @@ inline instance instance_number(hol_number number) {
 	instance i;
 	i.type = instance_type::NUMBER;
 	i.number = number;
+	i.matching_types = 0;
+	i.mismatching_types = 0;
 	return i;
 }
 
@@ -115,6 +125,8 @@ inline instance instance_number(int64_t integer, uint64_t decimal) {
 	i.type = instance_type::NUMBER;
 	i.number.integer = integer;
 	i.number.decimal = decimal;
+	i.matching_types = 0;
+	i.mismatching_types = 0;
 	return i;
 }
 
@@ -122,6 +134,8 @@ inline instance instance_string(string* str) {
 	instance i;
 	i.type = instance_type::STRING;
 	i.str = str;
+	i.matching_types = 0;
+	i.mismatching_types = 0;
 	return i;
 }
 
@@ -4579,7 +4593,7 @@ private:
 
 					existential_intro_nodes.remove(index_of(existential_intro_nodes, c.intro_node.value));
 					c.intro_node.key->reference_count--;
-					on_undo_filter_constants(*this, c.intro_node.key->quantifier.operand, c.intro_node.key->quantifier.variable, std::forward<Args>(visitor)...);
+					on_undo_filter_constants(*this, c.intro_node.key->quantifier.operand, term, c.intro_node.key->quantifier.variable, std::forward<Args>(visitor)...);
 					continue;
 				}
 			case change_type::DISJUNCTION_INTRO_NODE:
@@ -6701,6 +6715,8 @@ private:
 		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
 			if (ground_concepts[i].types.keys != nullptr) {
 				constants[constants.length].type = instance_type::CONSTANT;
+				constants[constants.length].matching_types = 0;
+				constants[constants.length].mismatching_types = 0;
 				constants[constants.length++].constant = new_constant_offset + i;
 
 				for (const auto& entry : ground_concepts[i].function_values) {
@@ -6727,9 +6743,13 @@ private:
 			return false;
 		for (hol_number number : numbers) {
 			constants[constants.length].type = instance_type::NUMBER;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
 			constants[constants.length++].number = number;
 		} for (string* str : strings) {
 			constants[constants.length].type = instance_type::STRING;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
 			constants[constants.length++].str = str;
 		}
 
@@ -10328,10 +10348,6 @@ private:
 				unsigned int old_index_count = indices.length;
 				if (!filter_operands(canonicalized, indices, std::forward<Args>(args)...)) return NULL;
 
-				Formula* negated_conjunction = Formula::new_not(canonicalized);
-				if (negated_conjunction == NULL) return NULL;
-				canonicalized->reference_count++;
-
 				for (unsigned int index : indices) {
 					unsigned int index_minus_one = index - 1;
 					Proof* operand = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index_minus_one], set_diff, new_constant, std::forward<Args>(args)...);
@@ -10340,7 +10356,6 @@ private:
 						Proof* axiom = ProofCalculus::new_axiom(canonicalized);
 						if (axiom == NULL) {
 							/* undo the changes made by the recursive call to `make_proof` */
-							core::free(*negated_conjunction); if (negated_conjunction->reference_count == 0) core::free(negated_conjunction);
 							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
 						}
 						axiom->reference_count++;
@@ -10349,13 +10364,15 @@ private:
 						core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 						if (proof == NULL) {
 							/* undo the changes made by the recursive call to `make_proof` */
-							core::free(*negated_conjunction); if (negated_conjunction->reference_count == 0) core::free(negated_conjunction);
 							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
 						}
 						core::free(*operand); if (operand->reference_count == 0) core::free(operand);
 						/* record the formula with this negated conjunction node */
+						Formula* negated_conjunction = Formula::new_not(canonicalized);
+						if (negated_conjunction == NULL) return NULL;
+						canonicalized->reference_count++;
+
 						negated_conjunction_nodes[negated_conjunction_nodes.length++] = { negated_conjunction, proof };
-						negated_conjunction->reference_count++;
 						proof->reference_count++;
 						return proof;
 					}
@@ -10365,7 +10382,6 @@ private:
 
 				/* we couldn't find a disproof of any of the conjuncts */
 				finished_constants(canonicalized, old_index_count, std::forward<Args>(args)...);
-				core::free(*negated_conjunction); if (negated_conjunction->reference_count == 0) core::free(negated_conjunction);
 				return NULL;
 			}
 
@@ -11703,6 +11719,8 @@ private:
 		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
 			if (ground_concepts[i].types.keys != nullptr) {
 				constants[constants.length].type = instance_type::CONSTANT;
+				constants[constants.length].matching_types = 0;
+				constants[constants.length].mismatching_types = 0;
 				constants[constants.length++].constant = new_constant_offset + i;
 
 				for (const auto& entry : ground_concepts[i].function_values) {
@@ -11725,14 +11743,20 @@ private:
 			if (!numbers.contains(number) && !numbers.add(number))
 				return nullptr;
 		}
+		constants[constants.length].matching_types = 0;
+		constants[constants.length].mismatching_types = 0;
 		constants[constants.length++].type = instance_type::ANY;
 		if (!constants.ensure_capacity(constants.length + numbers.length + strings.length))
 			return nullptr;
 		for (hol_number number : numbers) {
 			constants[constants.length].type = instance_type::NUMBER;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
 			constants[constants.length++].number = number;
 		} for (string* str : strings) {
 			constants[constants.length].type = instance_type::STRING;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
 			constants[constants.length++].str = str;
 		}
 		shuffle(constants);
@@ -12218,18 +12242,6 @@ inline bool contains_any(const array<instance>& constants) {
 	return index_of_any(constants) < constants.length;
 }
 
-inline bool contains_constant(const array<instance>& constants, unsigned int constant) {
-	return index_of_constant(constants, constant) < constants.length;
-}
-
-inline bool contains_number(const array<instance>& constants, hol_number number) {
-	return index_of_number(constants, number) < constants.length;
-}
-
-inline bool contains_string(const array<instance>& constants, string* str) {
-	return index_of_string(constants, str) < constants.length;
-}
-
 template<typename ProofCalculus, typename Canonicalizer>
 inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
@@ -12266,24 +12278,24 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				swap(left, right);
 			if (right->type == TermType::CONSTANT) {
 				unsigned int constant_id = right->constant;
-				if (!contains_constant(constants, constant_id) && (!contains_any(constants) || T.ground_concepts[constant_id - T.new_constant_offset].types.keys != nullptr))
+				unsigned int index = index_of_constant(constants, constant_id);
+				if (index == constants.length && (!contains_any(constants) || T.ground_concepts[constant_id - T.new_constant_offset].types.keys != nullptr))
 					return false;
-				constants[0].type = instance_type::CONSTANT;
-				constants[0].constant = right->constant;
+				move(constants[index], constants[0]);
 				constants.length = 1;
 			} else if (right->type == TermType::NUMBER) {
 				hol_number number = right->number;
-				if (!contains_number(constants, number) && !contains_any(constants))
+				unsigned int index = index_of_number(constants, number);
+				if (index == constants.length && !contains_any(constants))
 					return false;
-				constants[0].type = instance_type::NUMBER;
-				constants[0].number = right->number;
+				move(constants[index], constants[0]);
 				constants.length = 1;
 			} else if (right->type == TermType::STRING) {
 				string* str = &right->str;
-				if (!contains_string(constants, str) && !contains_any(constants))
+				unsigned int index = index_of_string(constants, str);
+				if (index == constants.length && !contains_any(constants))
 					return false;
-				constants[0].type = instance_type::STRING;
-				constants[0].str = &right->str;
+				move(constants[index], constants[0]);
 				constants.length = 1;
 			} else if (right->type == TermType::VARIABLE) {
 				/* no-op */
@@ -12377,10 +12389,10 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 							/* we found a different concept with this definition */
 							free(*new_right); if (new_right->reference_count == 0) free(new_right);
 							unsigned int constant_id = T.new_constant_offset + i;
-							if (!contains_constant(constants, constant_id) && (!contains_any(constants) || T.ground_concepts[i].types.keys != nullptr))
+							unsigned int index = index_of_constant(constants, constant_id);
+							if (index == constants.length && (!contains_any(constants) || T.ground_concepts[i].types.keys != nullptr))
 								return false;
-							constants[0].type = instance_type::CONSTANT;
-							constants[0].constant = constant_id;
+							move(constants[index], constants[0]);
 							constants.length = 1;
 							return true;
 						}
@@ -12622,7 +12634,13 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				free(*new_left); if (new_left->reference_count == 0) free(new_left);
 			}
 		}
-	} else if (formula->type == FormulaType::UNARY_APPLICATION) {
+	} else if (formula->type == FormulaType::UNARY_APPLICATION || (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::UNARY_APPLICATION)) {
+		bool negated = false;
+		if (formula->type == FormulaType::NOT) {
+			formula = formula->unary.operand;
+			negated = true;
+		}
+
 		Term* left = formula->binary.left;
 		Term* right = formula->binary.right;
 		if (left->type == TermType::VARIABLE && left->variable == variable) {
@@ -12631,6 +12649,27 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				unsigned int index = index_of_constant(constants, right->constant);
 				if (index < constants.length)
 					constants.remove(index);
+
+				/* count the number of matching and mismatching types */
+				if (right->constant >= T.new_constant_offset) {
+					const concept<ProofCalculus>& c = T.ground_concepts[right->constant - T.new_constant_offset];
+					for (unsigned int i = 0; i < constants.length; i++) {
+						if (constants[i].type != instance_type::CONSTANT) continue;
+						for (const auto& entry : c.types) {
+							if (!negated && entry.key.binary.left->type == TermType::CONSTANT && entry.key.binary.left->constant == constants[i].constant) {
+								constants[i].matching_types++;
+							} else {
+								constants[i].mismatching_types++;
+							}
+						} for (const auto& entry : c.negated_types) {
+							if (negated && entry.key.binary.left->type == TermType::CONSTANT && entry.key.binary.left->constant == constants[i].constant) {
+								constants[i].matching_types++;
+							} else {
+								constants[i].mismatching_types++;
+							}
+						}
+					}
+				}
 			}
 			/* make sure x could be a set in `x(y)` */
 			for (unsigned int i = 0; i < constants.length; i++) {
@@ -12641,7 +12680,7 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 					i--;
 				}
 				/* make sure `constants[i].constant` is not the arg1 of a name event */
-				else if (constants[i].constant >= T.new_constant_offset) {
+				else if (!negated && constants[i].constant >= T.new_constant_offset) {
 					for (Proof* proof : T.ground_concepts[constants[i].constant - T.new_constant_offset].definitions) {
 						if (proof->formula->binary.right->type == FormulaType::UNARY_APPLICATION
 						 && proof->formula->binary.right->binary.left->type == TermType::CONSTANT
@@ -12657,7 +12696,7 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 			}
 
 			/* check to make sure the args are type-correct */
-			if (right->type == TermType::CONSTANT) {
+			if (!negated && right->type == TermType::CONSTANT) {
 				/* if arg1 is a `name` constant, `left` cannot be `name` */
 				Term* arg1 = T.get_arg(right->constant, (unsigned int) built_in_predicates::ARG1);
 				if (arg1 != nullptr && arg1->type == TermType::CONSTANT && T.is_name_event(arg1->constant)) {
@@ -12669,8 +12708,9 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				Term* arg2 = T.get_arg(right->constant, (unsigned int) built_in_predicates::ARG2);
 				if (arg2 != nullptr) {
 					if (arg2->type == TermType::STRING) {
-						if (contains_constant(constants, (unsigned int) built_in_predicates::NAME)) {
-							constants[0] = instance_constant((unsigned int) built_in_predicates::NAME);
+						unsigned int index = index_of_constant(constants, (unsigned int) built_in_predicates::NAME);
+						if (index < constants.length) {
+							move(constants[index], constants[0]);
 							constants.length = 1;
 						} else {
 							return false;
@@ -12712,12 +12752,35 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				}
 			}
 
+			if (!is_ambiguous(*left)) {
+				/* count the number of matching and mismatching types */
+				for (unsigned int i = 0; i < constants.length; i++) {
+					if (constants[i].type != instance_type::CONSTANT || constants[i].constant < T.new_constant_offset) continue;
+					const concept<ProofCalculus>& c = T.ground_concepts[constants[i].constant - T.new_constant_offset];
+					for (const auto& entry : c.types) {
+						if (!negated && *entry.key.binary.left == *left) {
+							constants[i].matching_types++;
+						} else {
+							constants[i].mismatching_types++;
+						}
+					} for (const auto& entry : c.negated_types) {
+						if (negated && *entry.key.binary.left == *left) {
+							constants[i].matching_types++;
+						} else {
+							constants[i].mismatching_types++;
+						}
+					}
+				}
+			}
+
 			for (unsigned int i = 0; i < constants.length; i++) {
 				if (constants[i].type == instance_type::ANY) continue;
 				if (constants[i].type != instance_type::CONSTANT) {
 					constants.remove(i--);
 					continue;
 				}
+				if (negated) continue;
+
 				/* check to make sure the args are type-correct */
 				unsigned int arg = constants[i].constant;
 				if (left->constant == (unsigned int) built_in_predicates::NAME) {

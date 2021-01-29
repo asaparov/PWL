@@ -16804,7 +16804,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 							for (unsigned int i = 0; i < current_left_length; i++) {
 								new_term->any_array.left.operands[i] = get_term(new_left_intersections[i][left_indices[i]]);
 								new_term->any_array.left.operands[i]->reference_count++;
-							} for (unsigned int i = current_left_length; i < min_length; i++) {
+							} for (unsigned int i = current_left_length; i < new_term->any_array.left.length; i++) {
 								new_term->any_array.left.operands[i] = get_term(all);
 								new_term->any_array.all->reference_count++;
 							}

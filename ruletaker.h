@@ -383,7 +383,7 @@ inline void print_theory(const Theory& T, const typename Theory::Proof* test_pro
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
-constexpr double PREDICT_UNKNOWN_THRESHOLD = 20.0;
+constexpr double PREDICT_UNKNOWN_THRESHOLD = 30.0;
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_ruletaker_experiments(bool& status,
@@ -451,9 +451,10 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id < 29 - 1)
+/*if (job.question_id < 11 - 1)
 {
 total++;
+free(job);
 continue;
 }*/
 
@@ -554,9 +555,10 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id == 140 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 1 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
+free(job);
 continue;
 }
 
