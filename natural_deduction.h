@@ -1088,9 +1088,6 @@ bool check_proof(proof_state<Formula>& out,
 			return false;
 		} else if (formula->type != FormulaType::AND || formula->array.length < 2) {
 			fprintf(stderr, "check_proof ERROR: Expected a conjunction.\n");
-			free(*formula);
-			if (formula->reference_count == 0)
-				free(formula);
 			return false;
 		}
 		if (proof.type == nd_step_type::CONJUNCTION_ELIMINATION_LEFT) {
@@ -1114,9 +1111,6 @@ bool check_proof(proof_state<Formula>& out,
 			for (unsigned int i = 0; i < conjuncts.length; i++)
 				conjuncts[i]->reference_count++;
 		}
-		free(*formula);
-		if (formula->reference_count == 0)
-			free(formula);
 		return pass_hypotheses(out.assumptions, operand_states[0]->assumptions);
 	case nd_step_type::DISJUNCTION_INTRODUCTION:
 		second_operand = map_const(proof.operands[1], std::forward<ProofMap>(proof_map)...);
@@ -1242,11 +1236,11 @@ bool check_proof(proof_state<Formula>& out,
 		if (operand_count != 2) {
 			return false;
 		} else if (operand_states[1]->formula->type == FormulaType::NOT
-		 && *operand_states[0]->formula == *operand_states[1]->formula->unary.operand)
+				&& *operand_states[0]->formula == *operand_states[1]->formula->unary.operand)
 		{
 			out.formula = Formula::new_false();
 		} else if (operand_states[0]->formula->type == FormulaType::NOT
-		 && *operand_states[1]->formula == *operand_states[0]->formula->unary.operand)
+				&& *operand_states[1]->formula == *operand_states[0]->formula->unary.operand)
 		{
 			out.formula = Formula::new_false();
 		} else { return false; }

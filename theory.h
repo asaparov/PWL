@@ -10180,14 +10180,12 @@ private:
 
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			if (Contradiction) {
-				if (!existential_intro_nodes.ensure_capacity(existential_intro_nodes.length + 1))
-					return NULL;
-
 				Term* constant;
 				Proof* exists_not_proof = make_exists_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->quantifier.operand, canonicalized->quantifier.variable, set_diff, constant, new_constant, std::forward<Args>(args)...);
 				if (exists_not_proof == NULL) return NULL;
 				if (constant->type == TermType::CONSTANT && constant->constant >= new_constant_offset
-				 && !ground_concepts[constant->constant - new_constant_offset].existential_intro_nodes.ensure_capacity(ground_concepts[constant->constant - new_constant_offset].existential_intro_nodes.length + 1))
+				 && (!existential_intro_nodes.ensure_capacity(existential_intro_nodes.length + 1)
+				  || !ground_concepts[constant->constant - new_constant_offset].existential_intro_nodes.ensure_capacity(ground_concepts[constant->constant - new_constant_offset].existential_intro_nodes.length + 1)))
 				{
 					free_proof(exists_not_proof, set_diff, std::forward<Args>(args)...);
 					core::free(*constant); if (constant->reference_count == 0) core::free(constant);
@@ -10336,9 +10334,6 @@ private:
 
 		} else if (canonicalized->type == FormulaType::AND) {
 			if (Contradiction) {
-				if (!negated_conjunction_nodes.ensure_capacity(negated_conjunction_nodes.length + 1))
-					return NULL;
-
 				array<unsigned int> indices(canonicalized->array.length);
 				for (unsigned int i = 0; i < canonicalized->array.length; i++)
 					indices[i] = i + 1;
@@ -10352,6 +10347,11 @@ private:
 					unsigned int index_minus_one = index - 1;
 					Proof* operand = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index_minus_one], set_diff, new_constant, std::forward<Args>(args)...);
 					if (operand != NULL) {
+						if (!negated_conjunction_nodes.ensure_capacity(negated_conjunction_nodes.length + 1)) {
+							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
+							return NULL;
+						}
+
 						/* we found a disproof of a conjunct */
 						Proof* axiom = ProofCalculus::new_axiom(canonicalized);
 						if (axiom == NULL) {
@@ -10366,14 +10366,19 @@ private:
 							/* undo the changes made by the recursive call to `make_proof` */
 							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
 						}
-						core::free(*operand); if (operand->reference_count == 0) core::free(operand);
+						proof->reference_count++;
+
 						/* record the formula with this negated conjunction node */
 						Formula* negated_conjunction = Formula::new_not(canonicalized);
-						if (negated_conjunction == NULL) return NULL;
+						if (negated_conjunction == NULL) {
+							core::free(*proof); core::free(proof);
+							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
+							return NULL;
+						}
 						canonicalized->reference_count++;
+						core::free(*operand); if (operand->reference_count == 0) core::free(operand);
 
 						negated_conjunction_nodes[negated_conjunction_nodes.length++] = { negated_conjunction, proof };
-						proof->reference_count++;
 						return proof;
 					}
 
@@ -10478,9 +10483,6 @@ private:
 				return proof;
 			}
 
-			if (!disjunction_intro_nodes.ensure_capacity(disjunction_intro_nodes.length + 1))
-				return NULL;
-
 			array<unsigned int> indices(canonicalized->array.length);
 			for (unsigned int i = 0; i < canonicalized->array.length; i++)
 				indices[i] = i + 1;
@@ -10493,6 +10495,11 @@ private:
 			for (unsigned int index : indices) {
 				Proof* operand = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index - 1], set_diff, new_constant, std::forward<Args>(args)...);
 				if (operand != NULL) {
+					if (!disjunction_intro_nodes.ensure_capacity(disjunction_intro_nodes.length + 1)) {
+						free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
+						return NULL;
+					}
+
 					/* we found a proof of a disjunct */
 					array<Formula*> other_disjuncts(max(1u, canonicalized->array.length - 1));
 					for (unsigned int i = 0; i < canonicalized->array.length; i++) {
@@ -10569,9 +10576,6 @@ private:
 				return proof;
 			}
 
-			if (!implication_intro_nodes.ensure_capacity(implication_intro_nodes.length + 1))
-				return NULL;
-
 			array<unsigned int> indices(2);
 			indices[0] = 1; indices[1] = 2;
 			indices.length = 2;
@@ -10584,6 +10588,11 @@ private:
 					if (left == NULL) {
 						if (!inconsistent_constant(canonicalized, indices[i], std::forward<Args>(args)...)) return NULL;
 						continue;
+					}
+
+					if (!implication_intro_nodes.ensure_capacity(implication_intro_nodes.length + 1)) {
+						free_proof(left, set_diff, std::forward<Args>(args)...);
+						return NULL;
 					}
 
 					Proof* axiom = ProofCalculus::new_axiom(canonicalized->binary.left);
@@ -10614,6 +10623,11 @@ private:
 					if (right == NULL) {
 						if (!inconsistent_constant(canonicalized, indices[i], std::forward<Args>(args)...)) return NULL;
 						continue;
+					}
+
+					if (!implication_intro_nodes.ensure_capacity(implication_intro_nodes.length + 1)) {
+						free_proof(right, set_diff, std::forward<Args>(args)...);
+						return NULL;
 					}
 
 					Proof* proof = ProofCalculus::new_implication_intro(right, ProofCalculus::new_axiom(canonicalized->binary.left));
