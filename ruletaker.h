@@ -383,7 +383,7 @@ inline void print_theory(const Theory& T, const typename Theory::Proof* test_pro
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
-constexpr double PREDICT_UNKNOWN_THRESHOLD = 30.0;
+constexpr double PREDICT_UNKNOWN_THRESHOLD = 50.0;
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_ruletaker_experiments(bool& status,
@@ -451,7 +451,7 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id < 11 - 1)
+/*if (job.question_id != 1 - 1 && job.question_id != 2 - 1 && job.question_id != 11 - 1 && job.question_id != 12 - 1 && job.question_id != 15 - 1 && job.question_id != 16 - 1)
 {
 total++;
 free(job);
