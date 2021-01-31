@@ -144,6 +144,9 @@ inline bool init(default_array_multiset<T>& multiset) {
 }
 
 template<typename T>
+inline void free_all(default_array_multiset<T>& a) { }
+
+template<typename T>
 struct default_hash_multiset {
 	hash_multiset<T, true> a;
 
@@ -191,6 +194,9 @@ inline bool init(default_hash_multiset<T>& multiset, const default_hash_multiset
 	multiset.a.sum = src.a.sum;
 	return true;
 }
+
+template<typename T>
+inline void free_all(default_hash_multiset<T>& a) { }
 
 template<typename T>
 inline unsigned int size(const default_array_multiset<T>& multiset) {
@@ -408,12 +414,12 @@ double log_probability(
 	return value;
 }
 
-template<bool AutomaticallyFree, typename T, template<typename> class Collection>
+template<bool AutomaticallyFree, typename T, typename Collection>
 inline double log_probability_ratio_old_cluster(
 		const hash_multiset<T, AutomaticallyFree>& tables,
 		const T& observation, unsigned int frequency,
 		const chinese_restaurant_process<T>& prior,
-		Collection<T>& old_clusters,
+		Collection& old_clusters,
 		unsigned int& old_cluster_count)
 {
 #if !defined(NDEBUG)
@@ -430,12 +436,12 @@ inline double log_probability_ratio_old_cluster(
 	}
 }
 
-template<bool AutomaticallyFree, typename T, template<typename> class Collection>
+template<bool AutomaticallyFree, typename T, typename Collection>
 inline double log_probability_ratio_new_cluster(
 		const hash_multiset<T, AutomaticallyFree>& tables,
 		const T& observation, unsigned int frequency,
 		const chinese_restaurant_process<T>& prior,
-		Collection<T>& new_clusters,
+		Collection& new_clusters,
 		unsigned int& new_cluster_count)
 {
 	bool contains;
@@ -453,14 +459,13 @@ inline double log_probability_ratio_new_cluster(
 	}
 }
 
-template<bool AutomaticallyFree, typename MultisetType,
-	template<typename> class Collection, typename T>
+template<bool AutomaticallyFree, typename MultisetType, typename Collection, typename T>
 double log_probability_ratio(
 		const hash_multiset<T, AutomaticallyFree>& tables,
 		const MultisetType& old_observations,
 		const MultisetType& new_observations,
 		const chinese_restaurant_process<T>& prior,
-		Collection<T>& old_clusters, Collection<T>& new_clusters)
+		Collection& old_clusters, Collection& new_clusters)
 {
 	unsigned int i = 0, j = 0; double value = 0.0;
 	unsigned int old_cluster_count = 0, new_cluster_count = 0;
@@ -567,6 +572,7 @@ struct dirichlet_process
 	};
 
 	typedef typename BaseDistribution::ObservationType ObservationType;
+	typedef default_array_multiset<ObservationType> ObservationCollection;
 	typedef prior_state PriorState;
 	typedef typename BaseDistribution::PriorStateChanges PriorStateChanges;
 
@@ -610,6 +616,15 @@ double log_probability(
 	value += log_probability(clusters, prior.base_distribution);
 	free_all(clusters);
 	return value;
+}
+
+template<typename MultisetType, typename BaseDistribution>
+inline double log_probability(
+		const MultisetType& restaurant_tables,
+		const dirichlet_process<BaseDistribution>& prior,
+		typename BaseDistribution::ObservationCollection& clusters)
+{
+	return log_probability(restaurant_tables, prior.restaurant, clusters);
 }
 
 template<typename MultisetType, typename BaseDistribution>
@@ -747,10 +762,11 @@ struct simple_constant_distribution
 		typename ConstantDistribution::PriorState constants;
 		typename PredicateDistribution::PriorState predicates;
 		hash_map<unsigned int, hash_multiset<hol_term>> types;
+		hash_multiset<hol_term> root_types;
 
-		prior_state() : types(16) { }
+		prior_state() : types(16), root_types(16) { }
 
-		prior_state(const prior_state& src) : constants(src.constants), predicates(src.predicates), types(src.types.table.capacity) {
+		prior_state(const prior_state& src) : constants(src.constants), predicates(src.predicates), types(src.types.table.capacity), root_types(src.root_types.counts.table.capacity) {
 			for (const auto& entry : src.types) {
 				bool contains; unsigned int bucket;
 				types.get(entry.key, contains, bucket);
@@ -761,6 +777,8 @@ struct simple_constant_distribution
 				types.table.keys[bucket] = entry.key;
 				types.table.size++;
 			}
+			root_types.counts.put_all(src.root_types.counts);
+			root_types.sum = src.root_types.sum;
 		}
 
 		~prior_state() {
@@ -781,6 +799,7 @@ struct simple_constant_distribution
 				predicates.subtract(changes.predicates);
 				return false;
 			}
+			array_multiset<hol_term> new_root_types(8);
 			for (unsigned int i = 0; i < changes.types.size; i++) {
 				bool contains; unsigned int index;
 				hash_multiset<hol_term>& value = types.get(changes.types.keys[i], contains, index);
@@ -795,13 +814,36 @@ struct simple_constant_distribution
 					types.table.keys[index] = changes.types.keys[i];
 					types.table.size++;
 				}
-				if (!value.add(changes.types.values[i])) {
+
+				if (!value.counts.check_size(value.counts.table.size + changes.types.values[i].counts.size)
+				 || !new_root_types.counts.ensure_capacity(new_root_types.counts.size + changes.types.values[i].counts.size))
+				{
 					constants.subtract(changes.constants);
 					predicates.subtract(changes.predicates);
 					for (unsigned int j = 0; j < i; j++)
 						types.get(changes.types.keys[j]).subtract(changes.types.values[j]);
 					return false;
 				}
+				for (const auto& entry : changes.types.values[i].counts) {
+					unsigned int& count = value.counts.get(entry.key, contains, index);
+					if (contains) {
+						count += entry.value;
+					} else {
+						value.counts.values[index] = entry.value;
+						value.counts.table.keys[index] = entry.key;
+						value.counts.table.size++;
+						new_root_types.add(entry.key);
+					}
+					value.sum += entry.value;
+				}
+			}
+
+			if (!root_types.add(new_root_types)) {
+				constants.subtract(changes.constants);
+				predicates.subtract(changes.predicates);
+				for (unsigned int j = 0; j < changes.types.size; j++)
+					types.get(changes.types.keys[j]).subtract(changes.types.values[j]);
+				return false;
 			}
 			return true;
 		}
@@ -822,7 +864,32 @@ struct simple_constant_distribution
 				if (!contains)
 					fprintf(stderr, "simple_constant_distribution.prior_state.subtract WARNING: The given key does not exist in `types`.\n");
 #endif
-				value.subtract<true>(changes.types.values[i]);
+
+				const array_multiset<hol_term>& items = changes.types.values[i];
+				for (unsigned int j = 0; j < items.counts.size; j++) {
+					bool contains; unsigned int bucket;
+					unsigned int& count = value.counts.get(items.counts.keys[j], contains, bucket);
+#if !defined(NDEBUG)
+					if (!contains || count < items.counts.values[j]) {
+						fprintf(stderr, "simple_constant_distribution.prior_state.subtract "
+								"WARNING: Attempted to remove more items from a bin than it contains.\n");
+						count = 0;
+					} else count -= items.counts.values[j];
+#else
+					count -= items.counts.values[j];
+#endif
+					if (count == 0) {
+						value.counts.remove_at(bucket);
+						bucket = root_types.counts.table.index_of(items.counts.keys[j]);
+						if (root_types.counts.values[bucket] == 1) {
+							root_types.counts.table.remove_at(bucket);
+						} else {
+							root_types.counts.values[bucket]--;
+						}
+						root_types.sum--;
+					}
+				}
+				value.sum -= items.sum;
 				if (value.sum == 0) {
 					free(value);
 					types.remove_at(index);
@@ -875,12 +942,20 @@ inline double log_probability(const ConstantCollection& constants,
 {
 	double value = log_probability(constants.constants, prior.constant_distribution)
 				 + log_probability(constants.predicates, prior.predicate_distribution);
+
+	typedef typename decltype(prior.type_distribution.base_distribution)::ObservationCollection Clusters;
+	Clusters clusters;
 	for (const auto& entry : constants.types) {
 #if defined(DEBUG_LOG_PROBABILITY)
 		fprintf(stderr, "log_probability of type distribution for constant %u:\n", entry.key);
 #endif
-		value += log_probability(entry.value, prior.type_distribution);
+		value += log_probability(entry.value, prior.type_distribution, clusters);
 	}
+#if defined(DEBUG_LOG_PROBABILITY)
+		fprintf(stderr, "log_probability of root type distribution:\n");
+#endif
+	value += log_probability(clusters, prior.type_distribution.base_distribution);
+	free_all(clusters);
 	return value;
 }
 
@@ -898,50 +973,56 @@ inline double log_probability_ratio(const ObservationCollection& existing_consta
 	static array_multiset<hol_term> empty_type_prior_state_changes(1);
 
 	unsigned int i = 0, j = 0; bool contains;
-	default_array<hol_term> old_prior_changes, new_prior_changes;
+	array_multiset<hol_term> old_clusters(8);
+	array_multiset<hol_term> new_clusters(8);
 	while (i < old_constants.types.size && j < new_constants.types.size) {
 		if (old_constants.types.keys[i] == new_constants.types.keys[j]) {
 			const hash_multiset<hol_term>& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
 			if (contains) {
-				value += log_probability_ratio(existing, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+				value += log_probability_ratio(existing, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution.restaurant, old_clusters, new_clusters);
 			} else {
-				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], new_constants.types.values[j], prior.type_distribution.restaurant, old_clusters, new_clusters);
 			}
 			i++; j++;
 		} else if (old_constants.types.keys[i] < new_constants.types.keys[j]) {
 			const hash_multiset<hol_term>& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
 			if (contains) {
-				value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+				value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution.restaurant, old_clusters, new_clusters);
 			} else {
-				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+				value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution.restaurant, old_clusters, new_clusters);
 			}
 			i++;
 		} else {
 			const hash_multiset<hol_term>& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
 			if (contains) {
-				value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+				value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution.restaurant, old_clusters, new_clusters);
 			} else {
-				value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+				value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution.restaurant, old_clusters, new_clusters);
 			}
 			j++;
 		}
 	} while (i < old_constants.types.size) {
 		const hash_multiset<hol_term>& existing = existing_constants.types.get(old_constants.types.keys[i], contains);
 		if (contains) {
-			value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+			value += log_probability_ratio(existing, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution.restaurant, old_clusters, new_clusters);
 		} else {
-			value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+			value += log_probability_ratio(empty_type_prior_state, old_constants.types.values[i], empty_type_prior_state_changes, prior.type_distribution.restaurant, old_clusters, new_clusters);
 		}
 		i++;
 	} while (j < new_constants.types.size) {
 		const hash_multiset<hol_term>& existing = existing_constants.types.get(new_constants.types.keys[j], contains);
 		if (contains) {
-			value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+			value += log_probability_ratio(existing, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution.restaurant, old_clusters, new_clusters);
 		} else {
-			value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution, type_prior_state, old_prior_changes, new_prior_changes);
+			value += log_probability_ratio(empty_type_prior_state, empty_type_prior_state_changes, new_constants.types.values[j], prior.type_distribution.restaurant, old_clusters, new_clusters);
 		}
 		j++;
 	}
+
+	default_array<hol_term> old_prior_changes, new_prior_changes;
+	value += log_probability_ratio(existing_constants.root_types, old_clusters, new_clusters, prior.type_distribution.base_distribution, type_prior_state.base_prior_state, old_prior_changes, new_prior_changes);
+	free_all(old_prior_changes);
+	free_all(new_prior_changes);
 	return value;
 }
 
@@ -2377,19 +2458,20 @@ return EXIT_SUCCESS;*/
 	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
-			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0), make_dirichlet_process(1.0e-12, make_iid_uniform_distribution<hol_term>(100000)));
+			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
+			make_dirichlet_process(1.0e-12, make_dirichlet_process(100000.0, make_iid_uniform_distribution<hol_term>(100000))));
         auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
                         0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.58, 0.01, 0.01,
                         0.1099999, 0.01, 0.0000001, 0.1999999, 0.27, 0.01, 0.0000001, 0.2, 0.2,
                         0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.5);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
-	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.5);
+	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.8);
 	auto conjunction_elimination_prior = make_levy_process(poisson_distribution(2.0), poisson_distribution(1.0));
 	auto universal_introduction_prior = unif_distribution<unsigned int>();
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(4.0), poisson_distribution(1.5));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 1.0e-12);
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.5);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
