@@ -2471,7 +2471,7 @@ return EXIT_SUCCESS;*/
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(4.0), poisson_distribution(1.5));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.5);
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.0000001);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
