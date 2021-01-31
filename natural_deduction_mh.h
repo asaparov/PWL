@@ -1100,7 +1100,7 @@ bool propose_universal_elim(
 	unfixed_set_counter unfixed_set_count_change = {0};
 	Formula* old_antecedent_set_size_axiom = nullptr;
 	Formula* old_consequent_set_size_axiom = nullptr;
-	if (selected_edge.axiom->reference_count == 3) {
+	if (selected_edge.axiom->reference_count == 2) {
 		/* if this edge is removed from the set graph, two unfixed sets may also be freed */
 		bool size_axiom_is_used_in_proof = false;
 		for (Proof* size_axiom : T.sets.sets[selected_edge.consequent_set].size_axioms) {
@@ -1173,21 +1173,15 @@ bool propose_universal_elim(
 			+ unfixed_set_count_change.log_probability; /* log probability of selecting the set size when creating sets */
 
 	/* go ahead and compute the probability ratios and perform the accept/reject step */
-	selected_edge.axiom->reference_count++;
 	if (consequent->type == FormulaType::NOT) {
-		success = do_mh_universal_elim(T, proposed_proofs, observation_changes,
+		return do_mh_universal_elim(T, proposed_proofs, observation_changes,
 				make_universal_elim_proposal<true>(selected_edge, constant, new_axiom, *consequent->unary.operand, old_antecedent_set_size_axiom, old_consequent_set_size_axiom),
 				log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector);
 	} else {
-		success = do_mh_universal_elim(T, proposed_proofs, observation_changes,
+		return do_mh_universal_elim(T, proposed_proofs, observation_changes,
 				make_universal_elim_proposal<false>(selected_edge, constant, new_axiom, *consequent, old_antecedent_set_size_axiom, old_consequent_set_size_axiom),
 				log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector);
 	}
-	free(*new_axiom); if (new_axiom->reference_count == 0) free(new_axiom);
-	free(proposed_proofs); free(*selected_edge.axiom);
-	if (selected_edge.axiom->reference_count == 1)
-		T.sets.free_subset_axiom(selected_edge.axiom);
-	return success;
 }
 
 template<typename Formula, typename Canonicalizer,
@@ -2948,7 +2942,7 @@ template<
 	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_elim(
 		theory<natural_deduction<Formula>, Canonicalizer>& T,
-		const proof_transformations<Formula>& proposed_proofs,
+		proof_transformations<Formula>& proposed_proofs,
 		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_elim_proposal<Negated, Formula>& proposal,
 		double log_proposal_probability_ratio, ProofPrior& proof_prior,
@@ -2975,9 +2969,15 @@ bool do_mh_universal_elim(
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
-		if (!add_ground_axiom<Negated>(T, proposal.consequent_atom, proposal.constant, proposal.new_axiom))
+		if (!add_ground_axiom<Negated>(T, proposal.consequent_atom, proposal.constant, proposal.new_axiom)
+		 || !transform_proofs(proposed_proofs))
+		{
+			free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
+			free(proposed_proofs);
+			if (proposal.edge.axiom->reference_count == 1)
+				T.sets.free_subset_axiom(proposal.edge.axiom);
 			return false;
-		if (!transform_proofs(proposed_proofs)) return false;
+		}
 
 		for (auto& entry : observation_changes) {
 			T.observations.remove(entry.key);
@@ -2986,15 +2986,29 @@ bool do_mh_universal_elim(
 			entry.value->reference_count++;
 		}
 		proof_axioms.subtract(old_axioms);
-		if (!proof_axioms.add(new_axioms))
+		if (!proof_axioms.add(new_axioms)) {
+			free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
+			free(proposed_proofs);
+			if (proposal.edge.axiom->reference_count == 1)
+				T.sets.free_subset_axiom(proposal.edge.axiom);
 			return false;
+		}
+		free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
+		free(proposed_proofs);
+		if (proposal.edge.axiom->reference_count == 1)
+			T.sets.free_subset_axiom(proposal.edge.axiom);
+
 		/* TODO: we could keep track of the extra axioms within `theory` */
 		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
-			return false;
+		return sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes);
+	} else {
+		free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
+		free(proposed_proofs);
+		if (proposal.edge.axiom->reference_count == 1)
+			T.sets.free_subset_axiom(proposal.edge.axiom);
+		return true;
 	}
-	return true;
 }
 
 template<typename Formula, typename Canonicalizer,
