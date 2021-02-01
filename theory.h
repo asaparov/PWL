@@ -13488,7 +13488,8 @@ template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior>
 double log_joint_probability_of_truth(
 		theory<ProofCalculus, Canonicalizer>& T,
 		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
-		typename ProofCalculus::Language* logical_form, unsigned int num_samples,
+		typename ProofCalculus::Language* logical_form,
+		unsigned int num_samples, unsigned int num_restarts, unsigned int burn_in,
 		theory<ProofCalculus, Canonicalizer>& T_MAP,
 		typename ProofCalculus::Proof*& proof_MAP)
 {
@@ -13518,9 +13519,10 @@ double log_joint_probability_of_truth(
 
 	provability_collector<ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	double max_log_probability = collector.internal_collector.current_log_probability;
-	for (unsigned int t = 0; t < num_samples; t++)
-{
-fprintf(stderr, "DEBUG: t = %u\n", t);
+	for (unsigned int i = 0; i < num_restarts; i++) {
+		for (unsigned int t = 0; t < num_samples; t++)
+		{
+fprintf(stderr, "DEBUG: i = %u, t = %u\n", i, t);
 proof_axioms.check_proof_axioms(T);
 proof_axioms.check_universal_eliminations(T, collector);
 T.check_concept_axioms();
@@ -13533,21 +13535,27 @@ T.sets.check_set_ids();
 bool print_debug = false;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
-		do_mh_step(T, proof_prior, proof_axioms, collector);
-		if (collector.internal_collector.current_log_probability > max_log_probability) {
-			free(T_MAP); proof_map.clear(); formula_map.clear();
-			if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_MAP, proof_map, formula_map)) {
-				T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
-				proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
-				free(*collector.internal_collector.test_proof);
-				if (collector.internal_collector.test_proof->reference_count == 0)
-					free(collector.internal_collector.test_proof);
-				return -std::numeric_limits<double>::infinity();
+			do_mh_step(T, proof_prior, proof_axioms, collector);
+			if (collector.internal_collector.current_log_probability > max_log_probability) {
+				free(T_MAP); proof_map.clear(); formula_map.clear();
+				if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_MAP, proof_map, formula_map)) {
+					T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
+					proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
+					free(*collector.internal_collector.test_proof);
+					if (collector.internal_collector.test_proof->reference_count == 0)
+						free(collector.internal_collector.test_proof);
+					return -std::numeric_limits<double>::infinity();
+				}
+				proof_MAP = proof_map.get(collector.internal_collector.test_proof);
+				max_log_probability = collector.internal_collector.current_log_probability;
 			}
-			proof_MAP = proof_map.get(collector.internal_collector.test_proof);
-			max_log_probability = collector.internal_collector.current_log_probability;
 		}
-}
+
+		if (i + 1 < num_restarts) {
+			for (unsigned int t = 0; t < burn_in; t++)
+				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
+		}
+	}
 
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);

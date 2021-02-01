@@ -361,10 +361,19 @@ double log_probability(
 #endif
 		value += current_value;
 	}
-	double normalization = lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
-	if (prior.d == 0.0)
+	double normalization;
+	if (prior.alpha <= 1.0e11)
+		normalization = lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
+	else normalization = -(double) sum(observations) * log(prior.alpha + sum(observations));
+	if (prior.d == 0.0) {
 		normalization += prior.log_alpha * size(observations);
-	else normalization += prior.log_d * size(observations) + lgamma(prior.alpha/prior.d + size(observations)) - lgamma(prior.alpha/prior.d);
+	} else {
+		normalization += prior.log_d * size(observations);
+		double ratio = prior.alpha/prior.d;
+		if (ratio <= 1.0e11)
+			normalization += lgamma(ratio + size(observations)) - lgamma(ratio);
+		else normalization += (double) size(observations) * log(ratio + size(observations));
+	}
 #if defined(DEBUG_LOG_PROBABILITY)
 	fprintf(stderr, "  Prior: %lf.\n", normalization);
 #endif
@@ -400,10 +409,19 @@ double log_probability(
 #endif
 		value += current_value;
 	}
-	double normalization = lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
-	if (prior.d == 0.0)
+	double normalization;
+	if (prior.alpha <= 1.0e11)
+		normalization = lgamma(prior.alpha) - lgamma(prior.alpha + sum(observations));
+	else normalization = -(double) sum(observations) * log(prior.alpha + sum(observations));
+	if (prior.d == 0.0) {
 		normalization += prior.log_alpha * size(observations);
-	else normalization += prior.log_d * size(observations) + lgamma(prior.alpha/prior.d + size(observations)) - lgamma(prior.alpha/prior.d);
+	} else {
+		normalization += prior.log_d * size(observations);
+		double ratio = prior.alpha/prior.d;
+		if (ratio <= 1.0e11)
+			normalization += lgamma(ratio + size(observations)) - lgamma(ratio);
+		else normalization += (double) size(observations) * log(ratio + size(observations));
+	}
 #if defined(DEBUG_LOG_PROBABILITY)
 	fprintf(stderr, "  Prior: %lf.\n", normalization);
 #endif
@@ -512,9 +530,22 @@ double log_probability_ratio(
 		j++;
 	}
 
-	value += lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
-	if (prior.d != 0.0)
-		value += -lgamma(prior.alpha/prior.d + tables.counts.table.size) + lgamma(prior.alpha/prior.d + (tables.counts.table.size - old_cluster_count + new_cluster_count));
+	if (prior.alpha + tables.sum <= 1.0e11) {
+		value += lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
+	} else {
+		if (sum(new_observations) < sum(old_observations))
+			value += -((double) sum(new_observations) - sum(old_observations)) * log(prior.alpha + tables.sum);
+		else value += -((double) sum(new_observations) - sum(old_observations)) * log(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
+	}
+	if (prior.d != 0.0) {
+		if (prior.alpha/prior.d + tables.counts.table.size <= 1.0e11) {
+			value += -lgamma(prior.alpha/prior.d + tables.counts.table.size) + lgamma(prior.alpha/prior.d + (tables.counts.table.size - old_cluster_count + new_cluster_count));
+		} else {
+			if (new_cluster_count < old_cluster_count)
+				value += ((double) new_cluster_count - old_cluster_count) * log(prior.alpha/prior.d + tables.counts.table.size);
+			else value += ((double) new_cluster_count - old_cluster_count) * log(prior.alpha/prior.d + (tables.counts.table.size - old_cluster_count + new_cluster_count));
+		}
+	}
 	return value;
 }
 
@@ -882,7 +913,7 @@ struct simple_constant_distribution
 						value.counts.remove_at(bucket);
 						bucket = root_types.counts.table.index_of(items.counts.keys[j]);
 						if (root_types.counts.values[bucket] == 1) {
-							root_types.counts.table.remove_at(bucket);
+							root_types.counts.remove_at(bucket);
 						} else {
 							root_types.counts.values[bucket]--;
 						}
@@ -2459,7 +2490,7 @@ return EXIT_SUCCESS;*/
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
-			make_dirichlet_process(1.0e-12, make_dirichlet_process(1.0e12, make_iid_uniform_distribution<hol_term>(1000))));
+			make_dirichlet_process(1.0e-12, make_dirichlet_process(1.0e15, make_iid_uniform_distribution<hol_term>(1000))));
         auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
                         0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.58, 0.01, 0.01,
                         0.1099999, 0.01, 0.0000001, 0.1999999, 0.27, 0.01, 0.0000001, 0.2, 0.2,
@@ -2471,7 +2502,7 @@ return EXIT_SUCCESS;*/
 	auto universal_elimination_prior = chinese_restaurant_process<hol_term>(1.0, 0.0);
 	auto term_indices_prior = make_levy_process(poisson_distribution(4.0), poisson_distribution(1.5));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
-			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.0000001);
+			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.00001);
 	decltype(proof_prior)::PriorState proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
@@ -2479,7 +2510,7 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl");
+run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl", "ruletaker_results.txt");
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
