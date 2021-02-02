@@ -505,12 +505,12 @@ continue;
 				typedef typename Theory::Proof Proof;
 				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
 				Proof* proof_MAP_true; Proof* proof_MAP_false;
-				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 500, 4, 20, T_MAP_true, proof_MAP_true);
+				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 6, 20, T_MAP_true, proof_MAP_true);
 				for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 500, 4, 20, T_MAP_true, proof_MAP_true);
+					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 6, 20, T_MAP_true, proof_MAP_true);
 				}
 
 				hol_term* negated;
@@ -531,12 +531,12 @@ continue;
 				Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
 T_copy.print_axioms(stderr, *debug_terminal_printer);
 T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
-				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 500, 4, 20, T_MAP_false, proof_MAP_false);
+				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 6, 20, T_MAP_false, proof_MAP_false);
 				for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 500, 4, 20, T_MAP_false, proof_MAP_false);
+					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 6, 20, T_MAP_false, proof_MAP_false);
 				}
 				free(*negated); if (negated->reference_count == 0) free(negated);
 
@@ -575,7 +575,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 3 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 16 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
