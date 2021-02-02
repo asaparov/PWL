@@ -2949,14 +2949,41 @@ bool do_mh_universal_elim(
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector)
 {
+	typedef typename Formula::Type FormulaType;
+
 	/* compute the proof portion of the prior for both current and proposed theories */
 	typename ProofPrior::PriorStateChanges old_axioms, new_axioms;
-	array<Formula*> old_extra_observations(2);
+	array<Formula*> old_extra_observations(4);
 	array<Formula*> new_extra_observations(1);
 	if (proposal.old_antecedent_set_size_axiom != nullptr)
 		old_extra_observations[old_extra_observations.length++] = proposal.old_antecedent_set_size_axiom;
 	if (proposal.old_consequent_set_size_axiom != nullptr)
 		old_extra_observations[old_extra_observations.length++] = proposal.old_consequent_set_size_axiom;
+
+	if (proposal.edge.axiom->reference_count == 2) {
+		/* removing this universal quantifier could also remove axioms from the proof of the antecedent */
+		if (proposal.edge.grandchild->operands[1]->type == nd_step_type::CONJUNCTION_INTRODUCTION) {
+			for (nd_step<Formula>* conjunct : proposal.edge.grandchild->operands[1]->operand_array) {
+				if (conjunct->type == nd_step_type::AXIOM && conjunct->reference_count == 2
+				 && conjunct->formula->type == FormulaType::UNARY_APPLICATION
+				 && conjunct->formula->binary.right->type == FormulaType::CONSTANT
+				 && conjunct->formula->binary.right->constant >= T.new_constant_offset)
+				{
+					old_extra_observations.add(conjunct->formula);
+				}
+			}
+		} else {
+			nd_step<Formula>* conjunct = proposal.edge.grandchild->operands[1];
+			if (conjunct->type == nd_step_type::AXIOM && conjunct->reference_count == 2
+			 && conjunct->formula->type == FormulaType::UNARY_APPLICATION
+			 && conjunct->formula->binary.right->type == FormulaType::CONSTANT
+			 && conjunct->formula->binary.right->constant >= T.new_constant_offset)
+			{
+				old_extra_observations.add(conjunct->formula);
+			}
+		}
+	}
+
 	double proof_prior_diff = log_probability_ratio(proposed_proofs.transformed_proofs,
 			old_extra_observations, new_extra_observations,
 			proof_prior, proof_axioms, old_axioms, new_axioms, sample_collector);
@@ -2977,6 +3004,18 @@ bool do_mh_universal_elim(
 			if (proposal.edge.axiom->reference_count == 1)
 				T.sets.free_subset_axiom(proposal.edge.axiom);
 			return false;
+		}
+
+		for (Formula* old_formula : old_extra_observations) {
+			if (old_formula->type == FormulaType::UNARY_APPLICATION) {
+				old_formula->reference_count++;
+				T.template remove_unary_atom<false>(*old_formula);
+				free(*old_formula); if (old_formula->reference_count == 0) free(old_formula);
+			} else if (old_formula->type == FormulaType::NOT && old_formula->unary.operand->type == FormulaType::UNARY_APPLICATION) {
+				old_formula->reference_count++;
+				T.template remove_unary_atom<true>(*old_formula->unary.operand);
+				free(*old_formula); if (old_formula->reference_count == 0) free(old_formula);
+			}
 		}
 
 		for (auto& entry : observation_changes) {

@@ -3973,6 +3973,10 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 
 		array<unsigned int>& instances = (Negated ? instance_pair.value : instance_pair.key);
 		array_map<Term, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
+if (instances.length != 0) {
+core::free(*lifted_literal); core::free(lifted_literal);
+return false;
+}
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.ensure_capacity(ground_types.size + 1))
 		{
@@ -10021,9 +10025,9 @@ private:
 		   connected component containing `antecedent_set` may be moveable into
 		   a descendant of `consequent_set` */
 		hash_set<unsigned int> consequent_component(8);
-		if (!sets.get_strongly_connected_component(consequent_set, consequent_component))
+		if (!sets.get_strongly_connected_component(antecedent_set, consequent_component))
 			return false;
-		if (consequent_component.contains(antecedent_set))
+		if (consequent_component.contains(consequent_set))
 			return true;
 		/* check if any of the elements in `consequent_component` is provably an element of `antecedent_set` */
 		array<variable_assignment> possible_values(8);

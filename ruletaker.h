@@ -384,19 +384,23 @@ inline void print_theory(const Theory& T, const typename Theory::Proof* test_pro
 struct question_result {
 	unsigned int context_id;
 	unsigned int question_id;
-	double log_probability_diff;
+	bool is_true_possible;
+	bool is_false_possible;
 	ruletaker_label true_label;
 
 	static inline void swap(question_result& first, question_result& second) {
 		core::swap(first.context_id, second.context_id);
 		core::swap(first.question_id, second.question_id);
-		core::swap(first.log_probability_diff, second.log_probability_diff);
+		core::swap(first.is_true_possible, second.is_true_possible);
+		core::swap(first.is_false_possible, second.is_false_possible);
 		core::swap(first.true_label, second.true_label);
 	}
 };
 
 inline bool operator < (const question_result& first, const question_result& second) {
-	return fabs(first.log_probability_diff) < fabs(second.log_probability_diff);
+	if (first.context_id < second.context_id) return true;
+	else if (first.context_id > second.context_id) return false;
+	else return first.question_id < second.question_id;
 }
 
 inline bool operator == (const question_result& first, const question_result& second) {
@@ -406,7 +410,23 @@ inline bool operator == (const question_result& first, const question_result& se
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
-constexpr double PREDICT_UNKNOWN_THRESHOLD = 60.0;
+
+template<typename ProofCalculus, typename Canonicalizer>
+inline bool is_formula_possible(
+		theory<ProofCalculus, Canonicalizer>& T,
+		typename ProofCalculus::Language* logical_form)
+{
+	typedef typename ProofCalculus::Language Formula;
+	typedef typename ProofCalculus::Proof Proof;
+
+	unsigned int new_constant;
+	set_changes<Formula> set_diff;
+	Proof* new_proof = T.add_formula(logical_form, set_diff, new_constant);
+	if (new_proof == nullptr)
+		return false;
+	T.template remove_formula<true>(new_proof, set_diff);
+	return true;
+}
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_ruletaker_experiments(bool& status,
@@ -502,15 +522,12 @@ continue;
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
-				typedef typename Theory::Proof Proof;
-				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
-				Proof* proof_MAP_true; Proof* proof_MAP_false;
-				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 6, 20, T_MAP_true, proof_MAP_true);
-				for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
+				bool is_true_possible = is_formula_possible(job.T, logical_forms[0]);
+				for (unsigned int j = 0; !is_true_possible && j < 100; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 6, 20, T_MAP_true, proof_MAP_true);
+					is_true_possible = is_formula_possible(job.T, logical_forms[0]);
 				}
 
 				hol_term* negated;
@@ -519,7 +536,7 @@ continue;
 					status = false;
 					num_threads_running--;
 					work_queue_cv.notify_all();
-					free(job); free(T_copy); free(T_MAP_true);
+					free(job); free(T_copy);
 					total++;
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
@@ -528,42 +545,21 @@ continue;
 				/* for reproducibility, reset the PRNG state */
 				core::engine = context_queue[job.context_id].prng_engine;
 
-				Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
 T_copy.print_axioms(stderr, *debug_terminal_printer);
 T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
-				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 6, 20, T_MAP_false, proof_MAP_false);
-				for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
+				bool is_false_possible = is_formula_possible(T_copy, negated);
+				for (unsigned int j = 0; !is_false_possible && j < 100; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 6, 20, T_MAP_false, proof_MAP_false);
+					is_false_possible = is_formula_possible(T_copy, negated);
 				}
 				free(*negated); if (negated->reference_count == 0) free(negated);
 
 				results_lock.lock();
-				results.add({job.context_id, job.question_id, log_probability_true - log_probability_false, job.label});
+				results.add({job.context_id, job.question_id, is_true_possible, is_false_possible, job.label});
 				results_lock.unlock();
-
-				if (fabs(log_probability_true - log_probability_false) < PREDICT_UNKNOWN_THRESHOLD) {
-					if (job.label != ruletaker_label::UNKNOWN) {
-						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
-					}
-				} else if (log_probability_true > log_probability_false) {
-					if (job.label != ruletaker_label::TRUE) {
-						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
-					}
-				} else if (log_probability_false > log_probability_true) {
-					if (job.label != ruletaker_label::FALSE) {
-						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
-					}
-				}
-				free(T_MAP_true);
-				free(T_MAP_false);
 				total++;
-
 				free_logical_forms(logical_forms, parse_count);
 			} else {
 				total++;
@@ -575,7 +571,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 16 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id >= 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -731,17 +727,25 @@ inline void print_ruletaker_results(
 	}
 	array<pair<unsigned int, unsigned int>> incorrect(64);
 	for (const question_result& result : results) {
-		fprintf(out, "[%u, %u] %c %lf", result.context_id + 1, result.question_id + 1, label_to_char(result.true_label), result.log_probability_diff);
+		fprintf(out, "[%u, %u] %c %c %c",
+				result.context_id + 1, result.question_id + 1, label_to_char(result.true_label),
+				result.is_true_possible ? 'T' : 'F', result.is_false_possible ? 'T' : 'F');
 		bool correct = true;
-		if (fabs(result.log_probability_diff) < PREDICT_UNKNOWN_THRESHOLD) {
-			if (result.true_label != ruletaker_label::UNKNOWN)
-				correct = false;
-		} else if (result.log_probability_diff > 0.0) {
-			if (result.true_label != ruletaker_label::TRUE)
-				correct = false;
+		if (result.is_true_possible) {
+			if (result.is_false_possible) {
+				if (result.true_label != ruletaker_label::UNKNOWN)
+					correct = false;
+			} else {
+				if (result.true_label != ruletaker_label::TRUE)
+					correct = false;
+			}
 		} else {
-			if (result.true_label != ruletaker_label::FALSE)
+			if (result.is_false_possible) {
+				if (result.true_label != ruletaker_label::FALSE)
+					correct = false;
+			} else {
 				correct = false;
+			}
 		}
 
 		if (correct) {

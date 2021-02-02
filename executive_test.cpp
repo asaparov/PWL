@@ -2490,7 +2490,7 @@ return EXIT_SUCCESS;*/
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
-			make_dirichlet_process(1.0e-12, make_dirichlet_process(1.0e15, make_iid_uniform_distribution<hol_term>(1000))));
+			make_dirichlet_process(1.0e-12, make_dirichlet_process(1000.0, make_iid_uniform_distribution<hol_term>(1000))));
         auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
                         0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.58, 0.01, 0.01,
                         0.1099999, 0.01, 0.0000001, 0.1999999, 0.27, 0.01, 0.0000001, 0.2, 0.2,
