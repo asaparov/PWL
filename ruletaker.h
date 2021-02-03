@@ -493,12 +493,12 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id < 15 - 1)
+if (job.question_id < 5 - 1)
 {
 total++;
 free(job);
 continue;
-}*/
+}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -571,7 +571,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id >= 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 6 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -727,8 +727,10 @@ inline void print_ruletaker_results(
 	}
 	array<pair<unsigned int, unsigned int>> incorrect(64);
 	for (const question_result& result : results) {
-		fprintf(out, "[%u, %u] %c %c %c",
-				result.context_id + 1, result.question_id + 1, label_to_char(result.true_label),
+		if (result.context_id + 1 < 10)
+			fprintf(out, "[%u, %u]  ", result.context_id + 1, result.question_id + 1);
+		else fprintf(out, "[%u, %u] ", result.context_id + 1, result.question_id + 1);
+		fprintf(out, "%c %c %c", label_to_char(result.true_label),
 				result.is_true_possible ? 'T' : 'F', result.is_false_possible ? 'T' : 'F');
 		bool correct = true;
 		if (result.is_true_possible) {

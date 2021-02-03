@@ -1153,6 +1153,7 @@ struct simple_hol_term_distribution
 	double log_existential_probability;
 	double log_conjunction_probability;
 	double log_disjunction_probability;
+	double log_implication_probability;
 	double log_set_size_axiom_probability;
 	double log_arg1_probability;
 	double log_arg2_probability;
@@ -1163,6 +1164,7 @@ struct simple_hol_term_distribution
 	double log_quantified_existential_probability;
 	double log_quantified_conjunction_probability;
 	double log_quantified_disjunction_probability;
+	double log_quantified_implication_probability;
 	double log_quantified_set_size_axiom_probability;
 	double log_quantified_arg1_probability;
 	double log_quantified_arg2_probability;
@@ -1193,13 +1195,13 @@ struct simple_hol_term_distribution
 			double ground_literal_probability, double negated_expression_probability,
 			double universal_probability, double existential_probability,
 			double conjunction_probability, double disjunction_probability,
-			double set_size_axiom_probability, double arg1_probability,
-			double arg2_probability,
+			double implication_probability, double set_size_axiom_probability,
+			double arg1_probability, double arg2_probability,
 			double quantified_ground_literal_probability, double quantified_negated_expression_probability,
 			double quantified_universal_probability, double quantified_existential_probability,
 			double quantified_conjunction_probability, double quantified_disjunction_probability,
-			double quantified_set_size_axiom_probability, double quantified_arg1_probability,
-			double quantified_arg2_probability,
+			double quantified_implication_probability, double quantified_set_size_axiom_probability,
+			double quantified_arg1_probability, double quantified_arg2_probability,
 			double arg_constant_probability, double arg_number_probability,
 			double arg_string_probability, double negation_probability,
 			double unary_probability, double antecedent_stop_probability,
@@ -1210,6 +1212,7 @@ struct simple_hol_term_distribution
 		log_existential_probability(log(existential_probability)),
 		log_conjunction_probability(log(conjunction_probability)),
 		log_disjunction_probability(log(disjunction_probability)),
+		log_implication_probability(log(implication_probability)),
 		log_set_size_axiom_probability(log(set_size_axiom_probability)),
 		log_arg1_probability(log(arg1_probability)),
 		log_arg2_probability(log(arg2_probability)),
@@ -1219,6 +1222,7 @@ struct simple_hol_term_distribution
 		log_quantified_existential_probability(log(quantified_existential_probability)),
 		log_quantified_conjunction_probability(log(quantified_conjunction_probability)),
 		log_quantified_disjunction_probability(log(quantified_disjunction_probability)),
+		log_quantified_implication_probability(log(quantified_implication_probability)),
 		log_quantified_set_size_axiom_probability(log(quantified_set_size_axiom_probability)),
 		log_quantified_arg1_probability(log(quantified_arg1_probability)),
 		log_quantified_arg2_probability(log(quantified_arg2_probability)),
@@ -1237,10 +1241,10 @@ struct simple_hol_term_distribution
 		constant_distribution(constant_distribution),
 		set_size_distribution(set_size_distribution)
 	{
-		if (fabs(ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability - 1.0) > 1.0e-12)
-			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + set_size_axiom_probability + arg1_probability + arg2_probability` is not 1.\n");
-		if (fabs(quantified_ground_literal_probability + quantified_negated_expression_probability + quantified_universal_probability + quantified_existential_probability + quantified_conjunction_probability + quantified_disjunction_probability + quantified_set_size_axiom_probability + quantified_arg1_probability + quantified_arg2_probability - 1.0) > 1.0e-12)
-			fprintf(stderr, "simple_hol_term_distribution WARNING: `quantified_ground_literal_probability + quantified_negated_expression_probability + quantified_universal_probability + quantified_existential_probability + quantified_conjunction_probability + quantified_disjunction_probability + quantified_set_size_axiom_probability + quantified_arg1_probability + quantified_arg2_probability` is not 1.\n");
+		if (fabs(ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + implication_probability + set_size_axiom_probability + arg1_probability + arg2_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + implication_probability + set_size_axiom_probability + arg1_probability + arg2_probability` is not 1.\n");
+		if (fabs(quantified_ground_literal_probability + quantified_negated_expression_probability + quantified_universal_probability + quantified_existential_probability + quantified_conjunction_probability + quantified_disjunction_probability + quantified_implication_probability + quantified_set_size_axiom_probability + quantified_arg1_probability + quantified_arg2_probability - 1.0) > 1.0e-12)
+			fprintf(stderr, "simple_hol_term_distribution WARNING: `quantified_ground_literal_probability + quantified_negated_expression_probability + quantified_universal_probability + quantified_existential_probability + quantified_conjunction_probability + quantified_disjunction_probability + quantified_implication_probability + quantified_set_size_axiom_probability + quantified_arg1_probability + quantified_arg2_probability` is not 1.\n");
 		if (fabs(arg_constant_probability + arg_number_probability + arg_string_probability - 1.0) > 1.0e-12)
 			fprintf(stderr, "simple_hol_term_distribution WARNING: `arg_constant_probability + arg_number_probability + arg_string_probability` is not 1.\n");
 	}
@@ -1252,6 +1256,7 @@ struct simple_hol_term_distribution
 		log_existential_probability(src.log_existential_probability),
 		log_conjunction_probability(src.log_conjunction_probability),
 		log_disjunction_probability(src.log_disjunction_probability),
+		log_implication_probability(src.log_implication_probability),
 		log_set_size_axiom_probability(src.log_set_size_axiom_probability),
 		log_arg1_probability(src.log_arg1_probability),
 		log_arg2_probability(src.log_arg2_probability),
@@ -1261,6 +1266,7 @@ struct simple_hol_term_distribution
 		log_quantified_existential_probability(src.log_quantified_existential_probability),
 		log_quantified_conjunction_probability(src.log_quantified_conjunction_probability),
 		log_quantified_disjunction_probability(src.log_quantified_disjunction_probability),
+		log_quantified_implication_probability(src.log_quantified_implication_probability),
 		log_quantified_set_size_axiom_probability(src.log_quantified_set_size_axiom_probability),
 		log_quantified_arg1_probability(src.log_quantified_arg1_probability),
 		log_quantified_arg2_probability(src.log_quantified_arg2_probability),
@@ -1288,13 +1294,13 @@ inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, Set
 		double ground_literal_probability, double negated_expression_probability,
 		double universal_probability, double existential_probability,
 		double conjunction_probability, double disjunction_probability,
-		double set_size_axiom_probability, double arg1_probability,
-		double arg2_probability,
+		double implication_probability, double set_size_axiom_probability,
+		double arg1_probability, double arg2_probability,
 		double quantified_ground_literal_probability, double quantified_negated_expression_probability,
 		double quantified_universal_probability, double quantified_existential_probability,
 		double quantified_conjunction_probability, double quantified_disjunction_probability,
-		double quantified_set_size_axiom_probability, double quantified_arg1_probability,
-		double quantified_arg2_probability,
+		double quantified_implication_probability, double quantified_set_size_axiom_probability,
+		double quantified_arg1_probability, double quantified_arg2_probability,
 		double arg_constant_probability, double arg_number_probability,
 		double arg_string_probability, double negation_probability,
 		double unary_probability, double antecedent_stop_probability,
@@ -1305,13 +1311,13 @@ inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, Set
 			ground_literal_probability, negated_expression_probability,
 			universal_probability, existential_probability,
 			conjunction_probability, disjunction_probability,
-			set_size_axiom_probability, arg1_probability,
-			arg2_probability,
+			implication_probability, set_size_axiom_probability,
+			arg1_probability, arg2_probability,
 			quantified_ground_literal_probability, quantified_negated_expression_probability,
 			quantified_universal_probability, quantified_existential_probability,
 			quantified_conjunction_probability, quantified_disjunction_probability,
-			quantified_set_size_axiom_probability, quantified_arg1_probability,
-			quantified_arg2_probability,
+			quantified_implication_probability, quantified_set_size_axiom_probability,
+			quantified_arg1_probability, quantified_arg2_probability,
 			arg_constant_probability, arg_number_probability,
 			arg_string_probability, negation_probability,
 			unary_probability, antecedent_stop_probability,
@@ -1576,9 +1582,13 @@ double log_probability_helper(const hol_term* term,
 		value = (Quantified ? prior.log_quantified_negated_expression_probability : prior.log_negated_expression_probability);
 		value += log_probability_helper<Quantified, false>(term->unary.operand, prior, changes);
 		return value;
+	case hol_term_type::IF_THEN:
+		value = (Quantified ? prior.log_quantified_implication_probability : prior.log_implication_probability);
+		value += log_probability_helper<Quantified, false>(term->binary.left, prior, changes);
+		value += log_probability_helper<Quantified, false>(term->binary.right, prior, changes);
+		return value;
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
-	case hol_term_type::IF_THEN:
 	case hol_term_type::IFF:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -2486,14 +2496,14 @@ return EXIT_SUCCESS;*/
 	}
 
 	/* read the articles */
-	theory<natural_deduction<hol_term>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
+	theory<natural_deduction<hol_term, true>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
 			make_dirichlet_process(1.0e-12, make_dirichlet_process(1000.0, make_iid_uniform_distribution<hol_term>(1000))));
         auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.2),
-                        0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.58, 0.01, 0.01,
-                        0.1099999, 0.01, 0.0000001, 0.1999999, 0.27, 0.01, 0.0000001, 0.2, 0.2,
+                        0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.01, 0.57, 0.01, 0.01,
+                        0.1099999, 0.01, 0.0000001, 0.1999999, 0.26, 0.01, 0.01, 0.0000001, 0.2, 0.2,
                         0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 0.5);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
 	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.8);

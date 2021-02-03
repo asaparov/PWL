@@ -971,7 +971,8 @@ inline const nd_step<Formula>* map_const(
 	else return step;
 }
 
-template<typename BuiltInPredicates, typename Canonicalizer, typename Formula, typename... ProofMap>
+template<typename BuiltInPredicates, typename Canonicalizer,
+	bool Intuitionistic, typename Formula, typename... ProofMap>
 bool check_proof(proof_state<Formula>& out,
 		const nd_step<Formula>& proof,
 		proof_state<Formula>** operand_states,
@@ -1223,7 +1224,7 @@ bool check_proof(proof_state<Formula>& out,
 		 || operand_states[0]->formula->type != FormulaType::FALSE
 		 || second_operand->type != nd_step_type::AXIOM)
 			return false;
-		if (operand_states[1]->formula->type == FormulaType::NOT) {
+		if (!Intuitionistic && operand_states[1]->formula->type == FormulaType::NOT) {
 			out.formula = second_operand->formula->unary.operand;
 			out.formula->reference_count++;
 		} else {
@@ -1453,7 +1454,7 @@ bool compute_in_degrees(const nd_step<Formula>* proof,
 	return true;
 }
 
-template<typename BuiltInPredicates, typename Canonicalizer, typename Formula, typename... ProofMap>
+template<typename BuiltInPredicates, typename Canonicalizer, bool Intuitionistic, typename Formula, typename... ProofMap>
 Formula* compute_proof_conclusion(const nd_step<Formula>& proof, ProofMap&&... proof_map)
 {
 	/* first list the proof steps in reverse topological order */
@@ -1525,7 +1526,7 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof, ProofMap&&... p
 		}
 
 		/* check this proof step */
-		if (!check_proof<BuiltInPredicates, Canonicalizer>(state, *node, operand_states.data, operand_states.length, std::forward<ProofMap>(proof_map)...)) {
+		if (!check_proof<BuiltInPredicates, Canonicalizer, Intuitionistic>(state, *node, operand_states.data, operand_states.length, std::forward<ProofMap>(proof_map)...)) {
 			free_proof_states(proof_states);
 			return NULL;
 		}
@@ -1546,12 +1547,13 @@ Formula* compute_proof_conclusion(const nd_step<Formula>& proof, ProofMap&&... p
 	return formula;
 }
 
-template<typename BuiltInPredicates, typename Canonicalizer, typename Formula, typename... ProofMap>
+template<typename BuiltInPredicates, typename Canonicalizer,
+	bool Intuitionistic, typename Formula, typename... ProofMap>
 bool check_proof(const nd_step<Formula>& proof,
 		const Formula* expected_conclusion,
 		ProofMap&&... proof_map)
 {
-	Formula* actual_conclusion = compute_proof_conclusion<BuiltInPredicates, Canonicalizer>(proof, std::forward<ProofMap>(proof_map)...);
+	Formula* actual_conclusion = compute_proof_conclusion<BuiltInPredicates, Canonicalizer, Intuitionistic>(proof, std::forward<ProofMap>(proof_map)...);
 	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 /* TODO: for debugging; delete this */
@@ -1579,7 +1581,7 @@ bool new_nd_step(nd_step<Formula>*& step, nd_step_type type)
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer = identity_canonicalizer>
+template<typename Formula, bool IsIntuitionistic, typename Canonicalizer = identity_canonicalizer>
 struct natural_deduction
 {
 	typedef Formula Language;
@@ -1587,6 +1589,8 @@ struct natural_deduction
 	typedef nd_step_type ProofType;
 	typedef typename Formula::Term Term;
 	typedef Canonicalizer ProofCanonicalizer;
+
+	static constexpr bool Intuitionistic = IsIntuitionistic;
 
 	static inline Proof* new_axiom(Formula* axiom) {
 		return new_parameterized_step<nd_step_type::AXIOM>(axiom);
@@ -1646,7 +1650,7 @@ struct natural_deduction
 
 	static inline Proof* new_implication_intro(Proof* proof, Proof* assumption) {
 		if (assumption == NULL || assumption->type != nd_step_type::AXIOM) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(proof, assumption);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(proof, assumption);
 			return NULL;
 		}
 		return new_binary_step<nd_step_type::IMPLICATION_INTRODUCTION>(proof, assumption);
@@ -1675,7 +1679,7 @@ struct natural_deduction
 
 	static inline Proof* new_proof_by_contradiction(Proof* proof, Proof* assumption) {
 		if (assumption == NULL || assumption->type != nd_step_type::AXIOM) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(proof, assumption);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(proof, assumption);
 			return NULL;
 		}
 		return new_binary_step<nd_step_type::PROOF_BY_CONTRADICTION>(proof, assumption);
@@ -1783,13 +1787,13 @@ private:
 	template<nd_step_type Type>
 	static inline Proof* new_binary_step(Proof* left, Proof* right) {
 		if (left == NULL || right == NULL) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(left, right);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(left, right);
 			return NULL;
 		}
 
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(left, right);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(left, right);
 			return NULL;
 		}
 		step->reference_count = 0;
@@ -1799,7 +1803,7 @@ private:
 		left->reference_count++;
 		right->reference_count++;
 		if (!left->children.add(step) || !right->children.add(step)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(left, right);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(left, right);
 			free(*step); free(step); return NULL;
 		}
 		return step;
@@ -1808,13 +1812,13 @@ private:
 	template<nd_step_type Type>
 	static inline Proof* new_ternary_step(Proof* first, Proof* second, Proof* third) {
 		if (first == NULL || second == NULL || third == NULL) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(first, second, third);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(first, second, third);
 			return NULL;
 		}
 
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(first, second, third);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(first, second, third);
 			return NULL;
 		}
 		step->reference_count = 0;
@@ -1825,7 +1829,7 @@ private:
 		second->reference_count++;
 		third->reference_count++;
 		if (!first->children.add(step) || !second->children.add(step) || !third->children.add(step)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(first, second, third);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(first, second, third);
 			free(*step); free(step); return NULL;
 		}
 		return step;
@@ -1854,16 +1858,16 @@ private:
 	static inline Proof* new_array_step(Args&&... args) {
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(std::forward<Args>(args)...);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(std::forward<Args>(args)...);
 			return NULL;
 		}
 		step->reference_count = 0;
 		if (!array_init(step->operand_array, sizeof...(Args))) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(std::forward<Args>(args)...);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(std::forward<Args>(args)...);
 			free(step); return NULL;
 		}
 		if (!new_array_step_helper<0>(step, std::forward<Args>(args)...)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(std::forward<Args>(args)...);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(std::forward<Args>(args)...);
 			free(step->operand_array); free(step); return NULL;
 		}
 		step->operand_array.length = sizeof...(Args);
@@ -1875,18 +1879,18 @@ private:
 		if (operands.size() < MinOperandCount) {
 			fprintf(stderr, "natural_deduction.new_array_step ERROR: "
 					"This proof step requires at least two operands.\n");
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(operands);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(operands);
 			return NULL;
 		}
 
 		nd_step<Formula>* step;
 		if (!new_nd_step(step, Type)) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(operands);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(operands);
 			return NULL;
 		}
 		step->reference_count = 0;
 		if (!array_init(step->operand_array, operands.size())) {
-			natural_deduction<Formula, Canonicalizer>::free_proof_operands(operands);
+			natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(operands);
 			free(step); return NULL;
 		}
 		for (unsigned int i = 0; i < operands.size(); i++) {
@@ -1898,7 +1902,7 @@ private:
 					free(*operands[j]);
 				}
 				free(step->operand_array); free(step);
-				natural_deduction<Formula, Canonicalizer>::free_proof_operands(operands);
+				natural_deduction<Formula, Intuitionistic, Canonicalizer>::free_proof_operands(operands);
 				return NULL;
 			}
 		}

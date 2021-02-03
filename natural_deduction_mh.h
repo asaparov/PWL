@@ -65,14 +65,14 @@ inline bool init(proof_transformations<Formula>& transformations) {
 	return array_map_init(transformations.transformed_proofs, 16);
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool propose_transformation(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		proof_transformations<Formula>& proposed_proofs,
 		array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		nd_step<Formula>* old_step, nd_step<Formula>* new_step)
 {
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	array<Proof*> stack(16);
@@ -114,10 +114,10 @@ bool propose_transformation(
 	return true;
 }
 
-template<bool FirstSample, typename Formula, typename Canonicalizer>
+template<bool FirstSample, typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool select_axiom(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T,
-		const concept<natural_deduction<Formula>>& c,
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+		const concept<natural_deduction<Formula, Intuitionistic>>& c,
 		array<pair<uint_fast8_t, unsigned int>>& axiom_indices,
 		array<typename Formula::Term*>& selected_types,
 		array<typename Formula::Term*>& selected_negated_types,
@@ -191,9 +191,9 @@ inline bool get_axiom(
 	return conjunct_steps.add(relations.get(rel));
 }
 
-template<bool Negated, typename Formula, typename Canonicalizer>
+template<bool Negated, typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline const array<unsigned int>& get_concept_set(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term& a)
 {
 	typedef typename Formula::TermType TermType;
@@ -207,9 +207,9 @@ inline const array<unsigned int>& get_concept_set(
 	}
 }
 
-template<bool Negated, typename Formula>
+template<bool Negated, typename Formula, bool Intuitionistic>
 nd_step<Formula>* get_proof(
-		concept<natural_deduction<Formula>>& c,
+		concept<natural_deduction<Formula, Intuitionistic>>& c,
 		const typename Formula::Term& a)
 {
 	typedef typename Formula::Term Term;
@@ -242,10 +242,11 @@ nd_step<Formula>* get_proof(
 }
 
 template<bool FirstSample, bool Negated,
-	typename Formula, typename Canonicalizer>
+	typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline void get_satisfying_concepts_helper(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T, const typename Formula::Term* predicate,
-		const typename Formula::Term* arg1, const typename Formula::Term* arg2, array<unsigned int>& intersection)
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+		const typename Formula::Term* predicate, const typename Formula::Term* arg1,
+		const typename Formula::Term* arg2, array<unsigned int>& intersection)
 {
 	typedef typename Formula::TermType TermType;
 
@@ -267,9 +268,9 @@ inline void get_satisfying_concepts_helper(
 	}
 }
 
-template<bool FirstSample, typename Formula, typename Canonicalizer>
+template<bool FirstSample, typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool get_satisfying_concepts(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const Formula* formula, array<unsigned int>& intersection)
 {
 	typedef typename Formula::Type FormulaType;
@@ -334,9 +335,9 @@ inline void free_formulas(array<Formula*>& formulas) {
 	}
 }
 
-template<typename Formula>
+template<typename Formula, bool Intuitionistic>
 bool get_conjunct_step(const Formula* atom,
-		const concept<natural_deduction<Formula>>& instance,
+		const concept<natural_deduction<Formula, Intuitionistic>>& instance,
 		array<nd_step<Formula>*>& conjunct_steps)
 {
 	typedef typename Formula::Type FormulaType;
@@ -499,9 +500,9 @@ inline bool is_satisfying_antecedent(
 	return provably_consistent;
 }
 
-template<bool Negated, typename Formula, typename Canonicalizer>
+template<bool Negated, typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool get_satisfying_extensional_edges(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T,
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term& a,
 		unsigned int concept_id,
 		array<pair<unsigned int, unsigned int>>& satisfying_extensional_edges)
@@ -582,11 +583,11 @@ inline void on_old_size_axiom(
 { }
 
 template<
-	bool Negated, typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+	bool Negated, typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_universal_intro(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		typename Formula::Term& a,
 		unsigned int concept_id,
 		double& log_proposal_probability_ratio,
@@ -598,7 +599,7 @@ bool propose_universal_intro(
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	/* look for existing universally-quantified formulas that imply this formula */
@@ -883,17 +884,17 @@ void free_proofs(nd_step<Formula>** proofs, unsigned int count) {
 	}
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline nd_step<Formula>* make_grounded_conjunct(
-		const theory<natural_deduction<Formula>, Canonicalizer>& T,
-		const concept<natural_deduction<Formula>>& c,
+		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+		const concept<natural_deduction<Formula, Intuitionistic>>& c,
 		Formula* lifted_conjunct, unsigned int variable,
 		typename Formula::Term* constant)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 
 	/* first check if the grounded conjunct already exists as an axiom in the theory */
 	bool contains;
@@ -992,11 +993,11 @@ inline universal_elim_proposal<Negated, Formula> make_universal_elim_proposal(
 	return {edge, constant, new_axiom, consequent_atom, old_antecedent_set_size_axiom, old_consequent_set_size_axiom};
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_universal_elim(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const extensional_edge<Formula>& selected_edge,
 		double& log_proposal_probability_ratio,
 		ProofPrior& proof_prior,
@@ -1007,7 +1008,7 @@ bool propose_universal_elim(
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
@@ -1184,11 +1185,11 @@ bool propose_universal_elim(
 	}
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename SizePrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename SizePrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_change_set_size(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		unsigned int selected_set,
 		double& log_proposal_probability_ratio,
 		SizePrior& set_size_prior,
@@ -1612,11 +1613,101 @@ inline void on_old_size_axiom(
 		const undo_remove_sets& visitor)
 { }
 
-template<typename Formula, typename Canonicalizer>
+template<typename ProofCalculus>
+bool transform_proofs(const proof_transformations<typename ProofCalculus::Language>& proposed_proofs)
+{
+	typedef typename ProofCalculus::Proof Proof;
+
+	hash_map<Proof*, Proof*> transformations(32);
+	for (auto entry : proposed_proofs.transformed_proofs) {
+		if (!transformations.check_size(transformations.table.size + entry.value.map.size))
+			return false;
+		for (auto transformation : entry.value.map)
+			transformations.put(transformation.key, transformation.value);
+	}
+
+	for (auto entry : transformations) {
+		if (!entry.value->children.ensure_capacity(entry.key->children.length))
+			return false;
+
+		/* this is to avoid freeing `entry.key` while we are inside the next loop */
+		entry.key->reference_count++;
+
+		/* change the operand of any child to the new proof step */
+		for (unsigned int i = entry.key->children.length; i > 0; i--) {
+			Proof* child = entry.key->children[i - 1];
+
+			bool error = false;
+			switch (child->type) {
+			case nd_step_type::CONJUNCTION_INTRODUCTION:
+				for (unsigned int j = 0; j < child->operand_array.length; j++) {
+					if (child->operand_array[j] == entry.key) {
+						child->operand_array[j] = entry.value;
+						entry.key->reference_count--;
+						entry.value->reference_count++;
+					}
+				}
+				break;
+			case nd_step_type::CONJUNCTION_ELIMINATION:
+			case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+			case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+			case nd_step_type::DISJUNCTION_INTRODUCTION:
+			case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+			case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+			case nd_step_type::DISJUNCTION_ELIMINATION:
+			case nd_step_type::IMPLICATION_INTRODUCTION:
+			case nd_step_type::IMPLICATION_ELIMINATION:
+			case nd_step_type::BICONDITIONAL_INTRODUCTION:
+			case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+			case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+			case nd_step_type::PROOF_BY_CONTRADICTION:
+			case nd_step_type::NEGATION_ELIMINATION:
+			case nd_step_type::FALSITY_ELIMINATION:
+			case nd_step_type::UNIVERSAL_INTRODUCTION:
+			case nd_step_type::UNIVERSAL_ELIMINATION:
+			case nd_step_type::EXISTENTIAL_INTRODUCTION:
+			case nd_step_type::EXISTENTIAL_ELIMINATION:
+			case nd_step_type::EQUALITY_ELIMINATION:
+				for (unsigned int j = 0; j < ND_OPERAND_COUNT; j++) {
+					if (child->operands[j] == entry.key) {
+						child->operands[j] = entry.value;
+						entry.key->reference_count--;
+						entry.value->reference_count++;
+					}
+				}
+				break;
+			case nd_step_type::AXIOM:
+			case nd_step_type::COMPARISON_INTRODUCTION:
+			case nd_step_type::INEQUALITY_INTRODUCTION:
+			case nd_step_type::PARAMETER:
+			case nd_step_type::TERM_PARAMETER:
+			case nd_step_type::ARRAY_PARAMETER:
+			case nd_step_type::FORMULA_PARAMETER:
+			case nd_step_type::BETA_EQUIVALENCE:
+			case nd_step_type::COUNT:
+				error = true; break;
+			}
+			if (error) {
+				fprintf(stderr, "transform_proofs ERROR: Invalid nd_step_type.\n");
+				return false;
+			}
+
+			entry.value->children[entry.value->children.length++] = child;
+			entry.key->children.length--;
+		}
+
+		free(*entry.key);
+		if (entry.key->reference_count == 0)
+			free(entry.key);
+	}
+	return true;
+}
+
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool undo_proof_changes(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
-		typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
-		typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+		typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& old_proof_changes,
+		typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& new_proof_changes,
 		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof,
 		const undo_remove_sets& old_sets, const undo_remove_sets& new_sets)
 {
@@ -1628,7 +1719,7 @@ bool undo_proof_changes(
 		return false;
 	} else if (!propose_transformation(T, proposed_proofs, observation_changes, new_proof, old_proof)) {
 		free(proposed_proofs); return false;
-	} else if (!transform_proofs(proposed_proofs)) {
+	} else if (!transform_proofs<natural_deduction<Formula, Intuitionistic>>(proposed_proofs)) {
 		free(proposed_proofs); return false;
 	}
 
@@ -1819,11 +1910,11 @@ inline void on_old_size_axiom(
 		const inverse_proof_sampler& visitor)
 { }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_disjunction_intro(
-	theory<natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*> selected_step,
 	double& log_proposal_probability_ratio,
 	ProofPrior& proof_prior,
@@ -1832,7 +1923,8 @@ bool propose_disjunction_intro(
 	const ProposalDistribution& proposal_distribution)
 {
 	typedef nd_step<Formula> Proof;
-	typedef theory<natural_deduction<Formula>, Canonicalizer> Theory;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
+	typedef theory<ProofCalculus, Canonicalizer> Theory;
 
 	set_changes<Formula> set_diff;
 	inverse_proof_sampler inverse_sampler;
@@ -1945,7 +2037,7 @@ T.print_axioms(stderr);
 			proof_prior, proof_axioms, old_axioms, new_axioms, sample_collector);
 	log_proposal_probability_ratio += proof_prior_diff;
 
-	if (!transform_proofs(proposed_proofs)) {
+	if (!transform_proofs<ProofCalculus>(proposed_proofs)) {
 		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
@@ -2242,14 +2334,14 @@ inline bool get_proof_initializer(nd_step<Formula>* proof, proof_initializer& in
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename DstEventType,
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename DstEventType,
 	typename MapConstantsFunction,
 	typename ComputeLogProbabilityFunction,
 	typename ProofPrior, typename TheorySampleCollector,
 	typename ProposalDistribution>
 inline bool do_split_merge(
-	theory<natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 	const relation& src_event,
 	const DstEventType& dst_event,
 	MapConstantsFunction map_constants,
@@ -2262,9 +2354,9 @@ inline bool do_split_merge(
 {
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
-	typedef theory<natural_deduction<Formula>, Canonicalizer> Theory;
+	typedef theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer> Theory;
 	typedef typename Theory::changes TheoryChanges;
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	array<pair<Formula*, Proof*>> old_proofs(8);
@@ -2513,7 +2605,7 @@ inline bool do_split_merge(
 			proof_prior, proof_axioms, old_axioms, new_axioms, sample_collector);
 	log_proposal_probability_ratio += proof_prior_diff;
 
-	if (!transform_proofs(proposed_proofs)) {
+	if (!transform_proofs<ProofCalculus>(proposed_proofs)) {
 		free(proposed_proofs);
 		set_changes<Formula> dummy;
 		for (unsigned int j = old_proofs.length; j > 0; j--) {
@@ -2540,7 +2632,7 @@ inline bool do_split_merge(
 				return false;
 			}
 		}
-		if (!transform_proofs(inverse_proofs)) {
+		if (!transform_proofs<ProofCalculus>(inverse_proofs)) {
 			free(inverse_proofs);
 			return false;
 		}
@@ -2627,11 +2719,11 @@ inline bool do_split_merge(
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_merge_events(
-	theory<natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 	const pair<relation, relation>& events,
 	double& log_proposal_probability_ratio,
 	ProofPrior& proof_prior,
@@ -2674,11 +2766,11 @@ bool propose_merge_events(
 	return do_split_merge(T, events.value, events.key, map_constants, compute_log_probability, log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_split_event(
-	theory<natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 	const relation& event,
 	double& log_proposal_probability_ratio,
 	ProofPrior& proof_prior,
@@ -2743,100 +2835,10 @@ bool propose_split_event(
 	return do_split_merge(T, event, dst_event, map_constants, compute_log_probability, log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }
 
-template<typename Formula>
-bool transform_proofs(const proof_transformations<Formula>& proposed_proofs)
-{
-	typedef natural_deduction<Formula> ProofCalculus;
-	typedef typename ProofCalculus::Proof Proof;
-
-	hash_map<Proof*, Proof*> transformations(32);
-	for (auto entry : proposed_proofs.transformed_proofs) {
-		if (!transformations.check_size(transformations.table.size + entry.value.map.size))
-			return false;
-		for (auto transformation : entry.value.map)
-			transformations.put(transformation.key, transformation.value);
-	}
-
-	for (auto entry : transformations) {
-		if (!entry.value->children.ensure_capacity(entry.key->children.length))
-			return false;
-
-		/* this is to avoid freeing `entry.key` while we are inside the next loop */
-		entry.key->reference_count++;
-
-		/* change the operand of any child to the new proof step */
-		for (unsigned int i = entry.key->children.length; i > 0; i--) {
-			Proof* child = entry.key->children[i - 1];
-
-			bool error = false;
-			switch (child->type) {
-			case nd_step_type::CONJUNCTION_INTRODUCTION:
-				for (unsigned int j = 0; j < child->operand_array.length; j++) {
-					if (child->operand_array[j] == entry.key) {
-						child->operand_array[j] = entry.value;
-						entry.key->reference_count--;
-						entry.value->reference_count++;
-					}
-				}
-				break;
-			case nd_step_type::CONJUNCTION_ELIMINATION:
-			case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
-			case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
-			case nd_step_type::DISJUNCTION_INTRODUCTION:
-			case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
-			case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
-			case nd_step_type::DISJUNCTION_ELIMINATION:
-			case nd_step_type::IMPLICATION_INTRODUCTION:
-			case nd_step_type::IMPLICATION_ELIMINATION:
-			case nd_step_type::BICONDITIONAL_INTRODUCTION:
-			case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
-			case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
-			case nd_step_type::PROOF_BY_CONTRADICTION:
-			case nd_step_type::NEGATION_ELIMINATION:
-			case nd_step_type::FALSITY_ELIMINATION:
-			case nd_step_type::UNIVERSAL_INTRODUCTION:
-			case nd_step_type::UNIVERSAL_ELIMINATION:
-			case nd_step_type::EXISTENTIAL_INTRODUCTION:
-			case nd_step_type::EXISTENTIAL_ELIMINATION:
-			case nd_step_type::EQUALITY_ELIMINATION:
-				for (unsigned int j = 0; j < ND_OPERAND_COUNT; j++) {
-					if (child->operands[j] == entry.key) {
-						child->operands[j] = entry.value;
-						entry.key->reference_count--;
-						entry.value->reference_count++;
-					}
-				}
-				break;
-			case nd_step_type::AXIOM:
-			case nd_step_type::COMPARISON_INTRODUCTION:
-			case nd_step_type::INEQUALITY_INTRODUCTION:
-			case nd_step_type::PARAMETER:
-			case nd_step_type::TERM_PARAMETER:
-			case nd_step_type::ARRAY_PARAMETER:
-			case nd_step_type::FORMULA_PARAMETER:
-			case nd_step_type::BETA_EQUIVALENCE:
-			case nd_step_type::COUNT:
-				error = true; break;
-			}
-			if (error) {
-				fprintf(stderr, "transform_proofs ERROR: Invalid nd_step_type.\n");
-				return false;
-			}
-
-			entry.value->children[entry.value->children.length++] = child;
-			entry.key->children.length--;
-		}
-
-		free(*entry.key);
-		if (entry.key->reference_count == 0)
-			free(entry.key);
-	}
-	return true;
-}
-
-template<bool Negated, typename Formula, typename Canonicalizer>
+template<bool Negated, typename Formula,
+	bool Intuitionistic, typename Canonicalizer>
 inline bool add_ground_axiom(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term& consequent_atom,
 		unsigned int constant, nd_step<Formula>* axiom)
 {
@@ -2858,9 +2860,9 @@ inline bool add_ground_axiom(
 	}
 }
 
-template<bool Negated, typename Formula, typename Canonicalizer>
+template<bool Negated, typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline bool remove_ground_axiom(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term& consequent_atom, unsigned int constant)
 {
 	typedef typename Formula::Term Term;
@@ -2882,10 +2884,11 @@ inline bool remove_ground_axiom(
 }
 
 template<
-	typename Formula, typename Canonicalizer, bool Negated,
+	typename Formula, bool Intuitionistic,
+	typename Canonicalizer, bool Negated,
 	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_intro(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const proof_transformations<Formula>& proposed_proofs,
 		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_intro_proposal<Negated, Formula>& proposal,
@@ -2915,7 +2918,7 @@ bool do_mh_universal_intro(
 		/* we've accepted the proposal */
 		if (!remove_ground_axiom<Negated>(T, proposal.consequent_atom, proposal.concept_id))
 			return false;
-		if (!transform_proofs(proposed_proofs)) {
+		if (!transform_proofs<natural_deduction<Formula, Intuitionistic>>(proposed_proofs)) {
 			add_ground_axiom<Negated>(T, proposal.consequent_atom, proposal.concept_id, proposal.old_axiom);
 			return false;
 		}
@@ -2937,11 +2940,11 @@ bool do_mh_universal_intro(
 	return true;
 }
 
-template<
-	typename Formula, typename Canonicalizer, bool Negated,
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, bool Negated,
 	typename ProofPrior, typename TheorySampleCollector>
 bool do_mh_universal_elim(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		proof_transformations<Formula>& proposed_proofs,
 		const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 		const universal_elim_proposal<Negated, Formula>& proposal,
@@ -2997,7 +3000,7 @@ bool do_mh_universal_elim(
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we've accepted the proposal */
 		if (!add_ground_axiom<Negated>(T, proposal.consequent_atom, proposal.constant, proposal.new_axiom)
-		 || !transform_proofs(proposed_proofs))
+		 || !transform_proofs<natural_deduction<Formula, Intuitionistic>>(proposed_proofs))
 		{
 			free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
 			free(proposed_proofs);
@@ -3050,16 +3053,16 @@ bool do_mh_universal_elim(
 	}
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename PriorState, typename PriorStateChanges,
-	typename TheorySampleCollector>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename PriorState,
+	typename PriorStateChanges, typename TheorySampleCollector>
 inline bool do_mh_disjunction_intro(
-	theory<natural_deduction<Formula>, Canonicalizer>& T,
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*>& selected_step,
 	nd_step<Formula>* proposed_proof,
 	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
-	typename theory<natural_deduction<Formula>, Canonicalizer>::changes& old_proof_changes,
-	typename theory<natural_deduction<Formula>, Canonicalizer>::changes& new_proof_changes,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& old_proof_changes,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& new_proof_changes,
 	PriorState& proof_axioms,
 	const PriorStateChanges& old_axioms,
 	const PriorStateChanges& new_axioms,
@@ -3093,9 +3096,9 @@ inline bool do_mh_disjunction_intro(
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool is_eliminable_extensional_edge(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const nd_step<Formula>* axiom)
 {
 	typedef typename Formula::Type FormulaType;
@@ -3141,14 +3144,14 @@ bool is_eliminable_extensional_edge(
 	return false;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool get_eliminable_extensional_edges(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::TermType TermType;
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
 	for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
@@ -3179,9 +3182,9 @@ bool get_eliminable_extensional_edges(
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool are_mergeable(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term* first,
 		const typename Formula::Term* second,
 		const relation& first_fragment,
@@ -3241,9 +3244,9 @@ bool are_mergeable(
 	}
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool get_mergeable_events(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<pair<relation, relation>>& mergeable_events)
 {
 	typedef typename Formula::Term Term;
@@ -3302,9 +3305,9 @@ bool get_mergeable_events(
 	return true;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool get_splittable_events(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<relation>& splittable_events)
 {
 	typedef typename Formula::Term Term;
@@ -3369,10 +3372,10 @@ struct uniform_proposal {
 	{ }
 };
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline unsigned int sample(
 		uniform_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3421,10 +3424,10 @@ inline double log_probability(
 	return -log(new_normalization);
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline double log_probability(
 		const uniform_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3443,10 +3446,10 @@ inline double log_probability(
 	return -log(normalization);
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline double log_probability(
 		const uniform_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3465,10 +3468,10 @@ inline double log_probability(
 	return proposal_distribution.log_merge_weight - log(normalization);
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline double log_probability(
 		const uniform_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3489,10 +3492,10 @@ inline double log_probability(
 
 struct exploration_proposal { };
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline unsigned int sample(
 		exploration_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3517,10 +3520,10 @@ inline double log_probability(
 	return 1.0e100;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline double log_probability(
 		const exploration_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3530,10 +3533,10 @@ inline double log_probability(
 	return 1.0e100;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline double log_probability(
 		const exploration_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3543,10 +3546,10 @@ inline double log_probability(
 	return 1.0e100;
 }
 
-template<typename Formula, typename Canonicalizer>
+template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline double log_probability(
 		const exploration_proposal& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<extensional_edge<Formula>>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3573,10 +3576,11 @@ struct query_proposal {
 	{ }
 };
 
-template<typename Formula, typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
+template<typename Formula, bool Intuitionistic,
+	typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
 inline unsigned int sample(
 		query_proposal<Formula, FallbackProposal>& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<ExtensionalEdge>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3613,10 +3617,11 @@ inline double log_probability(
 			log_probability(proposal_distribution.fallback_proposal, delta_atom_count, delta_extensional_edges, delta_unfixed_set_count));
 }
 
-template<typename Formula, typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
+template<typename Formula, bool Intuitionistic,
+	typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
 inline double log_probability(
 		const query_proposal<Formula, FallbackProposal>& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<ExtensionalEdge>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3632,10 +3637,11 @@ inline double log_probability(
 	}
 }
 
-template<typename Formula, typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
+template<typename Formula, bool Intuitionistic,
+	typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
 inline double log_probability(
 		const query_proposal<Formula, FallbackProposal>& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<ExtensionalEdge>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3646,10 +3652,11 @@ inline double log_probability(
 		 + log_probability(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_merge_event);
 }
 
-template<typename Formula, typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
+template<typename Formula, bool Intuitionistic,
+	typename FallbackProposal, typename Canonicalizer, typename ExtensionalEdge>
 inline double log_probability(
 		const query_proposal<Formula, FallbackProposal>& proposal_distribution,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		array<ExtensionalEdge>& eliminable_extensional_edges,
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
@@ -3660,17 +3667,17 @@ inline double log_probability(
 		 + log_probability(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_split_event);
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector,
-	typename ProposalDistribution>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
 bool do_mh_step(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		ProofPrior& proof_prior,
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector,
 		ProposalDistribution& proposal_distribution)
 {
-	typedef natural_deduction<Formula> ProofCalculus;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename Formula::Term Term;
 
 	array<unsigned int> unfixed_sets(8);
@@ -3770,10 +3777,11 @@ bool do_mh_step(
 	return false;
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector>
 inline bool do_mh_step(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		ProofPrior& proof_prior,
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector)
@@ -3782,10 +3790,11 @@ inline bool do_mh_step(
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, default_proposal);
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector>
 inline bool do_exploratory_mh_step(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		ProofPrior& proof_prior,
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector)
@@ -3794,10 +3803,11 @@ inline bool do_exploratory_mh_step(
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }
 
-template<typename Formula, typename Canonicalizer,
-	typename ProofPrior, typename TheorySampleCollector>
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector>
 inline bool do_mh_step(
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		ProofPrior& proof_prior,
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector,

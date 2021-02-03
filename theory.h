@@ -1771,7 +1771,7 @@ private:
 
 	inline bool init_helper(const instantiation_tuple& src) {
 		length = src.length;
-		values = (instantiation*) malloc(sizeof(instantiation) * length);
+		values = (instantiation*) malloc(max(1, sizeof(instantiation) * length));
 		if (values == nullptr) {
 			fprintf(stderr, "instantiation_tuple.init_helper ERROR: Out of memory.\n");
 			return false;
@@ -2844,6 +2844,8 @@ struct theory
 	array<pair<Formula*, Proof*>> implication_intro_nodes;
 	array<pair<Formula*, Proof*>> existential_intro_nodes;
 
+	array<pair<Proof*, bool>> implication_axioms;
+
 	Proof* empty_set_axiom;
 	Proof* maximality_axiom;
 	Proof* function_axiom;
@@ -2856,7 +2858,8 @@ struct theory
 			new_constant_offset(new_constant_offset), atoms(64), relations(64),
 			ground_concept_capacity(64), ground_axiom_count(0), observations(64),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
-			implication_intro_nodes(16), existential_intro_nodes(16), built_in_sets(4)
+			implication_intro_nodes(16), existential_intro_nodes(16),
+			implication_axioms(16), built_in_sets(4)
 	{
 		ground_concepts = (concept<ProofCalculus>*) malloc(sizeof(concept<ProofCalculus>) * ground_concept_capacity);
 		if (ground_concepts == NULL) {
@@ -3017,6 +3020,10 @@ struct theory
 			core::free(*entry.key);
 			if (entry.key->reference_count == 0)
 				core::free(entry.key);
+		} for (auto entry : implication_axioms) {
+			core::free(*entry.key);
+			if (entry.key->reference_count == 0)
+				core::free(entry.key);
 		}
 
 		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
@@ -3084,6 +3091,7 @@ struct theory
 		core::free(T.negated_conjunction_nodes);
 		core::free(T.implication_intro_nodes);
 		core::free(T.existential_intro_nodes);
+		core::free(T.implication_axioms);
 		core::free(T.built_in_sets);
 	}
 
@@ -3493,11 +3501,24 @@ struct theory
 			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
+		} else if (!array_init(dst.implication_axioms, src.implication_axioms.capacity)) {
+			core::free(dst.implication_intro_nodes);
+			core::free(dst.negated_conjunction_nodes);
+			core::free(dst.disjunction_intro_nodes);
+			core::free(dst.sets); core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
+			return false;
 		} else if (!array_init(dst.built_in_sets, src.built_in_sets.capacity)) {
 			core::free(dst.implication_intro_nodes);
 			core::free(dst.negated_conjunction_nodes);
 			core::free(dst.disjunction_intro_nodes);
 			core::free(dst.existential_intro_nodes);
+			core::free(dst.implication_axioms);
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
@@ -3601,6 +3622,13 @@ struct theory
 				return false;
 			}
 			dst.existential_intro_nodes.length++;
+		} for (const auto& entry : src.implication_axioms) {
+			if (!Proof::clone(entry.key, dst.implication_axioms[dst.implication_axioms.length].key, proof_map, formula_map)) {
+				core::free(dst);
+				return false;
+			}
+			dst.implication_axioms[dst.implication_axioms.length].value = entry.value;
+			dst.implication_axioms.length++;
 		}
 
 		for (unsigned int i = 0; i < dst.ground_concept_capacity; i++) {
@@ -3681,8 +3709,8 @@ if (new_proof != NULL) {
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
-if (!check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer>(*new_proof, expected_conclusion)) {
-check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer>(*new_proof, expected_conclusion);
+if (!check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*new_proof, expected_conclusion)) {
+check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*new_proof, expected_conclusion);
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 }
 core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0) core::free(expected_conclusion);
@@ -4279,6 +4307,7 @@ return false;
 		BINARY_ATOM,
 		NEGATED_BINARY_ATOM,
 		SUBSET_AXIOM,
+		IMPLICATION_AXIOM,
 		SET_SIZE_AXIOM,
 		DEFINITION,
 		FUNCTION_VALUE,
@@ -4309,6 +4338,7 @@ return false;
 				core::free(*c.binary_atom.value); if (c.binary_atom.value->reference_count == 0) core::free(c.binary_atom.value);
 				return;
 			case change_type::SUBSET_AXIOM:
+			case change_type::IMPLICATION_AXIOM:
 			case change_type::SET_SIZE_AXIOM:
 			case change_type::DEFINITION:
 			case change_type::FUNCTION_VALUE:
@@ -4428,6 +4458,18 @@ private:
 					if (!sets.add_subset_axiom(c.axiom, set_diff, std::forward<Args>(visitor)...)) return false;
 				}
 				continue;
+			case change_type::IMPLICATION_AXIOM:
+				if (!implication_axioms.ensure_capacity(implication_axioms.length + 1))
+					return false;
+				implication_axioms[implication_axioms.length].key = c.axiom;
+				implication_axioms[implication_axioms.length++].value = false;
+				c.axiom->reference_count++;
+				if (!check_new_implication_satisfaction<false>(implication_axioms.length - 1, set_diff, std::forward<Args>(visitor)...)) {
+					implication_axioms.length--;
+					c.axiom->reference_count--;
+					return false;
+				}
+				continue;
 			case change_type::SET_SIZE_AXIOM:
 				{
 					unsigned int set_id, arity = 1;
@@ -4544,6 +4586,18 @@ private:
 					}
 					continue;
 				}
+			case change_type::IMPLICATION_AXIOM:
+				for (unsigned int i = 0; i < implication_axioms.length; i++) {
+					if (implication_axioms[i].key == c.axiom) {
+						check_old_implication_satisfaction(i, set_diff, std::forward<Args>(visitor)...);
+						core::free(*implication_axioms[i].key);
+						if (implication_axioms[i].key->reference_count == 0)
+							core::free(implication_axioms[i].key);
+						implication_axioms.remove(i);
+						break;
+					}
+				}
+				continue;
 			case change_type::SET_SIZE_AXIOM:
 				{
 					unsigned int set_id, arity = 1;
@@ -4667,6 +4721,9 @@ private:
 					return false;
 				if (reference_count != 1) return true;
 				return changes.add(change_type::SUBSET_AXIOM, &proof);
+			} else if (proof.formula->type == FormulaType::IF_THEN) {
+				if (reference_count != 1) return true;
+				return changes.add(change_type::IMPLICATION_AXIOM, &proof);
 			} else if (proof.formula->type == FormulaType::EQUALS) {
 				bool atomic = is_atomic(*proof.formula->binary.left, predicate, arg1, arg2);
 				if (atomic && predicate->type == TermType::CONSTANT
@@ -6329,6 +6386,51 @@ private:
 					}
 				}
 				for (tuple& tup : provable_elements) core::free(tup);
+			}
+		}
+		for (unsigned int i = 0; i < implication_axioms.length; i++) {
+			if (!implication_axioms[i].value) continue;
+			Proof* axiom = implication_axioms[i].key;
+			Formula* consequent = axiom->formula->binary.right;
+
+			array_view<Formula*> consequent_conjuncts(
+					(consequent->type == FormulaType::AND) ? consequent->array.operands : &consequent,
+					(consequent->type == FormulaType::AND) ? consequent->array.length : 1);
+			for (unsigned int l = 0; l < consequent_conjuncts.length; l++) {
+				Formula* consequent_conjunct = consequent_conjuncts.array[l];
+				if (Contradiction) {
+					if (consequent_conjunct->type != FormulaType::NOT) continue;
+					consequent_conjunct = consequent_conjunct->unary.operand;
+				}
+				array_map<Formula*, Term*> first_unifications(4);
+				array_map<Formula*, Term*> second_unifications(4);
+				array<Formula*> second_quantifiers(1);
+				if (!unify(formula, consequent_conjunct, quantifiers, first_unifications, second_quantifiers, second_unifications))
+					continue;
+
+				for (unsigned int j = 0; j < possible_values.length; j++) {
+					const variable_assignment& values = possible_values[j];
+					if (!new_possible_values.ensure_capacity(new_possible_values.length + 1))
+						return false;
+					variable_assignment& new_value = new_possible_values[new_possible_values.length];
+					if (!::init(new_value, values))
+						return false;
+
+					bool unifies = true;
+					for (const auto& unification : first_unifications) {
+						if (unification.value->type != TermType::VARIABLE
+						 && !new_value.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
+							unifies = false;
+							break;
+						}
+					}
+					if (!unifies) {
+						core::free(new_value);
+						continue;
+					}
+
+					new_possible_values.length++;
+				}
 			}
 		}
 		if (new_possible_values.length > old_size) {
@@ -8761,6 +8863,61 @@ private:
 		return true;
 	}
 
+	bool check_antecedent_satisfaction(
+			unsigned int implication_id,
+			array<unsigned int>& new_antecedents,
+			array_map<tuple, array<unsigned int>>& new_elements,
+			array<Formula*>& new_atoms,
+			unsigned int new_atom_index)
+	{
+		/* check if the antecedent is already satisfied */
+		if (implication_axioms[implication_id].value || new_antecedents.contains(implication_id))
+			return true;
+
+		Proof* axiom = implication_axioms[implication_id].key;
+		Formula* consequent = axiom->formula->binary.right;
+		array<Formula*> quantifiers(4);
+		set_membership_prover prover(sets, new_elements);
+		array<variable_assignment> possible_values(1);
+		if (!::init(possible_values[0], 0))
+			return false;
+		possible_values.length = 1;
+		if (is_provable_without_abduction<true>(consequent, quantifiers, possible_values, prover)) {
+			for (auto& element : possible_values) core::free(element);
+			return false;
+		}
+		for (auto& element : possible_values) core::free(element);
+
+		if (!new_antecedents.add(implication_id))
+			return false;
+
+		if (consequent->type == FormulaType::AND) {
+			if (!new_atoms.ensure_capacity(new_atoms.length + consequent->array.length))
+				return false;
+			for (unsigned int i = 0; i < consequent->array.length; i++) {
+				Formula* conjunct = consequent->array.operands[i];
+				bool atom_already_exists = false;
+				for (unsigned int k = new_atom_index; !atom_already_exists && k < new_atoms.length; k++)
+					if (*new_atoms[k] == *conjunct) atom_already_exists = true;
+				if (!atom_already_exists) {
+					new_atoms[new_atoms.length++] = conjunct;
+					conjunct->reference_count++;
+				}
+			}
+		} else {
+			if (!new_atoms.ensure_capacity(new_atoms.length + 1))
+				return false;
+			bool atom_already_exists = false;
+			for (unsigned int k = new_atom_index; !atom_already_exists && k < new_atoms.length; k++)
+				if (*new_atoms[k] == *consequent) atom_already_exists = true;
+			if (!atom_already_exists) {
+				new_atoms[new_atoms.length++] = consequent;
+				consequent->reference_count++;
+			}
+		}
+		return true;
+	}
+
 	template<bool ResolveInconsistencies, typename... Args>
 	bool check_set_membership_after_addition(array<Formula*>& new_atoms, Args&&... visitor) {
 		/* We first need to find all pairs of tuples and sets such that, with
@@ -8770,6 +8927,7 @@ private:
 		   unifies with `new_atom`. */
 		unsigned int new_atom_index = 0;
 		array_map<tuple, array<unsigned int>> new_elements(4);
+		array<unsigned int> new_antecedents(4);
 		while (new_atom_index < new_atoms.length) {
 			Formula* next_new_atom = new_atoms[new_atom_index++];
 
@@ -8785,7 +8943,7 @@ private:
 				}
 				array<array_map<Formula*, Term*>> unifications(4);
 				if (!unify_subformula(next_new_atom, set_formula, quantifiers, unifications)) {
-					for (auto entry : new_elements) core::free(entry.value);
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 					return false;
 				}
 
@@ -8961,6 +9119,50 @@ private:
 				}
 				for (auto& element : new_possible_values) core::free(element);
 			}
+			for (unsigned int i = 0; i < implication_axioms.length; i++) {
+				Proof* axiom = implication_axioms[i].key;
+				Formula* antecedent = axiom->formula->binary.left;
+
+				array<Formula*> quantifiers(4);
+				array<array_map<Formula*, Term*>> unifications(4);
+				if (!unify_subformula(next_new_atom, antecedent, quantifiers, unifications)) {
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
+
+				if (unifications.length == 0)
+					continue;
+				for (auto& element : unifications) core::free(element);
+
+				set_membership_prover prover(sets, new_elements);
+				array<variable_assignment> temp_possible_values(1);
+				if (!::init(temp_possible_values[0], 0)) {
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
+				temp_possible_values.length = 1;
+				if (!is_provable_without_abduction<false>(antecedent, quantifiers, temp_possible_values, prover)) {
+					for (auto& element : temp_possible_values) core::free(element);
+					continue;
+				}
+				for (auto& element : temp_possible_values) core::free(element);
+
+				/* the addition could cause this formula to be provably false */
+				if (!::init(temp_possible_values[0], 0)) {
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
+				temp_possible_values.length = 1;
+				if (implication_axioms[i].value && is_provable_without_abduction<true>(antecedent, quantifiers, temp_possible_values, prover)) {
+					for (auto& element : temp_possible_values) core::free(element);
+					return false;
+				}
+
+				if (!check_antecedent_satisfaction(i, new_antecedents, new_elements, new_atoms, new_atom_index + 1)) {
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
+			}
 		}
 
 		/* get the old sets that contain the elements in `new_elements` */
@@ -9026,6 +9228,10 @@ private:
 				}
 			}
 		}
+
+		/* set the appropriate antecedents to be provable */
+		for (unsigned int index : new_antecedents)
+			implication_axioms[index].value = true;
 
 		/* make sure there are no inconsistencies */
 		for (unsigned int i = 0; i < new_elements.size; i++) {
@@ -9431,6 +9637,7 @@ private:
 	{
 		unsigned int old_atom_index = 0;
 		array_map<unsigned int, tuple> old_elements(8);
+		array<unsigned int> old_antecedents(4);
 		while (old_atom_index < old_atoms.length) {
 			Formula* next_old_atom = old_atoms[old_atom_index++];
 
@@ -9623,6 +9830,62 @@ private:
 				}
 				for (auto& element : unifications) core::free(element);
 			}
+			for (unsigned int i = 0; i < implication_axioms.length; i++) {
+				if (!implication_axioms[i].value) continue;
+				Proof* axiom = implication_axioms[i].key;
+				Formula* antecedent = axiom->formula->binary.left;
+				Formula* consequent = axiom->formula->binary.right;
+
+				array<Formula*> quantifiers(1);
+				array<array_map<Formula*, Term*>> unifications(4);
+				if (!unify_subformula(next_old_atom, antecedent, quantifiers, unifications)) {
+					for (auto entry : old_elements) core::free(entry.value);
+					return false;
+				}
+
+				if (unifications.length == 0)
+					continue;
+				for (auto& element : unifications) core::free(element);
+
+				if (!old_antecedents.add(i)) {
+					for (auto entry : old_elements) core::free(entry.value);
+					return false;
+				}
+				implication_axioms[i].value = false;
+
+				array<Formula*> conjuncts(4);
+				if (antecedent->type == FormulaType::AND) {
+					if (!conjuncts.append(antecedent->array.operands, antecedent->array.length)) {
+						for (auto entry : old_elements) core::free(entry.value);
+						return false;
+					}
+				} else {
+					conjuncts[conjuncts.length++] = antecedent;
+				}
+				if (consequent->type == FormulaType::AND) {
+					if (!conjuncts.append(consequent->array.operands, consequent->array.length)) {
+						for (auto entry : old_elements) core::free(entry.value);
+						return false;
+					}
+				} else {
+					conjuncts[conjuncts.length++] = consequent;
+				}
+
+				if (!old_atoms.ensure_capacity(old_atoms.length + conjuncts.length)) {
+					for (auto entry : old_elements) core::free(entry.value);
+					return false;
+				}
+				for (Formula* conjunct : conjuncts) {
+					/* make sure `conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+					bool in_old_atoms = false;
+					for (unsigned int j = old_atom_index + 1; !in_old_atoms && j < old_atoms.length; j++)
+						if (*old_atoms[j] == *conjunct) in_old_atoms = true;
+					if (in_old_atoms)
+						continue;
+					old_atoms[old_atoms.length++] = conjunct;
+					conjunct->reference_count++;
+				}
+			}
 		}
 
 		bool sets_changed = true;
@@ -9805,6 +10068,32 @@ private:
 							old_elements.remove_at(j--);
 						}
 					}
+				}
+			}
+			for (unsigned int i = 0; i < old_antecedents.length; i++) {
+				/* check if this antecedent is still provable */
+				Proof* proof = implication_axioms[old_antecedents[i]].key;
+				Formula* antecedent = proof->formula->binary.left;
+
+				array<Formula*> quantifiers(1);
+				array<variable_assignment> temp_possible_values(1);
+				variable_assignment& values = temp_possible_values[0];
+				if (!::init(values, 0)) {
+					for (uint_fast8_t k = 0; k < sets.sets[old_elements.keys[i]].arity; k++)
+						move(old_elements.values[i][k], sets.sets[old_elements.keys[i]].elements[sets.sets[old_elements.keys[i]].elements.length++]);
+					for (auto entry : old_elements) core::free(entry.value);
+					return false;
+				}
+				temp_possible_values.length++;
+
+				default_prover prover(sets, removed_set);
+				if (is_provable_without_abduction<false>(antecedent, quantifiers, temp_possible_values, prover)) {
+					/* this antecedent is still provable */
+					for (auto& element : temp_possible_values) core::free(element);
+					implication_axioms[old_antecedents[i]].value = true;
+					old_antecedents.remove(i);
+					sets_changed = true;
+					continue;
 				}
 			}
 		}
@@ -10164,6 +10453,80 @@ private:
 					if (in_old_atoms) continue;
 					old_atoms[old_atoms.length++] = substituted_formula;
 				}
+			}
+		}
+
+		bool result = check_set_membership_after_subtraction(old_atoms, 0, std::forward<Args>(visitor)...);
+		free_all(old_atoms);
+		return result;
+	}
+
+	template<bool ResolveInconsistencies, typename... Args>
+	bool check_new_implication_satisfaction(unsigned int implication_id, Args&&... visitor)
+	{
+		Proof* axiom = implication_axioms[implication_id].key;
+		Formula* antecedent = axiom->formula->binary.left;
+
+		array<Formula*> quantifiers(1);
+		default_prover prover(sets);
+		array<variable_assignment> possible_values(1);
+		if (!::init(possible_values[0], 0))
+			return false;
+		possible_values.length++;
+		if (!is_provable_without_abduction<false>(antecedent, quantifiers, possible_values, prover))
+			return true;
+		for (auto& element : possible_values) core::free(element);
+
+		array<Formula*> new_atoms(4);
+		array<unsigned int> new_antecedents(4);
+		array_map<tuple, array<unsigned int>> new_elements(4);
+		if (!check_antecedent_satisfaction(implication_id, new_antecedents, new_elements, new_atoms, 0)) {
+			for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+			free_all(new_atoms); return false;
+		}
+		for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+		bool result = check_set_membership_after_addition<ResolveInconsistencies>(new_atoms, std::forward<Args>(visitor)...);
+		free_all(new_atoms);
+		return result;
+	}
+
+	template<typename... Args>
+	bool check_old_implication_satisfaction(unsigned int implication_id, Args&&... visitor)
+	{
+		if (!implication_axioms[implication_id].value)
+			return true;
+		implication_axioms[implication_id].value = false;
+		Proof* axiom = implication_axioms[implication_id].key;
+		Formula* consequent = axiom->formula->binary.left;
+
+		array<Formula*> old_atoms(8);
+		if (consequent->type == FormulaType::AND) {
+			if (!old_atoms.ensure_capacity(old_atoms.length + consequent->array.length)) {
+				free_all(old_atoms);
+				return false;
+			}
+			for (unsigned int k = 0; k < consequent->array.length; k++) {
+				/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+				bool in_old_atoms = false;
+				for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
+					if (*old_atoms[j] == *consequent->array.operands[k]) in_old_atoms = true;
+				if (!in_old_atoms) {
+					old_atoms[old_atoms.length++] = consequent->array.operands[k];
+					consequent->array.operands[k]->reference_count++;
+				}
+			}
+		} else {
+			if (!old_atoms.ensure_capacity(old_atoms.length + 1)) {
+				free_all(old_atoms);
+				return false;
+			}
+			/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
+			bool in_old_atoms = false;
+			for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
+				if (*old_atoms[j] == *consequent) in_old_atoms = true;
+			if (!in_old_atoms) {
+				old_atoms[old_atoms.length++] = consequent;
+				consequent->reference_count++;
 			}
 		}
 
@@ -10578,6 +10941,31 @@ private:
 				core::free(*right); if (right->reference_count == 0) core::free(right);
 				proof->reference_count++;
 				return proof;
+			}
+
+			if (ProofCalculus::Intuitionistic) {
+				for (unsigned int i = 0; i < implication_axioms.length; i++) {
+					if (*implication_axioms[i].key->formula == *canonicalized) {
+						implication_axioms[i].key->reference_count++;
+						return implication_axioms[i].key;
+					}
+				}
+
+				if (!implication_axioms.ensure_capacity(implication_axioms.length + 1))
+					return nullptr;
+				Proof* axiom = ProofCalculus::new_axiom(canonicalized);
+				if (axiom == nullptr)
+					return nullptr;
+				implication_axioms[implication_axioms.length].key = axiom;
+				implication_axioms[implication_axioms.length++].value = false;
+				axiom->reference_count += 2;
+				if (!check_new_implication_satisfaction<ResolveInconsistencies>(implication_axioms.length - 1, set_diff, std::forward<Args>(args)...)) {
+					implication_axioms.length--;
+					axiom->reference_count--;
+					core::free(*axiom); core::free(axiom);
+					return nullptr;
+				}
+				return axiom;
 			}
 
 			array<unsigned int> indices(2);
@@ -13583,15 +13971,8 @@ struct lambda_proof_sample_delegate
 		typedef typename Formula::Term Term;
 
 		/* get the current value of the term used to introduce the existential quantifier */
-		Formula* instantiated_formula = compute_proof_conclusion<built_in_predicates, ProofCanonicalizer>(*test_proof->operands[0]);
-		if (test_proof->operands[1]->parameters.length == 0) {
-			fprintf(stderr, "lambda_proof_sample_delegate.operator () ERROR: Formula does not depend on the lambda variable.\n");
-			core::free(*instantiated_formula); if (instantiated_formula->reference_count == 0) core::free(instantiated_formula);
-			return;
-		}
-		Term* current_term = get_term_at_index(*instantiated_formula, test_proof->operands[1]->parameters[0]);
+		Term* current_term = test_proof->operands[2]->term;
 		on_new_proof_sample(current_term, log_probability);
-		free(*instantiated_formula); if (instantiated_formula->reference_count == 0) free(instantiated_formula);
 	}
 };
 

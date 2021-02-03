@@ -40,10 +40,11 @@ inline bool concatenate(
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior, typename... Args>
+	typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename TheoryPrior, typename... Args>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const typename Parser::SentenceType& s,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		unsigned int article_name, hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior,
 		typename TheoryPrior::PriorState& proof_axioms,
@@ -204,10 +205,11 @@ auto collector = make_log_probability_collector(T, theory_prior);
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior, typename... Args>
+	typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename TheoryPrior, typename... Args>
 bool read_article(
 		unsigned int article_name, const ArticleSource& articles, Parser& parser,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
 		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms,
 		unsigned int mcmc_iterations_per_retry = 100,
@@ -232,10 +234,11 @@ bool read_article(
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior, typename... Args>
+	typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename TheoryPrior, typename... Args>
 inline bool read_sentence(
 		const ArticleSource& articles, Parser& parser, const char* input_sentence,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names, hash_set<unsigned int>& visited_articles,
 		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms,
 		unsigned int mcmc_iterations_per_retry = 100,
@@ -1496,11 +1499,12 @@ bool find_answer_in_website(const string& address,
 }
 
 template<typename ArticleSource, typename Parser,
-	typename Formula, typename Canonicalizer, typename TheoryPrior>
+	typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename TheoryPrior>
 bool read_sentence(
 		const ArticleSource& articles, Parser& parser,
 		const html_lexer_token* tokens, unsigned int length,
-		theory<natural_deduction<Formula>, Canonicalizer>& T,
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& visited_articles, TheoryPrior& theory_prior,
 		typename TheoryPrior::PriorState& proof_axioms,
