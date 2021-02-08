@@ -493,7 +493,7 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 5 - 1)
+if (job.question_id < 7 - 1)
 {
 total++;
 free(job);
@@ -571,7 +571,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 6 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 1 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -615,7 +615,7 @@ continue;
 					Theory::clone(job.T, T_MAP, formula_map);
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
-					for (unsigned int t = 0; t < 2000; t++) {
+					for (unsigned int t = 0; t < 400; t++) {
 						bool print_debug = false;
 						if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
 						if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
@@ -727,7 +727,7 @@ inline void print_ruletaker_results(
 	}
 	array<pair<unsigned int, unsigned int>> incorrect(64);
 	for (const question_result& result : results) {
-		if (result.context_id + 1 < 10)
+		if (result.question_id + 1 < 10)
 			fprintf(out, "[%u, %u]  ", result.context_id + 1, result.question_id + 1);
 		else fprintf(out, "[%u, %u] ", result.context_id + 1, result.question_id + 1);
 		fprintf(out, "%c %c %c", label_to_char(result.true_label),

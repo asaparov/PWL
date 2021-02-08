@@ -4508,7 +4508,8 @@ inline bool unify_variable(
 		hol_type<BaseType>& out, hol_type<BaseType>& new_second,
 		array<hol_type<BaseType>>& type_variables)
 {
-	unsigned int var;
+	unsigned int first_var;
+	unsigned int second_var;
 	switch (second.kind) {
 	case hol_type_kind::ANY:
 		return init(out, first)
@@ -4543,20 +4544,23 @@ inline bool unify_variable(
 		free(type_variables[first]);
 		return init(type_variables[first], out);
 	case hol_type_kind::VARIABLE:
-		var = second.variable;
-		if (first == var) return init(out, var) && init(new_second, var);
-		while (type_variables[var].kind == hol_type_kind::VARIABLE) {
-			var = type_variables[var].variable;
-			if (first == var) return init(out, var) && init(new_second, var);
-		}
+		first_var = first;
+		while (type_variables[first_var].kind == hol_type_kind::VARIABLE)
+			first_var = type_variables[first_var].variable;
 
-		if (!unify_variable(first, type_variables[var], out, new_second, type_variables))
+		second_var = second.variable;
+		while (type_variables[second_var].kind == hol_type_kind::VARIABLE)
+			second_var = type_variables[second_var].variable;
+
+		if (first_var == second_var)
+			return init(out, second_var) && init(new_second, second_var);
+		if (!unify_variable(first_var, type_variables[second_var], out, new_second, type_variables))
 			return false;
 		if (out.kind == hol_type_kind::NONE) return true;
-		free(type_variables[var]);
+		free(type_variables[second_var]);
 		free(new_second);
-		move(out, type_variables[var]);
-		return init(out, var) && init(new_second, var);
+		move(out, type_variables[second_var]);
+		return init(out, first_var) && init(new_second, first_var);
 	}
 	fprintf(stderr, "unify_variable ERROR: Unrecognized hol_type_kind.\n");
 	return false;

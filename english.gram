@@ -1707,7 +1707,11 @@ NAME nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 DEF_NP nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # DEF_NP {A} -> THE NP' {A}
-DEF_NP -> THE NP':try_remove_correlated,require_predicative_existential,try_add_singular
+# TODO: do we need to require equality in the set definition for either of the following two rules?
+DEF_NP -> THE NP':try_remove_correlated,require_predicative_existential,require_singleton,remove_second_left_set_conjunct,try_add_singular
+DEF_NP -> THE NP':try_remove_correlated,require_predicative_existential,require_superlative,try_add_singular
+DEF_NP -> THE NP':try_remove_correlated,require_predicative_existential,require_no_superlative,require_constant_in_set,try_add_singular
+DEF_NP -> THE NP':try_remove_correlated,require_predicative_existential,require_no_superlative,require_string_or_number_in_set,try_add_singular
 DEF_NP -> THE NP':try_remove_correlated,require_predicative_universal,try_add_plural
 
 # NP {^[P]:(... & ?[S]:(this(S) & F(S) & ![x]:(S(x) => P(x))))} -> THIS NP' {^[P]:(... & ?[S]:(F(S) & ![x]:(S(x) => P(x))))}
