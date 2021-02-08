@@ -493,12 +493,12 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 7 - 1)
+/*if (job.question_id < 7 - 1)
 {
 total++;
 free(job);
 continue;
-}
+}*/
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -571,7 +571,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 1 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 59 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -703,7 +703,7 @@ continue;
 
 inline char label_to_char(ruletaker_label label) {
 	switch (label) {
-	case ruletaker_label::UNKNOWN: return 'U';
+	case ruletaker_label::UNKNOWN: return '?';
 	case ruletaker_label::TRUE: return 'T';
 	case ruletaker_label::FALSE: return 'F';
 	}

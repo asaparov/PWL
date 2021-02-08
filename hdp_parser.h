@@ -32664,7 +32664,8 @@ inline hol_term* do_invert_set_predicate_empty(hol_term* second_head)
 	head_var->reference_count++;
 
 	head_index second_predicate_index;
-	find_predicate<built_in_predicates>(head_variable, second_head->quantifier.operand, second_predicate_index);
+	if (second_head->type == hol_term_type::EXISTS)
+		find_predicate<built_in_predicates>(head_variable, second_head->quantifier.operand, second_predicate_index);
 	hol_term* new_head = apply_predicate<PredicateIndex>(second_head, head_variable, second_predicate_index, empty_predicate, expected_predicate);
 	free(*empty_predicate); if (empty_predicate->reference_count == 0) free(empty_predicate);
 	free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
