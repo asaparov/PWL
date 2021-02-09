@@ -3425,7 +3425,7 @@ struct theory
 		}
 		for (unsigned int i = 0; i < dst.ground_concept_capacity; i++)
 			dst.ground_concepts[i].types.keys = nullptr; /* this is used to indicate that this concept is uninitialized */
-		dst.ground_axiom_count = 0;
+		dst.ground_axiom_count = src.ground_axiom_count;
 		if (!hash_set_init(dst.observations, src.observations.capacity)) {
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
@@ -3581,7 +3581,6 @@ struct theory
 				core::free(dst);
 				return false;
 			}
-			dst.ground_axiom_count++;
 		} for (auto& entry : src.disjunction_intro_nodes) {
 			unsigned int index = proof_map.index_of(entry.value);
 #if !defined(NDEBUG)
