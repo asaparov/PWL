@@ -1401,6 +1401,22 @@ inline bool get_proof_steps(const nd_step<Formula>* proof, Collection& steps) {
 	return visit<true>(proof, collector);
 }
 
+template<nd_step_type Type>
+struct static_proof_step_finder { };
+
+template<nd_step_type Type, typename Formula>
+inline bool visit_node(const nd_step<Formula>* proof, static_proof_step_finder<Type>& visitor) {
+	if (proof->type == Type)
+		return false;
+	return true;
+}
+
+template<nd_step_type Type, typename Formula>
+inline bool has_proof_step(const nd_step<Formula>* proof) {
+	static_proof_step_finder<Type> visitor;
+	return !visit<false>(proof, visitor);
+}
+
 template<typename Formula, typename... ProofMap>
 bool compute_in_degrees(const nd_step<Formula>* proof,
 		hash_map<const nd_step<Formula>*, unsigned int>& in_degrees,

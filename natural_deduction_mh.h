@@ -1926,14 +1926,15 @@ bool propose_disjunction_intro(
 	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef theory<ProofCalculus, Canonicalizer> Theory;
 
+	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
+	if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(selected_step.value))
+		return true;
+
 	set_changes<Formula> set_diff;
 	inverse_proof_sampler inverse_sampler;
 	typename Theory::changes old_proof_changes;
 	if (!T.get_theory_changes(*selected_step.value, old_proof_changes))
 		return false;
-	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
-	for (const typename Theory::change& change : old_proof_changes.list)
-		if (change.type == Theory::change_type::SUBSET_AXIOM) return true;
 	T.subtract_changes(old_proof_changes, set_diff, inverse_sampler);
 	/* some removed set size axioms may actually become extra axioms */
 	for (const typename Theory::change& change : old_proof_changes.list) {
@@ -2389,6 +2390,12 @@ inline bool do_split_merge(
 			return false;
 	}
 
+	/* check to make sure these proofs wouldn't remove any subset edges, since we cannot make the inverse proposal */
+	for (unsigned int i = 0; i < old_proofs.length; i++) {
+		if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(old_proofs[i].value))
+			return true;
+	}
+
 	TheoryChanges* old_proof_changes = (TheoryChanges*) malloc(sizeof(TheoryChanges) * old_proofs.length);
 	if (old_proof_changes == nullptr) {
 		fprintf(stderr, "do_split_merge ERROR: Out of memory.\n");
@@ -2472,21 +2479,6 @@ inline bool do_split_merge(
 		reference_counts.values[index]--;
 		if (!T.get_theory_changes(*old_proofs[i].value, discharged_axioms, reference_counts, old_proof_changes[i]))
 			return false;
-		/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
-		for (const typename Theory::change& c : old_proof_changes[i].list) {
-			if (c.type == Theory::change_type::SUBSET_AXIOM) {
-				set_changes<Formula> dummy;
-				for (unsigned int j = i; j > 0; j--) {
-					T.add_changes(old_proof_changes[j - 1], dummy, undo_remove_sets(set_size_log_probability.removed_set_sizes));
-					free(old_proof_changes[j - 1]);
-				}
-				for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
-				for (unsigned int j = i; j < old_proofs.length; j++) free(old_proof_changes[j]);
-				for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
-				free(old_proof_changes); free(new_proof_changes);
-				free(initializers); free(new_proofs); return false;
-			}
-		}
 		T.subtract_changes(old_proof_changes[i], set_diff, set_size_log_probability);
 		/* some removed set size axioms may actually become extra axioms */
 		for (const typename Theory::change& change : old_proof_changes[i].list) {

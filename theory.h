@@ -1754,7 +1754,7 @@ struct instantiation_tuple {
 private:
 	inline bool init_helper(uint_fast8_t src_length) {
 		length = src_length;
-		values = (instantiation*) malloc(sizeof(instantiation) * length);
+		values = (instantiation*) malloc(max(1, sizeof(instantiation) * length));
 		if (values == nullptr) {
 			fprintf(stderr, "instantiation_tuple.init_helper ERROR: Out of memory.\n");
 			return false;
@@ -3967,21 +3967,11 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				return false;
 		}
 
-		Formula* lifted_literal;
 		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
 		if (lifted_atom == nullptr)
 			return false;
 		atom.binary.left->reference_count++;
 		Variables<1>::value.reference_count++;
-		if (Negated) {
-			lifted_literal = Formula::new_not(lifted_atom);
-			if (lifted_literal == NULL) {
-				core::free(*lifted_atom); core::free(lifted_atom);
-				return false;
-			}
-		} else {
-			lifted_literal = lifted_atom;
-		}
 
 #if !defined(NDEBUG)
 		if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
@@ -3989,21 +3979,21 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 #endif
 		bool contains; unsigned int bucket;
 		if (!atoms.check_size()) {
-			core::free(*lifted_literal); core::free(lifted_literal);
+			core::free(*lifted_atom); core::free(lifted_atom);
 			return false;
 		}
 
-		pair<array<unsigned int>, array<unsigned int>>& instance_pair = atoms.get(*lifted_literal, contains, bucket);
+		pair<array<unsigned int>, array<unsigned int>>& instance_pair = atoms.get(*lifted_atom, contains, bucket);
 		if (!contains) {
 			if (!array_init(instance_pair.key, 8)) {
-				core::free(*lifted_literal); core::free(lifted_literal);
+				core::free(*lifted_atom); core::free(lifted_atom);
 				return false;
 			} else if (!array_init(instance_pair.value, 8)) {
 				core::free(instance_pair.key);
-				core::free(*lifted_literal); core::free(lifted_literal);
+				core::free(*lifted_atom); core::free(lifted_atom);
 				return false;
 			}
-			atoms.table.keys[bucket] = *lifted_literal;
+			atoms.table.keys[bucket] = *lifted_atom;
 			atoms.table.size++;
 		}
 
@@ -4012,7 +4002,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.ensure_capacity(ground_types.size + 1))
 		{
-			core::free(*lifted_literal); core::free(lifted_literal);
+			core::free(*lifted_atom); core::free(lifted_atom);
 			return false;
 		}
 
@@ -4021,7 +4011,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		ground_types.values[ground_types.size++] = axiom;
 		axiom->reference_count++;
 		ground_axiom_count++;
-		core::free(*lifted_literal); core::free(lifted_literal);
+		core::free(*lifted_atom); core::free(lifted_atom);
 
 		if (!check_set_membership_after_addition<ResolveInconsistencies>(&atom, std::forward<Args>(visitor)...)) {
 			remove_unary_atom<Negated>(atom, std::forward<Args>(visitor)...);
@@ -4143,31 +4133,21 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 #endif
 		unsigned int arg = atom.binary.right->constant;
 
-		Formula* lifted_literal;
 		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
 		if (lifted_atom == nullptr)
 			return false;
 		atom.binary.left->reference_count++;
 		Variables<1>::value.reference_count++;
-		if (Negated) {
-			lifted_literal = Formula::new_not(lifted_atom);
-			if (lifted_literal == NULL) {
-				core::free(*lifted_atom); core::free(lifted_atom);
-				return false;
-			}
-		} else {
-			lifted_literal = lifted_atom;
-		}
 
 #if !defined(NDEBUG)
-		if (!atoms.table.contains(*lifted_literal)) {
+		if (!atoms.table.contains(*lifted_atom)) {
 			print("theory.remove_unary_atom WARNING: `atoms` does not contain the key ", stderr);
-			print(*lifted_literal, stderr); print(".\n", stderr);
+			print(*lifted_atom, stderr); print(".\n", stderr);
 		} if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
 #endif
 
-		array<unsigned int>& instances = (Negated ? atoms.get(*lifted_literal).value : atoms.get(*lifted_literal).key);
+		array<unsigned int>& instances = (Negated ? atoms.get(*lifted_atom).value : atoms.get(*lifted_atom).key);
 		array_map<Term, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
 
 		unsigned int index = instances.index_of(arg);
@@ -4182,7 +4162,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 #if !defined(NDEBUG)
 		if (index == ground_types.size) {
 			print("theory.remove_unary_atom WARNING: `ground_types` does not contain ", stderr);
-			print(*lifted_literal, stderr); print(".\n", stderr);
+			print(*lifted_atom, stderr); print(".\n", stderr);
 		}
 #endif
 		Proof* axiom = ground_types.values[index];
@@ -4190,7 +4170,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		core::free(ground_types.keys[index]);
 		ground_types.remove_at(index);
 		ground_axiom_count--;
-		core::free(*lifted_literal); core::free(lifted_literal);
+		core::free(*lifted_atom); core::free(lifted_atom);
 		return check_set_membership_after_subtraction(&atom, 0, std::forward<Args>(visitor)...);
 	}
 
@@ -9075,16 +9055,23 @@ private:
 			/* get the ancestors of this set that don't already provably contain `tup` */
 			hash_set<unsigned int> visited(16);
 			array<unsigned int> stack(8);
-			array<Formula*> new_ancestor_terms(8);
+			array<pair<Formula*, bool>> new_ancestor_terms(8);
 			stack[stack.length++] = set_id;
 			visited.add(set_id);
 			while (stack.length != 0) {
 				unsigned int current = stack.pop();
+				hash_set<tuple> provable_elements(16);
+				if (!prover.get_provable_elements(current, provable_elements)) {
+					for (tuple& tup : provable_elements) core::free(tup);
+					return false;
+				}
 				Formula* set_formula = sets.sets[current].set_formula();
 				if (set_formula->type == FormulaType::AND) {
-					if (!new_ancestor_terms.append(set_formula->array.operands, set_formula->array.length))
-						return false;
-				} else if (!new_ancestor_terms.add(set_formula)) {
+					for (unsigned int i = 0; i < set_formula->array.length; i++) {
+						if (!new_ancestor_terms.add(make_pair(set_formula->array.operands[i], provable_elements.size == sets.sets[current].set_size)))
+							return false;
+					}
+				} else if (!new_ancestor_terms.add(make_pair(set_formula, provable_elements.size == sets.sets[current].set_size))) {
 					return false;
 				}
 
@@ -9127,13 +9114,20 @@ private:
 				for (unsigned int j = 0; j < tup.length; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
 				return false;
 			}
-			for (Formula* new_descendant_term : new_ancestor_terms) {
-				Formula* substituted_atom = substitute_all(new_descendant_term, src_variables, dst_constants, tup.length);
-				if (substituted_atom == nullptr) {
-					for (unsigned int j = 0; j < tup.length; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
-					for (unsigned int j = 0; j < tup.length; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
-					return false;
+			for (pair<Formula*, bool> new_descendant_term : new_ancestor_terms) {
+				Formula* substituted_atom;
+				if (new_descendant_term.value) {
+					substituted_atom = new_descendant_term.key;
+					substituted_atom->reference_count++;
+				} else {
+					substituted_atom = substitute_all(new_descendant_term.key, src_variables, dst_constants, tup.length);
+					if (substituted_atom == nullptr) {
+						for (unsigned int j = 0; j < tup.length; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
+						for (unsigned int j = 0; j < tup.length; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
+						return false;
+					}
 				}
+
 				bool atom_already_exists = false;
 				for (unsigned int k = new_atom_index; !atom_already_exists && k < new_atoms.length; k++)
 					if (*new_atoms[k] == *substituted_atom) atom_already_exists = true;
@@ -12689,6 +12683,18 @@ private:
 						}
 					}
 
+					/* make sure we can't disprove this atom */
+					array<Formula*> quantifiers(1);
+					array<variable_assignment> temp_possible_values(1);
+					if (!::init(temp_possible_values[0], 0))
+						return nullptr;
+					temp_possible_values.length = 1;
+					default_prover prover(sets, implication_axioms);
+					if (is_provable_without_abduction<!Negated>(atom, quantifiers, temp_possible_values, prover)) {
+						for (auto& element : temp_possible_values) core::free(element);
+						return nullptr;
+					}
+
 					/* there is no extensional edge that proves this atomic formula,
 					  so check if the axiom already exists, and if not, create a new axiom */
 					Term* lifted_atom = Term::new_apply(atom->binary.left, &Variables<1>::value);
@@ -12696,17 +12702,8 @@ private:
 					atom->binary.left->reference_count++;
 					Variables<1>::value.reference_count++;
 
-					/* make sure the negation of this atom doesn't exist as an axiom */
 					bool contains;
 					concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
-					if (Negated && c.types.contains(*lifted_atom)) {
-						core::free(*lifted_atom); core::free(lifted_atom);
-						return nullptr;
-					} else if (!Negated && c.negated_types.contains(*lifted_atom)) {
-						core::free(*lifted_atom); core::free(lifted_atom);
-						return nullptr;
-					}
-
 					Proof* axiom = (Negated ?
 							c.negated_types.get(*lifted_atom, contains) :
 							c.types.get(*lifted_atom, contains));

@@ -493,12 +493,12 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id < 7 - 1)
+if (job.question_id < 7 - 1)
 {
 total++;
 free(job);
 continue;
-}*/
+}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -634,23 +634,36 @@ continue;
 					while (isspace(job.context[start])) start++;
 
 					Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
+					PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
 					hash_map<const hol_term*, hol_term*> formula_map(128);
 					Theory::clone(job.T, T_MAP, formula_map);
+					new (&proof_axioms_MAP) PriorStateType(job.proof_axioms, formula_map);
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
-					for (unsigned int t = 0; t < 400; t++) {
-						bool print_debug = false;
-						if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
-						if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
-						do_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-						if (collector.current_log_probability > max_log_probability) {
-							free(T_MAP); formula_map.clear();
-							Theory::clone(job.T, T_MAP, formula_map);
-							max_log_probability = collector.current_log_probability;
+					for (unsigned int j = 0; j < 4; j++) {
+						for (unsigned int t = 0; t < 400; t++) {
+							bool print_debug = false;
+							if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
+							if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+							do_mh_step(job.T, proof_prior, job.proof_axioms, collector);
+							if (collector.current_log_probability > max_log_probability) {
+								free(T_MAP); proof_axioms_MAP.~PriorStateType(); formula_map.clear();
+								Theory::clone(job.T, T_MAP, formula_map);
+								new (&proof_axioms_MAP) PriorStateType(job.proof_axioms, formula_map);
+								max_log_probability = collector.current_log_probability;
+							}
+						}
+
+						if (j + 1 < 4) {
+							for (unsigned int t = 0; t < 20; t++)
+								do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
 						}
 					}
+					free(job.T); job.proof_axioms.~PriorStateType(); formula_map.clear();
+					Theory::clone(T_MAP, job.T, formula_map);
+					new (&job.proof_axioms) PriorStateType(proof_axioms_MAP, formula_map);
 					T_MAP.print_axioms(stderr, *debug_terminal_printer);
-					free(T_MAP);
+					free(T_MAP); proof_axioms_MAP.~PriorStateType();
 				}
 			}
 
