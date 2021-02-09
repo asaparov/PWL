@@ -6768,7 +6768,7 @@ private:
 	inline bool get_elements_of_full_supersets(Term* subset_term,
 			array<unsigned int>& quantified_variables,
 			array_map<Term*, array<tuple>>& elements,
-			Prover& prover) const
+			Prover& prover, bool& found_empty_set) const
 	{
 		if (subset_term->type != TermType::UNARY_APPLICATION
 		 || subset_term->binary.left->type != TermType::CONSTANT
@@ -6789,7 +6789,10 @@ private:
 		hash_set<tuple> provable_elements(16);
 		if (!prover.get_provable_elements(set_id, provable_elements))
 			return false;
-		if (provable_elements.size != sets.sets[set_id].set_size) {
+		if (provable_elements.size == 0) {
+			found_empty_set = true;
+			return true;
+		} else if (provable_elements.size != sets.sets[set_id].set_size) {
 			for (tuple& tup : provable_elements) core::free(tup);
 			return true;
 		}
@@ -6917,26 +6920,55 @@ private:
 		}
 
 		/* consider existential quantification over the elements in full sets */
+		bool found_empty_set = false;
 		array_map<Term*, array<tuple>> elements(max(1, quantified_variables.length));
 		if (new_operand->type == FormulaType::AND) {
 			for (unsigned int i = 0; i < new_operand->array.length; i++) {
-				if (!get_elements_of_full_supersets(new_operand->array.operands[i], quantified_variables, elements, prover)) {
+				if (!get_elements_of_full_supersets(new_operand->array.operands[i], quantified_variables, elements, prover, found_empty_set)) {
 					for (auto entry : elements) {
 						for (tuple& tup : entry.value) core::free(tup);
 						core::free(entry.value);
 					}
 					core::free(*new_operand); if (new_operand->reference_count == 0) core::free(new_operand);
 					return false;
+				} else if (found_empty_set) {
+					for (auto entry : elements) {
+						for (tuple& tup : entry.value) core::free(tup);
+						core::free(entry.value);
+					}
+					core::free(*new_operand); if (new_operand->reference_count == 0) core::free(new_operand);
+					for (auto& element : new_possible_values) core::free(element);
+					new_possible_values.clear();
+					if (!new_possible_values.ensure_capacity(possible_values.length)) return false;
+					for (unsigned int i = 0; i < possible_values.length; i++) {
+						if (!::init(new_possible_values[i], possible_values[i])) return false;
+						new_possible_values.length++;
+					}
+					return true;
 				}
 			}
 		} else {
-			if (!get_elements_of_full_supersets(new_operand, quantified_variables, elements, prover)) {
+			if (!get_elements_of_full_supersets(new_operand, quantified_variables, elements, prover, found_empty_set)) {
 				for (auto entry : elements) {
 					for (tuple& tup : entry.value) core::free(tup);
 					core::free(entry.value);
 				}
 				core::free(*new_operand); if (new_operand->reference_count == 0) core::free(new_operand);
 				return false;
+			} else if (found_empty_set) {
+				for (auto entry : elements) {
+					for (tuple& tup : entry.value) core::free(tup);
+					core::free(entry.value);
+				}
+				core::free(*new_operand); if (new_operand->reference_count == 0) core::free(new_operand);
+				for (auto& element : new_possible_values) core::free(element);
+				new_possible_values.clear();
+				if (!new_possible_values.ensure_capacity(possible_values.length)) return false;
+				for (unsigned int i = 0; i < possible_values.length; i++) {
+					if (!::init(new_possible_values[i], possible_values[i])) return false;
+					new_possible_values.length++;
+				}
+				return true;
 			}
 		}
 		if (quantified_variables.length == 0) {
