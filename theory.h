@@ -9314,12 +9314,98 @@ private:
 					}
 				}
 
+				hash_set<tuple> provable_elements(16);
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
+				if (!prover.get_provable_elements(i, provable_elements)) {
+					for (auto& element : possible_values) core::free(element);
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
+				if (provable_elements.size == sets.sets[i].set_size) {
+					/* this set being full could make other expressions provable by exclusion */
+					array_view<Formula*> conjuncts = make_array_view(
+							set_formula->type == FormulaType::AND ? set_formula->array.operands : &set_formula,
+							set_formula->type == FormulaType::AND ? set_formula->array.length : 1);
+					for (const variable_assignment& possible_value : possible_values) {
+						unsigned int substitution_count = 0;
+						Term** src_variables = (Term**) malloc(sizeof(Term*) * sets.sets[i].arity * 2);
+						if (src_variables == nullptr || !new_atoms.ensure_capacity(new_atoms.length + conjuncts.length)) {
+							if (src_variables != nullptr) core::free(src_variables);
+							for (auto& element : possible_values) core::free(element);
+							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+							return false;
+						}
+						Term** dst_variables = src_variables + sets.sets[i].arity;
+						for (uint_fast8_t k = 0; k < possible_value.assignment.length; k++) {
+							if (possible_value.assignment.values[k].type == instantiation_type::CONSTANT) {
+								src_variables[substitution_count] = Formula::new_variable(k + 1);
+								dst_variables[substitution_count] = Formula::new_constant(possible_value.assignment.values[k].constant);
+							} else if (possible_value.assignment.values[k].type == instantiation_type::NUMBER) {
+								src_variables[substitution_count] = Formula::new_variable(k + 1);
+								dst_variables[substitution_count] = Formula::new_number(possible_value.assignment.values[k].number);
+							} else if (possible_value.assignment.values[k].type == instantiation_type::STRING) {
+								src_variables[substitution_count] = Formula::new_variable(k + 1);
+								dst_variables[substitution_count] = Formula::new_string(possible_value.assignment.values[k].str);
+							} else {
+								continue;
+							}
+							if (src_variables[substitution_count] == nullptr || dst_variables[substitution_count] == nullptr) {
+								if (src_variables[substitution_count] != nullptr) { core::free(*src_variables[substitution_count]); core::free(src_variables[substitution_count]); }
+								if (dst_variables[substitution_count] != nullptr) { core::free(*dst_variables[substitution_count]); core::free(dst_variables[substitution_count]); }
+								for (unsigned int j = 0; j < substitution_count; j++) {
+									core::free(*src_variables[j]); core::free(src_variables[j]);
+									core::free(*dst_variables[j]); core::free(dst_variables[j]);
+								}
+								core::free(src_variables);
+								for (auto& element : possible_values) core::free(element);
+								for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+								return false;
+							}
+							substitution_count++;
+						}
+
+						for (Formula* conjunct : conjuncts) {
+							Formula* substituted;
+							if (substitution_count == 0) {
+								substituted = conjunct;
+								conjunct->reference_count++;
+							} else {
+								substituted = substitute_all(conjunct, src_variables, dst_variables, substitution_count);
+								if (substituted == nullptr) {
+									for (unsigned int j = 0; j < substitution_count; j++) {
+										core::free(*src_variables[j]); if (src_variables[j]->reference_count == 0) core::free(src_variables[j]);
+										core::free(*dst_variables[j]); if (dst_variables[j]->reference_count == 0) core::free(dst_variables[j]);
+									}
+									core::free(src_variables);
+									for (auto& element : possible_values) core::free(element);
+									for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+									return false;
+								}
+							}
+
+							bool atom_already_exists = false;
+							for (unsigned int k = 0; !atom_already_exists && k < new_atoms.length; k++)
+								if (*new_atoms[k] == *substituted) atom_already_exists = true;
+							if (atom_already_exists) {
+								core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
+							} else {
+								new_atoms[new_atoms.length++] = substituted;
+							}
+						}
+						for (unsigned int j = 0; j < substitution_count; j++) {
+							core::free(*src_variables[j]); if (src_variables[j]->reference_count == 0) core::free(src_variables[j]);
+							core::free(*dst_variables[j]); if (dst_variables[j]->reference_count == 0) core::free(dst_variables[j]);
+						}
+						core::free(src_variables);
+					}
+				}
+
 				array<variable_assignment> new_possible_values(max((size_t) 1, 4 * possible_values.length));
 				for (const variable_assignment& possible_value : possible_values) {
 					array<variable_assignment> temp_possible_values(4);
 					variable_assignment& values = temp_possible_values[0];
 					if (!::init(values, possible_value)) {
+						for (tuple& tup : provable_elements) core::free(tup);
 						for (auto& element : new_possible_values) core::free(element);
 						for (auto& element : possible_values) core::free(element);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
@@ -9341,12 +9427,6 @@ private:
 				for (auto& element : possible_values) core::free(element);
 
 				/* the addition could cause this formula to be provably false */
-				hash_set<tuple> provable_elements(16);
-				if (!sets.get_provable_elements(i, provable_elements)) {
-					for (auto& element : new_possible_values) core::free(element);
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					return false;
-				}
 				array<variable_assignment> temp_possible_values(max(1, provable_elements.size));
 				for (const tuple& element : provable_elements) {
 					variable_assignment& values = temp_possible_values[temp_possible_values.length];
