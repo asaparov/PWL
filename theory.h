@@ -3158,13 +3158,15 @@ struct theory
 		for (unsigned int i = 2; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axioms.data == nullptr)
 				continue;
+			hash_set<unsigned int> ancestors(16);
+			sets.template get_ancestors<true>(i, ancestors);
 			for (unsigned int j = sets.sets[i].element_count(); j > 0; j--) {
 				const tuple_element* element_src = sets.sets[i].elements.data + (sets.sets[i].arity * (j - 1));
 				bool contains_constant = false;
 				for (uint_fast8_t k = 0; k < sets.sets[i].arity && !contains_constant; k++)
 					if (element_src[k].type == tuple_element_type::CONSTANT && element_src[k].constant == id) contains_constant = true;
 				if (contains_constant)
-					sets.sets[i].remove_element_at(j - 1);
+					sets.remove_element_at(i, j - 1, ancestors);
 			}
 		}
 	}
@@ -3183,7 +3185,7 @@ struct theory
 		free_concept_id(id);
 	}
 
-	template<typename Stream, typename... Printer>
+	template<bool PrintProvableElements = false, typename Stream, typename... Printer>
 	bool print_axioms(Stream& out, Printer&&... printer) const {
 		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
 			if (ground_concepts[i].types.keys == NULL) continue;
@@ -3198,7 +3200,7 @@ struct theory
 				else if (!entry.value && !print("false.\n", out)) return false;
 			}
 		}
-		return sets.print_axioms(out, std::forward<Printer>(printer)...);
+		return sets.template print_axioms<PrintProvableElements>(out, std::forward<Printer>(printer)...);
 	}
 
 	template<typename Stream, typename... Printer>
@@ -3805,7 +3807,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		return success;
 	}
 
-	inline bool are_elements_provable() const {
+	inline bool are_elements_provable() {
 		bool success = true;
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axioms.data == nullptr)
@@ -3818,12 +3820,16 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				set_formula = set_formula->quantifier.operand;
 			}
 
+			hash_set<unsigned int> ancestors(16);
+			if (!sets.template get_ancestors<true>(i, ancestors))
+				return false;
 			for (unsigned int j = sets.sets[i].element_count(); j > 0; j--) {
 				tuple_element* element = (tuple_element*) alloca(sizeof(tuple_element) * sets.sets[i].arity);
 				const tuple_element* element_src = sets.sets[i].elements.data + (sets.sets[i].arity * (j - 1));
 				for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++) {
 					if (!::init(element[k], element_src[k])) {
 						for (uint_fast8_t l = 0; l < k; l++) core::free(element[l]);
+						return false;
 					}
 				}
 				array<variable_assignment> possible_values(1);
@@ -3850,7 +3856,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 					}
 				}
 
-				sets.sets[i].remove_element_at(j - 1);
+				sets.remove_element_at(i, j - 1, ancestors);
 				default_prover prover(sets, implication_axioms);
 				if (!is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover)) {
 					print("theory.are_elements_provable ERROR: The element ", stderr);
@@ -3862,6 +3868,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 					success = false;
 				}
 				for (auto& element : possible_values) core::free(element);
+				sets.add_to_provable_elements(i, {element, sets.sets[i].arity}, ancestors);
 				for (uint_fast8_t k = 0; k < sets.sets[i].arity; k++)
 					move(element[k], sets.sets[i].elements[sets.sets[i].elements.length++]);
 			}
@@ -6121,6 +6128,8 @@ private:
 	};
 
 	struct default_prover {
+		typedef const array<tuple>& ProvableElementArray;
+
 		const set_reasoning<built_in_predicates, ProofCalculus, Canonicalizer>& sets;
 		const array<pair<Proof*, bool>>& implication_axioms;
 		hypothetical_reasoner h;
@@ -6131,9 +6140,15 @@ private:
 				const array<pair<Proof*, bool>>& implication_axioms,
 				unsigned int removed_set = 0) : sets(sets), implication_axioms(implication_axioms), removed_set(removed_set) { }
 
-		inline bool get_provable_elements(unsigned int set_id, hash_set<tuple>& provable_elements) {
-			return sets.get_provable_elements(set_id, provable_elements);
+		inline const array<tuple>& get_provable_elements(unsigned int set_id) const {
+			return sets.sets[set_id].provable_elements;
 		}
+
+		inline unsigned int get_provable_element_count(unsigned int set_id) const {
+			return sets.sets[set_id].provable_elements.length;
+		}
+
+		inline void free_provable_elements(const array<tuple>& elements) const { }
 
 		inline bool is_antecedent_satisfied(unsigned int implication_id) const {
 			return implication_axioms[implication_id].value;
@@ -6178,7 +6193,54 @@ private:
 		}
 	};
 
+	template<typename T>
+	struct array_with_extra_elements {
+		struct iterator {
+			const array_with_extra_elements<T>& a;
+			unsigned int index;
+
+			iterator(const array_with_extra_elements<T>& a, unsigned int index) : a(a), index(index) { }
+
+			inline void operator ++ () {
+				index++;
+			}
+
+			inline const T& operator * () {
+				if (index < a.data_length)
+					return a.data[index];
+				else return a.extra_data[index - a.data_length];
+			}
+
+			inline bool operator != (const iterator& other) {
+				return index != other.index;
+			}
+		};
+
+		T* data;
+		unsigned int data_length;
+		T* extra_data;
+
+		unsigned int length;
+
+		array_with_extra_elements(T* data, unsigned int data_length, T* extra_data, unsigned int extra_data_length) :
+				data(data), data_length(data_length), extra_data(extra_data), length(data_length + extra_data_length)
+		{ }
+
+		iterator begin() const { return iterator(*this, 0); }
+		iterator end() const { return iterator(*this, length); }
+
+		inline bool contains(const tuple& element) const
+		{
+			if (core::index_of(element, data, data_length) < data_length)
+				return true;
+			unsigned int extra_count = length - data_length;
+			return (core::index_of(element, extra_data, extra_count) < extra_count);
+		}
+	};
+
 	struct set_membership_prover {
+		typedef array_with_extra_elements<tuple> ProvableElementArray;
+
 		const set_reasoning<built_in_predicates, ProofCalculus, Canonicalizer>& sets;
 		const array<pair<Proof*, bool>>& implication_axioms;
 		const array_map<tuple, array<unsigned int>>& new_elements;
@@ -6191,27 +6253,45 @@ private:
 				const array_map<tuple, array<unsigned int>>& new_elements,
 				const array<unsigned int>& new_antecedents) : sets(sets), implication_axioms(implication_axioms), new_elements(new_elements), new_antecedents(new_antecedents) { }
 
-		inline bool get_provable_elements(unsigned int set_id, hash_set<tuple>& provable_elements)
+		inline array_with_extra_elements<tuple> get_provable_elements(unsigned int set_id) const
 		{
-			if (!sets.get_provable_elements(set_id, provable_elements))
-				return false;
-
+			array<tuple>& extra_data = *((array<tuple>*) alloca(sizeof(array<tuple>)));
+			array_init(extra_data, 4);
 			for (const auto& entry : new_elements) {
 				for (unsigned int other_set : entry.value) {
 					if (sets.sets[set_id].descendants.contains(other_set)) {
-						if (!provable_elements.check_size()) return false;
+						extra_data.ensure_capacity(extra_data.length + 1);
 
-						bool contains;
-						unsigned int index = provable_elements.index_of(entry.key, contains);
-						if (!contains) {
-							if (!::init(provable_elements.keys[index], entry.key))
-								return false;
-							provable_elements.size++;
+						if (!sets.sets[set_id].provable_elements.contains(entry.key)) {
+							::init(extra_data[extra_data.length], entry.key);
+							extra_data.length++;
 						}
 					}
 				}
 			}
-			return true;
+			return array_with_extra_elements<tuple>(sets.sets[set_id].provable_elements.data, sets.sets[set_id].provable_elements.length, extra_data.data, extra_data.length);
+		}
+
+		inline unsigned int get_provable_element_count(unsigned int set_id) const
+		{
+			unsigned int count = sets.sets[set_id].provable_elements.length;
+			for (const auto& entry : new_elements) {
+				for (unsigned int other_set : entry.value) {
+					if (sets.sets[set_id].descendants.contains(other_set)) {
+						if (!sets.sets[set_id].provable_elements.contains(entry.key)) {
+							count++;
+						}
+					}
+				}
+			}
+			return count;
+		}
+
+		inline void free_provable_elements(array_with_extra_elements<tuple>& elements) const {
+			unsigned int count = elements.length - elements.data_length;
+			for (unsigned int i = 0; i < count; i++)
+				core::free(elements.extra_data[i]);
+			core::free(elements.extra_data);
 		}
 
 		inline bool is_antecedent_satisfied(unsigned int implication_id) const {
@@ -6287,14 +6367,11 @@ private:
 				if (!unify(formula, set_formula_conjunct, quantifiers, first_unifications, second_quantifiers, second_unifications))
 					continue;
 
-				hash_set<tuple> provable_elements(16);
-				if (!prover.get_provable_elements(i, provable_elements))
-					return false;
-
+				typename Prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
 				for (unsigned int j = 0; j < possible_values.length; j++) {
 					const variable_assignment& values = possible_values[j];
-					if (!new_possible_values.ensure_capacity(new_possible_values.length + provable_elements.size + 1)) {
-						for (tuple& tup : provable_elements) core::free(tup);
+					if (!new_possible_values.ensure_capacity(new_possible_values.length + provable_elements.length + 1)) {
+						prover.free_provable_elements(provable_elements);
 						return false;
 					}
 					variable_assignment new_value(values);
@@ -6312,7 +6389,7 @@ private:
 					for (const tuple& element : provable_elements) {
 						variable_assignment& new_new_value = new_possible_values[new_possible_values.length];
 						if (!::init(new_new_value, new_value)) {
-							for (tuple& tup : provable_elements) core::free(tup);
+							prover.free_provable_elements(provable_elements);
 							return false;
 						}
 
@@ -6335,7 +6412,7 @@ private:
 							else if (element[unification.value->variable - 1].type == tuple_element_type::STRING)
 								constant = Term::new_string(element[unification.value->variable - 1].str);
 							if (constant == nullptr) {
-								for (tuple& tup : provable_elements) core::free(tup);
+								prover.free_provable_elements(provable_elements);
 								return false;
 							}
 							if (!new_new_value.unify_value(unification.key->quantifier.variable - 1, constant)) {
@@ -6382,7 +6459,7 @@ private:
 						new_possible_values.length++;
 					}
 				}
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 			}
 		}
 		for (unsigned int i = 0; i < implication_axioms.length; i++) {
@@ -6457,11 +6534,9 @@ private:
 			 || prover.is_set_removed(i)
 			 || prover.is_set_on_stack(i)) continue;
 
-			hash_set<tuple> provable_elements(16);
-			if (!prover.get_provable_elements(i, provable_elements))
-				return false;
-			if (provable_elements.size != sets.sets[i].set_size) {
-				for (tuple& tup : provable_elements) core::free(tup);
+			typename Prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
+			if (provable_elements.length != sets.sets[i].set_size) {
+				prover.free_provable_elements(provable_elements);
 				continue;
 			}
 
@@ -6474,7 +6549,7 @@ private:
 
 			array<unification> unifications(4);
 			if (!unify_subformula(formula, set_formula, quantifiers, second_quantifiers, unifications) || unifications.length == 0) {
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				continue;
 			}
 			/* make sure all unifications are either variables, constants, numbers, or strings */
@@ -6504,22 +6579,22 @@ private:
 			}
 			for (unification& u : unifications) core::free(u);
 			if (!has_valid_unification) {
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				continue;
 			}
 
 			unsigned int pushed_axiom_count;
 			if (!prover.template push_axiom<!Contradiction>(i, formula, possible_values, pushed_axiom_count)) {
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				return false;
 			} else if (pushed_axiom_count == 0) {
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				continue;
 			}
 
 			array<variable_assignment> temp_possible_values(4);
 			if (!::init(temp_possible_values[0], sets.sets[i].arity)) {
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				return false;
 			}
 			temp_possible_values.length = 1;
@@ -6537,7 +6612,7 @@ private:
 
 				tuple new_tuple;
 				if (!::init(new_tuple, sets.sets[i].arity)) {
-					for (tuple& tup : provable_elements) core::free(tup);
+					prover.free_provable_elements(provable_elements);
 					for (auto& element : temp_possible_values) core::free(element);
 					return false;
 				}
@@ -6552,7 +6627,7 @@ private:
 					} else if (value.assignment.values[k].type == instantiation_type::STRING) {
 						new_tuple[k].type = tuple_element_type::STRING;
 						if (!core::init(new_tuple[k].str, value.assignment.values[k].str)) {
-							for (tuple& tup : provable_elements) core::free(tup);
+							prover.free_provable_elements(provable_elements);
 							for (unsigned int l = 0; l < k; l++) core::free(new_tuple[l]);
 							core::free(new_tuple.elements);
 							for (auto& element : temp_possible_values) core::free(element);
@@ -6574,7 +6649,7 @@ private:
 					if (!new_possible_values.ensure_capacity(new_possible_values.length + 1)
 					 || !prover.get_axiom_instantiation(new_possible_values[new_possible_values.length], value, pushed_axiom_count))
 					{
-						for (tuple& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						for (auto& element : temp_possible_values) core::free(element);
 						return false;
 					}
@@ -6584,7 +6659,7 @@ private:
 				}
 			}
 			prover.pop_axiom(pushed_axiom_count);
-			for (tuple& tup : provable_elements) core::free(tup);
+			prover.free_provable_elements(provable_elements);
 			for (auto& element : temp_possible_values) core::free(element);
 		}
 		if (new_possible_values.length > old_size) {
@@ -6644,11 +6719,9 @@ private:
 				}
 				if (!are_variables_mapped) continue;
 
-				hash_set<tuple> provable_elements(16);
-				if (!prover.get_provable_elements(i, provable_elements))
-					return false;
-				if (provable_elements.size != sets.sets[i].set_size) {
-					for (tuple& tup : provable_elements) core::free(tup);
+				typename Prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
+				if (provable_elements.length != sets.sets[i].set_size) {
+					prover.free_provable_elements(provable_elements);
 					continue;
 				}
 
@@ -6657,7 +6730,7 @@ private:
 					array<variable_assignment> temp_possible_values(4);
 					variable_assignment& new_values = temp_possible_values[0];
 					if (!::init(new_values, values)) {
-						for (tuple& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						return false;
 					}
 					temp_possible_values.length = 1;
@@ -6695,7 +6768,7 @@ private:
 								for (unsigned int j = 0; j < second_unifications.size; j++) { core::free(*src_variables[j]); if (src_variables[j]->reference_count == 0) core::free(src_variables[j]); }
 								for (unsigned int j = 0; j < i; j++) { core::free(*dst_constants[j]); core::free(dst_constants[j]); }
 								for (auto& element : temp_possible_values) core::free(element);
-								for (tuple& tup : provable_elements) core::free(tup);
+								prover.free_provable_elements(provable_elements);
 								return false;
 							}
 						}
@@ -6719,7 +6792,7 @@ private:
 						for (auto& element : temp) core::free(element);
 					}
 				}
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 			}
 		}
 		return true;
@@ -6786,22 +6859,23 @@ private:
 		if (!contains || sets.sets[set_id].arity != 1) return true;
 
 		elements.keys[elements.size] = subset_term->binary.right;
-		hash_set<tuple> provable_elements(16);
-		if (!prover.get_provable_elements(set_id, provable_elements))
-			return false;
-		if (provable_elements.size == 0) {
+		if (sets.sets[set_id].provable_elements.length == 0) {
 			found_empty_set = true;
 			return true;
-		} else if (provable_elements.size != sets.sets[set_id].set_size) {
-			for (tuple& tup : provable_elements) core::free(tup);
+		} else if (sets.sets[set_id].provable_elements.length != sets.sets[set_id].set_size) {
 			return true;
 		}
 		array<tuple>& new_elements = elements.values[elements.size];
-		if (!array_init(new_elements, max(1, provable_elements.size))) {
-			for (tuple& tup : provable_elements) core::free(tup);
+		if (!array_init(new_elements, max(1, sets.sets[set_id].provable_elements.length))) {
 			return false;
-		} for (tuple& tup : provable_elements)
-			core::move(tup, new_elements[new_elements.length++]);
+		} for (const tuple& tup : sets.sets[set_id].provable_elements) {
+			if (!::init(new_elements[new_elements.length], tup)) {
+				for (tuple& tup : new_elements) core::free(tup);
+				core::free(new_elements);
+				return false;
+			}
+			new_elements.length++;
+		}
 		quantified_variables.remove(quantified_variables.index_of(elements.keys[elements.size]->variable));
 		elements.size++;
 		return true;
@@ -7423,15 +7497,10 @@ private:
 					if (!contains) continue;
 					if (!Contradiction && sets.sets[set_id].arity != args.length) continue;
 
-					hash_set<tuple> provable_elements(16);
-					if (!prover.get_provable_elements(set_id, provable_elements)) {
-						for (auto& element : new_possible_values) core::free(element);
-						for (auto& element : possible_values) core::free(element);
-						possible_values.clear(); return false;
-					}
+					typename Prover::ProvableElementArray provable_elements = prover.get_provable_elements(set_id);
 					if (Contradiction && sets.sets[set_id].arity != args.length) {
 						/* since the arity of the elements don't match, this formula is trivially disprovable */
-						for (auto& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						for (auto& element : new_possible_values) core::free(element);
 						for (variable_assignment& assignment : possible_values)
 							if (assignment.matching_axiom == formula) assignment.matching_axiom = nullptr;
@@ -7440,7 +7509,7 @@ private:
 					if (Contradiction) {
 						/* we can only prove a contradiction by exclusion, which is
 						   already handled by `is_provable_by_exclusion_without_abduction` */
-						for (auto& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						continue;
 					}
 
@@ -7449,11 +7518,11 @@ private:
 						if (left_most->type == TermType::VARIABLE && !new_values.unify_value(left_most->variable - 1, set_formula->binary.left))
 							continue;
 
-						array<variable_assignment> temp(max(1u, provable_elements.size));
+						array<variable_assignment> temp(max(1u, provable_elements.length));
 						for (const tuple& provable_element : provable_elements) {
 							variable_assignment& new_new_values = temp[temp.length];
 							if (!::init(new_new_values, new_values)) {
-								for (auto& tup : provable_elements) core::free(tup);
+								prover.free_provable_elements(provable_elements);
 								for (auto& element : temp) core::free(element);
 								for (auto& element : new_possible_values) core::free(element);
 								for (auto& element : possible_values) core::free(element);
@@ -7513,7 +7582,7 @@ private:
 							for (auto& element : union_result) core::free(element);
 						}
 					}
-					for (auto& tup : provable_elements) core::free(tup);
+					prover.free_provable_elements(provable_elements);
 				}
 
 				for (unsigned int k = 0; k < args.length; k++) {
@@ -8936,21 +9005,18 @@ private:
 			array_map<tuple, array<unsigned int>>& new_elements,
 			array<Formula*>& quantifiers,
 			array<Formula*>& new_atoms,
-			unsigned int new_atom_index)
+			unsigned int new_atom_index,
+			array<unsigned int>& visited_sets)
 	{
 		/* check if any of the possible values of the quantified variables are newly provable members of this set */
-		hash_set<tuple> provable_elements(16);
 		set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
-		if (!prover.get_provable_elements(set_id, provable_elements)) {
-			for (tuple& tup : provable_elements) core::free(tup);
-			return false;
-		}
-		unsigned int provable_set_size = provable_elements.size;
+		typename set_membership_prover::ProvableElementArray provable_elements = prover.get_provable_elements(set_id);
+		unsigned int provable_set_size = provable_elements.length;
 		for (unsigned int j = 0; SubtractProvableElements && j < possible_values.length; j++) {
 			const instantiation_tuple& values = possible_values[j].assignment;
 			tuple new_tuple;
 			if (!::init(new_tuple, values.length)) {
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				return false;
 			}
 			bool has_any = false;
@@ -8965,7 +9031,7 @@ private:
 					new_tuple[k].type = tuple_element_type::STRING;
 					if (!core::init(new_tuple[k].str, values.values[k].str)) {
 						for (unsigned int l = 0; l < k; l++) core::free(new_tuple[l]);
-						for (tuple& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						core::free(new_tuple.elements); return false;
 					}
 				} else if (values.values[k].type == instantiation_type::ANY || values.values[k].type == instantiation_type::ANY_NUMBER) {
@@ -8977,7 +9043,7 @@ private:
 			}
 			if (has_any) {
 				/* the number of provable elements is infinite */
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				return false;
 			}
 
@@ -8990,7 +9056,7 @@ private:
 				j--;
 			}
 		}
-		for (tuple& tup : provable_elements) core::free(tup);
+		prover.free_provable_elements(provable_elements);
 
 		if (possible_values.length == 0)
 			return true;
@@ -9091,18 +9157,14 @@ private:
 			visited.add(set_id);
 			while (stack.length != 0) {
 				unsigned int current = stack.pop();
-				hash_set<tuple> provable_elements(16);
-				if (!prover.get_provable_elements(current, provable_elements)) {
-					for (tuple& tup : provable_elements) core::free(tup);
-					return false;
-				}
+				unsigned int provable_element_count = prover.get_provable_element_count(current);
 				Formula* set_formula = sets.sets[current].set_formula();
 				if (set_formula->type == FormulaType::AND) {
 					for (unsigned int i = 0; i < set_formula->array.length; i++) {
-						if (!new_ancestor_terms.add(make_pair(set_formula->array.operands[i], provable_elements.size == sets.sets[current].set_size)))
+						if (!new_ancestor_terms.add(make_pair(set_formula->array.operands[i], provable_element_count == sets.sets[current].set_size)))
 							return false;
 					}
-				} else if (!new_ancestor_terms.add(make_pair(set_formula, provable_elements.size == sets.sets[current].set_size))) {
+				} else if (!new_ancestor_terms.add(make_pair(set_formula, provable_element_count == sets.sets[current].set_size))) {
 					return false;
 				}
 
@@ -9172,6 +9234,7 @@ private:
 			for (unsigned int j = 0; j < tup.length; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
 			for (unsigned int j = 0; j < tup.length; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
 		}
+		visited_sets.clear();
 		return true;
 	}
 
@@ -9180,7 +9243,8 @@ private:
 			array<unsigned int>& new_antecedents,
 			array_map<tuple, array<unsigned int>>& new_elements,
 			array<Formula*>& new_atoms,
-			unsigned int new_atom_index)
+			unsigned int new_atom_index,
+			array<unsigned int>& visited_sets)
 	{
 		/* check if the antecedent is already satisfied */
 		if (implication_axioms[implication_id].value || new_antecedents.contains(implication_id))
@@ -9227,6 +9291,7 @@ private:
 				consequent->reference_count++;
 			}
 		}
+		visited_sets.clear();
 		return true;
 	}
 
@@ -9239,12 +9304,17 @@ private:
 		   unifies with `new_atom`. */
 		unsigned int new_atom_index = 0;
 		array_map<tuple, array<unsigned int>> new_elements(4);
+		array<unsigned int> visited_sets(16);
 		while (new_atom_index < new_atoms.length) {
 			Formula* next_new_atom = new_atoms[new_atom_index++];
 
 			for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-				if (sets.sets[i].size_axioms.data == nullptr)
+				if (sets.sets[i].size_axioms.data == nullptr || visited_sets.contains(i))
 					continue;
+				if (!visited_sets.add(i)) {
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
 				Formula* set_formula = sets.sets[i].size_axioms[0]->formula->binary.left->binary.right;
 
 				array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
@@ -9345,14 +9415,9 @@ private:
 					}
 				}
 
-				hash_set<tuple> provable_elements(16);
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
-				if (!prover.get_provable_elements(i, provable_elements)) {
-					for (auto& element : possible_values) core::free(element);
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					return false;
-				}
-				if (provable_elements.size == sets.sets[i].set_size) {
+				typename set_membership_prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
+				if (provable_elements.length == sets.sets[i].set_size) {
 					/* this set being full could make other expressions provable by exclusion */
 					array_view<Formula*> conjuncts = make_array_view(
 							set_formula->type == FormulaType::AND ? set_formula->array.operands : &set_formula,
@@ -9436,7 +9501,7 @@ private:
 					array<variable_assignment> temp_possible_values(4);
 					variable_assignment& values = temp_possible_values[0];
 					if (!::init(values, possible_value)) {
-						for (tuple& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						for (auto& element : new_possible_values) core::free(element);
 						for (auto& element : possible_values) core::free(element);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
@@ -9458,12 +9523,12 @@ private:
 				for (auto& element : possible_values) core::free(element);
 
 				/* the addition could cause this formula to be provably false */
-				array<variable_assignment> temp_possible_values(max(1, provable_elements.size));
+				array<variable_assignment> temp_possible_values(max(1, provable_elements.length));
 				for (const tuple& element : provable_elements) {
 					variable_assignment& values = temp_possible_values[temp_possible_values.length];
 					if (!::init(values, element.length)) {
 						for (auto& element : temp_possible_values) core::free(element);
-						for (tuple& tup : provable_elements) core::free(tup);
+						prover.free_provable_elements(provable_elements);
 						for (auto& element : new_possible_values) core::free(element);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 						return false;
@@ -9483,7 +9548,7 @@ private:
 							if (!core::init(values.assignment.values[k].str, element[k].str)) {
 								values.assignment.values[k].type = instantiation_type::CONSTANT;
 								for (auto& element : temp_possible_values) core::free(element);
-								for (tuple& tup : provable_elements) core::free(tup);
+								prover.free_provable_elements(provable_elements);
 								for (auto& element : new_possible_values) core::free(element);
 								for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 								values.assignment.values[k].type = instantiation_type::CONSTANT;
@@ -9493,7 +9558,7 @@ private:
 					}
 					temp_possible_values.length++;
 				}
-				for (tuple& tup : provable_elements) core::free(tup);
+				prover.free_provable_elements(provable_elements);
 				if (temp_possible_values.length != 0 && is_provable_without_abduction<true>(set_formula, quantifiers, temp_possible_values, prover)) {
 					/* we found a contradiction */
 					for (auto& element : temp_possible_values) core::free(element);
@@ -9503,7 +9568,7 @@ private:
 				}
 
 				if (new_possible_values.length == 0) continue;
-				if (!check_set_membership<ResolveInconsistencies, true>(i, new_possible_values, new_antecedents, new_elements, quantifiers, new_atoms, new_atom_index + 1)) {
+				if (!check_set_membership<ResolveInconsistencies, true>(i, new_possible_values, new_antecedents, new_elements, quantifiers, new_atoms, new_atom_index + 1, visited_sets)) {
 					for (auto& element : new_possible_values) core::free(element);
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 					return false;
@@ -9552,7 +9617,7 @@ private:
 				}
 				for (auto& element : temp_possible_values) core::free(element);
 
-				if (!check_antecedent_satisfaction(i, new_antecedents, new_elements, new_atoms, new_atom_index + 1)) {
+				if (!check_antecedent_satisfaction(i, new_antecedents, new_elements, new_atoms, new_atom_index + 1, visited_sets)) {
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 					return false;
 				}
@@ -9656,9 +9721,9 @@ private:
 		for (unsigned int i = 0; i < new_elements.size; i++) {
 			const tuple& element = new_elements.keys[i];
 			for (unsigned int old_set : old_elements[i])
-				sets.sets[old_set].remove_element_at(sets.sets[old_set].index_of_element(element));
+				sets.remove_element_at(old_set, sets.sets[old_set].index_of_element(element));
 			for (unsigned int new_set : new_elements.values[i]) {
-				if (!sets.sets[new_set].add_element(element)) {
+				if (!sets.add_element(new_set, element)) {
 					for (unsigned int j = 0; j < new_elements.size; j++) core::free(old_elements[j]);
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 					core::free(old_elements); return false;
@@ -9731,54 +9796,42 @@ private:
 			/* check the new ancestors of `new_set_id` to make sure the size of each
 			   set is at least as large as the number of provable elements of each set */
 			for (unsigned int new_ancestor : new_ancestors) {
-				hash_set<tuple> provable_elements(16);
-				if (!sets.get_provable_elements(new_ancestor, provable_elements)) {
-					for (unsigned int j = 0; j < new_elements.size; j++) core::free(old_elements[j]);
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					core::free(old_elements); return false;
-				}
-
-				if (sets.sets[new_ancestor].set_size >= provable_elements.size) {
-					for (tuple& tup : provable_elements) core::free(tup);
+				if (sets.sets[new_ancestor].set_size >= sets.sets[new_ancestor].provable_elements.length)
 					continue;
-				}
 
 				while (true) {
 					/* compute the upper bound on the size of this set; if the new size
 						violates this bound, change the sizes of other sets to increase the bound */
 					array<unsigned int> stack(8); bool graph_changed;
-					if (!ResolveInconsistencies || !sets.increase_set_size(new_ancestor, provable_elements.size, stack, graph_changed)) {
-						for (tuple& tup : provable_elements) core::free(tup);
+					if (!ResolveInconsistencies || !sets.increase_set_size(new_ancestor, sets.sets[new_ancestor].provable_elements.length, stack, graph_changed)) {
 						/* undo the set changes */
 						for (unsigned int i = 0; i < new_elements.size; i++) {
 							const tuple& element = new_elements.keys[i];
 							for (unsigned int new_set : new_elements.values[i])
-								sets.sets[new_set].remove_element_at(sets.sets[new_set].index_of_element(element));
+								sets.remove_element_at(new_set, sets.sets[new_set].index_of_element(element));
 							for (unsigned int old_set : old_elements[i])
-								sets.sets[old_set].add_element(element);
+								sets.add_element(old_set, element);
 						}
 						for (unsigned int j = 0; j < new_elements.size; j++) core::free(old_elements[j]);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 						core::free(old_elements); return false;
 					}
-					if (sets.sets[new_ancestor].set_size >= provable_elements.size)
+					if (sets.sets[new_ancestor].set_size >= sets.sets[new_ancestor].provable_elements.length)
 						break;
 					if (!graph_changed) {
-						for (tuple& tup : provable_elements) core::free(tup);
 						/* undo the set changes */
 						for (unsigned int i = 0; i < new_elements.size; i++) {
 							const tuple& element = new_elements.keys[i];
 							for (unsigned int new_set : new_elements.values[i])
-								sets.sets[new_set].remove_element_at(sets.sets[new_set].index_of_element(element));
+								sets.remove_element_at(new_set, sets.sets[new_set].index_of_element(element));
 							for (unsigned int old_set : old_elements[i])
-								sets.sets[old_set].add_element(element);
+								sets.add_element(old_set, element);
 						}
 						for (unsigned int j = 0; j < new_elements.size; j++) core::free(old_elements[j]);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 						core::free(old_elements); return false;
 					}
 				}
-				for (tuple& tup : provable_elements) core::free(tup);
 			}
 		}
 		for (unsigned int j = 0; j < new_elements.size; j++) core::free(old_elements[j]);
@@ -9823,11 +9876,12 @@ private:
 			conjuncts[conjuncts.length++] = set_formula;
 		}
 
-		sets.sets[element_set_id].remove_element_at(element_index);
+		sets.remove_element_at(element_set_id, element_index);
 		for (unsigned int l = 0; l < conjuncts.length; l++) {
 			array<variable_assignment> temp_possible_values(1);
 			variable_assignment& values = temp_possible_values[0];
 			if (!::init(values, sets.sets[element_set_id].arity)) {
+				sets.add_to_provable_elements(element_set_id, element);
 				for (uint_fast8_t k = 0; k < sets.sets[element_set_id].arity; k++)
 					move(element[k], sets.sets[element_set_id].elements[sets.sets[element_set_id].elements.length++]);
 				return false;
@@ -9844,6 +9898,7 @@ private:
 					values.assignment.values[k].type = instantiation_type::STRING;
 					if (!core::init(values.assignment.values[k].str, element[k].str)) {
 						values.assignment.values[k].type = instantiation_type::CONSTANT;
+						sets.add_to_provable_elements(element_set_id, element);
 						for (uint_fast8_t k = 0; k < sets.sets[element_set_id].arity; k++)
 							move(element[k], sets.sets[element_set_id].elements[sets.sets[element_set_id].elements.length++]);
 						core::free(values); return false;
@@ -9860,6 +9915,7 @@ private:
 		}
 
 		if (conjuncts.length == 0) {
+			sets.add_to_provable_elements(element_set_id, element);
 			for (uint_fast8_t k = 0; k < sets.sets[element_set_id].arity; k++)
 				move(element[k], sets.sets[element_set_id].elements[sets.sets[element_set_id].elements.length++]);
 		} else {
@@ -9974,7 +10030,7 @@ private:
 			}
 
 			for (unsigned int new_set : new_sets) {
-				if (!sets.sets[new_set].add_element(element)) {
+				if (!sets.add_element(new_set, element)) {
 					for (uint_fast8_t k = 0; k < sets.sets[element_set_id].arity; k++) core::free(element[k]);
 					return false;
 				}
@@ -10095,6 +10151,12 @@ private:
 					return false;
 				}
 
+				hash_set<unsigned int> ancestors(16);
+				if (!sets.template get_ancestors<true>(i, ancestors)) {
+					for (auto& element : unifications) core::free(element);
+					for (auto entry : old_elements) core::free(entry.value);
+					return false;
+				}
 				for (unsigned int j = sets.sets[i].element_count(); j > 0; j--) {
 					tuple& element = *((tuple*) alloca(sizeof(tuple)));
 					element.elements = (tuple_element*) malloc(sizeof(tuple_element) * sets.sets[i].arity);
@@ -10164,7 +10226,7 @@ private:
 						conjuncts[conjuncts.length++] = set_formula;
 					}
 
-					sets.sets[i].remove_element_at(j - 1);
+					sets.remove_element_at(i, j - 1, ancestors);
 					if (!old_elements.ensure_capacity(old_elements.size + 1)) {
 						for (auto& element : unifications) core::free(element);
 						for (auto entry : old_elements) core::free(entry.value);
@@ -10342,6 +10404,7 @@ private:
 				array<variable_assignment> temp_possible_values(1);
 				variable_assignment& values = temp_possible_values[0];
 				if (!::init(values, sets.sets[old_elements.keys[i]].arity)) {
+					sets.add_to_provable_elements(old_elements.keys[i], old_elements.values[i]);
 					for (uint_fast8_t k = 0; k < sets.sets[old_elements.keys[i]].arity; k++)
 						move(old_elements.values[i][k], sets.sets[old_elements.keys[i]].elements[sets.sets[old_elements.keys[i]].elements.length++]);
 					for (auto entry : old_elements) core::free(entry.value);
@@ -10359,6 +10422,7 @@ private:
 						values.assignment.values[k].type = instantiation_type::STRING;
 						if (!core::init(values.assignment.values[k].str, old_elements.values[i][k].str)) {
 							values.assignment.values[k].type = instantiation_type::CONSTANT;
+							sets.add_to_provable_elements(old_elements.keys[i], old_elements.values[i]);
 							for (uint_fast8_t k = 0; k < sets.sets[old_elements.keys[i]].arity; k++)
 								move(old_elements.values[i][k], sets.sets[old_elements.keys[i]].elements[sets.sets[old_elements.keys[i]].elements.length++]);
 							for (auto entry : old_elements) core::free(entry.value);
@@ -10372,7 +10436,7 @@ private:
 				if (is_provable_without_abduction<false>(set_formula, quantifiers, temp_possible_values, prover)) {
 					/* this element is still provably a member of this set */
 					for (auto& element : temp_possible_values) core::free(element);
-					if (!sets.sets[old_elements.keys[i]].add_element(old_elements.values[i])) {
+					if (!sets.add_element(old_elements.keys[i], old_elements.values[i])) {
 						for (auto entry : old_elements) core::free(entry.value);
 						return false;
 					}
@@ -10493,7 +10557,7 @@ private:
 				}
 
 				for (unsigned int new_set : new_sets) {
-					if (!sets.sets[new_set].add_element(old_elements.values[i])) {
+					if (!sets.add_element(new_set, old_elements.values[i])) {
 						for (auto entry : old_elements) core::free(entry.value);
 						return false;
 					}
@@ -10517,6 +10581,7 @@ private:
 				array<variable_assignment> temp_possible_values(1);
 				variable_assignment& values = temp_possible_values[0];
 				if (!::init(values, 0)) {
+					sets.add_to_provable_elements(old_elements.keys[i], old_elements.values[i]);
 					for (uint_fast8_t k = 0; k < sets.sets[old_elements.keys[i]].arity; k++)
 						move(old_elements.values[i][k], sets.sets[old_elements.keys[i]].elements[sets.sets[old_elements.keys[i]].elements.length++]);
 					for (auto entry : old_elements) core::free(entry.value);
@@ -10580,7 +10645,8 @@ private:
 		array<unsigned int> new_antecedents(1);
 		array_map<tuple, array<unsigned int>> new_elements(1);
 		array<Formula*> new_atoms(1);
-		if (!check_set_membership<ResolveInconsistencies, true>(set_id, possible_values, new_antecedents, new_elements, quantifiers, new_atoms, 0)) {
+		array<unsigned int> visited_sets(1);
+		if (!check_set_membership<ResolveInconsistencies, true>(set_id, possible_values, new_antecedents, new_elements, quantifiers, new_atoms, 0, visited_sets)) {
 			for (auto& element : possible_values) core::free(element);
 			for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 			return false;
@@ -10605,20 +10671,20 @@ private:
 			if (!entry.value.contains(set_id)) continue;
 			new_element_count++;
 		}
-		hash_set<tuple> provable_elements(16);
-		if (!sets.get_provable_elements(set_id, provable_elements)
-		 || provable_elements.size + new_element_count > sets.sets[set_id].set_size)
-		{
+		if (sets.sets[set_id].provable_elements.length + new_element_count > sets.sets[set_id].set_size) {
 			for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-			for (tuple& tup : provable_elements) core::free(tup);
 			return false;
 		}
-		for (tuple& tup : provable_elements) core::free(tup);
 
 		/* add the elements to the sets */
+		hash_set<unsigned int> ancestors(16);
+		if (!sets.template get_ancestors<true>(set_id, ancestors)) {
+			for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+			return false;
+		}
 		for (const auto& entry : new_elements) {
 			if (!entry.value.contains(set_id)) continue;
-			if (!sets.sets[set_id].add_element(entry.key)) {
+			if (!sets.add_element(set_id, entry.key, ancestors)) {
 				for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 				return false;
 			}
@@ -10641,6 +10707,9 @@ private:
 		if (sets.sets[set_id].set_size == 0)
 			return check_set_membership_after_subtraction(set_formula, set_id, std::forward<Args>(visitor)...);
 
+		hash_set<unsigned int> ancestors(16);
+		if (!sets.template get_ancestors<true>(set_id, ancestors))
+			return false;
 		for (unsigned int i = 0; i < sets.sets[set_id].element_count(); i++) {
 			tuple_element* element = sets.sets[set_id].elements.data + (sets.sets[set_id].arity * i);
 
@@ -10738,10 +10807,10 @@ private:
 			}
 
 			for (unsigned int new_set : new_sets) {
-				if (!sets.sets[new_set].add_element({element, sets.sets[set_id].arity}))
+				if (!sets.add_element(new_set, {element, sets.sets[set_id].arity}))
 					return false;
 			}
-			sets.sets[set_id].remove_element_at(i--);
+			sets.remove_element_at(set_id, i--, ancestors);
 		}
 		return true;
 	}
@@ -10811,7 +10880,8 @@ private:
 		array<Formula*> new_atoms(4);
 		array_map<tuple, array<unsigned int>> new_elements(4);
 		array<unsigned int> new_antecedents(4);
-		if (!check_set_membership<ResolveInconsistencies, false>(consequent_set, possible_values, new_antecedents, new_elements, quantifiers, new_atoms, 0)) {
+		array<unsigned int> visited_sets(1);
+		if (!check_set_membership<ResolveInconsistencies, false>(consequent_set, possible_values, new_antecedents, new_elements, quantifiers, new_atoms, 0, visited_sets)) {
 			for (auto& element : possible_values) core::free(element);
 			for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 			free_all(new_atoms); return false;
@@ -10921,7 +10991,8 @@ private:
 		array<Formula*> new_atoms(4);
 		array<unsigned int> new_antecedents(4);
 		array_map<tuple, array<unsigned int>> new_elements(4);
-		if (!check_antecedent_satisfaction(implication_id, new_antecedents, new_elements, new_atoms, 0)) {
+		array<unsigned int> visited_sets(1);
+		if (!check_antecedent_satisfaction(implication_id, new_antecedents, new_elements, new_atoms, 0, visited_sets)) {
 			for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 			free_all(new_atoms); return false;
 		}
@@ -12085,11 +12156,8 @@ private:
 			/* adding this edge could increase the number of provable elements
 			   in `consequent_set` to be its set size, which can cause `a(b)`
 			   to be newly provable or disprovable */
-			hash_set<tuple> provable_elements(16);
-			if (!sets.get_provable_elements(consequent_set, provable_elements)
-			 || (provable_elements.size == sets.sets[consequent_set].set_size && !check_set_membership_after_addition<ResolveInconsistencies>(consequent, std::forward<Args>(visitor)...)))
+			if (sets.sets[consequent_set].provable_elements.length == sets.sets[consequent_set].set_size && !check_set_membership_after_addition<ResolveInconsistencies>(consequent, std::forward<Args>(visitor)...))
 			{
-				for (tuple& tup : provable_elements) core::free(tup);
 				if (is_subset_new) {
 					sets.template free_subset_axiom<false>(antecedent, consequent, arity, std::forward<Args>(visitor)...);
 					check_old_subset_membership(antecedent_set, consequent_set, std::forward<Args>(visitor)...);
@@ -12102,7 +12170,6 @@ private:
 				}
 				return nullptr;
 			}
-			for (tuple& tup : provable_elements) core::free(tup);
 		}
 		return axiom;
 	}
@@ -12171,11 +12238,8 @@ private:
 				/* adding this edge could increase the number of provable elements
 				   in `consequent_set` to be its set size, which can cause `a(b)`
 				   to be newly provable or disprovable */
-				hash_set<tuple> provable_elements(16);
-				if (!sets.get_provable_elements(consequent_set, provable_elements)
-				 || (provable_elements.size == sets.sets[consequent_set].set_size && !check_set_membership_after_addition<ResolveInconsistencies>(consequent, std::forward<Args>(visitor)...)))
+				if (sets.sets[consequent_set].provable_elements.length == sets.sets[consequent_set].set_size && !check_set_membership_after_addition<ResolveInconsistencies>(consequent, std::forward<Args>(visitor)...))
 				{
-					for (tuple& tup : provable_elements) core::free(tup);
 					if (is_subset_new) {
 						sets.template free_subset_axiom<false>(antecedent, consequent, arity, std::forward<Args>(visitor)...);
 						check_old_subset_membership(antecedent_set, consequent_set, std::forward<Args>(visitor)...);
@@ -12188,7 +12252,6 @@ private:
 					}
 					return nullptr;
 				}
-				for (tuple& tup : provable_elements) core::free(tup);
 			}
 		}
 		return axiom;
@@ -12211,28 +12274,16 @@ private:
 			/* removing this edge could decrease the number of provable elements
 			   in `consequent_set` to no longer be its set size, which can
 			   cause `a(b)` to be newly provable or disprovable */
-			hash_set<tuple> provable_elements(16);
-			if (!sets.get_provable_elements(consequent_set, provable_elements)) {
-				for (tuple& tup : provable_elements) core::free(tup);
-				core::free(*consequent); if (consequent->reference_count == 0) core::free(consequent);
-				return;
-			}
-			unsigned int new_set_size = provable_elements.size;
+			unsigned int new_set_size = sets.sets[consequent_set].provable_elements.length;
 			if (new_set_size < sets.sets[consequent_set].set_size) {
-				if (!sets.get_provable_elements(antecedent_set, provable_elements)) {
-					for (tuple& tup : provable_elements) core::free(tup);
-					core::free(*consequent); if (consequent->reference_count == 0) core::free(consequent);
-					return;
-				}
-				if (provable_elements.size == sets.sets[consequent_set].set_size
+				unsigned int provable_element_count = sets.count_union_of_provable_elements(consequent_set, antecedent_set);
+				if (provable_element_count == sets.sets[consequent_set].set_size
 				 && !check_set_membership_after_subtraction(consequent, 0, std::forward<Args>(visitor)...))
 				{
-					for (tuple& tup : provable_elements) core::free(tup);
 					core::free(*consequent); if (consequent->reference_count == 0) core::free(consequent);
 					return;
 				}
 			}
-			for (tuple& tup : provable_elements) core::free(tup);
 		}
 		core::free(*consequent); if (consequent->reference_count == 0) core::free(consequent);
 		check_old_subset_membership(antecedent_set, consequent_set, std::forward<Args>(visitor)...);
@@ -14357,10 +14408,12 @@ double log_joint_probability_of_truth(
 
 	provability_collector<ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	double max_log_probability = collector.internal_collector.current_log_probability;
+unsigned int max_t = 0;
+unsigned int max_i = 0;
 	for (unsigned int i = 0; i < num_restarts; i++) {
 		for (unsigned int t = 0; t < num_samples; t++)
 		{
-fprintf(stderr, "DEBUG: i = %u, t = %u\n", i, t);
+/*fprintf(stderr, "DEBUG: i = %u, t = %u\n", i, t);
 proof_axioms.check_proof_axioms(T);
 proof_axioms.check_universal_eliminations(T, collector);
 T.check_concept_axioms();
@@ -14372,9 +14425,11 @@ T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
-if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			do_mh_step(T, proof_prior, proof_axioms, collector);
 			if (collector.internal_collector.current_log_probability > max_log_probability) {
+max_t = max(max_t, t);
+max_i = max(max_i, i);
 				free(T_MAP); proof_map.clear(); formula_map.clear();
 				if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_MAP, proof_map, formula_map)) {
 					T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
@@ -14394,6 +14449,7 @@ if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_print
 				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
 		}
 	}
+fprintf(stderr, "max_i = %u, max_t = %u\n", max_i, max_t);
 
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);

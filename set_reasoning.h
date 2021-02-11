@@ -772,6 +772,10 @@ inline bool operator < (const tuple& first, const tuple& second) {
 	return false;
 }
 
+inline bool operator >= (const tuple& first, const tuple& second) {
+	return !(first < second);
+}
+
 template<typename Stream, typename... Printer>
 bool print(const tuple& tup, Stream& out, Printer&&... printer) {
 	if (tup.length == 0)
@@ -800,6 +804,7 @@ struct set_info
 	array<Proof*> size_axioms;
 	hash_set<unsigned int> descendants;
 	array<tuple_element> elements; /* NOTE: this does not contain the elements of the descendants of this set */
+	array<tuple> provable_elements;
 
 	inline unsigned int element_count() const {
 		return elements.length / arity;
@@ -840,12 +845,6 @@ struct set_info
 		elements.length -= arity;
 	}
 
-	inline void remove_last_element() {
-		for (unsigned int j = 0; j < arity; j++)
-			core::free(elements[elements.length - j - 1]);
-		elements.length -= arity;
-	}
-
 	static inline bool clone(
 			const set_info<BuiltInConstants, ProofCalculus>& src,
 			set_info<BuiltInConstants, ProofCalculus>& dst,
@@ -863,6 +862,11 @@ struct set_info
 			core::free(dst.size_axioms);
 			core::free(dst.descendants);
 			return false;
+		} else if (!array_init(dst.provable_elements, src.provable_elements.capacity)) {
+			core::free(dst.size_axioms);
+			core::free(dst.descendants);
+			core::free(dst.elements);
+			return false;
 		}
 		for (Proof* axiom : src.size_axioms) {
 			if (!Proof::clone(axiom, dst.size_axioms[dst.size_axioms.length], proof_map, formula_map)) {
@@ -878,6 +882,12 @@ struct set_info
 				return false;
 			}
 			dst.elements.length++;
+		} for (const tuple& element : src.provable_elements) {
+			if (!init(dst.provable_elements[dst.provable_elements.length], element)) {
+				core::free(dst);
+				return false;
+			}
+			dst.provable_elements.length++;
 		}
 		return true;
 	}
@@ -887,6 +897,9 @@ struct set_info
 		for (unsigned int j = 0; j < info.elements.length; j++)
 			core::free(info.elements[j]);
 		core::free(info.elements);
+		for (tuple& tup : info.provable_elements)
+			core::free(tup);
+		core::free(info.provable_elements);
 		for (Proof* axiom : info.size_axioms) {
 			core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		}
@@ -1033,6 +1046,9 @@ inline bool init(
 	} else if (!array_init(info.elements, 4)) {
 		free(*initial_size_axiom); free(initial_size_axiom); free(info.size_axioms);
 		free(info.descendants); return false;
+	} else if (!array_init(info.provable_elements, 8)) {
+		free(*initial_size_axiom); free(initial_size_axiom); free(info.size_axioms);
+		free(info.descendants); free(info.elements); return false;
 	}
 	on_new_size_axiom(initial_size_axiom, std::forward<Args>(visitor)...);
 	return true;
@@ -1200,6 +1216,111 @@ struct set_reasoning
 		return true;
 	}
 
+	template<bool AncestorsIsEmpty = false>
+	inline bool get_ancestors(unsigned int set_id, hash_set<unsigned int>& ancestors) const
+	{
+		unsigned int index;
+		if (AncestorsIsEmpty) {
+			index = ancestors.index_to_insert(set_id);
+		} else {
+			if (!ancestors.check_size()) return false;
+			bool contains;
+			index = ancestors.index_of(set_id, contains);
+			if (contains) return true;
+		}
+
+		/* get the old ancestors */
+		array<unsigned int> stack(8);
+		stack[stack.length++] = set_id;
+		ancestors.keys[index] = set_id;
+		ancestors.size++;
+		while (stack.length != 0) {
+			unsigned int current = stack.pop();
+			for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (ancestors.contains(parent)) continue;
+				if (!ancestors.add(parent) || !stack.add(parent)) {
+					return false;
+				}
+			} for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (ancestors.contains(entry.key)) continue;
+				if (!ancestors.add(entry.key) || !stack.add(entry.key)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	void remove_element_at(unsigned int set_id, unsigned int i, hash_set<unsigned int>& ancestors) {
+		const tuple_element* element_src = sets[set_id].elements.data + (sets[set_id].arity * i);
+		for (unsigned int ancestor : ancestors) {
+			for (unsigned int j = 0; j < sets[ancestor].provable_elements.length; j++) {
+				tuple& tup = sets[ancestor].provable_elements[j];
+				bool equivalent = true;
+				for (uint_fast8_t k = 0; k < tup.length; k++) {
+					if (tup[k] != element_src[k]) {
+						equivalent = false;
+						break;
+					}
+				}
+				if (equivalent) {
+					core::free(sets[ancestor].provable_elements[j]);
+					shift_left(sets[ancestor].provable_elements.data + j, sets[ancestor].provable_elements.length - j - 1);
+					sets[ancestor].provable_elements.length--;
+					break;
+				}
+			}
+		}
+		sets[set_id].remove_element_at(i);
+	}
+
+	inline bool remove_element_at(unsigned int set_id, unsigned int i) {
+		hash_set<unsigned int> ancestors(16);
+		if (!get_ancestors<true>(set_id, ancestors))
+			return false;
+		remove_element_at(set_id, i, ancestors);
+		return true;
+	}
+
+	bool add_to_provable_elements(unsigned int set_id, const tuple& tup, const hash_set<unsigned int>& ancestors) {
+		for (unsigned int ancestor : ancestors) {
+			array<tuple>& provable_elements = sets[ancestor].provable_elements;
+			unsigned int index = linear_search(provable_elements.data, tup, 0, provable_elements.length);
+			if (index == sets[ancestor].provable_elements.length) {
+				if (!provable_elements.ensure_capacity(provable_elements.length + 1)
+				 || !init(provable_elements[provable_elements.length], tup))
+					return false;
+				provable_elements.length++;
+			} else if (provable_elements[index] != tup) {
+				if (!provable_elements.ensure_capacity(provable_elements.length + 1)) return false;
+				shift_right(provable_elements.data, provable_elements.length, index);
+				if (!init(provable_elements[index], tup))
+					return false;
+				provable_elements.length++;
+			}
+		}
+		return true;
+	}
+
+	inline bool add_to_provable_elements(unsigned int set_id, const tuple& tup) {
+		hash_set<unsigned int> ancestors(16);
+		if (!get_ancestors<true>(set_id, ancestors))
+			return false;
+		return add_to_provable_elements(set_id, tup, ancestors);
+	}
+
+	inline bool add_element(unsigned int set_id, const tuple& tup, const hash_set<unsigned int>& ancestors) {
+		return add_to_provable_elements(set_id, tup, ancestors)
+			&& sets[set_id].add_element(tup);
+	}
+
+	inline bool add_element(unsigned int set_id, const tuple& tup) {
+		hash_set<unsigned int> ancestors(16);
+		return get_ancestors<true>(set_id, ancestors)
+			&& add_to_provable_elements(set_id, tup, ancestors)
+			&& sets[set_id].add_element(tup);
+	}
+
 	bool ensure_capacity(unsigned int new_length) {
 		if (new_length <= capacity) return true;
 		unsigned int new_capacity = capacity;
@@ -1322,7 +1443,7 @@ struct set_reasoning
 		/* compute the ancestors of `new_set` and their degrees (in the subgraph of the ancestors) */
 		array_map<unsigned int, unsigned int> ancestors(8);
 		for (unsigned int superset : supersets) {
-			if (!get_ancestors(intensional_graph, superset, ancestors)) {
+			if (!::get_ancestors(intensional_graph, superset, ancestors)) {
 				intensional_graph.template free_set<true>(set_id);
 				extensional_graph.template free_set<true>(set_id);
 				return false;
@@ -2203,6 +2324,16 @@ struct set_reasoning
 		return true;
 	}
 
+	inline unsigned int count_union_of_provable_elements(unsigned int first, unsigned int second) const {
+		unsigned int count = sets[first].provable_elements.length + sets[second].provable_elements.length;
+		auto union_both = [&count](const tuple& tup, unsigned int i, unsigned int j) { count--; };
+		auto union_one = [](const tuple& tup, unsigned int i, unsigned int j) { };
+		set_union(union_both, union_one, union_one,
+				sets[first].provable_elements.data, sets[second].provable_elements.length,
+				sets[second].provable_elements.data, sets[second].provable_elements.length);
+		return count;
+	}
+
 	template<bool ResolveInconsistencies, bool FreeSets, typename... Args>
 	Proof* get_subset_axiom(
 			Formula* antecedent, Formula* consequent, unsigned int arity,
@@ -2237,40 +2368,18 @@ struct set_reasoning
 		if (!new_edge) return axiom;
 
 		/* check that the new edge does not create any inconsistencies */
-		hash_set<tuple> provable_elements(16);
-		if (!get_provable_elements(antecedent_set, provable_elements)) {
-			extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
-			if (FreeSets) {
-				try_free_set(consequent_set);
-				try_free_set(antecedent_set);
-			}
-			return NULL;
-		}
 		array<unsigned int> ancestors_stack(8);
 		hash_set<unsigned int> visited(16);
 		ancestors_stack[ancestors_stack.length++] = consequent_set;
 		visited.add(consequent_set);
 		while (ancestors_stack.length > 0) {
 			unsigned int current = ancestors_stack.pop();
-			hash_set<tuple> current_provable_elements(16);
-			if (!get_provable_elements(current, current_provable_elements)
-			 || !current_provable_elements.add_all(provable_elements))
-			{
-				for (tuple& tup : provable_elements) core::free(tup);
-				for (tuple& tup : current_provable_elements) core::free(tup);
-				extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
-				if (FreeSets) {
-					try_free_set(consequent_set);
-					try_free_set(antecedent_set);
-				}
-				return NULL;
-			}
-			while (current_provable_elements.size > sets[current].set_size) {
+			unsigned int provable_element_count = count_union_of_provable_elements(antecedent_set, current);
+			while (provable_element_count > sets[current].set_size) {
 				if (ResolveInconsistencies) {
 					bool graph_changed;
 					array<unsigned int> stack(8);
-					if (!increase_set_size(current, current_provable_elements.size, stack, graph_changed) || !graph_changed) {
-						for (tuple& tup : provable_elements) core::free(tup);
+					if (!increase_set_size(current, provable_element_count, stack, graph_changed) || !graph_changed) {
 						extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
 						if (FreeSets) {
 							try_free_set(consequent_set);
@@ -2279,8 +2388,6 @@ struct set_reasoning
 						return NULL;
 					}
 				} else {
-					for (tuple& tup : provable_elements) core::free(tup);
-					for (tuple& tup : current_provable_elements) core::free(tup);
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
 					if (FreeSets) {
 						try_free_set(consequent_set);
@@ -2289,12 +2396,10 @@ struct set_reasoning
 					return NULL;
 				}
 			}
-			for (tuple& tup : current_provable_elements) core::free(tup);
 
 			for (const auto& entry : extensional_graph.vertices[current].parents) {
 				if (visited.contains(entry.key)) continue;
 				if (!ancestors_stack.add(entry.key) || !visited.add(entry.key)) {
-					for (tuple& tup : provable_elements) core::free(tup);
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
 					if (FreeSets) {
 						try_free_set(consequent_set);
@@ -2305,7 +2410,6 @@ struct set_reasoning
 			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (visited.contains(parent)) continue;
 				if (!ancestors_stack.add(parent) || !visited.add(parent)) {
-					for (tuple& tup : provable_elements) core::free(tup);
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
 					if (FreeSets) {
 						try_free_set(consequent_set);
@@ -2315,7 +2419,6 @@ struct set_reasoning
 				}
 			}
 		}
-		for (tuple& tup : provable_elements) core::free(tup);
 		for (unsigned int descendant : sets[antecedent_set].descendants) {
 			if (sets[descendant].set_size > 0 && are_disjoint(consequent_set, descendant)) {
 				if (ResolveInconsistencies) {
@@ -2620,33 +2723,6 @@ struct set_reasoning
 		return sets[set_id].get_size_axiom(formula, std::forward<Args>(visitor)...);
 	}
 
-	inline bool get_provable_elements(unsigned int set_id,
-			hash_set<tuple>& provable_elements) const
-	{
-		for (unsigned int descendant : sets[set_id].descendants) {
-			unsigned int num_elements = sets[descendant].elements.length / sets[descendant].arity;
-			for (unsigned int i = 0; i < num_elements; i++) {
-				if (!provable_elements.add({sets[descendant].elements.data + i * sets[descendant].arity, sets[descendant].arity}))
-					return false;
-			}
-		}
-		return true;
-	}
-
-	inline bool get_provable_elements(unsigned int set_id,
-			hash_set<tuple>& provable_elements,
-			Proof* excluded_subset_axiom) const
-	{
-		for (unsigned int descendant : sets[set_id].descendants) {
-			unsigned int num_elements = sets[descendant].elements.length / sets[descendant].arity;
-			for (unsigned int i = 0; i < num_elements; i++) {
-				if (!provable_elements.add({sets[descendant].elements.data + i * sets[descendant].arity, sets[descendant].arity}))
-					return false;
-			}
-		}
-		return true;
-	}
-
 	bool get_size_lower_bound(unsigned int set_id, unsigned int& lower_bound,
 			unsigned int*& clique, unsigned int& clique_count,
 			unsigned int& ancestor_of_clique) const
@@ -2657,11 +2733,7 @@ struct set_reasoning
 #endif
 
 		/* first compute the number of elements that provably belong to this set */
-		hash_set<tuple> provable_elements(16);
-		if (!get_provable_elements(set_id, provable_elements))
-			return false;
-		lower_bound = provable_elements.size;
-		for (tuple& tup : provable_elements) core::free(tup);
+		lower_bound = sets[set_id].provable_elements.length;
 
 		/* next compute the maximal clique of subsets of this set
 		   (maximal in the sense of the size of their union) */
@@ -2895,7 +2967,7 @@ struct set_reasoning
 		return success;
 	}
 
-	template<typename Stream, typename... Printer>
+	template<bool PrintProvableElements = false, typename Stream, typename... Printer>
 	bool print_axioms(Stream& out, Printer&&... printer) const {
 		for (unsigned int i = 1; i < set_count + 1; i++) {
 			if (sets[i].size_axioms.data == nullptr) continue;
@@ -2928,6 +3000,16 @@ struct set_reasoning
 				if (sets[i].arity > 1 && !print(')', out)) return false;
 			}
 			if (!print("}\n", out)) return false;
+
+			if (PrintProvableElements) {
+				if (!print("  Provable elements: {", out)) return false;
+				for (unsigned int k = 0; k < sets[i].provable_elements.length; k++) {
+					if (k != 0 && !print(", ", out)) return false;
+					if (!print(sets[i].provable_elements[k], out, std::forward<Printer>(printer)...))
+						return false;
+				}
+				if (!print("}\n", out)) return false;
+			}
 		}
 		return true;
 	}

@@ -1215,22 +1215,14 @@ bool propose_change_set_size(
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		T.sets.sets[selected_set].change_size(new_size);
 
-		hash_set<tuple> provable_elements(16);
-		if (!T.sets.get_provable_elements(selected_set, provable_elements)) {
-			T.sets.sets[selected_set].change_size(old_size);
-			return false;
-		}
-
 		bool is_consistent = true;
-		if (provable_elements.size == new_size) {
+		if (T.sets.sets[selected_set].provable_elements.length == new_size) {
 			/* if the set becomes full, check for consistency by calling `check_set_membership_after_addition` */
 			hol_term* set_formula = T.sets.sets[selected_set].set_formula();
 			array<hol_term*> conjuncts(8);
 			if (set_formula->type == hol_term_type::AND) {
-				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
-					for (tuple& tup : provable_elements) core::free(tup);
+				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length))
 					return false;
-				}
 			} else {
 				conjuncts[conjuncts.length++] = set_formula;
 			}
@@ -1241,15 +1233,13 @@ bool propose_change_set_size(
 					break;
 				}
 			}
-		} else if (provable_elements.size == old_size) {
+		} else if (T.sets.sets[selected_set].provable_elements.length == old_size) {
 			/* if the set becomes not full, check for consistency by calling `check_set_membership_after_subtraction` */
 			hol_term* set_formula = T.sets.sets[selected_set].set_formula();
 			array<hol_term*> conjuncts(8);
 			if (set_formula->type == hol_term_type::AND) {
-				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
-					for (tuple& tup : provable_elements) core::free(tup);
+				if (!conjuncts.append(set_formula->array.operands, set_formula->array.length))
 					return false;
-				}
 			} else {
 				conjuncts[conjuncts.length++] = set_formula;
 			}
@@ -1261,7 +1251,6 @@ bool propose_change_set_size(
 				}
 			}
 		}
-		for (tuple& tup : provable_elements) core::free(tup);
 
 		if (!is_consistent) {
 			T.sets.sets[selected_set].change_size(old_size);

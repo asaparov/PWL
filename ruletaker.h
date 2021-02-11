@@ -493,7 +493,7 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id < 17 - 1)
+/*if (job.question_id > 4 - 1)
 {
 total++;
 free(job);
@@ -526,62 +526,72 @@ continue;
 				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
 				Proof* proof_MAP_true; Proof* proof_MAP_false;
 				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 4, 20, T_MAP_true, proof_MAP_true);
-				for (unsigned int j = 0; isinf(log_probability_true) && j < 1000; j++) {
+				for (unsigned int j = 0; isinf(log_probability_true) && j < 50; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
 					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 4, 20, T_MAP_true, proof_MAP_true);
 				}
 
-				hol_term* negated;
-				if (!negate_head(logical_forms[0], negated) || negated == nullptr) {
-					free_logical_forms(logical_forms, parse_count);
-					status = false;
-					num_threads_running--;
-					work_queue_cv.notify_all();
-					free(job); free(T_copy); free(T_MAP_true);
-					total++;
-					for (auto entry : names) free(entry.key);
-					free(parser); return;
-				}
+				if (!isinf(log_probability_true)) {
+					hol_term* negated;
+					if (!negate_head(logical_forms[0], negated) || negated == nullptr) {
+						free_logical_forms(logical_forms, parse_count);
+						status = false;
+						num_threads_running--;
+						work_queue_cv.notify_all();
+						free(job); free(T_copy); free(T_MAP_true);
+						total++;
+						for (auto entry : names) free(entry.key);
+						free(parser); return;
+					}
 
-				/* for reproducibility, reset the PRNG state */
-				core::engine = context_queue[job.context_id].prng_engine;
+					/* for reproducibility, reset the PRNG state */
+					core::engine = context_queue[job.context_id].prng_engine;
 
-				Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
+					Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
 T_copy.print_axioms(stderr, *debug_terminal_printer);
 T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
-				double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
-				for (unsigned int j = 0; isinf(log_probability_false) && j < 1000; j++) {
-					null_collector collector;
-					for (unsigned int t = 0; t < 10; t++)
-						do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-					log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
-				}
-				free(*negated); if (negated->reference_count == 0) free(negated);
+					double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
+					for (unsigned int j = 0; isinf(log_probability_false) && j < 50; j++) {
+						null_collector collector;
+						for (unsigned int t = 0; t < 10; t++)
+							do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
+						log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
+					}
+					free(*negated); if (negated->reference_count == 0) free(negated);
 
-				if (fabs(log_probability_true - log_probability_false) < PREDICT_UNKNOWN_THRESHOLD) {
-					if (job.label != ruletaker_label::UNKNOWN) {
-						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+					if (fabs(log_probability_true - log_probability_false) < PREDICT_UNKNOWN_THRESHOLD) {
+						if (job.label != ruletaker_label::UNKNOWN) {
+							print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+							print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+						}
+					} else if (log_probability_true > log_probability_false) {
+						if (job.label != ruletaker_label::TRUE) {
+							print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+							print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+						}
+					} else if (log_probability_false > log_probability_true) {
+						if (job.label != ruletaker_label::FALSE) {
+							print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+							print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+						}
 					}
-				} else if (log_probability_true > log_probability_false) {
-					if (job.label != ruletaker_label::TRUE) {
-						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
-					}
-				} else if (log_probability_false > log_probability_true) {
+
+					results_lock.lock();
+					results.add({job.context_id, job.question_id, log_probability_true - log_probability_false, job.label});
+					results_lock.unlock();
+					if (!isinf(log_probability_true)) free(T_MAP_true);
+					if (!isinf(log_probability_false)) free(T_MAP_false);
+				} else {
 					if (job.label != ruletaker_label::FALSE) {
 						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-						print_theory(T_MAP_false, proof_MAP_false, proof_prior);
 					}
-				}
 
-				results_lock.lock();
-				results.add({job.context_id, job.question_id, log_probability_true - log_probability_false, job.label});
-				results_lock.unlock();
-				if (!isinf(log_probability_true)) free(T_MAP_true);
-				if (!isinf(log_probability_false)) free(T_MAP_false);
+					results_lock.lock();
+					results.add({job.context_id, job.question_id, -std::numeric_limits<double>::infinity(), job.label});
+					results_lock.unlock();
+				}
 				total++;
 				free_logical_forms(logical_forms, parse_count);
 			} else {
@@ -594,7 +604,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 2 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 43 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);

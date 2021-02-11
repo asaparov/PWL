@@ -1725,19 +1725,16 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 			unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
 			free(*set_formula); free(set_formula);
 			if (contains) {
-				hash_set<tuple> provable_elements(16);
-				if (!T.sets.get_provable_elements(set_id, provable_elements))
-					return;
-				array<array<string>> element_names(provable_elements.size + 1);
-				bool has_unnamed_elements = (provable_elements.size < T.sets.sets[set_id].set_size);
+				array<array<string>> element_names(T.sets.sets[set_id].provable_elements.length + 1);
+				bool has_unnamed_elements = (T.sets.sets[set_id].provable_elements.length < T.sets.sets[set_id].set_size);
 				named_constant_or_set = true;
-				for (const tuple& tup : provable_elements) {
+				for (const tuple& tup : T.sets.sets[set_id].provable_elements) {
 					array<string>& current_element_names = element_names[element_names.length];
 					if (!array_init(current_element_names, max(1, tup.length))) {
 						for (array<string>& name_array : element_names) {
 							for (string& str : name_array) free(str);
 							free(name_array);
-						} for (tuple& tup : provable_elements) free(tup);
+						}
 						return;
 					}
 					element_names.length++;
@@ -1753,7 +1750,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 								for (array<string>& name_array : element_names) {
 									for (string& str : name_array) free(str);
 									free(name_array);
-								} for (tuple& tup : provable_elements) free(tup);
+								}
 								return;
 							}
 							current_element_names.length++;
@@ -1767,7 +1764,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 								for (array<string>& name_array : element_names) {
 									for (string& str : name_array) free(str);
 									free(name_array);
-								} for (tuple& tup : provable_elements) free(tup);
+								}
 								return;
 							}
 							current_element_names.length++;
@@ -1780,7 +1777,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 										for (array<string>& name_array : element_names) {
 											for (string& str : name_array) free(str);
 											free(name_array);
-										} for (tuple& tup : provable_elements) free(tup);
+										}
 										return;
 									}
 									current_element_names.length++;
@@ -1789,7 +1786,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 										for (array<string>& name_array : element_names) {
 											for (string& str : name_array) free(str);
 											free(name_array);
-										} for (tuple& tup : provable_elements) free(tup);
+										}
 										return;
 									}
 									current_element_names.length++;
@@ -1806,7 +1803,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 											for (array<string>& name_array : element_names) {
 												for (string& str : name_array) free(str);
 												free(name_array);
-											} for (tuple& tup : provable_elements) free(tup);
+											}
 											return;
 										}
 										current_element_names.length++;
@@ -1822,7 +1819,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 										for (array<string>& name_array : element_names) {
 											for (string& str : name_array) free(str);
 											free(name_array);
-										} for (tuple& tup : provable_elements) free(tup);
+										}
 										return;
 									}
 									current_element_names.length++;
@@ -1842,7 +1839,6 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 						element_names.length--;
 					}
 				}
-				for (tuple& tup : provable_elements) free(tup);
 
 				string& new_name = *((string*) alloca(sizeof(string)));
 				if (element_names.length == 0) {
