@@ -563,18 +563,18 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 
 					if (fabs(log_probability_true - log_probability_false) < PREDICT_UNKNOWN_THRESHOLD) {
 						if (job.label != ruletaker_label::UNKNOWN) {
-							print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-							print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+							if (!isinf(log_probability_true)) print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+							if (!isinf(log_probability_false)) print_theory(T_MAP_false, proof_MAP_false, proof_prior);
 						}
 					} else if (log_probability_true > log_probability_false) {
 						if (job.label != ruletaker_label::TRUE) {
-							print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-							print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+							if (!isinf(log_probability_true)) print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+							if (!isinf(log_probability_false)) print_theory(T_MAP_false, proof_MAP_false, proof_prior);
 						}
 					} else if (log_probability_false > log_probability_true) {
 						if (job.label != ruletaker_label::FALSE) {
-							print_theory(T_MAP_true, proof_MAP_true, proof_prior);
-							print_theory(T_MAP_false, proof_MAP_false, proof_prior);
+							if (!isinf(log_probability_true)) print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+							if (!isinf(log_probability_false)) print_theory(T_MAP_false, proof_MAP_false, proof_prior);
 						}
 					}
 
@@ -585,7 +585,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 					if (!isinf(log_probability_false)) free(T_MAP_false);
 				} else {
 					if (job.label != ruletaker_label::FALSE) {
-						print_theory(T_MAP_true, proof_MAP_true, proof_prior);
+						if (!isinf(log_probability_true)) print_theory(T_MAP_true, proof_MAP_true, proof_prior);
 					}
 
 					results_lock.lock();
@@ -604,7 +604,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 43 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 5 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
