@@ -2329,7 +2329,7 @@ struct set_reasoning
 		auto union_both = [&count](const tuple& tup, unsigned int i, unsigned int j) { count--; };
 		auto union_one = [](const tuple& tup, unsigned int i, unsigned int j) { };
 		set_union(union_both, union_one, union_one,
-				sets[first].provable_elements.data, sets[second].provable_elements.length,
+				sets[first].provable_elements.data, sets[first].provable_elements.length,
 				sets[second].provable_elements.data, sets[second].provable_elements.length);
 		return count;
 	}

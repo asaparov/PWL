@@ -14408,8 +14408,6 @@ double log_joint_probability_of_truth(
 
 	provability_collector<ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	double max_log_probability = collector.internal_collector.current_log_probability;
-unsigned int max_t = 0;
-unsigned int max_i = 0;
 	for (unsigned int i = 0; i < num_restarts; i++) {
 		for (unsigned int t = 0; t < num_samples; t++)
 		{
@@ -14428,8 +14426,6 @@ if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			do_mh_step(T, proof_prior, proof_axioms, collector);
 			if (collector.internal_collector.current_log_probability > max_log_probability) {
-max_t = max(max_t, t);
-max_i = max(max_i, i);
 				free(T_MAP); proof_map.clear(); formula_map.clear();
 				if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_MAP, proof_map, formula_map)) {
 					T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
@@ -14449,7 +14445,6 @@ max_i = max(max_i, i);
 				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
 		}
 	}
-fprintf(stderr, "max_i = %u, max_t = %u\n", max_i, max_t);
 
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
