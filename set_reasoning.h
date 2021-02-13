@@ -661,7 +661,7 @@ struct tuple {
 	unsigned int length;
 
 	inline bool operator = (const tuple& src) {
-		return init_helper(src);
+		return init_helper(src.elements, src.length);
 	}
 
 	inline tuple_element& operator [] (unsigned int i) {
@@ -714,11 +714,11 @@ private:
 		return true;
 	}
 
-	inline bool init_helper(const tuple& src) {
-		if (!init_helper(src.length))
+	inline bool init_helper(const tuple_element* src_elements, unsigned int src_length) {
+		if (!init_helper(src_length))
 			return false;
-		for (unsigned int i = 0; i < src.length; i++) {
-			if (!init(elements[i], src.elements[i])) {
+		for (unsigned int i = 0; i < src_length; i++) {
+			if (!init(elements[i], src_elements[i])) {
 				for (unsigned int j = 0; j < i; j++)
 					core::free(elements[j]);
 				core::free(elements);
@@ -730,6 +730,7 @@ private:
 
 	friend bool init(tuple&, unsigned int);
 	friend bool init(tuple&, const tuple&);
+	friend bool init(tuple&, const tuple_element*, unsigned int);
 };
 
 inline bool init(tuple& new_tuple, unsigned int length) {
@@ -737,7 +738,11 @@ inline bool init(tuple& new_tuple, unsigned int length) {
 }
 
 inline bool init(tuple& new_tuple, const tuple& src) {
-	return new_tuple.init_helper(src);
+	return new_tuple.init_helper(src.elements, src.length);
+}
+
+inline bool init(tuple& new_tuple, const tuple_element* src_elements, unsigned int src_length) {
+	return new_tuple.init_helper(src_elements, src_length);
 }
 
 inline bool operator == (const tuple& first, const tuple& second) {
@@ -1229,7 +1234,6 @@ struct set_reasoning
 			if (contains) return true;
 		}
 
-		/* get the old ancestors */
 		array<unsigned int> stack(8);
 		stack[stack.length++] = set_id;
 		ancestors.keys[index] = set_id;
@@ -1251,35 +1255,75 @@ struct set_reasoning
 		return true;
 	}
 
-	void remove_element_at(unsigned int set_id, unsigned int i, hash_set<unsigned int>& ancestors) {
-		const tuple_element* element_src = sets[set_id].elements.data + (sets[set_id].arity * i);
-		for (unsigned int ancestor : ancestors) {
-			for (unsigned int j = 0; j < sets[ancestor].provable_elements.length; j++) {
-				tuple& tup = sets[ancestor].provable_elements[j];
-				bool equivalent = true;
-				for (uint_fast8_t k = 0; k < tup.length; k++) {
-					if (tup[k] != element_src[k]) {
-						equivalent = false;
-						break;
-					}
+	template<bool EmptySet>
+	bool recompute_provable_elements(unsigned int set_id)
+	{
+		/* we need to recompute the provable elements of all ancestor nodes; first clear them all */
+		array<unsigned int> stack(8);
+		hash_set<unsigned int> visited(16);
+		stack[stack.length++] = set_id;
+		visited.add(set_id);
+		while (stack.length > 0) {
+			unsigned int current = stack.pop();
+			for (tuple& tup : sets[current].provable_elements) core::free(tup);
+			sets[current].provable_elements.clear();
+			if (!EmptySet || current != set_id) {
+				const tuple_element* elements_src = sets[current].elements.data;
+				for (unsigned int i = 0; i < sets[current].element_count(); i++) {
+					if (!init(sets[current].provable_elements[i], elements_src + (i * sets[current].arity), sets[current].arity))
+						return false;
+					sets[current].provable_elements.length++;
 				}
-				if (equivalent) {
-					core::free(sets[ancestor].provable_elements[j]);
-					shift_left(sets[ancestor].provable_elements.data + j, sets[ancestor].provable_elements.length - j - 1);
-					sets[ancestor].provable_elements.length--;
-					break;
-				}
+				if (sets[current].provable_elements.length > 1)
+					sort(sets[current].provable_elements, default_sorter());
+			}
+			for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (visited.contains(entry.key)) continue;
+				if (!stack.add(entry.key) || !visited.add(entry.key)) return false;
+			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!stack.add(parent) || !visited.add(parent)) return false;
 			}
 		}
-		sets[set_id].remove_element_at(i);
+
+		for (unsigned int set : visited)
+			if (!stack.add(set)) return false;
+		while (stack.length > 0) {
+			unsigned int current = stack.pop();
+			unsigned int old_provable_element_count = sets[current].provable_elements.length;
+			for (unsigned int child : intensional_graph.vertices[current].children) {
+				array<tuple> new_provable_elements(max(1, sets[current].provable_elements.length + sets[child].provable_elements.length));
+				set_union(new_provable_elements.data, new_provable_elements.length,
+						sets[current].provable_elements.data, sets[current].provable_elements.length,
+						sets[child].provable_elements.data, sets[child].provable_elements.length);
+				swap(new_provable_elements, sets[current].provable_elements);
+				for (tuple& tup : new_provable_elements) core::free(tup);
+			}
+			for (const auto& entry : extensional_graph.vertices[current].children) {
+				array<tuple> new_provable_elements(max(1, sets[current].provable_elements.length + sets[entry.key].provable_elements.length));
+				set_union(new_provable_elements.data, new_provable_elements.length,
+						sets[current].provable_elements.data, sets[current].provable_elements.length,
+						sets[entry.key].provable_elements.data, sets[entry.key].provable_elements.length);
+				swap(new_provable_elements, sets[current].provable_elements);
+				for (tuple& tup : new_provable_elements) core::free(tup);
+			}
+			if (old_provable_element_count == sets[current].provable_elements.length)
+				continue;
+
+			for (const auto& entry : extensional_graph.vertices[current].parents)
+				if (!stack.add(entry.key)) return false;
+			for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (extensional_graph.vertices[current].parents.contains(parent)) continue;
+				if (!stack.add(parent)) return false;
+			}
+		}
+		return true;
 	}
 
-	inline bool remove_element_at(unsigned int set_id, unsigned int i) {
-		hash_set<unsigned int> ancestors(16);
-		if (!get_ancestors<true>(set_id, ancestors))
-			return false;
-		remove_element_at(set_id, i, ancestors);
-		return true;
+	inline void remove_element_at(unsigned int set_id, unsigned int i)
+	{
+		sets[set_id].remove_element_at(i);
+		recompute_provable_elements<false>(set_id);
 	}
 
 	bool add_to_provable_elements(unsigned int set_id, const tuple& tup, const hash_set<unsigned int>& ancestors) {
@@ -1510,11 +1554,18 @@ struct set_reasoning
 			}
 		}
 
-		/* compute the descendants of `set_id` from its immediate children */
+		/* compute the descendants and provable elements of `set_id` from its immediate children */
 		for (unsigned int immediate_descendant : intensional_graph.vertices[set_id].children) {
 			if (!sets[set_id].descendants.add_all(sets[immediate_descendant].descendants)) {
 				free_set_id(set_id); return false;
 			}
+
+			array<tuple> new_provable_elements(max(1, sets[set_id].provable_elements.length + sets[immediate_descendant].provable_elements.length));
+			set_union(new_provable_elements.data, new_provable_elements.length,
+					sets[set_id].provable_elements.data, sets[set_id].provable_elements.length,
+					sets[immediate_descendant].provable_elements.data, sets[immediate_descendant].provable_elements.length);
+			swap(new_provable_elements, sets[set_id].provable_elements);
+			for (tuple& tup : new_provable_elements) core::free(tup);
 		}
 
 		/* update the descendants set of all ancestors of `set_id` */
@@ -1581,6 +1632,8 @@ struct set_reasoning
 		 || extensional_graph.vertices[set_id].children.size > 0)
 			fprintf(stderr, "set_reasoning.free_set WARNING: This set has extensional edges.\n");
 #endif
+
+		recompute_provable_elements<true>(set_id);
 
 		hash_set<unsigned int> visited(32);
 		array<unsigned int> stack(8);
@@ -1866,11 +1919,18 @@ struct set_reasoning
 		if (contracted_set == set_count + 1) set_count++;
 
 		if (!sets[contracted_set].descendants.add_all(sets[set].descendants)) {
-			core::free(*conjunction); if (conjunction->reference_count == 0) core::free(conjunction);
 			intensional_graph.template free_set<true>(contracted_set);
 			extensional_graph.template free_set<true>(contracted_set);
 			core::free(sets[contracted_set]); if (contracted_set == set_count + 2) set_count--;
 			return false;
+		}
+		for (const tuple& tup : sets[set].provable_elements) {
+			if (!sets[contracted_set].provable_elements.add(tup)) {
+				intensional_graph.template free_set<true>(contracted_set);
+				extensional_graph.template free_set<true>(contracted_set);
+				core::free(sets[contracted_set]); if (contracted_set == set_count + 2) set_count--;
+				return false;
+			}
 		}
 
 		for (unsigned int member : connected_component) {
@@ -2372,6 +2432,7 @@ struct set_reasoning
 		hash_set<unsigned int> visited(16);
 		ancestors_stack[ancestors_stack.length++] = consequent_set;
 		visited.add(consequent_set);
+		visited.add(antecedent_set);
 		while (ancestors_stack.length > 0) {
 			unsigned int current = ancestors_stack.pop();
 			unsigned int provable_element_count = count_union_of_provable_elements(antecedent_set, current);
@@ -2543,6 +2604,43 @@ struct set_reasoning
 			remove_subset_relation<true>(antecedent_set, consequent_set, antecedent, consequent);
 			return nullptr;
 		}
+
+		/* update the provable elements of `consequent_set` and all its ancestors */
+		ancestors_stack[ancestors_stack.length++] = consequent_set;
+		visited.clear();
+		visited.add(consequent_set);
+		visited.add(antecedent_set);
+		while (ancestors_stack.length > 0) {
+			unsigned int current = ancestors_stack.pop();
+			array<tuple> new_provable_elements(max(1, sets[antecedent_set].provable_elements.length + sets[current].provable_elements.length));
+			set_union(new_provable_elements.data, new_provable_elements.length,
+					sets[antecedent_set].provable_elements.data, sets[antecedent_set].provable_elements.length,
+					sets[current].provable_elements.data, sets[current].provable_elements.length);
+			swap(new_provable_elements, sets[current].provable_elements);
+			for (tuple& tup : new_provable_elements) core::free(tup);
+
+			for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (visited.contains(entry.key)) continue;
+				if (!ancestors_stack.add(entry.key) || !visited.add(entry.key)) {
+					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
+					if (FreeSets) {
+						try_free_set(consequent_set);
+						try_free_set(antecedent_set);
+					}
+					return NULL;
+				}
+			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!ancestors_stack.add(parent) || !visited.add(parent)) {
+					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
+					if (FreeSets) {
+						try_free_set(consequent_set);
+						try_free_set(antecedent_set);
+					}
+					return NULL;
+				}
+			}
+		}
 		return axiom;
 	}
 
@@ -2558,7 +2656,7 @@ struct set_reasoning
 
 		extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
 
-		/* we need to recompute the descendants of all ancestor nodes; first clear them all */
+		/* we need to recompute the descendants and provable elements of all ancestor nodes; first clear them all */
 		array<unsigned int> stack(8);
 		hash_set<unsigned int> visited(16);
 		stack[stack.length++] = consequent_set;
@@ -2567,6 +2665,16 @@ struct set_reasoning
 			unsigned int current = stack.pop();
 			sets[current].descendants.clear();
 			sets[current].descendants.add(current);
+			for (tuple& tup : sets[current].provable_elements) core::free(tup);
+			sets[current].provable_elements.clear();
+			const tuple_element* elements_src = sets[current].elements.data;
+			for (unsigned int i = 0; i < sets[current].element_count(); i++) {
+				if (!init(sets[current].provable_elements[i], elements_src + (i * sets[current].arity), sets[current].arity))
+					return false;
+				sets[current].provable_elements.length++;
+			}
+			if (sets[current].provable_elements.length > 1)
+				sort(sets[current].provable_elements, default_sorter());
 			for (const auto& entry : extensional_graph.vertices[current].parents) {
 				if (visited.contains(entry.key)) continue;
 				if (!stack.add(entry.key) || !visited.add(entry.key)) return false;
@@ -2579,12 +2687,29 @@ struct set_reasoning
 		stack[stack.length++] = consequent_set;
 		while (stack.length > 0) {
 			unsigned int current = stack.pop();
-			unsigned int old_size = sets[current].descendants.size;
-			for (unsigned int child : intensional_graph.vertices[current].children)
+			unsigned int old_descendant_count = sets[current].descendants.size;
+			unsigned int old_provable_element_count = sets[current].provable_elements.length;
+			for (unsigned int child : intensional_graph.vertices[current].children) {
 				if (!sets[current].descendants.add_all(sets[child].descendants)) return false;
-			for (const auto& entry : extensional_graph.vertices[current].children)
+				array<tuple> new_provable_elements(max(1, sets[current].provable_elements.length + sets[child].provable_elements.length));
+				set_union(new_provable_elements.data, new_provable_elements.length,
+						sets[current].provable_elements.data, sets[current].provable_elements.length,
+						sets[child].provable_elements.data, sets[child].provable_elements.length);
+				swap(new_provable_elements, sets[current].provable_elements);
+				for (tuple& tup : new_provable_elements) core::free(tup);
+			}
+			for (const auto& entry : extensional_graph.vertices[current].children) {
 				if (!sets[current].descendants.add_all(sets[entry.key].descendants)) return false;
-			if (old_size == sets[current].descendants.size) continue;
+				array<tuple> new_provable_elements(max(1, sets[current].provable_elements.length + sets[entry.key].provable_elements.length));
+				set_union(new_provable_elements.data, new_provable_elements.length,
+						sets[current].provable_elements.data, sets[current].provable_elements.length,
+						sets[entry.key].provable_elements.data, sets[entry.key].provable_elements.length);
+				swap(new_provable_elements, sets[current].provable_elements);
+				for (tuple& tup : new_provable_elements) core::free(tup);
+			}
+			if (old_descendant_count == sets[current].descendants.size
+			 && old_provable_element_count == sets[current].provable_elements.length)
+				continue;
 
 			for (const auto& entry : extensional_graph.vertices[current].parents)
 				if (!stack.add(entry.key)) return false;

@@ -3158,15 +3158,13 @@ struct theory
 		for (unsigned int i = 2; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axioms.data == nullptr)
 				continue;
-			hash_set<unsigned int> ancestors(16);
-			sets.template get_ancestors<true>(i, ancestors);
 			for (unsigned int j = sets.sets[i].element_count(); j > 0; j--) {
 				const tuple_element* element_src = sets.sets[i].elements.data + (sets.sets[i].arity * (j - 1));
 				bool contains_constant = false;
 				for (uint_fast8_t k = 0; k < sets.sets[i].arity && !contains_constant; k++)
 					if (element_src[k].type == tuple_element_type::CONSTANT && element_src[k].constant == id) contains_constant = true;
 				if (contains_constant)
-					sets.remove_element_at(i, j - 1, ancestors);
+					sets.remove_element_at(i, j - 1);
 			}
 		}
 	}
@@ -3856,7 +3854,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 					}
 				}
 
-				sets.remove_element_at(i, j - 1, ancestors);
+				sets.remove_element_at(i, j - 1);
 				default_prover prover(sets, implication_axioms);
 				if (!is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover)) {
 					print("theory.are_elements_provable ERROR: The element ", stderr);
@@ -9062,9 +9060,24 @@ private:
 			return true;
 
 		/* all values in `possible_values` are newly provable */
-		for (const auto& entry : sets.extensional_graph.vertices[set_id].parents) {
-			unsigned int other_set = entry.key;
-			Formula* other_formula = sets.sets[other_set].set_formula();
+		hash_set<unsigned int> visited(16);
+		hash_set<unsigned int> extensional_ancestors(8);
+		array<unsigned int> stack(8);
+		stack[stack.length++] = set_id;
+		visited.add(set_id);
+		while (stack.length != 0) {
+			unsigned int current = stack.pop();
+			for (const auto& entry : sets.extensional_graph.vertices[current].parents)
+				if (!extensional_ancestors.add(entry.key)) return false;
+
+			for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!visited.add(parent) || !stack.add(parent))
+					return false;
+			}
+		}
+		for (unsigned int extensional_ancestor : extensional_ancestors) {
+			Formula* other_formula = sets.sets[extensional_ancestor].set_formula();
 
 			array<variable_assignment> copy(possible_values.length);
 			for (unsigned int j = 0; j < possible_values.length; j++) {
@@ -9150,10 +9163,9 @@ private:
 			}
 
 			/* get the ancestors of this set that don't already provably contain `tup` */
-			hash_set<unsigned int> visited(16);
-			array<unsigned int> stack(8);
 			array<pair<Formula*, bool>> new_ancestor_terms(8);
 			stack[stack.length++] = set_id;
+			visited.clear();
 			visited.add(set_id);
 			while (stack.length != 0) {
 				unsigned int current = stack.pop();
@@ -10151,12 +10163,6 @@ private:
 					return false;
 				}
 
-				hash_set<unsigned int> ancestors(16);
-				if (!sets.template get_ancestors<true>(i, ancestors)) {
-					for (auto& element : unifications) core::free(element);
-					for (auto entry : old_elements) core::free(entry.value);
-					return false;
-				}
 				for (unsigned int j = sets.sets[i].element_count(); j > 0; j--) {
 					tuple& element = *((tuple*) alloca(sizeof(tuple)));
 					element.elements = (tuple_element*) malloc(sizeof(tuple_element) * sets.sets[i].arity);
@@ -10226,7 +10232,7 @@ private:
 						conjuncts[conjuncts.length++] = set_formula;
 					}
 
-					sets.remove_element_at(i, j - 1, ancestors);
+					sets.remove_element_at(i, j - 1);
 					if (!old_elements.ensure_capacity(old_elements.size + 1)) {
 						for (auto& element : unifications) core::free(element);
 						for (auto entry : old_elements) core::free(entry.value);
@@ -10707,9 +10713,6 @@ private:
 		if (sets.sets[set_id].set_size == 0)
 			return check_set_membership_after_subtraction(set_formula, set_id, std::forward<Args>(visitor)...);
 
-		hash_set<unsigned int> ancestors(16);
-		if (!sets.template get_ancestors<true>(set_id, ancestors))
-			return false;
 		for (unsigned int i = 0; i < sets.sets[set_id].element_count(); i++) {
 			tuple_element* element = sets.sets[set_id].elements.data + (sets.sets[set_id].arity * i);
 
@@ -10810,7 +10813,7 @@ private:
 				if (!sets.add_element(new_set, {element, sets.sets[set_id].arity}))
 					return false;
 			}
-			sets.remove_element_at(set_id, i--, ancestors);
+			sets.remove_element_at(set_id, i--);
 		}
 		return true;
 	}
@@ -14422,7 +14425,7 @@ T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
-if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
+if (print_debug) T.template print_axioms<true>(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			do_mh_step(T, proof_prior, proof_axioms, collector);
 			if (collector.internal_collector.current_log_probability > max_log_probability) {

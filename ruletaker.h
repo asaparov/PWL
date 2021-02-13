@@ -408,7 +408,7 @@ inline bool operator == (const question_result& first, const question_result& se
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
-constexpr double PREDICT_UNKNOWN_THRESHOLD = 300.0;
+constexpr double PREDICT_UNKNOWN_THRESHOLD = 500.0;
 
 
 template<typename ProofCalculus, typename Canonicalizer>
@@ -493,12 +493,12 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id > 4 - 1)
+if (job.question_id < 19 - 1)
 {
 total++;
 free(job);
 continue;
-}*/
+}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -526,7 +526,7 @@ continue;
 				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
 				Proof* proof_MAP_true; Proof* proof_MAP_false;
 				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 4, 20, T_MAP_true, proof_MAP_true);
-				for (unsigned int j = 0; isinf(log_probability_true) && j < 50; j++) {
+				for (unsigned int j = 0; isinf(log_probability_true) && j < 400; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
@@ -553,7 +553,7 @@ continue;
 T_copy.print_axioms(stderr, *debug_terminal_printer);
 T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 					double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
-					for (unsigned int j = 0; isinf(log_probability_false) && j < 50; j++) {
+					for (unsigned int j = 0; isinf(log_probability_false) && j < 400; j++) {
 						null_collector collector;
 						for (unsigned int t = 0; t < 10; t++)
 							do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
@@ -604,7 +604,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 5 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -653,7 +653,7 @@ continue;
 					for (unsigned int j = 0; j < 4; j++) {
 						for (unsigned int t = 0; t < 400; t++) {
 							bool print_debug = false;
-							if (print_debug) job.T.print_axioms(stderr, *debug_terminal_printer);
+							if (print_debug) job.T.template print_axioms<true>(stderr, *debug_terminal_printer);
 							if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 							do_mh_step(job.T, proof_prior, job.proof_axioms, collector);
 							if (collector.current_log_probability > max_log_probability) {
