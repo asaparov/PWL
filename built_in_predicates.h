@@ -44,6 +44,8 @@ enum class built_in_predicates : unsigned int {
 	NAMED_ENTITY, /* this is only used in parsing */
 	MEASURE,
 	REF,
+	PLURAL_REF,
+	ANIMATE,
 
 AREA, /* TODO: for debugging; delete this */
 SQUARE, /* TODO: for debugging; delete this */
@@ -214,6 +216,8 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)
 		&& names.put("measure", (unsigned int) built_in_predicates::MEASURE)
 		&& names.put("ref", (unsigned int) built_in_predicates::REF)
+		&& names.put("plural_ref", (unsigned int) built_in_predicates::PLURAL_REF)
+		&& names.put("animate", (unsigned int) built_in_predicates::ANIMATE)
 		&& names.put("area", (unsigned int) built_in_predicates::AREA)
 		&& names.put("square", (unsigned int) built_in_predicates::SQUARE)
 		&& names.put("mile", (unsigned int) built_in_predicates::MILE);

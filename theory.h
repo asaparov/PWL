@@ -3710,7 +3710,8 @@ struct theory
 /* TODO: for debugging; delete this */
 //print_axioms(stderr);
 //print("canonicalized: ", stderr); print(*canonicalized, stderr); print('\n', stderr);
-		Proof* new_proof = make_proof<false, true, true>(canonicalized, set_diff, new_constant, std::forward<Args>(args)...);
+		array_map<unsigned int, unsigned int> requested_set_sizes(4);
+		Proof* new_proof = make_proof<false, true, true>(canonicalized, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 //print_axioms(stderr);
 if (new_proof != NULL) {
 array_map<unsigned int, unsigned int> constant_map(1);
@@ -3856,6 +3857,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 
 				sets.remove_element_at(i, j - 1);
 				default_prover prover(sets, implication_axioms);
+				prover.h.set_ids[0] = i;
+				prover.h.set_ids.length = 1;
 				if (!is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover)) {
 					print("theory.are_elements_provable ERROR: The element ", stderr);
 					if (sets.sets[i].arity == 1)
@@ -4474,7 +4477,7 @@ private:
 				}
 				continue;
 			case change_type::DEFINITION:
-				if (!add_definition<false>(c.axiom, set_diff, std::forward<Args>(visitor)...))
+				if (!add_definition<false>(c.axiom, UINT_MAX, set_diff, std::forward<Args>(visitor)...))
 					return false;
 				continue;
 			case change_type::FUNCTION_VALUE:
@@ -6523,7 +6526,7 @@ private:
 			Prover& prover) const
 	{
 		/* for performance, we cutoff this search to a maximum depth of 1; TODO: how does this limit provability? */
-		if (prover.h.set_ids.length != 0)
+		if (prover.h.set_ids.length > 1)
 			return true;
 
 		unsigned int old_size = new_possible_values.length;
@@ -9008,6 +9011,8 @@ private:
 	{
 		/* check if any of the possible values of the quantified variables are newly provable members of this set */
 		set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
+		prover.h.set_ids[0] = 0;
+		prover.h.set_ids.length = 1;
 		typename set_membership_prover::ProvableElementArray provable_elements = prover.get_provable_elements(set_id);
 		unsigned int provable_set_size = provable_elements.length;
 		for (unsigned int j = 0; SubtractProvableElements && j < possible_values.length; j++) {
@@ -9086,6 +9091,8 @@ private:
 				copy.length++;
 			}
 
+			prover.h.set_ids[0] = extensional_ancestor;
+			prover.h.set_ids.length = 1;
 			if (is_provable_without_abduction<true>(other_formula, quantifiers, copy, prover)) {
 				/* we found a contradiction with a universally-quantified theorem */
 				for (auto& element : copy) core::free(element);
@@ -9266,6 +9273,8 @@ private:
 		Formula* consequent = axiom->formula->binary.right;
 		array<Formula*> quantifiers(4);
 		set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
+		prover.h.set_ids[0] = 0;
+		prover.h.set_ids.length = 1;
 		array<variable_assignment> possible_values(1);
 		if (!::init(possible_values[0], 0))
 			return false;
@@ -9428,6 +9437,8 @@ private:
 				}
 
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
+				prover.h.set_ids[0] = i;
+				prover.h.set_ids.length = 1;
 				typename set_membership_prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
 				if (provable_elements.length == sets.sets[i].set_size) {
 					/* this set being full could make other expressions provable by exclusion */
@@ -9617,6 +9628,8 @@ private:
 					continue;
 
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
+				prover.h.set_ids[0] = 0;
+				prover.h.set_ids.length = 1;
 				array<variable_assignment> temp_possible_values(1);
 				if (!::init(temp_possible_values[0], 0)) {
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
@@ -9666,6 +9679,8 @@ private:
 
 				/* the addition could cause this formula to be provably false */
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
+				prover.h.set_ids[0] = 0;
+				prover.h.set_ids.length = 1;
 				array<variable_assignment> temp_possible_values(1);
 				if (!::init(temp_possible_values[0], 0)) {
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
@@ -9920,6 +9935,8 @@ private:
 			temp_possible_values.length++;
 
 			default_prover prover(sets, implication_axioms);
+			prover.h.set_ids[0] = formula_set_id;
+			prover.h.set_ids.length = 1;
 			if (is_provable_without_abduction<false>(conjuncts[l], quantifiers, temp_possible_values, prover)) {
 				for (auto& element : temp_possible_values) core::free(element);
 				conjuncts.remove(l--);
@@ -10012,6 +10029,8 @@ private:
 					temp_possible_values.length++;
 
 					default_prover prover(sets, implication_axioms);
+					prover.h.set_ids[0] = current;
+					prover.h.set_ids.length = 1;
 					if (is_provable_without_abduction<false>(current_set_formula, quantifiers, temp_possible_values, prover)) {
 						for (auto& element : temp_possible_values) core::free(element);
 						for (unsigned int j = 0; j < new_sets.length; j++) {
@@ -10439,6 +10458,8 @@ private:
 				temp_possible_values.length++;
 
 				default_prover prover(sets, implication_axioms, removed_set);
+				prover.h.set_ids[0] = old_elements.keys[i];
+				prover.h.set_ids.length = 1;
 				if (is_provable_without_abduction<false>(set_formula, quantifiers, temp_possible_values, prover)) {
 					/* this element is still provably a member of this set */
 					for (auto& element : temp_possible_values) core::free(element);
@@ -10533,6 +10554,8 @@ private:
 						temp_possible_values.length++;
 
 						default_prover prover(sets, implication_axioms, removed_set);
+						prover.h.set_ids[0] = current;
+						prover.h.set_ids.length = 1;
 						if (is_provable_without_abduction<false>(current_set_formula, quantifiers, temp_possible_values, prover)) {
 							for (auto& element : temp_possible_values) core::free(element);
 							for (unsigned int j = 0; j < new_sets.length; j++) {
@@ -10596,6 +10619,8 @@ private:
 				temp_possible_values.length++;
 
 				default_prover prover(sets, implication_axioms, removed_set);
+				prover.h.set_ids[0] = 0;
+				prover.h.set_ids.length = 1;
 				if (is_provable_without_abduction<false>(antecedent, quantifiers, temp_possible_values, prover)) {
 					/* this antecedent is still provable */
 					for (auto& element : temp_possible_values) core::free(element);
@@ -10643,6 +10668,8 @@ private:
 		possible_values.length++;
 
 		default_prover prover(sets, implication_axioms);
+		prover.h.set_ids[0] = set_id;
+		prover.h.set_ids.length = 1;
 		if (!is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover)) {
 			for (auto& element : possible_values) core::free(element);
 			return true;
@@ -10786,6 +10813,8 @@ private:
 					temp_possible_values.length++;
 
 					default_prover prover(sets, implication_axioms);
+					prover.h.set_ids[0] = current;
+					prover.h.set_ids.length = 1;
 					if (is_provable_without_abduction<false>(sets.sets[current].set_formula(), quantifiers, temp_possible_values, prover)) {
 						for (auto& element : temp_possible_values) core::free(element);
 						for (unsigned int j = 0; j < new_sets.length; j++) {
@@ -10877,6 +10906,8 @@ private:
 			antecedent_formula = antecedent_formula->quantifier.operand;
 		}
 		default_prover prover(sets, implication_axioms);
+		prover.h.set_ids[0] = antecedent_set;
+		prover.h.set_ids.length = 1;
 		if (!is_provable_without_abduction<false>(antecedent_formula, quantifiers, possible_values, prover))
 			return true;
 
@@ -10983,6 +11014,8 @@ private:
 
 		array<Formula*> quantifiers(1);
 		default_prover prover(sets, implication_axioms);
+		prover.h.set_ids[0] = 0;
+		prover.h.set_ids.length = 1;
 		array<variable_assignment> possible_values(1);
 		if (!::init(possible_values[0], 0))
 			return false;
@@ -11051,19 +11084,19 @@ private:
 	}
 
 	template<bool Contradiction, bool DefinitionsAllowed, bool ResolveInconsistencies, typename... Args>
-	Proof* make_proof(Formula* canonicalized, set_changes<Formula>& set_diff, unsigned int& new_constant, Args&&... args)
+	Proof* make_proof(Formula* canonicalized, array_map<unsigned int, unsigned int>& requested_set_sizes, set_changes<Formula>& set_diff, unsigned int& new_constant, Args&&... args)
 	{
 		Term* predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
 			return make_atom_proof<DefinitionsAllowed, Contradiction, ResolveInconsistencies>(canonicalized, new_constant, std::forward<Args>(args)...);
 
 		} else if (canonicalized->type == FormulaType::NOT) {
-			return make_proof<!Contradiction, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->unary.operand, set_diff, new_constant, std::forward<Args>(args)...);
+			return make_proof<!Contradiction, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->unary.operand, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 
 		} else if (canonicalized->type == FormulaType::FOR_ALL) {
 			if (Contradiction) {
 				Term* constant;
-				Proof* exists_not_proof = make_exists_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->quantifier.operand, canonicalized->quantifier.variable, set_diff, constant, new_constant, std::forward<Args>(args)...);
+				Proof* exists_not_proof = make_exists_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->quantifier.operand, requested_set_sizes, canonicalized->quantifier.variable, set_diff, constant, new_constant, std::forward<Args>(args)...);
 				if (exists_not_proof == NULL) return NULL;
 				if (constant->type == TermType::CONSTANT && constant->constant >= new_constant_offset
 				 && (!existential_intro_nodes.ensure_capacity(existential_intro_nodes.length + 1)
@@ -11118,6 +11151,8 @@ private:
 				Formula* right = operand->binary.right;
 
 				/* check if `left` or `right` are of the form `c(x)` and that `c` can be a set */
+				unsigned int antecedent_set_size = UINT_MAX;
+				unsigned int consequent_set_size = UINT_MAX;
 				if (left->type == FormulaType::UNARY_APPLICATION
 				 && left->binary.left->type == FormulaType::CONSTANT
 				 && left->binary.right->type == FormulaType::VARIABLE)
@@ -11140,6 +11175,9 @@ private:
 							}
 						}
 					}
+					unsigned int index = requested_set_sizes.index_of(left->binary.left->constant);
+					if (index < requested_set_sizes.size)
+						antecedent_set_size = requested_set_sizes.values[index];
 				}
 				if (right->type == FormulaType::UNARY_APPLICATION
 				 && right->binary.left->type == FormulaType::CONSTANT
@@ -11163,6 +11201,9 @@ private:
 							}
 						}
 					}
+					unsigned int index = requested_set_sizes.index_of(right->binary.left->constant);
+					if (index < requested_set_sizes.size)
+						consequent_set_size = requested_set_sizes.values[index];
 				}
 
 				Term const* predicate; Term const* arg1; Term const* arg2;
@@ -11191,7 +11232,11 @@ private:
 					/* TODO: definitions of new concepts should be biconditionals */
 					if (!try_init_concept(new_constant, arity)) return NULL;
 
-					new_axiom = get_subset_axiom<ResolveInconsistencies>(left, right, arity, set_diff, std::forward<Args>(args)...);
+					unsigned int antecedent_set, consequent_set;
+					bool is_antecedent_new, is_consequent_new;
+					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies>(
+							left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
+							antecedent_set_size, consequent_set_size, set_diff, std::forward<Args>(args)...);
 					core::free(*new_canonicalized); if (new_canonicalized->reference_count == 0) core::free(new_canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
@@ -11206,7 +11251,11 @@ private:
 					}
 
 					/* this is a formula of form `![x]:(t(x) => f(x))` */
-					new_axiom = get_subset_axiom<ResolveInconsistencies>(left, right, arity, set_diff, std::forward<Args>(args)...);
+					unsigned int antecedent_set, consequent_set;
+					bool is_antecedent_new, is_consequent_new;
+					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies>(
+							left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
+							antecedent_set_size, consequent_set_size, set_diff, std::forward<Args>(args)...);
 					core::free(*new_canonicalized); if (new_canonicalized->reference_count == 0) core::free(new_canonicalized);
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
@@ -11227,7 +11276,7 @@ private:
 
 				for (unsigned int index : indices) {
 					unsigned int index_minus_one = index - 1;
-					Proof* operand = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index_minus_one], set_diff, new_constant, std::forward<Args>(args)...);
+					Proof* operand = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index_minus_one], requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 					if (operand != NULL) {
 						if (!negated_conjunction_nodes.ensure_capacity(negated_conjunction_nodes.length + 1)) {
 							free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
@@ -11272,6 +11321,35 @@ private:
 				return NULL;
 			}
 
+			/* check if there are any set size statements in the conjunction */
+			unsigned int new_requested_set_sizes = 0;
+			for (unsigned int i = 1; i < canonicalized->array.length; i++) {
+				Term* conjunct = canonicalized->array.operands[i];
+				if (conjunct->type != TermType::EQUALS) continue;
+				Term* left = conjunct->binary.left;
+				Term* right = conjunct->binary.right;
+				if (left->type != TermType::UNARY_APPLICATION)
+					swap(left, right);
+				if (left->type == TermType::UNARY_APPLICATION && left->binary.left->type == TermType::CONSTANT
+				 && left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+				 && left->binary.right->type == TermType::CONSTANT && right->type == TermType::NUMBER)
+				{
+					if (!requested_set_sizes.ensure_capacity(requested_set_sizes.size + 1)
+					 || right->number.integer < 0 || right->number.decimal != 0)
+						return nullptr;
+					unsigned int index = requested_set_sizes.index_of(left->binary.right->constant);
+					if (index < requested_set_sizes.size) {
+						if (requested_set_sizes.values[index] != right->number.integer)
+							return nullptr;
+					} else {
+						requested_set_sizes.keys[index] = left->binary.right->constant;
+						requested_set_sizes.values[index] = right->number.integer;
+						requested_set_sizes.size++;
+						new_requested_set_sizes++;
+					}
+				}
+			}
+
 			Proof** operands = (Proof**) malloc(sizeof(Proof*) * canonicalized->array.length);
 			if (operands == NULL) {
 				fprintf(stderr, "theory.make_proof ERROR: Out of memory.\n");
@@ -11279,16 +11357,18 @@ private:
 			}
 			for (unsigned int i = 0; i < canonicalized->array.length; i++) {
 				if (new_constant == 0)
-					operands[i] = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[i], set_diff, new_constant, std::forward<Args>(args)...);
-				else operands[i] = make_proof<false, false, ResolveInconsistencies>(canonicalized->array.operands[i], set_diff, new_constant, std::forward<Args>(args)...);
+					operands[i] = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[i], requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
+				else operands[i] = make_proof<false, false, ResolveInconsistencies>(canonicalized->array.operands[i], requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 
 				if (operands[i] == NULL) {
+					requested_set_sizes.size -= new_requested_set_sizes;
 					for (unsigned int j = i; j > 0; j--)
 						/* undo the changes made by the recursive calls to `make_proof` */
 						free_proof(operands[j - 1], set_diff, std::forward<Args>(args)...);
 					core::free(operands); return NULL;
 				}
 			}
+			requested_set_sizes.size -= new_requested_set_sizes;
 			Proof* conjunction = ProofCalculus::new_conjunction_intro(make_array_view(operands, canonicalized->array.length));
 			if (conjunction == NULL) {
 				for (unsigned int j = canonicalized->array.length; j > 0; j--)
@@ -11305,6 +11385,35 @@ private:
 
 		} else if (canonicalized->type == FormulaType::OR) {
 			if (Contradiction) {
+				/* check if there are any set size statements in the conjunction */
+				unsigned int new_requested_set_sizes = 0;
+				for (unsigned int i = 1; i < canonicalized->array.length; i++) {
+					Term* conjunct = canonicalized->array.operands[i];
+					if (conjunct->type != TermType::EQUALS) continue;
+					Term* left = conjunct->binary.left;
+					Term* right = conjunct->binary.right;
+					if (left->type != TermType::UNARY_APPLICATION)
+						swap(left, right);
+					if (left->type == TermType::UNARY_APPLICATION && left->binary.left->type == TermType::CONSTANT
+					 && left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+					 && left->binary.right->type == TermType::CONSTANT && right->type == TermType::NUMBER)
+					{
+						if (!requested_set_sizes.ensure_capacity(requested_set_sizes.size + 1)
+						 || right->number.integer < 0 || right->number.decimal != 0)
+							return nullptr;
+						unsigned int index = requested_set_sizes.index_of(left->binary.right->constant);
+						if (index < requested_set_sizes.size) {
+							if (requested_set_sizes.values[index] != right->number.integer)
+								return nullptr;
+						} else {
+							requested_set_sizes.keys[index] = left->binary.right->constant;
+							requested_set_sizes.values[index] = right->number.integer;
+							requested_set_sizes.size++;
+							new_requested_set_sizes++;
+						}
+					}
+				}
+
 				Proof** operands = (Proof**) malloc(sizeof(Proof*) * canonicalized->array.length);
 				if (operands == NULL) {
 					fprintf(stderr, "theory.make_proof ERROR: Out of memory.\n");
@@ -11312,10 +11421,11 @@ private:
 				}
 				for (unsigned int i = 0; i < canonicalized->array.length; i++) {
 					if (new_constant == 0)
-						operands[i] = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[i], set_diff, new_constant, std::forward<Args>(args)...);
-					else operands[i] = make_proof<true, false, ResolveInconsistencies>(canonicalized->array.operands[i], set_diff, new_constant, std::forward<Args>(args)...);
+						operands[i] = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[i], requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
+					else operands[i] = make_proof<true, false, ResolveInconsistencies>(canonicalized->array.operands[i], requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 
 					if (operands[i] == NULL) {
+						requested_set_sizes.size -= new_requested_set_sizes;
 						for (unsigned int j = i; j > 0; j--)
 							/* undo the changes made by recursive calls to `make_proof` */
 							free_proof(operands[j - 1], set_diff, std::forward<Args>(args)...);
@@ -11329,6 +11439,7 @@ private:
 						Proof* absurdity = ProofCalculus::new_negation_elim(
 								ProofCalculus::new_axiom(canonicalized->array.operands[i]), operands[i]);
 						if (absurdity == NULL) {
+							requested_set_sizes.size -= new_requested_set_sizes;
 							for (unsigned int j = i; j > 0; j--)
 								/* undo the changes made by recursive calls to `make_proof` */
 								free_proof(operands[j - 1], set_diff, std::forward<Args>(args)...);
@@ -11339,6 +11450,7 @@ private:
 						operands[i] = absurdity;
 					}
 				}
+				requested_set_sizes.size -= new_requested_set_sizes;
 
 				Proof* axiom = ProofCalculus::new_axiom(canonicalized);
 				if (axiom == NULL) {
@@ -11375,7 +11487,7 @@ private:
 			if (!filter_operands(canonicalized, indices, std::forward<Args>(args)...)) return NULL;
 
 			for (unsigned int index : indices) {
-				Proof* operand = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index - 1], set_diff, new_constant, std::forward<Args>(args)...);
+				Proof* operand = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->array.operands[index - 1], requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 				if (operand != NULL) {
 					if (!disjunction_intro_nodes.ensure_capacity(disjunction_intro_nodes.length + 1)) {
 						free_proof(operand, set_diff, std::forward<Args>(args)...); return NULL;
@@ -11424,13 +11536,13 @@ private:
 
 		} else if (canonicalized->type == FormulaType::IF_THEN) {
 			if (Contradiction) {
-				Proof* left = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.left, set_diff, new_constant, std::forward<Args>(args)...);
+				Proof* left = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.left, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 				if (left == NULL) return NULL;
 
 				Proof* right;
 				if (new_constant == 0 && DefinitionsAllowed)
-					right = make_proof<true, true, ResolveInconsistencies>(canonicalized->binary.right, set_diff, new_constant, std::forward<Args>(args)...);
-				else right = make_proof<true, false, ResolveInconsistencies>(canonicalized->binary.right, set_diff, new_constant, std::forward<Args>(args)...);
+					right = make_proof<true, true, ResolveInconsistencies>(canonicalized->binary.right, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
+				else right = make_proof<true, false, ResolveInconsistencies>(canonicalized->binary.right, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 
 				if (right == NULL) {
 					free_proof(left, set_diff, std::forward<Args>(args)...); return NULL;
@@ -11491,7 +11603,7 @@ private:
 			if (!filter_operands(canonicalized, indices, std::forward<Args>(args)...)) return NULL;
 			for (unsigned int i = 0; i < indices.length; i++) {
 				if (indices[i] == 1) {
-					Proof* left = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.left, set_diff, new_constant, std::forward<Args>(args)...);
+					Proof* left = make_proof<true, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.left, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 					if (left == NULL) {
 						if (!inconsistent_constant(canonicalized, indices[i], std::forward<Args>(args)...)) return NULL;
 						continue;
@@ -11526,7 +11638,7 @@ private:
 					proof->reference_count++;
 					return proof;
 				} else {
-					Proof* right = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.right, set_diff, new_constant, std::forward<Args>(args)...);
+					Proof* right = make_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->binary.right, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 					if (right == NULL) {
 						if (!inconsistent_constant(canonicalized, indices[i], std::forward<Args>(args)...)) return NULL;
 						continue;
@@ -11673,7 +11785,8 @@ private:
 				if (variable == NULL) return NULL;
 
 				Term* constant;
-				Proof* operand = make_exists_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->quantifier.operand, canonicalized->quantifier.variable, set_diff, constant, new_constant, std::forward<Args>(args)...);
+				Proof* operand = make_exists_proof<false, DefinitionsAllowed, ResolveInconsistencies>(canonicalized->quantifier.operand,
+						requested_set_sizes, canonicalized->quantifier.variable, set_diff, constant, new_constant, std::forward<Args>(args)...);
 				if (operand == NULL) {
 					core::free(*variable); if (variable->reference_count == 0) core::free(variable);
 					return NULL;
@@ -11959,7 +12072,11 @@ private:
 						return NULL;
 					new_proof->reference_count++;
 
-					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, set_diff, std::forward<Args>(args)...);
+					unsigned int requested_set_size = UINT_MAX;
+					unsigned int index = requested_set_sizes.index_of(left->constant);
+					if (index < requested_set_sizes.size)
+						requested_set_size = requested_set_sizes.values[index];
+					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, requested_set_size, set_diff, std::forward<Args>(args)...);
 					if (definition != new_proof) {
 						core::free(*new_proof);
 						core::free(new_proof);
@@ -12098,17 +12215,19 @@ private:
 			Formula* antecedent, Formula* consequent, unsigned int arity,
 			unsigned int& antecedent_set, unsigned int& consequent_set,
 			bool& is_antecedent_new, bool& is_consequent_new,
-			unsigned int set_size, Args&&... visitor)
+			unsigned int antecedent_set_size,
+			unsigned int consequent_set_size, Args&&... visitor)
 	{
-		required_set_size set_size_enforcer(set_size);
-		if (!sets.get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, set_size_enforcer, std::forward<Args>(visitor)...))
+		required_set_size antecedent_set_size_enforcer(antecedent_set_size);
+		if (!sets.get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, antecedent_set_size_enforcer, std::forward<Args>(visitor)...))
 			return nullptr;
 		if (is_antecedent_new && !check_new_set_membership<ResolveInconsistencies>(antecedent_set, std::forward<Args>(visitor)...)) {
 			sets.try_free_set(antecedent_set);
 			return nullptr;
 		}
 
-		if (!sets.get_set_id(consequent, arity, consequent_set, is_consequent_new, set_size_enforcer, std::forward<Args>(visitor)...)) {
+		required_set_size consequent_set_size_enforcer(consequent_set_size);
+		if (!sets.get_set_id(consequent, arity, consequent_set, is_consequent_new, consequent_set_size_enforcer, std::forward<Args>(visitor)...)) {
 			if (is_antecedent_new) {
 				check_old_set_membership(antecedent_set, std::forward<Args>(visitor)...);
 				sets.try_free_set(antecedent_set);
@@ -12130,8 +12249,7 @@ private:
 		Proof* axiom = sets.template get_subset_axiom<ResolveInconsistencies, false>(
 				antecedent, consequent, arity,
 				antecedent_set, consequent_set,
-				dummy, dummy, set_size_enforcer,
-				std::forward<Args>(visitor)...);
+				dummy, dummy, std::forward<Args>(visitor)...);
 		if (axiom == nullptr) {
 			if (is_consequent_new) {
 				check_old_set_membership(consequent_set, std::forward<Args>(visitor)...);
@@ -12307,7 +12425,7 @@ private:
 
 private:
 	template<bool ResolveInconsistencies, typename... Args>
-	Proof* add_definition(Proof* definition, Args&&... args)
+	Proof* add_definition(Proof* definition, unsigned int requested_set_size, Args&&... args)
 	{
 		Formula* constant = definition->formula->binary.left;
 		Formula* new_definition = definition->formula->binary.right;
@@ -12340,7 +12458,7 @@ private:
 		if (new_definition->type == FormulaType::LAMBDA) {
 			/* check if this constant defines any other sets, and indicate to the set reasoning module that they are the same set */
 			bool contains;
-			unsigned int set_size = UINT_MAX;
+			unsigned int set_size = requested_set_size;
 			unsigned int set_id = sets.set_ids.get(*new_set_formula, contains);
 			if (contains) {
 				set_size = sets.sets[set_id].set_size;
@@ -12354,6 +12472,10 @@ private:
 						other_set_formula = other_set_formula->quantifier.operand;
 					set_id = sets.set_ids.get(*other_set_formula, contains);
 					if (contains) {
+						if (set_size != UINT_MAX && set_size != sets.sets[set_id].set_size) {
+							try_free_concept_id(constant->constant);
+							return nullptr;
+						}
 						set_size = sets.sets[set_id].set_size;
 						break;
 					}
@@ -12371,7 +12493,7 @@ private:
 					bool is_antecedent_new, is_consequent_new;
 					Proof* first_subset_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies>(
 							new_set_formula, other_set_formula, arity, antecedent_set, consequent_set,
-							is_antecedent_new, is_consequent_new, set_size, std::forward<Args>(args)...);
+							is_antecedent_new, is_consequent_new, set_size, set_size, std::forward<Args>(args)...);
 					if (first_subset_axiom == NULL) {
 						/* undo the changes we've made so far */
 						on_subtract_changes(std::forward<Args>(args)...);
@@ -12612,7 +12734,8 @@ private:
 
 	/* NOTE: this function finds a constant that proves `quantified`, and not ?[x]:`quantified` */
 	template<bool Contradiction, bool DefinitionsAllowed, bool ResolveInconsistencies, typename... Args>
-	Proof* make_exists_proof(Formula* quantified, unsigned int variable, set_changes<Formula>& set_diff, Term*& constant, unsigned int& new_constant, Args&&... args)
+	Proof* make_exists_proof(Formula* quantified, array_map<unsigned int, unsigned int>& requested_set_sizes,
+			unsigned int variable, set_changes<Formula>& set_diff, Term*& constant, unsigned int& new_constant, Args&&... args)
 	{
 		Formula* var = Formula::new_variable(variable);
 		if (var == nullptr) return nullptr;
@@ -12694,7 +12817,7 @@ private:
 					free_concept_id(constant_id); return nullptr;
 				}
 
-				Proof* proof = make_proof<Contradiction, false, ResolveInconsistencies>(substituted, set_diff, new_constant, std::forward<Args>(args)...);
+				Proof* proof = make_proof<Contradiction, false, ResolveInconsistencies>(substituted, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 				core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
 				if (proof != nullptr) {
 					core::free(*var); if (var->reference_count == 0) core::free(var);
@@ -12728,7 +12851,7 @@ private:
 					return nullptr;
 				}
 
-				Proof* proof = make_proof<Contradiction, DefinitionsAllowed, ResolveInconsistencies>(substituted, set_diff, new_constant, std::forward<Args>(args)...);
+				Proof* proof = make_proof<Contradiction, DefinitionsAllowed, ResolveInconsistencies>(substituted, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 				core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
 				if (proof != nullptr) {
 					core::free(*var); if (var->reference_count == 0) core::free(var);
@@ -12855,6 +12978,8 @@ private:
 						return nullptr;
 					temp_possible_values.length = 1;
 					default_prover prover(sets, implication_axioms);
+					prover.h.set_ids[0] = 0;
+					prover.h.set_ids.length = 1;
 					if (is_provable_without_abduction<!Negated>(atom, quantifiers, temp_possible_values, prover)) {
 						for (auto& element : temp_possible_values) core::free(element);
 						return nullptr;
@@ -13576,7 +13701,27 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 						}
 					}
 				}
+
+				/* if this is a subset statement, increment `matching_types` if the set does indeed provably contain the element */
+				for (unsigned int i = 0; i < constants.length; i++) {
+					if (constants[i].type != instance_type::CONSTANT || constants[i].constant < T.new_constant_offset)
+						continue;
+					const concept<ProofCalculus>& c = T.ground_concepts[constants[i].constant - T.new_constant_offset];
+					Formula* set_formula = c.definitions[0]->formula->binary.right->quantifier.operand;
+
+					bool contains;
+					unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
+					if (!contains || T.sets.sets[set_id].arity != 1) continue;
+
+					tuple_element& element = *((tuple_element*) alloca(sizeof(tuple_element)));
+					element.type = tuple_element_type::CONSTANT;
+					element.constant = right->constant;
+					const tuple tup = {&element, 1};
+					if (T.sets.sets[set_id].provable_elements.contains(tup))
+						constants[i].matching_types++;
+				}
 			}
+
 			/* make sure x could be a set in `x(y)` */
 			for (unsigned int i = 0; i < constants.length; i++) {
 				if (constants[i].type == instance_type::ANY) {
@@ -13674,6 +13819,25 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 							constants[i].matching_types++;
 						} else {
 							constants[i].mismatching_types++;
+						}
+					}
+				}
+
+				/* if this is a subset statement, increment `matching_types` if the set does indeed provably contain the element */
+				if (left->type == TermType::CONSTANT && left->constant >= T.new_constant_offset) {
+					const concept<ProofCalculus>& c = T.ground_concepts[left->constant - T.new_constant_offset];
+					Formula* set_formula = c.definitions[0]->formula->binary.right->quantifier.operand;
+
+					bool contains;
+					unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
+					if (contains && T.sets.sets[set_id].arity == 1) {
+						for (unsigned int i = 0; i < constants.length; i++) {
+							tuple_element& element = *((tuple_element*) alloca(sizeof(tuple_element)));
+							element.type = tuple_element_type::CONSTANT;
+							element.constant = constants[i].constant;
+							const tuple tup = {&element, 1};
+							if (T.sets.sets[set_id].provable_elements.contains(tup))
+								constants[i].matching_types++;
 						}
 					}
 				}

@@ -697,6 +697,8 @@ struct flagged_logical_form
 		SELECT_ANTECEDENT,
 		SELECT_CONSEQUENT,
 		REQUIRE_REF_IN_SET,
+		REQUIRE_PLURAL_REF_IN_SET,
+		REQUIRE_ANIMATE_IN_SET,
 
 		/* functions on strings */
 		REQUIRE_CAPITALIZED,
@@ -1076,6 +1078,8 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::SELECT_ANTECEDENT, "select_antecedent"},
 	{function_type::SELECT_CONSEQUENT, "select_consequent"},
 	{function_type::REQUIRE_REF_IN_SET, "require_ref_in_set"},
+	{function_type::REQUIRE_PLURAL_REF_IN_SET, "require_plural_ref_in_set"},
+	{function_type::REQUIRE_ANIMATE_IN_SET, "require_animate_in_set"},
 	{function_type::REQUIRE_CAPITALIZED, "require_capitalized"},
 	{function_type::ADD_SINGULAR, "add_singular"},
 	{function_type::ADD_PLURAL, "add_plural"},
@@ -18969,7 +18973,8 @@ inline bool select_consequent(
 	return true;
 }
 
-inline bool require_ref_in_set(
+template<unsigned int Predicate>
+inline bool require_only_predicate_in_set(
 		hol_term* src, hol_term*& dst)
 {
 	unsigned int max_variable = 0;
@@ -19008,7 +19013,7 @@ inline bool require_ref_in_set(
 				hol_term::new_equals(
 					set_var,
 					hol_term::new_lambda(element_variable,
-						hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::REF>::value,
+						hol_term::new_apply(&hol_term::constants<Predicate>::value,
 						element_var)
 					)
 				),
@@ -19024,7 +19029,7 @@ inline bool require_ref_in_set(
 	}
 	set_var->reference_count += 2 - 1;
 	element_var->reference_count += 3 - 1;
-	hol_term::constants<(unsigned int) built_in_predicates::REF>::value.reference_count++;
+	hol_term::constants<Predicate>::value.reference_count++;
 
 	if (!is_subset<built_in_predicates>(dst, old_src)) {
 		free(*dst); free(dst);
@@ -20163,7 +20168,13 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		return select_consequent(src.root, dst.root);
 	case function_type::REQUIRE_REF_IN_SET:
 		dst.flags = src.flags;
-		return require_ref_in_set(src.root, dst.root);
+		return require_only_predicate_in_set<(unsigned int) built_in_predicates::REF>(src.root, dst.root);
+	case function_type::REQUIRE_PLURAL_REF_IN_SET:
+		dst.flags = src.flags;
+		return require_only_predicate_in_set<(unsigned int) built_in_predicates::PLURAL_REF>(src.root, dst.root);
+	case function_type::REQUIRE_ANIMATE_IN_SET:
+		dst.flags = src.flags;
+		return require_only_predicate_in_set<(unsigned int) built_in_predicates::ANIMATE>(src.root, dst.root);
 	case function_type::REQUIRE_CAPITALIZED:
 		dst.flags = src.flags;
 		return require_capitalized<true>(src.root, dst.root);
@@ -34897,6 +34908,8 @@ bool invert(
 	case function_type::REQUIRE_SUPERLATIVE:
 	case function_type::REQUIRE_NO_SUPERLATIVE:
 	case function_type::REQUIRE_REF_IN_SET:
+	case function_type::REQUIRE_PLURAL_REF_IN_SET:
+	case function_type::REQUIRE_ANIMATE_IN_SET:
 		/* the forward application already ensures that `second` satisfies this requirement */
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return intersect(inverse, inverse_count, flags, first.root, second.root);

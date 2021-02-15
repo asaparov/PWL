@@ -1963,7 +1963,8 @@ T.print_axioms(stderr);
 }
 debug++;
 		new_set_diff.clear();
-		new_proof = T.template make_proof<false, true, false>(selected_step.key, new_set_diff, new_constant, sampler);
+		array_map<unsigned int, unsigned int> requested_set_sizes(4);
+		new_proof = T.template make_proof<false, true, false>(selected_step.key, requested_set_sizes, new_set_diff, new_constant, sampler);
 		if (new_proof != NULL)
 			break;
 	}
@@ -2503,7 +2504,8 @@ inline bool do_split_merge(
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
 		unsigned int new_constant = 0;
 		set_changes<Formula> new_set_diff;
-		new_proofs[i] = T.template make_proof<false, true, false>(old_proofs[i].key, new_set_diff, new_constant, initializers[i]);
+		array_map<unsigned int, unsigned int> requested_set_sizes(4);
+		new_proofs[i] = T.template make_proof<false, true, false>(old_proofs[i].key, requested_set_sizes, new_set_diff, new_constant, initializers[i]);
 		if (new_proofs[i] == nullptr) {
 			free(proposed_proofs);
 			set_changes<Formula> dummy;

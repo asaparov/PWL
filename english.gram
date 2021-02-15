@@ -2268,7 +2268,7 @@ PRO nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 PRO -> IT:require_ref_in_set
 
 # PRO {^[P]:?[X]:(plural_ref(X) & ?[x]:(X(x) & P(x)))} -> THEY/THEM
-#PRO -> THEY
+PRO -> THEY:require_plural_ref_in_set
 #PRO -> THEM
 
 # PRO {^[P,x]:?[X]:(X=^[x]:U(0,x) & X(x) & P(x))} -> WHICH/WHAT/WHICHEVER/WHATEVER
@@ -2290,6 +2290,8 @@ PRO -> WHATEVER:require_no_wh_minus,require_predicate_of_lambda
 # PRO {^[P,x]:?[X]:(X=^[x]:(U(0,x) & location(x)) & X(x) & P(x))} -> WHERE/WHEREVER
 #PRO -> WHERE:require_no_wh_minus
 #PRO -> WHEREVER:require_no_wh_minus
+
+PRO -> SOMEONE:require_animate_in_set,require_singular
 
 
 # this noun phrase nonterminal is for left-side modifiers
@@ -3053,3 +3055,9 @@ THEN -> "then"
 
 IT preterminal {} {1.0} {1.0} {} 10 1.0 {}
 IT -> "it"
+
+THEY preterminal {} {1.0} {1.0} {} 10 1.0 {}
+THEY -> "they"
+
+SOMEONE preterminal {} {1.0} {1.0} {} 10 1.0 {}
+SOMEONE -> "someone"
