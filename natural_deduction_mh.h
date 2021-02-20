@@ -1267,6 +1267,7 @@ bool propose_change_set_size(
 	return true;
 }
 
+template<bool IsExploratory>
 struct proof_sampler {
 	/* this tracking of inconsistent constants may too liberally exclude
 	   constants if the expression contains a set size term, since we don't
@@ -1287,29 +1288,30 @@ struct proof_sampler {
 	}
 };
 
-template<typename Proof>
-inline void visit_node(const Proof& proof, const proof_sampler& visitor) { }
+template<typename Proof, bool IsExploratory>
+inline void visit_node(const Proof& proof, const proof_sampler<IsExploratory>& visitor) { }
 
-template<bool Negated, typename Term> constexpr bool visit_unary_atom(const Term* term, const proof_sampler& visitor) { return true; }
-template<bool Negated> constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2, const proof_sampler& visitor) { return true; }
-template<typename Proof> constexpr bool visit_subset_axiom(const Proof& proof, const proof_sampler& visitor) { return true; }
-constexpr bool visit_existential_intro(const proof_sampler& visitor) { return true; }
-constexpr bool visit_negated_universal_intro(const proof_sampler& visitor) { return true; }
-constexpr bool visit_negated_conjunction(const proof_sampler& visitor) { return true; }
-constexpr bool visit_disjunction_intro(const proof_sampler& visitor) { return true; }
+template<bool Negated, typename Term, bool IsExploratory> constexpr bool visit_unary_atom(const Term* term, const proof_sampler<IsExploratory>& visitor) { return true; }
+template<bool Negated, bool IsExploratory> constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2, const proof_sampler<IsExploratory>& visitor) { return true; }
+template<typename Proof, bool IsExploratory> constexpr bool visit_subset_axiom(const Proof& proof, const proof_sampler<IsExploratory>& visitor) { return true; }
+template<bool IsExploratory> constexpr bool visit_existential_intro(const proof_sampler<IsExploratory>& visitor) { return true; }
+template<bool IsExploratory> constexpr bool visit_negated_universal_intro(const proof_sampler<IsExploratory>& visitor) { return true; }
+template<bool IsExploratory> constexpr bool visit_negated_conjunction(const proof_sampler<IsExploratory>& visitor) { return true; }
+template<bool IsExploratory> constexpr bool visit_disjunction_intro(const proof_sampler<IsExploratory>& visitor) { return true; }
 
-inline void on_subtract_changes(proof_sampler& visitor) {
+template<bool IsExploratory>
+inline void on_subtract_changes(proof_sampler<IsExploratory>& visitor) {
 	visitor.undo = true;
 }
 
-template<typename Formula>
-constexpr bool on_undo_filter_operands(const Formula* formula, const proof_sampler& visitor) { return true; }
+template<typename Formula, bool IsExploratory>
+constexpr bool on_undo_filter_operands(const Formula* formula, const proof_sampler<IsExploratory>& visitor) { return true; }
 
-template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const proof_sampler& visitor) { return true; }
+template<typename Theory, typename Formula, bool IsExploratory>
+constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const proof_sampler<IsExploratory>& visitor) { return true; }
 
-template<typename Formula>
-inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_sampler& sampler)
+template<typename Formula, bool IsExploratory>
+inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_sampler<IsExploratory>& sampler)
 {
 	if (!filter_operands(formula, indices))
 		return false;
@@ -1333,19 +1335,23 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 		probabilities[i] = exp(constants[i].matching_types * 1.0 - constants[i].mismatching_types * 2.0);
 		sum += probabilities[i];
 	}
-	for (unsigned int i = 0; i < constants.length; i++)
-		probabilities[i] /= sum;
 	return probabilities;
 }
 
-template<typename ProofCalculus, typename Canonicalizer>
+template<typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
 inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
-		proof_sampler& sampler)
+		proof_sampler<IsExploratory>& sampler)
 {
 	if (!filter_constants_helper(T, formula, variable, constants))
 		return false;
+
+	if (IsExploratory) {
+		unsigned int index = index_of_any(constants);
+		if (index < constants.length)
+			constants[index].matching_types += 6;
+	}
 
 	double sum;
 	double* probabilities = compute_constant_probabilities(constants, sum);
@@ -1353,7 +1359,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		return false;
 
 	unsigned int random = sample_categorical(probabilities, sum, constants.length);
-	sampler.log_probability += log(probabilities[random]);
+	sampler.log_probability += log(probabilities[random] / sum);
 	free(probabilities);
 	swap(constants[0], constants[random]);
 
@@ -1383,14 +1389,14 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	return true;
 }
 
-template<typename Formula>
-constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_sampler& sampler) { return true; }
+template<typename Formula, bool IsExploratory>
+constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_sampler<IsExploratory>& sampler) { return true; }
 
-template<typename Formula>
-constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler& sampler) { return true; }
+template<typename Formula, bool IsExploratory>
+constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler<IsExploratory>& sampler) { return true; }
 
-template<typename Formula>
-inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler& sampler) {
+template<typename Formula, bool IsExploratory>
+inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler<IsExploratory>& sampler) {
 	/*bool contains; unsigned int bucket;
 	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
 	sampler.all_descendants_inconsistent = (inconsistent_constants.size == original_constant_count);
@@ -1537,7 +1543,7 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 	if (probabilities == nullptr)
 		return false;
 
-	sampler.log_probability += log(probabilities[index]);
+	sampler.log_probability += log(probabilities[index] / sum);
 	free(probabilities);
 	return true;
 }
@@ -1807,11 +1813,11 @@ inline void on_old_size_axiom(
 		const inverse_set_size_log_probability& visitor)
 { }
 
-template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
 inline bool compute_new_set_size(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		unsigned int& out, unsigned int min_set_size, unsigned int max_set_size,
-		proof_sampler& sampler)
+		proof_sampler<IsExploratory>& sampler)
 {
 	if (sampler.undo) {
 		out = sampler.removed_set_sizes.last();
@@ -1837,25 +1843,25 @@ inline bool compute_new_set_size(unsigned int set_id,
 	return true;
 }
 
-template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
-		proof_sampler& sampler)
+		proof_sampler<IsExploratory>& sampler)
 {
 	if (sampler.undo) return;
 	sampler.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
-template<typename Proof>
+template<typename Proof, bool IsExploratory>
 constexpr bool on_new_size_axiom(Proof* new_size_axiom,
-		const proof_sampler& visitor)
+		const proof_sampler<IsExploratory>& visitor)
 {
 	return true;
 }
 
-template<typename Proof>
+template<typename Proof, bool IsExploratory>
 inline void on_old_size_axiom(Proof* old_size_axiom,
-		const proof_sampler& visitor)
+		const proof_sampler<IsExploratory>& visitor)
 { }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
@@ -1941,7 +1947,7 @@ bool propose_disjunction_intro(
 	}
 
 	nd_step<Formula>* new_proof;
-	proof_sampler sampler;
+	proof_sampler<ProposalDistribution::IsExploratory> sampler;
 	set_changes<Formula> new_set_diff;
 unsigned int debug = 0;
 bool debug_flag = false;
@@ -3349,6 +3355,8 @@ struct uniform_proposal {
 
 	double old_normalization;
 
+	static constexpr bool IsExploratory = false;
+
 	uniform_proposal(double merge_weight = 1.0, double split_weight = 1.0) :
 			merge_weight(merge_weight), split_weight(split_weight),
 			log_merge_weight(log(merge_weight)), log_split_weight(log(split_weight))
@@ -3473,7 +3481,9 @@ inline double log_probability(
 	return proposal_distribution.log_split_weight - log(normalization);
 }
 
-struct exploration_proposal { };
+struct exploration_proposal {
+	static constexpr bool IsExploratory = true;
+};
 
 template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 inline unsigned int sample(
@@ -3550,6 +3560,8 @@ struct query_proposal {
 	const nd_step<Formula>* query_proof;
 	bool selected_query;
 	FallbackProposal& fallback_proposal;
+
+	static constexpr bool IsExploratory = false;
 
 	query_proposal(double sample_query_probability, const nd_step<Formula>* query_proof, FallbackProposal& fallback_proposal) :
 		sample_query_probability(sample_query_probability),

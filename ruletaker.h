@@ -315,31 +315,49 @@ inline bool negate_head(
 		new_head->reference_count++;
 	} else {
 		/* check if the head is a `same` event */
-		if (head->type == hol_term_type::EXISTS) {
-			hol_term* operand = head->quantifier.operand;
-			bool is_same = false;
-			if (operand->type == hol_term_type::AND) {
-				for (unsigned int i = 0; !is_same && i < operand->array.length; i++) {
-					hol_term* conjunct = operand->array.operands[i];
-					if (conjunct->type == hol_term_type::UNARY_APPLICATION && *conjunct->binary.left == hol_term::constants<(unsigned int) built_in_predicates::SAME>::value
-					 && conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == head->quantifier.variable)
+		bool is_same = true;
+		unsigned int head_index = scopes.length - 1;
+		do {
+			is_same = false;
+			if (head->type == hol_term_type::EXISTS) {
+				hol_term* operand = head->quantifier.operand;
+				if (operand->type == hol_term_type::AND) {
+					for (unsigned int i = 0; !is_same && i < operand->array.length; i++) {
+						hol_term* conjunct = operand->array.operands[i];
+						if (conjunct->type == hol_term_type::UNARY_APPLICATION
+						 && (*conjunct->binary.left == hol_term::constants<(unsigned int) built_in_predicates::SAME>::value
+						  || *conjunct->binary.left == hol_term::constants<(unsigned int) built_in_predicates::NAME>::value)
+						 && conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == head->quantifier.variable)
+						{
+							is_same = true;
+						} else if (get_scope<built_in_predicates, (unsigned int) built_in_predicates::NAME>(conjunct, head->quantifier.variable) != nullptr) {
+							is_same = true;
+						}
+					}
+				} else {
+					if (operand->type == hol_term_type::UNARY_APPLICATION
+					 && (*operand->binary.left == hol_term::constants<(unsigned int) built_in_predicates::SAME>::value
+					  || *operand->binary.left == hol_term::constants<(unsigned int) built_in_predicates::NAME>::value)
+					 && operand->binary.right->type == hol_term_type::VARIABLE && operand->binary.right->variable == head->quantifier.variable)
 					{
+						is_same = true;
+					} else if (get_scope<built_in_predicates, (unsigned int) built_in_predicates::NAME>(operand, head->quantifier.variable) != nullptr) {
 						is_same = true;
 					}
 				}
-			} else {
-				if (operand->type == hol_term_type::UNARY_APPLICATION && *operand->binary.left == hol_term::constants<(unsigned int) built_in_predicates::SAME>::value
-				 && operand->binary.right->type == hol_term_type::VARIABLE && operand->binary.right->variable == head->quantifier.variable)
-				{
-					is_same = true;
+
+				if (is_same) {
+					if (head_index > 0) {
+						/* negate the scope immediately preceding `head` */
+						head_index--;
+						head = scopes[head_index];
+					} else {
+						fprintf(stderr, "negate_head ERROR: Unable to find appropriate scope to negate.\n");
+						return false;
+					}
 				}
 			}
-
-			if (is_same && scopes.length > 1) {
-				/* negate the scope immediately preceding `head` */
-				head = scopes[scopes.length - 2];
-			}
-		}
+		} while (is_same);
 
 		new_head = hol_term::new_not(head);
 		if (new_head == nullptr) return false;
@@ -428,6 +446,136 @@ inline bool is_formula_possible(
 	return true;
 }
 
+template<typename Theory, typename PriorStateType, typename ProofPrior>
+bool resample_observations(Theory& T, PriorStateType& proof_axioms, ProofPrior& proof_prior)
+{
+	typedef typename Theory::Proof Proof;
+	typedef typename Theory::ProofType ProofType;
+
+	array<pair<hol_term*, Proof*>> observations(T.observations.size);
+	for (Proof* proof : T.observations) {
+		/* get the logical form conclusion of this proof */
+		hol_term* formula;
+		if (proof->type == ProofType::AXIOM) {
+			formula = proof->formula;
+		} else if (proof->type == ProofType::EXISTENTIAL_INTRODUCTION) {
+			unsigned int index;
+			for (index = 0; index < T.existential_intro_nodes.length; index++)
+				if (T.existential_intro_nodes[index].value == proof) break;
+			if (index == T.existential_intro_nodes.length) {
+				fprintf(stderr, "resample_observations ERROR: Unable to find proof in `theory.existential_intro_nodes`.\n");
+				return false;
+			}
+			formula = T.existential_intro_nodes[index].key;
+		} else if (proof->type == ProofType::IMPLICATION_INTRODUCTION) {
+			unsigned int index;
+			for (index = 0; index < T.implication_intro_nodes.length; index++)
+				if (T.implication_intro_nodes[index].value == proof) break;
+			if (index == T.implication_intro_nodes.length) {
+				fprintf(stderr, "resample_observations ERROR: Unable to find proof in `theory.implication_intro_nodes`.\n");
+				return false;
+			}
+			formula = T.implication_intro_nodes[index].key;
+		} else if (proof->type == ProofType::DISJUNCTION_INTRODUCTION) {
+			unsigned int index;
+			for (index = 0; index < T.disjunction_intro_nodes.length; index++)
+				if (T.disjunction_intro_nodes[index].value == proof) break;
+			if (index == T.disjunction_intro_nodes.length) {
+				fprintf(stderr, "resample_observations ERROR: Unable to find proof in `theory.disjunction_intro_nodes`.\n");
+				return false;
+			}
+			formula = T.disjunction_intro_nodes[index].key;
+		} else if (proof->type == ProofType::PROOF_BY_CONTRADICTION
+				&& proof->operands[0]->type == ProofType::NEGATION_ELIMINATION
+				&& proof->operands[0]->operands[0]->type == ProofType::CONJUNCTION_ELIMINATION
+				&& proof->operands[0]->operands[0]->operands[0] == proof->operands[1])
+		{
+			unsigned int index;
+			for (index = 0; index < T.negated_conjunction_nodes.length; index++)
+				if (T.negated_conjunction_nodes[index].value == proof) break;
+			if (index == T.negated_conjunction_nodes.length) {
+				fprintf(stderr, "resample_observations ERROR: Unable to find proof in `theory.negated_conjunction_nodes`.\n");
+				return false;
+			}
+			formula = T.negated_conjunction_nodes[index].key;
+		} else {
+			fprintf(stderr, "resample_observations ERROR: Unsupported `ProofType`.\n");
+			return false;
+		}
+
+		observations[observations.length++] = {formula, proof};
+	}
+
+	for (const pair<hol_term*, Proof*>& entry : observations) {
+		entry.key->reference_count++;
+		set_changes<hol_term> set_diff;
+		T.template remove_formula<false>(entry.value, set_diff);
+		proof_axioms.template subtract(entry.value, set_diff.old_set_axioms, proof_prior);
+		free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
+	}
+
+	for (unsigned int i = observations.length - 1; i > 0; i--) {
+		unsigned int next = sample_uniform(i + 1);
+		if (next != i) {
+			core::swap(observations[next].key, observations[i].key);
+			core::swap(observations[next].value, observations[i].value);
+		}
+	}
+	for (unsigned int i = 0; i < observations.length; i++) {
+		unsigned int new_constant;
+		set_changes<hol_term> set_diff;
+		Proof* new_proof = T.add_formula(observations[i].key, set_diff, new_constant);
+		while (new_proof == nullptr) {
+			null_collector collector;
+			set_diff.clear();
+			for (unsigned int t = 0; t < 10; t++)
+				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
+			new_proof = T.add_formula(observations[i].key, set_diff, new_constant);
+		}
+		if (new_proof == nullptr) {
+			for (auto entry : observations) { free(*entry.key); if (entry.key->reference_count == 0) free(entry.key); }
+			return false;
+		} else if (!proof_axioms.template add(new_proof, set_diff.new_set_axioms, proof_prior)) {
+			T.template remove_formula<true>(new_proof, set_diff);
+			for (auto entry : observations) { free(*entry.key); if (entry.key->reference_count == 0) free(entry.key); }
+			return false;
+		}
+		observations[i].value = new_proof;
+
+		Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
+		PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
+		hash_map<const hol_term*, hol_term*> formula_map(128);
+		Theory::clone(T, T_MAP, formula_map);
+		new (&proof_axioms_MAP) PriorStateType(proof_axioms, formula_map);
+		auto collector = make_log_probability_collector(T, proof_prior);
+		double max_log_probability = collector.current_log_probability;
+		for (unsigned int j = 0; j < 4; j++) {
+			for (unsigned int t = 0; t < 400; t++) {
+				do_mh_step(T, proof_prior, proof_axioms, collector);
+				if (collector.current_log_probability > max_log_probability) {
+					free(T_MAP); proof_axioms_MAP.~PriorStateType(); formula_map.clear();
+					Theory::clone(T, T_MAP, formula_map);
+					new (&proof_axioms_MAP) PriorStateType(proof_axioms, formula_map);
+					max_log_probability = collector.current_log_probability;
+				}
+			}
+
+			if (j + 1 < 4) {
+				for (unsigned int t = 0; t < 20; t++)
+					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
+			}
+		}
+		free(T); proof_axioms.~PriorStateType(); formula_map.clear();
+		Theory::clone(T_MAP, T, formula_map);
+		new (&proof_axioms) PriorStateType(proof_axioms_MAP, formula_map);
+		T_MAP.print_axioms(stderr, *debug_terminal_printer);
+		free(T_MAP); proof_axioms_MAP.~PriorStateType();
+	}
+
+	for (auto entry : observations) { free(*entry.key); if (entry.key->reference_count == 0) free(entry.key); }
+	return true;
+}
+
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_ruletaker_experiments(bool& status,
 		ruletaker_context_item<Theory, PriorStateType>* context_queue,
@@ -493,7 +641,7 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 19 - 1)
+if (job.question_id < 17 - 1)
 {
 total++;
 free(job);
@@ -525,12 +673,12 @@ continue;
 				typedef typename Theory::Proof Proof;
 				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
 				Proof* proof_MAP_true; Proof* proof_MAP_false;
-				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 4, 20, T_MAP_true, proof_MAP_true);
+				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 100, 4, 20, T_MAP_true, proof_MAP_true);
 				for (unsigned int j = 0; isinf(log_probability_true) && j < 400; j++) {
 					null_collector collector;
 					for (unsigned int t = 0; t < 10; t++)
 						do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 400, 4, 20, T_MAP_true, proof_MAP_true);
+					log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 100, 4, 20, T_MAP_true, proof_MAP_true);
 				}
 
 				if (!isinf(log_probability_true)) {
@@ -552,12 +700,12 @@ continue;
 					Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
 T_copy.print_axioms(stderr, *debug_terminal_printer);
 T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
-					double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
+					double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 100, 4, 20, T_MAP_false, proof_MAP_false);
 					for (unsigned int j = 0; isinf(log_probability_false) && j < 400; j++) {
 						null_collector collector;
 						for (unsigned int t = 0; t < 10; t++)
 							do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
-						log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 400, 4, 20, T_MAP_false, proof_MAP_false);
+						log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 100, 4, 20, T_MAP_false, proof_MAP_false);
 					}
 					free(*negated); if (negated->reference_count == 0) free(negated);
 
@@ -604,7 +752,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 63 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -651,7 +799,7 @@ continue;
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
 					for (unsigned int j = 0; j < 4; j++) {
-						for (unsigned int t = 0; t < 400; t++) {
+						for (unsigned int t = 0; t < 100; t++) {
 							bool print_debug = false;
 							if (print_debug) job.T.template print_axioms<true>(stderr, *debug_terminal_printer);
 							if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);

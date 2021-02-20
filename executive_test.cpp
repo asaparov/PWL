@@ -1057,25 +1057,64 @@ inline double log_probability_ratio(const ObservationCollection& existing_consta
 	return value;
 }
 
-template<typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution, typename DefinitionCountDistribution>
 struct simple_hol_term_distribution
 {
 	struct prior_state_changes {
 		typename ConstantDistribution::PriorStateChanges constants;
 		array_map<unsigned int, unsigned int> arg1_map;
 		array_map<unsigned int, string*> arg2_string_map;
+		array_map<unsigned int, array<hol_term>> definitions;
 
-		prior_state_changes() : arg1_map(4), arg2_string_map(4) { }
+		prior_state_changes() : arg1_map(4), arg2_string_map(4), definitions(4) { }
+
+		~prior_state_changes() {
+			for (auto entry : definitions) {
+				for (hol_term& term : entry.value)
+					core::free(term);
+				core::free(entry.value);
+			}
+		}
+
+		bool add_definition(unsigned int constant, const hol_term* definition) {
+			if (definition->type == hol_term_type::LAMBDA
+			 && definition->quantifier.operand->type == hol_term_type::UNARY_APPLICATION
+			 && definition->quantifier.operand->binary.left->type == hol_term_type::CONSTANT
+			 && definition->quantifier.operand->binary.left->constant == constant
+			 && definition->quantifier.operand->binary.right->type == hol_term_type::VARIABLE
+			 && definition->quantifier.operand->binary.right->variable == definition->quantifier.variable)
+				return true;
+			if (!definitions.ensure_capacity(definitions.size + 1))
+				return false;
+			unsigned int index = definitions.index_of(constant);
+			if (index == definitions.size) {
+				if (!array_init(definitions.values[index], 4))
+					return false;
+				definitions.keys[index] = constant;
+				definitions.size++;
+				if (!init(definitions.values[index][0], *definition))
+					return false;
+				definitions.values[index].length = 1;
+				return true;
+			} else {
+#if !defined(NDEBUG)
+				if (definitions.values[index].contains(*definition))
+					fprintf(stderr, "simple_hol_term_distribution.prior_state_changes.add_definition ERROR: `definitions[%u]` already contains the given formula.\n", index);
+#endif
+				return definitions.values[index].add(*definition);
+			}
+		}
 	};
 
 	struct prior_state {
 		typename ConstantDistribution::PriorState constant_prior_state;
 		array_map<unsigned int, unsigned int> arg1_map;
 		array_map<unsigned int, string*> arg2_string_map;
+		array_map<unsigned int, array<hol_term>> definitions;
 
-		prior_state() : arg1_map(16), arg2_string_map(16) { }
+		prior_state() : arg1_map(16), arg2_string_map(16), definitions(16) { }
 
-		prior_state(const prior_state& src) : constant_prior_state(src.constant_prior_state), arg1_map(src.arg1_map.capacity), arg2_string_map(src.arg2_string_map.capacity) {
+		prior_state(const prior_state& src) : constant_prior_state(src.constant_prior_state), arg1_map(src.arg1_map.capacity), arg2_string_map(src.arg2_string_map.capacity), definitions(src.definitions.capacity) {
 			for (unsigned int i = 0; i < src.arg1_map.size; i++) {
 				arg1_map.keys[i] = src.arg1_map.keys[i];
 				arg1_map.values[i] = src.arg1_map.values[i];
@@ -1084,6 +1123,24 @@ struct simple_hol_term_distribution
 				arg2_string_map.keys[i] = src.arg2_string_map.keys[i];
 				arg2_string_map.values[i] = src.arg2_string_map.values[i];
 				arg2_string_map.size++;
+			} for (unsigned int i = 0; i < src.definitions.size; i++) {
+				if (!array_init(definitions.values[i], src.definitions.values[i].capacity)) {
+					for (unsigned int j = 0; j < i; j++) core::free(definitions.values[j]);
+					throw std::bad_alloc();
+				}
+				definitions.keys[i] = src.definitions.keys[i];
+				for (unsigned int j = 0; j < src.definitions.values[i].length; j++)
+					definitions.values[i][j] = src.definitions.values[i][j];
+				definitions.values[i].length = src.definitions.values[i].length;
+				definitions.size++;
+			}
+		}
+
+		~prior_state() {
+			for (auto entry : definitions) {
+				for (hol_term& term : entry.value)
+					core::free(term);
+				core::free(entry.value);
 			}
 		}
 
@@ -1102,12 +1159,38 @@ struct simple_hol_term_distribution
 #endif
 				if (!arg2_string_map.put(entry.key, entry.value))
 					return false;
+			} for (const auto& entry : changes.definitions) {
+				if (!definitions.ensure_capacity(definitions.size + 1))
+					return false;
+				unsigned int index = definitions.index_of(entry.key);
+				if (index == definitions.size) {
+					if (!array_init(definitions.values[index], entry.value.capacity))
+						return false;
+					for (unsigned int i = 0; i < entry.value.length; i++)
+						definitions.values[index][i] = entry.value[i];
+					definitions.values[index].length = entry.value.length;
+					definitions.keys[index] = entry.key;
+					definitions.size++;
+				} else {
+#if !defined(NDEBUG)
+					for (const hol_term& term : entry.value) {
+						if (definitions.values[index].contains(term))
+							fprintf(stderr, "simple_hol_term_distribution.prior_state.add ERROR: `definitions.values[%u]` already contains the given formula.\n", index);
+					}
+#endif
+					if (!definitions.values[index].ensure_capacity(definitions.values[index].length + entry.value.length))
+						return false;
+					for (unsigned int i = 0; i < entry.value.length; i++) {
+						definitions.values[index][definitions.values[index].length] = entry.value[i];
+						definitions.values[index].length++;
+					}
+				}
 			}
 			return constant_prior_state.add(changes.constants);
 		}
 
 		inline bool add(const hol_term* observation,
-				const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior)
+				const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior)
 		{
 			prior_state_changes changes;
 			log_probability_helper(observation, prior, changes);
@@ -1130,11 +1213,30 @@ struct simple_hol_term_distribution
 					fprintf(stderr, "simple_hol_term_distribution.prior_state.subtract ERROR: `arg2_string_map` doesn't contain the key %u.\n", entry.key);
 #endif
 				arg2_string_map.remove_at(index);
+			} for (const auto& entry : changes.definitions) {
+				unsigned int index = definitions.index_of(entry.key);
+#if !defined(NDEBUG)
+				if (index == definitions.size)
+					fprintf(stderr, "simple_hol_term_distribution.prior_state.subtract ERROR: `definitions` doesn't contain the given formula.\n");
+#endif
+				for (const hol_term& term : entry.value) {
+					unsigned int term_index = definitions.values[index].index_of(term);
+#if !defined(NDEBUG)
+					if (term_index == definitions.values[index].length)
+						fprintf(stderr, "simple_hol_term_distribution.prior_state.subtract ERROR: `definitions.values[%u]` doesn't contain the given formula.\n", index);
+#endif
+					core::free(definitions.values[index][term_index]);
+					definitions.values[index].remove(term_index);
+				}
+				if (definitions.values[index].length == 0) {
+					core::free(definitions.values[index]);
+					definitions.remove_at(index);
+				}
 			}
 		}
 
 		inline void subtract(const hol_term* observation,
-				const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior)
+				const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior)
 		{
 			prior_state_changes changes;
 			log_probability_helper(observation, prior, changes);
@@ -1188,10 +1290,12 @@ struct simple_hol_term_distribution
 
 	ConstantDistribution constant_distribution;
 	SetSizeDistribution set_size_distribution;
+	DefinitionCountDistribution definition_count_distribution;
 
 	simple_hol_term_distribution(
 			const ConstantDistribution& constant_distribution,
 			const SetSizeDistribution& set_size_distribution,
+			const DefinitionCountDistribution& definition_count_distribution,
 			double ground_literal_probability, double negated_expression_probability,
 			double universal_probability, double existential_probability,
 			double conjunction_probability, double disjunction_probability,
@@ -1239,7 +1343,8 @@ struct simple_hol_term_distribution
 		log_consequent_stop_probability(log(consequent_stop_probability)),
 		name_count_distribution(name_count_parameter),
 		constant_distribution(constant_distribution),
-		set_size_distribution(set_size_distribution)
+		set_size_distribution(set_size_distribution),
+		definition_count_distribution(definition_count_distribution)
 	{
 		if (fabs(ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + implication_probability + set_size_axiom_probability + arg1_probability + arg2_probability - 1.0) > 1.0e-12)
 			fprintf(stderr, "simple_hol_term_distribution WARNING: `ground_literal_probability + negated_expression_probability + universal_probability + existential_probability + conjunction_probability + disjunction_probability + implication_probability + set_size_axiom_probability + arg1_probability + arg2_probability` is not 1.\n");
@@ -1249,7 +1354,7 @@ struct simple_hol_term_distribution
 			fprintf(stderr, "simple_hol_term_distribution WARNING: `arg_constant_probability + arg_number_probability + arg_string_probability` is not 1.\n");
 	}
 
-	simple_hol_term_distribution(const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& src) :
+	simple_hol_term_distribution(const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& src) :
 		log_ground_literal_probability(src.log_ground_literal_probability),
 		log_negated_expression_probability(src.log_negated_expression_probability),
 		log_universal_probability(src.log_universal_probability),
@@ -1283,14 +1388,16 @@ struct simple_hol_term_distribution
 		log_consequent_stop_probability(src.log_consequent_stop_probability),
 		name_count_distribution(src.name_count_distribution),
 		constant_distribution(src.constant_distribution),
-		set_size_distribution(src.set_size_distribution)
+		set_size_distribution(src.set_size_distribution),
+		definition_count_distribution(src.definition_count_distribution)
 	{ }
 };
 
-template<typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
-inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution> make_simple_hol_term_distribution(
+template<typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution, typename DefinitionCountDistribution>
+inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution> make_simple_hol_term_distribution(
 		const ConstantDistribution& constant_distribution,
 		const SetSizeDistribution set_size_distribution,
+		const DefinitionCountDistribution& definition_count_distribution,
 		double ground_literal_probability, double negated_expression_probability,
 		double universal_probability, double existential_probability,
 		double conjunction_probability, double disjunction_probability,
@@ -1306,8 +1413,8 @@ inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, Set
 		double unary_probability, double antecedent_stop_probability,
 		double consequent_stop_probability, double name_count_parameter)
 {
-	return simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>(
-			constant_distribution, set_size_distribution,
+	return simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>(
+			constant_distribution, set_size_distribution, definition_count_distribution,
 			ground_literal_probability, negated_expression_probability,
 			universal_probability, existential_probability,
 			conjunction_probability, disjunction_probability,
@@ -1324,9 +1431,9 @@ inline simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, Set
 			consequent_stop_probability, name_count_parameter);
 }
 
-template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution, typename DefinitionCountDistribution>
 double log_probability_atom(const hol_term* function, const hol_term* arg1,
-		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
+		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (function->type == hol_term_type::UNARY_APPLICATION) {
@@ -1380,10 +1487,10 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 	}
 }
 
-template<bool Quantified, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution, typename DefinitionCountDistribution>
 double log_probability_atom(
 		const hol_term* function, const hol_term* arg1, const hol_term* arg2,
-		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
+		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (function->type != hol_term_type::CONSTANT)
@@ -1411,9 +1518,9 @@ double log_probability_atom(
 	}
 }
 
-template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified, bool IsRoot, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution, typename DefinitionCountDistribution>
 double log_probability_literal(const hol_term* literal,
-		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
+		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior,
 		typename ConstantDistribution::ObservationCollection& constants)
 {
 	if (literal->type == hol_term_type::UNARY_APPLICATION) {
@@ -1437,10 +1544,10 @@ inline bool is_literal(const hol_term* term) {
 	return false;
 }
 
-template<bool Quantified = false, bool IsRoot = true, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution>
+template<bool Quantified = false, bool IsRoot = true, typename BuiltInPredicates, typename ConstantDistribution, typename SetSizeDistribution, typename DefinitionCountDistribution>
 double log_probability_helper(const hol_term* term,
-		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
-		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& changes)
+		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior,
+		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes& changes)
 {
 	if (is_literal(term))
 		return (Quantified ? prior.log_quantified_ground_literal_probability : prior.log_ground_literal_probability) + log_probability_literal<Quantified, IsRoot>(term, prior, changes.constants);
@@ -1535,7 +1642,8 @@ double log_probability_helper(const hol_term* term,
 			hol_term* right = term->binary.right;
 			if (left->type != hol_term_type::UNARY_APPLICATION)
 				swap(left, right);
-			changes.constants.add_constant(left->binary.right->constant);
+			if (left->binary.right->type == hol_term_type::CONSTANT)
+				changes.constants.add_constant(left->binary.right->constant);
 			if (right->type == hol_term_type::CONSTANT) {
 				value += prior.log_arg_constant_probability;
 				changes.constants.add_constant(right->constant);
@@ -1545,9 +1653,19 @@ double log_probability_helper(const hol_term* term,
 				value += -7.0f;
 			} else if (right->type == hol_term_type::STRING) {
 				value += prior.log_arg_string_probability;
-				changes.arg2_string_map.put(left->binary.right->constant, &right->str);
+				if (left->binary.right->type == hol_term_type::CONSTANT)
+					changes.arg2_string_map.put(left->binary.right->constant, &right->str);
 			}
 			return value;
+		} else if (term->binary.left->type == hol_term_type::CONSTANT || term->binary.right->type == hol_term_type::CONSTANT) {
+			if (IsRoot) {
+				hol_term* left = term->binary.left;
+				hol_term* right = term->binary.right;
+				if (left->type != hol_term_type::CONSTANT)
+					swap(left, right);
+				changes.add_definition(left->constant, right);
+			}
+			return (Quantified ? prior.log_quantified_set_size_axiom_probability : prior.log_set_size_axiom_probability);
 		} else {
 			// TODO: implement this (we also have definition axioms for constants)
 			return (Quantified ? prior.log_quantified_set_size_axiom_probability : prior.log_set_size_axiom_probability);
@@ -1616,15 +1734,16 @@ double log_probability_helper(const hol_term* term,
 template<typename BuiltInPredicates,
 	typename ConstantDistribution,
 	typename SetSizeDistribution,
+	typename DefinitionCountDistribution,
 	template<typename> class Collection>
 double log_probability(const Collection<hol_term*>& clusters,
-		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior)
+		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior)
 {
 #if defined(DEBUG_LOG_PROBABILITY)
 	fprintf(stderr, "log_probability of `simple_hol_term_distribution`:\n");
 #endif
 	double value = 0.0;
-	typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes changes;
+	typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes changes;
 	array_map<unsigned int, unsigned int> arg1_map(8);
 	array_map<unsigned int, string*> arg2_string_map(8);
 	for (hol_term* formula : clusters) {
@@ -1680,20 +1799,39 @@ double log_probability(const Collection<hol_term*>& clusters,
 	for (auto entry : name_map) free(entry.value);
 	value += name_prior;
 
+#if defined(DEBUG_LOG_PROBABILITY)
+	fprintf(stderr, "log_probability of definitions:\n");
+#endif
+	double definition_prior = 0.0;
+	for (const auto& entry : changes.definitions) {
+		double current_value = log_probability(entry.value.length, prior.definition_count_distribution) - log_probability(0, prior.definition_count_distribution);
+#if defined(DEBUG_LOG_PROBABILITY)
+		fprintf(stderr, "  Concept %u has definitions ", entry.key);
+		print(entry.value, stderr);
+		fprintf(stderr, " with log probability %lf.\n", current_value);
+#endif
+		definition_prior += current_value;
+	}
+#if defined(DEBUG_LOG_PROBABILITY)
+	fprintf(stderr, "  Total: %lf\n", definition_prior);
+#endif
+	value += definition_prior;
+
 	return value + log_probability(changes.constants, prior.constant_distribution);
 }
 
 template<typename BuiltInPredicates,
 	typename ConstantDistribution,
 	typename SetSizeDistribution,
+	typename DefinitionCountDistribution,
 	template<typename> class Collection>
 double log_probability_ratio(
-		const typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state& prior_state,
+		const typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state& prior_state,
 		const Collection<hol_term*>& old_clusters,
 		const Collection<hol_term*>& new_clusters,
-		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>& prior,
-		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& old_prior_changes,
-		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution>::prior_state_changes& new_prior_changes)
+		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior,
+		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes& old_prior_changes,
+		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes& new_prior_changes)
 {
 	double value = 0.0;
 	for (hol_term* formula : new_clusters)
@@ -1859,6 +1997,26 @@ double log_probability_ratio(
 	for (auto entry : new_name_map) free(entry.value);
 	for (auto entry : name_map) free(entry.value);
 	value += name_prior;
+
+	double definition_prior = 0.0;
+	for (const auto& entry : new_prior_changes.definitions) {
+		const array<hol_term>& definitions = prior_state.definitions.get(entry.key, contains);
+		unsigned int old_count = (contains ? definitions.length : 0);
+		unsigned int index = old_prior_changes.definitions.index_of(entry.key);
+		if (index < old_prior_changes.definitions.size) {
+			definition_prior += log_probability(old_count + entry.value.length - old_prior_changes.definitions.values[index].length, prior.definition_count_distribution)
+							  - log_probability(old_count, prior.definition_count_distribution);
+		} else {
+			definition_prior += log_probability(old_count + entry.value.length, prior.definition_count_distribution)
+							  - log_probability(old_count, prior.definition_count_distribution);
+		}
+	} for (const auto& entry : old_prior_changes.definitions) {
+		if (new_prior_changes.definitions.contains(entry.key)) continue;
+		unsigned int old_count = prior_state.definitions.get(entry.key).length;
+		definition_prior += log_probability(old_count - entry.value.length, prior.definition_count_distribution)
+						  - log_probability(old_count, prior.definition_count_distribution);
+	}
+	value += definition_prior;
 
 	return value + log_probability_ratio(prior_state.constant_prior_state, old_prior_changes.constants, new_prior_changes.constants, prior.constant_distribution);
 }
@@ -2500,8 +2658,9 @@ return EXIT_SUCCESS;*/
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
-			make_dirichlet_process(1.0e-12, make_dirichlet_process(1000.0, make_iid_uniform_distribution<hol_term>(1000))));
-        auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(constant_prior, geometric_distribution(0.02),
+			make_dirichlet_process(1.0e-12, make_dirichlet_process(1000.0, make_iid_uniform_distribution<hol_term>(10000))));
+    auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(
+						constant_prior, geometric_distribution(0.02), very_light_tail_distribution(1.0e-20),
                         0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.01, 0.57, 0.01, 0.01,
                         0.1099999, 0.01, 0.0000001, 0.1999999, 0.26, 0.01, 0.01, 0.0000001, 0.2, 0.2,
                         0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 1.0e-220);

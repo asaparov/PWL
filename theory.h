@@ -201,6 +201,25 @@ inline int_fast8_t compare(const interval<T>& first, const interval<T>& second) 
 	return 0;
 }
 
+template<typename T, typename Stream>
+inline bool print(const interval<T>& i, Stream& out) {
+	if (i.left_inclusive) {
+		if (fputc('[', out) == EOF) return false;
+	} else {
+		if (fputc('(', out) == EOF) return false;
+	}
+	if (!print(i.min, out)
+	 || fputc(',', out) == EOF
+	 || !print(i.max, out))
+		return false;
+	if (i.left_inclusive) {
+		if (fputc(']', out) == EOF) return false;
+	} else {
+		if (fputc(')', out) == EOF) return false;
+	}
+	return true;
+}
+
 struct any_number_instantiation {
 	interval<hol_number>* included;
 	uint_fast8_t included_count;
@@ -414,6 +433,41 @@ inline bool operator < (const instantiation& first, const instantiation& second)
 		return first.str < second.str;
 	}
 	fprintf(stderr, "operator < ERROR: Unrecognized `instantiation_type`.\n");
+	return false;
+}
+
+template<typename Stream, typename... Printer>
+bool print(const instantiation& inst, Stream& out, Printer&&... printer) {
+	switch (inst.type) {
+	case instantiation_type::ANY:
+		if (fputc('*', out) == EOF) return false;
+		if (inst.any.excluded_count != 0
+		 && fputc('\\', out) == EOF) return false;
+		if (inst.any.excluded_count > 1
+		 && fputc('(', out) == EOF) return false;
+		for (uint_fast8_t i = 0; i < inst.any.excluded_count; i++) {
+			if (i != 0 && fprintf(out, " ⋃ ") <= 0) return false;
+			if (!print(inst.any.excluded[i], out, std::forward<Printer>(printer)...))
+				return false;
+		}
+		if (inst.any.excluded_count > 1
+		 && fputc(')', out) == EOF) return false;
+	case instantiation_type::ANY_NUMBER:
+		for (uint_fast8_t i = 0; i < inst.any_number.included_count; i++) {
+			if (i != 0 && fprintf(out, " ⋃ ") <= 0) return false;
+			if (!print(inst.any_number.included[i], out)) return false;
+		}
+		return true;
+	case instantiation_type::CONSTANT:
+		return print(inst.constant, out, std::forward<Printer>(printer)...);
+	case instantiation_type::NUMBER:
+		return print(inst.number, out);
+	case instantiation_type::STRING:
+		return fputc('"', out) != EOF
+			&& print(inst.str, out)
+			&& fputc('"', out) != EOF;
+	}
+	fprintf(stderr, "print < ERROR: Unrecognized `instantiation_type`.\n");
 	return false;
 }
 
@@ -1893,6 +1947,51 @@ inline bool operator < (const instantiation_tuple& src, const instantiation_tupl
 		else if (dst.ge_indices[i].value < src.ge_indices[i].value) return true;
 	}
 	return false;
+}
+
+template<typename K, typename V, typename Stream, typename... Printer>
+inline bool print(const pair<K, V>& p, Stream& out, Printer&&... printer) {
+	return fputc('(', out) != EOF
+		&& !print(p.key, out, std::forward<Printer>(printer)...)
+		&& fputc(',', out) != EOF
+		&& !print(p.value, out, std::forward<Printer>(printer)...)
+		&& fputc(')', out) != EOF;
+}
+
+template<typename Stream, typename... Printer>
+bool print(const instantiation_tuple& tuple, Stream& out, Printer&&... printer) {
+	if (tuple.length == 0) {
+		if (fprintf(out, "()") <= 0)
+			return false;
+	} else if (tuple.length == 1) {
+		if (!print(tuple.values[0], out, std::forward<Printer>(printer)...))
+			return false;
+	} else {
+		for (uint_fast8_t i = 0; i < tuple.length; i++) {
+			if (i == 0) {
+				if (fputc('(', out) == EOF)
+					return false;
+			} else {
+				if (fputc(',', out) == EOF)
+					return false;
+			}
+			if (!print(tuple.values[i], out, std::forward<Printer>(printer)...))
+				return false;
+		}
+		if (fputc(')', out) == EOF)
+			return false;
+	}
+	if (tuple.equal_indices.length != 0) {
+		if (fprintf(stderr, " equal_indices: ") <= 0
+		 || !print(tuple.equal_indices, out)) return false;
+	} if (tuple.not_equal_indices.length != 0) {
+		if (fprintf(stderr, " not_equal_indices: ") <= 0
+		 || !print(tuple.not_equal_indices, out)) return false;
+	} if (tuple.ge_indices.length != 0) {
+		if (fprintf(stderr, " ge_indices: ") <= 0
+		 || !print(tuple.ge_indices, out)) return false;
+	}
+	return true;
 }
 
 struct axiom_assignment {
@@ -11088,6 +11187,99 @@ private:
 	{
 		Term* predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
+			// if (predicate->type == TermType::CONSTANT && predicate->constant >= new_constant_offset) {
+			// 	/* find a set definition of the predicate constant */
+			// 	const concept<ProofCalculus>& c = ground_concepts[predicate->constant - new_constant_offset];
+			// 	array<Proof*> set_definitions(4);
+			// 	for (unsigned int i = 1; i < c.definitions.length; i++) {
+			// 		if (c.definitions[i]->formula->binary.right->type == FormulaType::LAMBDA
+			// 		 && !set_definitions.add(c.definitions[i]))
+			// 		{
+			// 			return nullptr;
+			// 		}
+			// 	}
+			// 	if (set_definitions.length != 0) {
+			// 		Proof* selected_definition = set_definitions[sample_uniform(set_definitions.length)];
+			// 		Formula* lambda_formula = selected_definition->formula->binary.right;
+			// 		Formula* set_formula = lambda_formula;
+			// 		unsigned int first_variable = set_formula->quantifier.variable;
+			// 		set_formula = set_formula->quantifier.operand;
+			// 		uint_fast8_t arity = 1;
+
+			// 		unsigned int second_variable = 0;
+			// 		if (set_formula->type == FormulaType::LAMBDA) {
+			// 			second_variable = set_formula->quantifier.variable;
+			// 			set_formula = set_formula->quantifier.operand;
+			// 			arity++;
+			// 		}
+
+			// 		if (set_formula->type != FormulaType::LAMBDA && ((arity == 1 && arg2 == nullptr) || (arity == 2 && arg2 != nullptr))) {
+			// 			Term* src_variables[2];
+			// 			Term* dst_variables[2];
+			// 			src_variables[0] = Term::new_variable(first_variable);
+			// 			if (src_variables[0] == nullptr)
+			// 				return nullptr;
+			// 			dst_variables[0] = arg1;
+			// 			if (second_variable != 0) {
+			// 				src_variables[1] = Term::new_variable(second_variable);
+			// 				if (src_variables[1] == nullptr) {
+			// 					core::free(*src_variables[0]); core::free(src_variables[0]);
+			// 					return nullptr;
+			// 				}
+			// 				dst_variables[1] = arg2;
+			// 			}
+
+			// 			Formula* substituted = substitute_all(set_formula, src_variables, dst_variables, arity);
+			// 			core::free(*src_variables[0]); if (src_variables[0]->reference_count == 0) core::free(src_variables[0]);
+			// 			if (second_variable != 0) {
+			// 				core::free(*src_variables[1]); if (src_variables[1]->reference_count == 0) core::free(src_variables[1]);
+			// 			}
+			// 			if (substituted == nullptr)
+			// 				return nullptr;
+
+			// 			Proof* new_proof = make_proof<Contradiction, DefinitionsAllowed, ResolveInconsistencies>(substituted, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
+			// 			if (new_proof == nullptr) {
+			// 				core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
+			// 				return nullptr;
+			// 			}
+
+			// 			Formula* beta_right = Formula::new_apply(lambda_formula, arg1);
+			// 			if (beta_right == nullptr) {
+			// 				free_proof(new_proof, set_diff, std::forward<Args>(args)...);
+			// 				core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
+			// 				return nullptr;
+			// 			}
+			// 			lambda_formula->reference_count++;
+			// 			arg1->reference_count++;
+			// 			if (second_variable != 0) {
+			// 				Formula* temp = Formula::new_apply(beta_right, arg2);
+			// 				if (temp == nullptr) {
+			// 					core::free(*beta_right); core::free(beta_right);
+			// 					free_proof(new_proof, set_diff, std::forward<Args>(args)...);
+			// 					core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
+			// 					return nullptr;
+			// 				}
+			// 				arg2->reference_count++;
+			// 				beta_right = temp;
+			// 			}
+
+			// 			Proof* proof = ProofCalculus::new_equality_elim(
+			// 					selected_definition,
+			// 					ProofCalculus::new_equality_elim(ProofCalculus::new_beta(substituted, beta_right), new_proof, make_repeated_array_view(0u, 1)),
+			// 					make_repeated_array_view(1u, 1));
+			// 			core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
+			// 			core::free(*beta_right); if (beta_right->reference_count == 0) core::free(beta_right);
+			// 			if (proof == nullptr) {
+			// 				free_proof(new_proof, set_diff, std::forward<Args>(args)...);
+			// 				return nullptr;
+			// 			}
+			// 			core::free(*new_proof); if (new_proof->reference_count == 0) core::free(new_proof);
+			// 			proof->reference_count++;
+			// 			return proof;
+			// 		}
+			// 	}
+			// }
+
 			return make_atom_proof<DefinitionsAllowed, Contradiction, ResolveInconsistencies>(canonicalized, new_constant, std::forward<Args>(args)...);
 
 		} else if (canonicalized->type == FormulaType::NOT) {
@@ -13717,8 +13909,12 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 					element.type = tuple_element_type::CONSTANT;
 					element.constant = right->constant;
 					const tuple tup = {&element, 1};
-					if (T.sets.sets[set_id].provable_elements.contains(tup))
+					if (T.sets.sets[set_id].provable_elements.contains(tup)) {
 						constants[i].matching_types++;
+					} else if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
+						/* this set is full so this `right` cannot be an element of this set */
+						constants.remove(i--);
+					}
 				}
 			}
 
@@ -13832,12 +14028,33 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 					unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
 					if (contains && T.sets.sets[set_id].arity == 1) {
 						for (unsigned int i = 0; i < constants.length; i++) {
+							if (constants[i].type == instance_type::ANY) {
+								if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
+									/* the set is full, so a new constant cannot be a member of the set */
+									constants.remove(i--);
+								}
+								continue;
+							}
+
 							tuple_element& element = *((tuple_element*) alloca(sizeof(tuple_element)));
-							element.type = tuple_element_type::CONSTANT;
-							element.constant = constants[i].constant;
+							if (constants[i].type == instance_type::CONSTANT) {
+								element.type = tuple_element_type::CONSTANT;
+								element.constant = constants[i].constant;
+							} else if (constants[i].type == instance_type::NUMBER) {
+								element.type = tuple_element_type::NUMBER;
+								element.number = constants[i].number;
+							} else if (constants[i].type == instance_type::STRING) {
+								element.type = tuple_element_type::STRING;
+								element.str = *constants[i].str;
+							}
 							const tuple tup = {&element, 1};
-							if (T.sets.sets[set_id].provable_elements.contains(tup))
+							if (T.sets.sets[set_id].provable_elements.contains(tup)) {
 								constants[i].matching_types++;
+							} else if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
+								/* the set is full, so `constants[i]` cannot be a member of the set */
+								constants.remove(i--);
+							}
+							free(element);
 						}
 					}
 				}
