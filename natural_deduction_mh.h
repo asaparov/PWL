@@ -1389,6 +1389,15 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	return true;
 }
 
+template<bool Contradiction, typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
+inline constexpr bool is_impossible(
+		const typename ProofCalculus::Language* formula,
+		const theory<ProofCalculus, Canonicalizer>& T,
+		const proof_sampler<IsExploratory>& sampler)
+{
+	return false;
+}
+
 template<typename Formula, bool IsExploratory>
 constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_sampler<IsExploratory>& sampler) { return true; }
 
@@ -1438,6 +1447,15 @@ constexpr bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		inverse_proof_sampler& sampler)
 {
 	return true;
+}
+
+template<bool Contradiction, typename ProofCalculus, typename Canonicalizer>
+inline constexpr bool is_impossible(
+		const typename ProofCalculus::Language* formula,
+		const theory<ProofCalculus, Canonicalizer>& T,
+		const inverse_proof_sampler& sampler)
+{
+	return false;
 }
 
 template<typename Formula>
@@ -2177,6 +2195,15 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	constants.length = 1;
 	initializer.constant_position++;
 	return true;
+}
+
+template<bool Contradiction, typename ProofCalculus, typename Canonicalizer>
+inline constexpr bool is_impossible(
+		const typename ProofCalculus::Language* formula,
+		const theory<ProofCalculus, Canonicalizer>& T,
+		const proof_initializer& initializer)
+{
+	return false;
 }
 
 template<typename Formula>

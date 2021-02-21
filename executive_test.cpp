@@ -40,9 +40,9 @@ unsigned int sample(const geometric_distribution& prior, unsigned int min, unsig
 struct very_light_tail_distribution {
 	typedef unsigned int ObservationType;
 
-	double lambda, log_lambda, log_normalization;
+	double log_lambda, log_normalization;
 
-	very_light_tail_distribution(double lambda) : lambda(lambda), log_lambda(log(lambda)), log_normalization(0.0) {
+	very_light_tail_distribution(double log_lambda) : log_lambda(log_lambda), log_normalization(0.0) {
 		for (unsigned int k = 0; ; k++) {
 			double old_log_normalization = log_normalization;
 			log_normalization = logsumexp(log_normalization, (k * k) * log_lambda);
@@ -51,7 +51,7 @@ struct very_light_tail_distribution {
 		}
 	}
 
-	very_light_tail_distribution(const very_light_tail_distribution& src) : lambda(src.lambda), log_lambda(src.log_lambda), log_normalization(src.log_normalization) { }
+	very_light_tail_distribution(const very_light_tail_distribution& src) : log_lambda(src.log_lambda), log_normalization(src.log_normalization) { }
 };
 
 inline double log_probability(unsigned int k, const very_light_tail_distribution& prior) {
@@ -2659,11 +2659,11 @@ return EXIT_SUCCESS;*/
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
 			make_dirichlet_process(1.0e-12, make_dirichlet_process(1000.0, make_iid_uniform_distribution<hol_term>(10000))));
-    auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(
-						constant_prior, geometric_distribution(0.02), very_light_tail_distribution(1.0e-20),
-                        0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.01, 0.57, 0.01, 0.01,
-                        0.1099999, 0.01, 0.0000001, 0.1999999, 0.26, 0.01, 0.01, 0.0000001, 0.2, 0.2,
-                        0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, 1.0e-220);
+	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(
+						constant_prior, geometric_distribution(0.02), very_light_tail_distribution(-40.0),
+						0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.01, 0.57, 0.01, 0.01,
+						0.1099999, 0.01, 0.0000001, 0.1999999, 0.26, 0.01, 0.01, 0.0000001, 0.2, 0.2,
+						0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, -2000.0);
 	auto axiom_prior = make_dirichlet_process(1.0e-1, theory_element_prior);
 	auto conjunction_introduction_prior = uniform_subset_distribution<const nd_step<hol_term>*>(0.8);
 	auto conjunction_elimination_prior = make_levy_process(poisson_distribution(2.0), poisson_distribution(1.0));

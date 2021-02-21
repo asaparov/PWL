@@ -426,7 +426,7 @@ inline bool operator == (const question_result& first, const question_result& se
 
 constexpr unsigned int MAX_CONTEXT_COUNT = 140;
 constexpr unsigned int MAX_QUESTION_COUNT = 5270;
-constexpr double PREDICT_UNKNOWN_THRESHOLD = 500.0;
+constexpr double PREDICT_UNKNOWN_THRESHOLD = 2000.0;
 
 
 template<typename ProofCalculus, typename Canonicalizer>
@@ -641,7 +641,7 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 17 - 1)
+if (job.question_id < 23 - 1)
 {
 total++;
 free(job);

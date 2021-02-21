@@ -878,6 +878,42 @@ inline bool set_intersect(any_number_instantiation& dst,
 	return true;
 }
 
+inline bool is_subset(
+		const any_number_instantiation& first,
+		const any_number_instantiation& second)
+{
+	uint_fast8_t i = 0, j = 0;
+	hol_number lower;
+	bool left_inclusive;
+	if (first.included[0].min < second.included[0].min || (second.included[0].min == first.included[0].min && first.included[0].left_inclusive)) {
+		lower = first.included[0].min;
+		left_inclusive = first.included[0].left_inclusive;
+	} else {
+		return false;
+	}
+	while (i < first.included_count && j < second.included_count) {
+		if (!has_intersection(lower, left_inclusive, first.included[i].max, first.included[i].right_inclusive)) {
+			i++;
+		} else if (!has_intersection(lower, left_inclusive, second.included[j].max, second.included[j].right_inclusive)) {
+			j++;
+		} else {
+			if (first.included[i].max < second.included[j].max || (second.included[j].max == first.included[i].max && !first.included[i].right_inclusive))
+				return false;
+			i++; j++;
+
+			if (i == first.included_count || j == second.included_count)
+				return true;
+			if (first.included[i].min < second.included[j].min || (second.included[j].min == first.included[i].min && first.included[i].left_inclusive)) {
+				lower = first.included[i].min;
+				left_inclusive = first.included[i].left_inclusive;
+			} else {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 inline bool subtract(instantiation& dst,
 		const instantiation& first, const instantiation& second)
 {
@@ -1110,6 +1146,47 @@ inline bool intersect(instantiation& dst,
 	return false;
 }
 
+inline bool is_subset(const instantiation& first, const instantiation& second)
+{
+	if (first.type == instantiation_type::ANY || second.type == instantiation_type::ANY) {
+		instantiation& dst = *((instantiation*) alloca(sizeof(instantiation)));
+		intersect(dst, first, second);
+		bool result = (dst == first);
+		free(dst);
+		return result;
+	} else if (first.type == instantiation_type::ANY_NUMBER) {
+		if (second.type == instantiation_type::ANY_NUMBER) {
+			return is_subset(first.any_number, second.any_number);
+		} else {
+			return false;
+		}
+	} else if (second.type == instantiation_type::ANY_NUMBER) {
+		if (first.type == instantiation_type::NUMBER) {
+			for (uint_fast8_t i = 0; i < second.any_number.included_count; i++)
+				if (second.any_number.included[i].contains(first.number)) return true;
+			return false;
+		} else {
+			return false;
+		}
+	} else if (first.type != second.type) {
+		return false;
+	}
+
+	switch (first.type) {
+	case instantiation_type::CONSTANT:
+		return (first.constant == second.constant);
+	case instantiation_type::NUMBER:
+		return (first.number == second.number);
+	case instantiation_type::STRING:
+		return (first.str == second.str);
+	case instantiation_type::ANY:
+	case instantiation_type::ANY_NUMBER:
+		break;
+	}
+	fprintf(stderr, "is_subset ERROR: Unrecognized `instantiation_type`.\n");
+	return false;
+}
+
 struct pair_sorter { };
 
 template<typename K, typename V>
@@ -1132,7 +1209,7 @@ struct instantiation_tuple {
 			not_equal_indices(max((size_t) 1, src.not_equal_indices.length)),
 			ge_indices(max((size_t) 1, src.ge_indices.length))
 	{
-		if (!init_helper(src)) throw std::bad_alloc();
+		if (!init_helper(src, src.length)) throw std::bad_alloc();
 	}
 
 	~instantiation_tuple() { free_helper(); }
@@ -1147,7 +1224,7 @@ struct instantiation_tuple {
 			core::free(equal_indices);
 			core::free(not_equal_indices);
 			return false;
-		} else if (!init_helper(src)) {
+		} else if (!init_helper(src, src.length)) {
 			core::free(equal_indices);
 			core::free(not_equal_indices);
 			core::free(ge_indices);
@@ -1823,15 +1900,21 @@ private:
 		return true;
 	}
 
-	inline bool init_helper(const instantiation_tuple& src) {
-		length = src.length;
+	inline bool init_helper(const instantiation_tuple& src, uint_fast8_t new_length) {
+		length = new_length;
 		values = (instantiation*) malloc(max(1, sizeof(instantiation) * length));
 		if (values == nullptr) {
 			fprintf(stderr, "instantiation_tuple.init_helper ERROR: Out of memory.\n");
 			return false;
 		}
-		for (unsigned int i = 0; i < length; i++) {
+		for (uint_fast8_t i = 0; i < src.length; i++) {
 			if (!init(values[i], src.values[i])) {
+				for (unsigned int j = 0; j < i; j++) core::free(values[j]);
+				core::free(values);
+				return false;
+			}
+		} for (uint_fast8_t i = src.length; i < new_length; i++) {
+			if (!init(values[i], instantiation_type::ANY)) {
 				for (unsigned int j = 0; j < i; j++) core::free(values[j]);
 				core::free(values);
 				return false;
@@ -1855,7 +1938,7 @@ private:
 	}
 
 	friend bool init(instantiation_tuple&, uint_fast8_t);
-	friend bool init(instantiation_tuple&, const instantiation_tuple&);
+	friend bool init(instantiation_tuple&, const instantiation_tuple&, uint_fast8_t);
 };
 
 inline bool init(instantiation_tuple& new_tuple, uint_fast8_t length) {
@@ -1877,7 +1960,7 @@ inline bool init(instantiation_tuple& new_tuple, uint_fast8_t length) {
 	return true;
 }
 
-inline bool init(instantiation_tuple& new_tuple, const instantiation_tuple& src) {
+inline bool init(instantiation_tuple& new_tuple, const instantiation_tuple& src, uint_fast8_t new_length) {
 	if (!array_init(new_tuple.equal_indices, max((size_t) 1, src.equal_indices.length))) {
 		return false;
 	} else if (!array_init(new_tuple.not_equal_indices, max((size_t) 1, src.not_equal_indices.length))) {
@@ -1887,13 +1970,17 @@ inline bool init(instantiation_tuple& new_tuple, const instantiation_tuple& src)
 		free(new_tuple.equal_indices);
 		free(new_tuple.not_equal_indices);
 		return false;
-	} else if (!new_tuple.init_helper(src)) {
+	} else if (!new_tuple.init_helper(src, new_length)) {
 		free(new_tuple.equal_indices);
 		free(new_tuple.not_equal_indices);
 		free(new_tuple.ge_indices);
 		return false;
 	}
 	return true;
+}
+
+inline bool init(instantiation_tuple& new_tuple, const instantiation_tuple& src) {
+	return init(new_tuple, src, src.length);
 }
 
 inline bool operator == (const instantiation_tuple& src, const instantiation_tuple& dst) {
@@ -1947,6 +2034,18 @@ inline bool operator < (const instantiation_tuple& src, const instantiation_tupl
 		else if (dst.ge_indices[i].value < src.ge_indices[i].value) return true;
 	}
 	return false;
+}
+
+inline bool is_subset(const instantiation_tuple& first, const instantiation_tuple& second)
+{
+	if (first.length != second.length) return false;
+	for (uint_fast8_t i = 0; i < first.length; i++) {
+		if (!is_subset(first.values[i], second.values[i]))
+			return false;
+	}
+	return is_subset(second.equal_indices.data, second.equal_indices.length, first.equal_indices.data, first.equal_indices.length)
+		&& is_subset(second.not_equal_indices.data, second.not_equal_indices.length, first.not_equal_indices.data, first.not_equal_indices.length)
+		&& is_subset(second.ge_indices.data, second.ge_indices.length, first.ge_indices.data, first.ge_indices.length);
 }
 
 template<typename K, typename V, typename Stream, typename... Printer>
@@ -2060,6 +2159,19 @@ inline bool operator < (const axiom_assignment& src, const axiom_assignment& dst
 		else if (dst.variable_map.values[i] < src.variable_map.values[i]) return false;
 	}
 	return false;
+}
+
+inline bool is_subset(const axiom_assignment& first, const axiom_assignment& second)
+{
+	for (const auto& entry : second.variable_map) {
+		unsigned int index = first.variable_map.index_of(entry.key);
+		if (index == first.variable_map.size
+		 || entry.value != first.variable_map.values[index])
+		{
+			return false;
+		}
+	}
+	return is_subset(first.assignment, second.assignment);
 }
 
 struct variable_assignment {
@@ -2241,7 +2353,7 @@ private:
 			core::free(entry.value);
 	}
 
-	friend bool init(variable_assignment&, const variable_assignment&);
+	friend bool init(variable_assignment&, const variable_assignment&, uint_fast8_t);
 	friend bool init(variable_assignment&, const instantiation_tuple&, const array_map<uint_fast8_t, uint_fast8_t>&);
 };
 
@@ -2256,8 +2368,8 @@ inline bool init(variable_assignment& assignment, uint_fast8_t length) {
 	return true;
 }
 
-inline bool init(variable_assignment& assignment, const variable_assignment& src) {
-	if (!init(assignment.assignment, src.assignment)) {
+inline bool init(variable_assignment& assignment, const variable_assignment& src, uint_fast8_t new_length) {
+	if (!init(assignment.assignment, src.assignment, new_length)) {
 		return false;
 	} else if (!array_map_init(assignment.axiom_assignments, src.axiom_assignments.capacity)) {
 		free(assignment.assignment);
@@ -2268,6 +2380,10 @@ inline bool init(variable_assignment& assignment, const variable_assignment& src
 		return false;
 	}
 	return true;
+}
+
+inline bool init(variable_assignment& assignment, const variable_assignment& src) {
+	return init(assignment, src, src.assignment.length);
 }
 
 inline bool init(variable_assignment& assignment, const instantiation_tuple& src_assignment) {
@@ -2312,6 +2428,19 @@ inline bool operator < (const variable_assignment& src, const variable_assignmen
 		else if (dst.axiom_assignments.values[i] < src.axiom_assignments.values[i]) return false;
 	}
 	return false;
+}
+
+inline bool is_subset(const variable_assignment& first, const variable_assignment& second)
+{
+	for (const auto& entry : second.axiom_assignments) {
+		unsigned int index = first.axiom_assignments.index_of(entry.key);
+		if (index == first.axiom_assignments.size
+		 || !is_subset(entry.value, first.axiom_assignments.values[index]))
+		{
+			return false;
+		}
+	}
+	return is_subset(first.assignment, second.assignment);
 }
 
 template<typename T>
@@ -2899,6 +3028,15 @@ template<typename Formula, typename... Args>
 inline void on_subtract_changes(const set_changes<Formula>& set_diff, Args&&... visitor) {
 	on_subtract_changes(std::forward<Args>(visitor)...);
 }
+
+
+/* forward declarations */
+
+template<typename ProofCalculus, typename Canonicalizer> struct theory;
+
+template<bool Contradiction, typename ProofCalculus, typename Canonicalizer>
+bool is_impossible(typename ProofCalculus::Language*, const theory<ProofCalculus, Canonicalizer>&);
+
 
 template<typename ProofCalculus, typename Canonicalizer>
 struct theory
@@ -6959,7 +7097,7 @@ private:
 		if (!contains || sets.sets[set_id].arity != 1) return true;
 
 		elements.keys[elements.size] = subset_term->binary.right;
-		if (sets.sets[set_id].provable_elements.length == 0) {
+		if (sets.sets[set_id].set_size == 0) {
 			found_empty_set = true;
 			return true;
 		} else if (sets.sets[set_id].provable_elements.length != sets.sets[set_id].set_size) {
@@ -7284,7 +7422,90 @@ private:
 			array<variable_assignment>& new_possible_values,
 			Prover& prover) const
 	{
-		Formula* quantified = formula->quantifier.operand;
+		Formula* operand = formula;
+		unsigned int old_quantifier_length = quantifiers.length;
+		uint_fast8_t old_length = possible_values[0].assignment.length;
+		array<unsigned int> quantified_variables(4);
+		do {
+			if (!quantifiers.ensure_capacity(operand->quantifier.variable)
+			 || !quantified_variables.add(operand->quantifier.variable))
+				return false;
+			while (operand->quantifier.variable - 1 >= quantifiers.length)
+				quantifiers[quantifiers.length++] = nullptr;
+			quantifiers[operand->quantifier.variable - 1] = operand;
+			operand = operand->quantifier.operand;
+		} while (operand->type == FormulaType::EXISTS);
+
+		array<variable_assignment> temp_possible_values(possible_values.length);
+		for (const variable_assignment& assignment : possible_values) {
+			variable_assignment& new_value = temp_possible_values[temp_possible_values.length];
+			if (!::init(new_value, assignment, quantifiers.length)) {
+				quantifiers.length = old_quantifier_length;
+				for (auto& element : temp_possible_values) core::free(element);
+				return false;
+			}
+			temp_possible_values.length++;
+		}
+
+		if (!is_provable_without_abduction<Contradiction>(operand, quantifiers, temp_possible_values, prover)) {
+			quantifiers.length = old_quantifier_length;
+			for (auto& element : temp_possible_values) core::free(element);
+			return true;
+		}
+		quantifiers.length = old_quantifier_length;
+
+		unsigned int next_position = 0;
+		for (unsigned int i = 0; i < temp_possible_values.length; i++) {
+			variable_assignment& assignment = temp_possible_values[i];
+			assignment.assignment.length = old_length;
+			for (unsigned int j = 0; j < assignment.assignment.equal_indices.length; j++) {
+				if (assignment.assignment.equal_indices[j].key >= old_length
+				 || assignment.assignment.equal_indices[j].value >= old_length)
+					assignment.assignment.equal_indices.remove(j--);
+			} for (unsigned int j = 0; j < assignment.assignment.not_equal_indices.length; j++) {
+				if (assignment.assignment.not_equal_indices[j].key >= old_length
+				 || assignment.assignment.not_equal_indices[j].value >= old_length)
+					assignment.assignment.not_equal_indices.remove(j--);
+			} for (unsigned int j = 0; j < assignment.assignment.ge_indices.length; j++) {
+				if (assignment.assignment.ge_indices[j].key >= old_length
+				 || assignment.assignment.ge_indices[j].value >= old_length)
+					assignment.assignment.ge_indices.remove(j--);
+			}
+
+			/* check if this new assignment is already a subset of an existing assignment */
+			bool found_superset = false;
+			for (unsigned int j = 0; j < next_position; j++) {
+				if (is_subset(assignment, temp_possible_values[j])) {
+					found_superset = true;
+					break;
+				}
+			}
+			if (found_superset) {
+				core::free(assignment);
+				continue;
+			}
+
+			/* check if an existing assignment is a subset of this new assignment */
+			for (unsigned int j = 0; j < next_position; j++) {
+				if (is_subset(temp_possible_values[j], assignment)) {
+					core::free(temp_possible_values[j]);
+					core::move(temp_possible_values[next_position - 1], temp_possible_values[j]);
+					next_position--; j--;
+				}
+			}
+
+			core::move(assignment, temp_possible_values[next_position++]);
+		}
+		temp_possible_values.length = next_position;
+
+		array<variable_assignment> union_result(new_possible_values.length + temp_possible_values.length);
+		set_union(union_result, new_possible_values, temp_possible_values);
+		swap(union_result, new_possible_values);
+		for (auto& element : union_result) core::free(element);
+		for (auto& element : temp_possible_values) core::free(element);
+		return true;
+
+		/*Formula* quantified = formula->quantifier.operand;
 		unsigned int variable = formula->quantifier.variable;
 
 		array<instance> constants(ground_concept_capacity + 1);
@@ -7381,7 +7602,7 @@ private:
 			for (auto& element : copy) core::free(element);
 		}
 		core::free(*var); if (var->reference_count == 0) core::free(var);
-		return true;
+		return true;*/
 	}
 
 	template<bool Contradiction, typename Prover>
@@ -11185,6 +11406,9 @@ private:
 	template<bool Contradiction, bool DefinitionsAllowed, bool ResolveInconsistencies, typename... Args>
 	Proof* make_proof(Formula* canonicalized, array_map<unsigned int, unsigned int>& requested_set_sizes, set_changes<Formula>& set_diff, unsigned int& new_constant, Args&&... args)
 	{
+		if (is_impossible<Contradiction>(canonicalized, *this, std::forward<Args>(args)...))
+			return nullptr;
+
 		Term* predicate; Term* arg1; Term* arg2;
 		if (is_atomic(*canonicalized, predicate, arg1, arg2)) {
 			// if (predicate->type == TermType::CONSTANT && predicate->constant >= new_constant_offset) {
@@ -14118,6 +14342,26 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 		return filter_constants_helper(T, formula->quantifier.operand, variable, constants);
 	}
 	return (constants.length > 0);
+}
+
+template<bool Contradiction, typename ProofCalculus, typename Canonicalizer>
+bool is_impossible(
+		typename ProofCalculus::Language* formula,
+		const theory<ProofCalculus, Canonicalizer>& T)
+{
+	typedef typename ProofCalculus::Language Formula;
+
+	array<Formula*> quantifiers(1);
+	array<variable_assignment> temp_possible_values(1);
+	if (!init(temp_possible_values[0], 0))
+		return true;
+	temp_possible_values.length = 1;
+	typename theory<ProofCalculus, Canonicalizer>::default_prover prover(T.sets, T.implication_axioms);
+	prover.h.set_ids[0] = 0;
+	prover.h.set_ids.length = 1;
+	bool result = T.template is_provable_without_abduction<!Contradiction>(formula, quantifiers, temp_possible_values, prover);
+	for (auto& element : temp_possible_values) free(element);
+	return result;
 }
 
 template<typename Formula>
