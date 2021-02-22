@@ -95,7 +95,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[X]:((X=^[x]:?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System"))) & (size(X)=1) & ?[x]:(X(x) & ?[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[s]:((arg1(s)=m) & same(s) & present(s) & (arg2(s)=p))))))};
+	{?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[X]:((X=^[x]:?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System"))) & (size(X)=1) & ?[x]:(X(x) & ?[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[s]:((arg1(s)=m) & same(s) & present(s) & (arg2(s)=p))))))};
 
 : # Mercury is in the Solar System.
 {(S
@@ -140,7 +140,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[X]:((X=^[x]:?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System"))) & (size(X)=1) & ?[x]:(X(x) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[l]:((arg1(l)=m) & locate(l) & present(l) & (arg2(l)=x)))))};
+	{?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[X]:((X=^[x]:?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Solar System"))) & (size(X)=1) & ?[x]:(X(x) & ?[l]:((arg1(l)=m) & locate(l) & present(l) & (arg2(l)=x)))))};
 
 : # Neptune is one of the 8 planets in the Solar System.
 {(S
@@ -216,7 +216,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[Z]:((Z=^[z]:?[n]:(name(n) & (arg1_of(z)=n) & (arg2(n)="Solar System"))) & (size(Z)=1) & ?[z]:(Z(z) & ?[P]:((P=^[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=z) & (arg1_of(p)=l)))) & (size(P)=8) & ?[S]:(subset(S,^[x]:P(x)) & (size(S)=1) & ?[x]:(S(x) & ?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Neptune")) & ?[s]:((arg1(s)=y) & same(s) & present(s) & (arg2(s)=x))))))))};
+	{?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Neptune")) & ?[Z]:((Z=^[z]:?[n]:(name(n) & (arg1_of(z)=n) & (arg2(n)="Solar System"))) & (size(Z)=1) & ?[z]:(Z(z) & ?[P]:((P=^[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=z) & (arg1_of(p)=l)))) & (size(P)=8) & ?[S]:(subset(S,^[x]:P(x)) & (size(S)=1) & ?[x]:(S(x) & ?[s]:((arg1(s)=y) & same(s) & present(s) & (arg2(s)=x))))))))};
 
 : # United States
 {(STRING "United States")}
@@ -418,7 +418,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[P]:(subset(P,^[p]:planet(p)) & (size(P)=1) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[x]:(P(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=e)))))};
+	{?[P]:(subset(P,^[p]:planet(p)) & (size(P)=1) & ?[x]:(P(x) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=e)))))};
 
 : # Jupiter is gaseous.
 {(S
@@ -738,7 +738,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[p]:(planet(p) & ?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Mercury")) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=p)))) & ?[p]:(planet(p) & ?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Jupiter")) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=p)))) & ?[p]:(planet(p) & ?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Neptune")) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=p))))};
+	{?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Mercury")) & ?[p]:(planet(p) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=p)))) & ?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Jupiter")) & ?[p]:(planet(p) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=p)))) & ?[x]:(?[n]:(name(n) & (arg1_of(x)=n) & (arg2(n)="Neptune")) & ?[p]:(planet(p) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=p))))};
 
 : # No mammal is a fish.
 {(S
@@ -1098,7 +1098,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[X]:((X=^[x]:?[y]:(?[i]:(inner(i) & (arg1_of(y)=i)) & contains_region(y) & (arg1(y)=solar_system) & (arg2_of(x)=y))) & (size(X)=1) & ?[x]:(X(x) & ?[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[v]:(?[n]:(name(n) & (arg1_of(v)=n) & (arg2(n)="Venus")) & ?[s]:((arg1(s)=v) & same(s) & present(s) & (arg2(s)=p))))))};
+	{?[v]:(?[n]:(name(n) & (arg1_of(v)=n) & (arg2(n)="Venus")) & ?[X]:((X=^[x]:?[y]:(?[i]:(inner(i) & (arg1_of(y)=i)) & contains_region(y) & (arg1(y)=solar_system) & (arg2_of(x)=y))) & (size(X)=1) & ?[x]:(X(x) & ?[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=x) & (arg1_of(p)=l)) & ?[s]:((arg1(s)=v) & same(s) & present(s) & (arg2(s)=p))))))};
 
 : # The Earth is located in the solar system.
 {(S
@@ -1634,7 +1634,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))))};
+	{?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))))};
 
 : # Titan is the brightest moon that orbits Saturn.
 {(S
@@ -1714,7 +1714,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))))};
+	{?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Titan")) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[z]:((arg1(z)=t) & same(z) & present(z) & (arg2(z)=y))))))))};
 
 : # What is the brightest moon orbiting Saturn?
 {(S
@@ -1783,7 +1783,7 @@
 	)
 	(QUESTION "?")
 )}
-	{^[q]:?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[z]:((arg1(z)=q) & same(z) & present(z) & (arg2(z)=y)))))))};
+	{^[q]:?[f]:((f=^[x,v]:?[b]:(brightness(b) & (arg2(b)=v) & (arg1_of(x)=b))) & ?[s]:(?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Saturn")) & ?[X]:((X=^[x]:(moon(x) & ?[o]:(orbit(o) & present_progressive(o) & (arg2(o)=s) & (arg1_of(x)=o)))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[z]:((arg1(z)=q) & same(z) & present(z) & (arg2(z)=y)))))))};
 
 : # border
 {(V "border"/"borders")}
@@ -1867,7 +1867,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ?[t]:(telescope(t) & ?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j) & ?[u]:(use_instrument(u) & (arg2(u)=t) & (arg1_of(o)=u))))))};
+	{?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ?[t]:(telescope(t) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j) & ?[u]:(use_instrument(u) & (arg2(u)=t) & (arg1_of(o)=u))))))};
 
 : # Galileo observed Jupiter with four moons.
 {(S
@@ -1925,7 +1925,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[M]:(subset(M,^[m]:moon(m)) & (size(M)=4) & ?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ![m]:(M(m) => ?[o]:(has(o) & (arg2(o)=m) & (arg1_of(j)=o))) & ?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j)))))};
+	{?[g]:(?[n]:(name(n) & (arg1_of(g)=n) & (arg2(n)="Galileo")) & ?[M]:(subset(M,^[m]:moon(m)) & (size(M)=4) & ?[j]:(?[n]:(name(n) & (arg1_of(j)=n) & (arg2(n)="Jupiter")) & ![m]:(M(m) => ?[o]:(has(o) & (arg2(o)=m) & (arg1_of(j)=o))) & ?[o]:((arg1(o)=g) & observe(o) & past(o) & (arg2(o)=j)))))};
 
 : # butterfly
 {(N "butterfly"/"butterfly")}
@@ -2109,7 +2109,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[X]:((X=^[x]:(?[i]:(inner(i) & (arg1_of(x)=i)) & planet(x))) & ?[f]:((f=^[x,v]:?[m]:(?[y]:(brightness(y) & (arg2(y)=v) & (arg1_of(m)=y)) & moon(m) & ?[o]:(inverse(orbit)(o) & past(o) & (arg2(o)=m) & (arg1_of(x)=o)))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[z]:((arg1(z)=e) & same(z) & present(z) & (arg2(z)=y)))))))};
+	{?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[X]:((X=^[x]:(?[i]:(inner(i) & (arg1_of(x)=i)) & planet(x))) & ?[f]:((f=^[x,v]:?[m]:(?[y]:(brightness(y) & (arg2(y)=v) & (arg1_of(m)=y)) & moon(m) & ?[o]:(inverse(orbit)(o) & past(o) & (arg2(o)=m) & (arg1_of(x)=o)))) & ?[Y]:((Y=^[y]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(y)=g))) & (size(Y)=1) & ?[y]:(Y(y) & ?[z]:((arg1(z)=e) & same(z) & present(z) & (arg2(z)=y)))))))};
 
 : # Which inner planet has the brightest moon?
 {(S

@@ -2912,6 +2912,13 @@ debug_nonterminal_printer = &nonterminal_printer;
 			Formula* logical_form,
 			hash_map<string, unsigned int>& names)
 	{
+#if !defined(NDEBUG)
+		if (terminal_printer.map == NULL) {
+			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
+			return false;
+		}
+#endif
+
 const string** nonterminal_name_map = invert(G.nonterminal_names);
 string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
 debug_terminal_printer = &terminal_printer;
@@ -2919,6 +2926,16 @@ debug_nonterminal_printer = &nonterminal_printer;
 		const logical_form_type root_logical_form(*logical_form);
 		bool result = ::generate<K>(generated_derivations, generated_derivation_count, root_logical_form, G, morph, names);
 core::free(nonterminal_name_map);
+		if (names.table.size >= terminal_printer.length) {
+			core::free(terminal_printer.map);
+			terminal_printer.map = invert(names);
+			if (terminal_printer.map == nullptr) {
+				for (unsigned int i = 0; i < generated_derivation_count; i++)
+					core::free(generated_derivations[i]);
+				return false;
+			}
+			terminal_printer.length = names.table.size + 1;
+		}
 		for (unsigned int i = 0; i < generated_derivation_count; i++) {
 			double log_likelihood = log_probability(G, generated_derivations[i], root_logical_form, *this);
 			log_likelihoods[i] = log_likelihood;
@@ -24588,6 +24605,69 @@ inline bool invert_remove_conjunct_in_set(
 		if (second_set_definition->type == hol_term_type::ANY_ARRAY)
 			return false;
 
+		/* make sure the non-right-leaning trees in `second` don't declare
+		   variables that have already been declared in the right-leaning path
+		   in `first` from the root to the head, excluding the head */
+		array<unsigned int> declared_variables(8);
+		for (unsigned int i = 0; i + 1 < first_head_inverter.outer.length; i++) {
+			hol_term* node = first_head_inverter.outer[i];
+			if (node->type == hol_term_type::EXISTS || node->type == hol_term_type::FOR_ALL || node->type == hol_term_type::LAMBDA) {
+				if (!declared_variables.add(node->quantifier.variable)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			}
+		}
+		array<hol_term*> second_scopes(16);
+		for (hol_term* node : second_head_inverter.outer) {
+			if (node->type == hol_term_type::AND || node->type == hol_term_type::OR || node->type == hol_term_type::IFF) {
+				for (unsigned int i = 0; i + 1 < node->array.length; i++) {
+					if (!get_scopes(*node->array.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				}
+			} else if (node->type == hol_term_type::IF_THEN || node->type == hol_term_type::UNARY_APPLICATION || node->type == hol_term_type::EQUALS) {
+				if (!get_scopes(*node->binary.left, second_scopes)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			} else if (node->type == hol_term_type::BINARY_APPLICATION) {
+				if (!get_scopes(*node->ternary.first, second_scopes)
+				 || !get_scopes(*node->ternary.second, second_scopes))
+				{
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			} else if (node->type == hol_term_type::ANY_ARRAY) {
+				for (unsigned int i = 0; i < node->any_array.left.length; i++) {
+					if (!get_scopes(*node->any_array.left.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				} for (unsigned int i = 0; i < node->any_array.any.length; i++) {
+					if (!get_scopes(*node->any_array.any.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				} for (unsigned int i = 0; i + 1 < node->any_array.right.length; i++) {
+					if (!get_scopes(*node->any_array.right.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				}
+			}
+		}
+		for (hol_term* scope : second_scopes) {
+			if ((scope->type == hol_term_type::EXISTS || scope->type == hol_term_type::FOR_ALL || scope->type == hol_term_type::LAMBDA)
+			 && declared_variables.contains(scope->quantifier.variable)
+			 && !second_variable_map.put(scope, ++max_variable))
+			{
+				for (auto entry : second_variable_map) free(entry.value);
+				return false;
+			}
+		}
+
 		hol_term* new_first_set_definition;
 		if (first_set_definition->type == hol_term_type::AND) {
 			unsigned int index = (ConjunctIndex < 0) ? (first_set_definition->array.length + ConjunctIndex) : ConjunctIndex;
@@ -24719,69 +24799,6 @@ inline bool invert_remove_conjunct_in_set(
 		if (!remap_scopes(free_variable_map, first_head_inverter, second_head_inverter, second_variable_map, max_variable, first_head_is_array, second_head_is_array)) {
 			for (auto entry : second_variable_map) free(entry.value);
 			return false;
-		}
-
-		/* make sure the non-right-leaning trees in `second` don't declare
-		   variables that have already been declared in the right-leaning path
-		   in `first` from the root to the head, excluding the head */
-		array<unsigned int> declared_variables(8);
-		for (unsigned int i = 0; i + 1 < first_head_inverter.outer.length; i++) {
-			hol_term* node = first_head_inverter.outer[i];
-			if (node->type == hol_term_type::EXISTS || node->type == hol_term_type::FOR_ALL || node->type == hol_term_type::LAMBDA) {
-				if (!declared_variables.add(node->quantifier.variable)) {
-					for (auto entry : second_variable_map) free(entry.value);
-					return false;
-				}
-			}
-		}
-		array<hol_term*> second_scopes(16);
-		for (hol_term* node : second_head_inverter.outer) {
-			if (node->type == hol_term_type::AND || node->type == hol_term_type::OR || node->type == hol_term_type::IFF) {
-				for (unsigned int i = 0; i + 1 < node->array.length; i++) {
-					if (!get_scopes(*node->array.operands[i], second_scopes)) {
-						for (auto entry : second_variable_map) free(entry.value);
-						return false;
-					}
-				}
-			} else if (node->type == hol_term_type::IF_THEN || node->type == hol_term_type::UNARY_APPLICATION || node->type == hol_term_type::EQUALS) {
-				if (!get_scopes(*node->binary.left, second_scopes)) {
-					for (auto entry : second_variable_map) free(entry.value);
-					return false;
-				}
-			} else if (node->type == hol_term_type::BINARY_APPLICATION) {
-				if (!get_scopes(*node->ternary.first, second_scopes)
-				 || !get_scopes(*node->ternary.second, second_scopes))
-				{
-					for (auto entry : second_variable_map) free(entry.value);
-					return false;
-				}
-			} else if (node->type == hol_term_type::ANY_ARRAY) {
-				for (unsigned int i = 0; i < node->any_array.left.length; i++) {
-					if (!get_scopes(*node->any_array.left.operands[i], second_scopes)) {
-						for (auto entry : second_variable_map) free(entry.value);
-						return false;
-					}
-				} for (unsigned int i = 0; i < node->any_array.any.length; i++) {
-					if (!get_scopes(*node->any_array.any.operands[i], second_scopes)) {
-						for (auto entry : second_variable_map) free(entry.value);
-						return false;
-					}
-				} for (unsigned int i = 0; i + 1 < node->any_array.right.length; i++) {
-					if (!get_scopes(*node->any_array.right.operands[i], second_scopes)) {
-						for (auto entry : second_variable_map) free(entry.value);
-						return false;
-					}
-				}
-			}
-		}
-		for (hol_term* scope : second_scopes) {
-			if ((scope->type == hol_term_type::EXISTS || scope->type == hol_term_type::FOR_ALL || scope->type == hol_term_type::LAMBDA)
-			 && declared_variables.contains(scope->quantifier.variable)
-			 && !second_variable_map.put(scope, ++max_variable))
-			{
-				for (auto entry : second_variable_map) free(entry.value);
-				return false;
-			}
 		}
 		return true;
 	};
