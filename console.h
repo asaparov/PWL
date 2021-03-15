@@ -194,7 +194,7 @@ void run_console(
 					print("  Logical form: ", stdout); print(*logical_forms[logical_form_index], stdout, parser.get_printer()); print("\n", stdout);
 					continue;
 				}
-				print("Successfully added logical form as an observation to the theory. Use 'print_theory' to inspect the current theory. Note that no additional MCMC iterations were performed.", stdout);
+				print("Successfully added logical form as an observation to the theory. Use 'print_theory' to inspect the current theory. Note that no additional MCMC iterations were performed.\n", stdout);
 				print("  Logical form: ", stdout); print(*logical_forms[logical_form_index], stdout, parser.get_printer()); print("\n", stdout);
 
 				for (unsigned int i = 0; i < parse_count; i++) {

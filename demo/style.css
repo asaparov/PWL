@@ -1,0 +1,25 @@
+#console {
+	overflow: auto;
+	display: flex;
+	flex-direction: column-reverse;
+	margin: 0;
+	position: absolute;
+	top: 0;
+	bottom: 50px;
+	left: 0;
+	right: 0;
+	padding: 10px;
+	font-size: 11pt;
+}
+
+#input_wrap {
+	position: absolute;
+	left: 10px;
+	bottom: 10px;
+	right: 10px;
+}
+
+#input_wrap input {
+	margin-left: 5px;
+	width: calc(100% - 80px);
+}
