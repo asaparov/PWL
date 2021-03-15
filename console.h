@@ -40,6 +40,11 @@ template<typename Stream, typename Parser>
 void run_console(
 		Stream& input, const char* prompt, Parser& parser, hash_map<string, unsigned int>& names)
 {
+	if (!parser.invert_name_map(names)) {
+		fprintf(stderr, "ERROR: `hdp_parser.invert_name_map` failed.\n");
+		return;
+	}
+
 	theory<natural_deduction<hol_term, true>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
@@ -84,7 +89,7 @@ void run_console(
 		} else if (read > 0) {
 			if (!line.ensure_capacity(line.length + 1))
 				break;
-			line[line.length++] = '\0';
+			line[line.length] = '\0';
 
 			unsigned int index = line.index_of(' ');
 
