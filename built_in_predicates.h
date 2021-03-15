@@ -164,9 +164,14 @@ unsigned int TENSE_PREDICATES[] = {
 	(unsigned int) built_in_predicates::FUTURE_PERFECT_PROGRESSIVE
 };
 
-unsigned int ASPECT_PREDICATES[2][3] = {
+unsigned int ONLY_ASPECT_PREDICATES[2][3] = {
 	{(unsigned int) built_in_predicates::PRESENT_PROGRESSIVE, (unsigned int) built_in_predicates::PRESENT_PERFECT, (unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE},
 	{(unsigned int) built_in_predicates::PAST_PROGRESSIVE, (unsigned int) built_in_predicates::PAST_PERFECT, (unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE}
+};
+
+unsigned int ASPECT_PREDICATES[2][4] = {
+	{(unsigned int) built_in_predicates::PRESENT, (unsigned int) built_in_predicates::PRESENT_PROGRESSIVE, (unsigned int) built_in_predicates::PRESENT_PERFECT, (unsigned int) built_in_predicates::PRESENT_PERFECT_PROGRESSIVE},
+	{(unsigned int) built_in_predicates::PAST, (unsigned int) built_in_predicates::PAST_PROGRESSIVE, (unsigned int) built_in_predicates::PAST_PERFECT, (unsigned int) built_in_predicates::PAST_PERFECT_PROGRESSIVE}
 };
 
 inline bool is_tense_predicate(unsigned int predicate) {

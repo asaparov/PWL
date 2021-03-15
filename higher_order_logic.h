@@ -10816,7 +10816,7 @@ bool is_subset(hol_term* first, hol_term* second)
 				if (!is_subset<BuiltInPredicates>(first->array.operands[first->array.length - i - 1], second->any_array.right.operands[second->any_array.right.length - i - 1])) return false;
 
 			bool found_any = false;
-			for (unsigned int i = 0; i < first->array.length - second->any_array.any.length; i++) {
+			for (unsigned int i = 0; i < first->array.length - second->any_array.any.length + 1; i++) {
 				bool found_any_i = true;
 				for (unsigned int j = 0; j < second->any_array.any.length; j++) {
 					if (!is_subset<BuiltInPredicates>(first->array.operands[i + j], second->any_array.any.operands[j])) {
@@ -13295,7 +13295,22 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 			free_all(first_differences);
 			return false;
 		} else if (first_differences.length == 1 && dst_variable_type == first->quantifier.variable_type && get_term(first_differences[0]) == first->quantifier.operand) {
-			if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, first, first, second, get_variable_map(first_differences[0]))) {
+			if (add_variable_pair && relabels_variables<LogicalFormSet>::value) {
+				remove(dst, dst.length - 1);
+				add_variable_pair = false;
+			}
+			if (add_variable_pair) {
+				pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+				new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
+				new_pair.value.type = variable_set_type::SINGLETON;
+				new_pair.value.variable = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
+				if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, first, first, second, get_variable_map(first_differences[0]), new_pair)) {
+					free_all(first_differences);
+					free(new_pair.value);
+					return false;
+				}
+				free(new_pair.value);
+			} else if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, first, first, second, get_variable_map(first_differences[0]))) {
 				free_all(first_differences);
 				return false;
 			}
