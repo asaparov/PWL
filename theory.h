@@ -14977,7 +14977,7 @@ double log_joint_probability_of_observation(
 	model_evidence_collector<ProofCalculus, Canonicalizer> collector(T, proof_prior, new_proof);
 	for (unsigned int t = 0; t < num_samples; t++)
 {
-fprintf(stderr, "DEBUG: t = %u\n", t);
+/*fprintf(stderr, "DEBUG: t = %u\n", t);
 proof_axioms.check_proof_axioms(T);
 proof_axioms.check_universal_eliminations(T, collector);
 T.check_concept_axioms();
@@ -14989,7 +14989,7 @@ T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
-if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		do_mh_step(T, proof_prior, proof_axioms, collector);
 }
 

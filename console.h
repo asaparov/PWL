@@ -197,6 +197,11 @@ void run_console(
 				print("Successfully added logical form as an observation to the theory. Use 'print_theory' to inspect the current theory. Note that no additional MCMC iterations were performed.", stdout);
 				print("  Logical form: ", stdout); print(*logical_forms[logical_form_index], stdout, parser.get_printer()); print("\n", stdout);
 
+				for (unsigned int i = 0; i < parse_count; i++) {
+					free(*logical_forms[i]); if (logical_forms[i]->reference_count == 0) free(logical_forms[i]);
+				}
+				parse_count = 0;
+
             } else if (compare_strings("mcmc", line.data, index)) {
 				if (index == line.length) {
 					printf("Missing number of MCMC iterations argument.\n");
