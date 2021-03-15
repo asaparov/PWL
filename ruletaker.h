@@ -394,9 +394,10 @@ inline void print_theory(const Theory& T, const typename Theory::Proof* test_pro
 	T.get_extra_axioms(extra_axioms);
 	auto collector = make_dummy_collector(test_proof);
 	double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
-	fprintf(stderr, "log probability of theory: %lf\n", value);
-	T.print_axioms(stderr, *debug_terminal_printer);
-	T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+	fprintf(stdout, "log probability of theory: %lf\n", value);
+	T.print_axioms(stdout, *debug_terminal_printer);
+	T.print_disjunction_introductions(stdout, *debug_terminal_printer);
+	fflush(stdout);
 }
 
 struct question_result {
@@ -568,7 +569,7 @@ bool resample_observations(Theory& T, PriorStateType& proof_axioms, ProofPrior& 
 		free(T); proof_axioms.~PriorStateType(); formula_map.clear();
 		Theory::clone(T_MAP, T, formula_map);
 		new (&proof_axioms) PriorStateType(proof_axioms_MAP, formula_map);
-		T_MAP.print_axioms(stderr, *debug_terminal_printer);
+		T_MAP.print_axioms(stdout, *debug_terminal_printer); fflush(stdout);
 		free(T_MAP); proof_axioms_MAP.~PriorStateType();
 	}
 
@@ -641,12 +642,12 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-if (job.question_id < 23 - 1)
+/*if (job.question_id < 23 - 1)
 {
 total++;
 free(job);
 continue;
-}
+}*/
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
@@ -698,8 +699,9 @@ continue;
 					core::engine = context_queue[job.context_id].prng_engine;
 
 					Theory& T_MAP_false = *((Theory*) alloca(sizeof(Theory)));
-T_copy.print_axioms(stderr, *debug_terminal_printer);
-T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
+T_copy.print_axioms(stdout, *debug_terminal_printer);
+T_copy.print_disjunction_introductions(stdout, *debug_terminal_printer);
+fflush(stdout);
 					double log_probability_false = log_joint_probability_of_truth(T_copy, proof_prior, proof_axioms_copy, negated, 100, 4, 20, T_MAP_false, proof_MAP_false);
 					for (unsigned int j = 0; isinf(log_probability_false) && j < 400; j++) {
 						null_collector collector;
@@ -752,7 +754,7 @@ T_copy.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 63 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -801,8 +803,8 @@ continue;
 					for (unsigned int j = 0; j < 4; j++) {
 						for (unsigned int t = 0; t < 100; t++) {
 							bool print_debug = false;
-							if (print_debug) job.T.template print_axioms<true>(stderr, *debug_terminal_printer);
-							if (print_debug) job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
+							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
 							do_mh_step(job.T, proof_prior, job.proof_axioms, collector);
 							if (collector.current_log_probability > max_log_probability) {
 								free(T_MAP); proof_axioms_MAP.~PriorStateType(); formula_map.clear();
@@ -820,7 +822,7 @@ continue;
 					free(job.T); job.proof_axioms.~PriorStateType(); formula_map.clear();
 					Theory::clone(T_MAP, job.T, formula_map);
 					new (&job.proof_axioms) PriorStateType(proof_axioms_MAP, formula_map);
-					T_MAP.print_axioms(stderr, *debug_terminal_printer);
+					T_MAP.print_axioms(stdout, *debug_terminal_printer); fflush(stdout);
 					free(T_MAP); proof_axioms_MAP.~PriorStateType();
 				}
 			}
@@ -961,7 +963,7 @@ inline void print_ruletaker_results(
 	}
 	fclose(out);
 
-	fprintf(stderr,
+	fprintf(stdout,
 			"Results so far:\n"
 			"  Total questions: %u\n"
 			"  Answered questions: %lu\n"
@@ -969,18 +971,19 @@ inline void print_ruletaker_results(
 			total.load(), results.length,
 			incorrect.length);
 	if (incorrect.length != 0) {
-		fprintf(stderr, "Incorrect questions:\n");
+		fprintf(stdout, "Incorrect questions:\n");
 		insertion_sort(incorrect, pair_sorter());
 		for (const auto& entry : incorrect)
-			fprintf(stderr, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
+			fprintf(stdout, "  Context ID %u, Question ID %u\n", entry.key + 1, entry.value + 1);
 	} if (unparseable_context.length != 0) {
-		fprintf(stderr, "Failed to parse following context sentences:\n");
+		fprintf(stdout, "Failed to parse following context sentences:\n");
 		insertion_sort(unparseable_context, pair_sorter());
 		for (const auto& entry : unparseable_context) {
-			fprintf(stderr, "  Context ID %u: \"", entry.key + 1);
-			print(entry.value, stderr); print("\"\n", stderr);
+			fprintf(stdout, "  Context ID %u: \"", entry.key + 1);
+			print(entry.value, stdout); print("\"\n", stdout);
 		}
 	}
+	fflush(stdout);
 }
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>

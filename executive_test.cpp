@@ -2290,39 +2290,6 @@ unsigned int read_line(array<char>& line, Stream& input)
 	return bytes_read;
 }
 
-template<typename Stream, typename Parser>
-void run_console(
-		Stream& input, const char* prompt, Parser& parser, hash_map<string, unsigned int>& names,
-		array<array_map<typename Parser::SentenceType, flagged_logical_form<hol_term>>>& training_set)
-{
-	array<char> line = array<char>(256);
-	while (true) {
-		if (prompt) {
-			printf("%s", prompt);
-			fflush(stdout);
-		}
-
-		line.clear();
-		int read = read_line(line, input);
-		if (read == 0) {
-			break;
-		} else if (read > 0) {
-			if (!line.ensure_capacity(line.length + 1))
-				break;
-			line[line.length++] = '\0';
-			parse_sentence(parser, line.data, names, training_set);
-		}
-	}
-}
-
-template<typename Stream, typename Parser>
-inline void run_console(Stream& input, const char* prompt,
-		Parser& parser, hash_map<string, unsigned int>& names)
-{
-	array<array_map<typename Parser::SentenceType, flagged_logical_form<hol_term>>> dummy_training_set(1);
-	run_console(input, prompt, parser, names, dummy_training_set);
-}
-
 template<bool AllConstantsDistinct, bool PolymorphicEquality, typename BuiltInPredicates>
 struct polymorphic_canonicalizer
 {
@@ -2464,6 +2431,9 @@ bool print_special_string(unsigned int key, Stream& out) {
 	return print('c', out) && print_subscript(key - constant_offset, out);
 }
 
+/* TODO: move this back to the top; this will require moving much of the above code into a common header */
+#include "console.h"
+
 int main(int argc, const char** argv)
 {
 	setlocale(LC_ALL, "en_US.UTF-8");
@@ -2585,7 +2555,8 @@ set_seed(1356941742);
 		}
 	}
 
-/*run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+//run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
+run_console(stdin, "\nEnter command: ", parser, names);
 for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 	free(paragraph);
@@ -2593,7 +2564,7 @@ for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
-return EXIT_SUCCESS;*/
+return EXIT_SUCCESS;
 
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }

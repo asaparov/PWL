@@ -3372,8 +3372,8 @@ core::free(nonterminal_name_map);
 		array<pair<unsigned int, unsigned int>> ambiguous_terminal_indices(8);
 		for (unsigned int i = 0; i < parse_count; i++) {
 /* TODO: for debugging; remove this */
-print(logical_form_output[i], stderr, terminal_printer); print('\n', stdout);
-print(parsed_syntax[i], stderr, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout);
+print(logical_form_output[i], stdout, terminal_printer); print('\n', stdout);
+print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout); fflush(stdout);
 			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
 			/* TODO: compute this prior */
 			double log_prior = 0.0; //log_probability<true>(T, logical_form_output[i]);
@@ -16995,7 +16995,7 @@ inline bool factor(
 		new_head = difference[0];
 
 	} else if (head->type == hol_term_type::AND || head->type == hol_term_type::OR) {
-		if (find_head_function == find_head<built_in_predicates>) {
+		if (find_head_function == &find_head<built_in_predicates>) {
 			/* make sure each operand has the same head variable */
 			unsigned int head_variable = 0;
 			for (unsigned int i = 0; i < head->array.length; i++) {
@@ -17028,7 +17028,7 @@ inline bool factor(
 		new_head = intersection[0];
 
 	} else if (head->type == hol_term_type::ANY_ARRAY && (head->any_array.oper == hol_term_type::ANY_ARRAY || head->any_array.oper == hol_term_type::AND || head->any_array.oper == hol_term_type::OR)) {
-		if (find_head_function == find_head<built_in_predicates>) {
+		if (find_head_function == &find_head<built_in_predicates>) {
 			/* make sure each operand has the same head variable */
 			unsigned int head_variable = get_head_variable(head->any_array.all);
 			for (unsigned int i = 0; i < head->any_array.left.length; i++) {
