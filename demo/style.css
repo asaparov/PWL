@@ -10,6 +10,11 @@
 	right: 0;
 	padding: 10px;
 	font-size: 11pt;
+	color: #343434;
+}
+
+#console * {
+	display: contents;
 }
 
 #input_wrap {
@@ -22,4 +27,8 @@
 #input_wrap input {
 	margin-left: 5px;
 	width: calc(100% - 80px);
+}
+
+.blue {
+	color: #2272d3;
 }

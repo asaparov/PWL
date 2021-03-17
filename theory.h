@@ -2,6 +2,7 @@
 #define THEORY_H_
 
 #include <core/array.h>
+#include <core/random.h>
 #include <math/multiset.h>
 #include <stdexcept>
 
@@ -14716,6 +14717,7 @@ struct log_probability_collector
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
 //fprintf(stderr, "log probability of theory: %lf\n", value);
+//extern thread_local const string_map_scribe* debug_terminal_printer;
 //T.print_axioms(stderr, *debug_terminal_printer);
 //T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			return value;
@@ -14799,6 +14801,7 @@ struct model_evidence_collector
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
 fprintf(stderr, "log probability of theory: %lf\n", value);
+extern thread_local const string_map_scribe* debug_terminal_printer;
 T.print_axioms(stderr, *debug_terminal_printer);
 T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			return value;
@@ -14988,6 +14991,7 @@ T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
+extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		do_mh_step(T, proof_prior, proof_axioms, collector);
@@ -15050,6 +15054,7 @@ T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
+extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.template print_axioms<true>(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			do_mh_step(T, proof_prior, proof_axioms, collector);
@@ -15130,7 +15135,7 @@ bool log_joint_probability_of_lambda(
 
 	unsigned int new_constant;
 	set_changes<Formula> set_diff;
-extern const thread_local string_map_scribe* debug_terminal_printer;
+extern thread_local const string_map_scribe* debug_terminal_printer;
 T.print_axioms(stderr, *debug_terminal_printer);
 	Proof* new_proof = T.add_formula(existential, set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 	free(*existential); if (existential->reference_count == 0) free(existential);
@@ -15168,6 +15173,7 @@ T.sets.check_set_ids();
 if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
 bool print_debug = false;
+extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof);

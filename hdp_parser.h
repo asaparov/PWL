@@ -6,6 +6,7 @@
 #include "morphology_en.h"
 #include "article.h"
 #include "built_in_predicates.h"
+#include "console.h"
 #include <grammar/parser.h>
 #include <grammar/hdp_grammar_io.h>
 
@@ -3372,6 +3373,7 @@ core::free(nonterminal_name_map);
 		array<pair<unsigned int, unsigned int>> ambiguous_terminal_indices(8);
 		for (unsigned int i = 0; i < parse_count; i++) {
 /* TODO: for debugging; remove this */
+print(CONSOLE_BOLD "Parse result ", stdout); print(i, stdout); print(":\n" CONSOLE_RESET, stdout);
 print(logical_form_output[i], stdout, terminal_printer); print('\n', stdout);
 print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout); fflush(stdout);
 			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
