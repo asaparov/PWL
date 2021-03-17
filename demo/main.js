@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function(event) {
 	const BLUE  = CSI + "34m";
 	const BOLD  = CSI + "1m";
 	const RESET = CSI + "0m";
+	const SUBSCRIPTS = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
 
 	var console = document.getElementById('console');
 	var input = document.getElementById('input');
@@ -20,6 +21,7 @@ document.addEventListener('DOMContentLoaded', function(event) {
 	socket.on('console', (data) => {
 		var new_data = [];
 		var style_stack = [];
+		var sub = false;
 		for (var i = 0; i < data.length; i++) {
 			if (data[i] == '&') {
 				new_data.push("&amp;");
@@ -43,7 +45,17 @@ document.addEventListener('DOMContentLoaded', function(event) {
 				while (style_stack.length != 0)
 					new_data.push("</" + style_stack.pop() + ">");
 				i += RESET.length - 1;
+			} else if ((index = SUBSCRIPTS.indexOf(data[i])) != -1) {
+				if (!sub) {
+					new_data.push("<sub>");
+					sub = true;
+				}
+				new_data.push('' + index);
 			} else {
+				if (sub) {
+					new_data.push("</sub>");
+					sub = false;
+				}
 				new_data.push(data[i]);
 			}
 		}

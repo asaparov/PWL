@@ -9,12 +9,17 @@
 	left: 0;
 	right: 0;
 	padding: 10px;
-	font-size: 11pt;
+	font-family: 'Source Code Pro', monospace;
+	font-size: 12pt;
 	color: #343434;
 }
 
 #console * {
 	display: contents;
+}
+
+sub {
+	font-variant-position: sub;
 }
 
 #input_wrap {

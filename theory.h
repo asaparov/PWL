@@ -14800,10 +14800,10 @@ struct model_evidence_collector
 			array<Formula*> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
-fprintf(stderr, "log probability of theory: %lf\n", value);
+/*fprintf(stderr, "log probability of theory: %lf\n", value);
 extern thread_local const string_map_scribe* debug_terminal_printer;
 T.print_axioms(stderr, *debug_terminal_printer);
-T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			return value;
 		};
 		current_log_probability = compute_current_log_probability();
