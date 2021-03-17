@@ -2475,7 +2475,7 @@ struct generated_utterance {
 	generated_utterance(sequence& seq) : tokens(seq.tokens), length(seq.length), capacity(16) {
 		tokens = (unsigned int*) malloc(sizeof(unsigned int) * capacity);
 		if (tokens == nullptr) {
-			fprintf(stderr, "hdp_parser.generated_utterance ERROR: Out of memory.\n");
+			fprintf(stderr, "generated_utterance ERROR: Out of memory.\n");
 			exit(EXIT_FAILURE);
 		}
 		length = 0;
@@ -3359,7 +3359,6 @@ const string** nonterminal_name_map = invert(G.nonterminal_names);
 string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
 debug_terminal_printer = &terminal_printer;
 debug_nonterminal_printer = &nonterminal_printer;
-debug_flag = true;
 		if (!::parse<false, false, K>(parsed_syntax, parse_count,
 				logical_form, logical_form_output, G, sentence, morph, *this))
 		{
@@ -3372,6 +3371,7 @@ core::free(nonterminal_name_map);
 		array<pair<unsigned int, unsigned int>> ambiguous_terminal_indices(8);
 		for (unsigned int i = 0; i < parse_count; i++) {
 /* TODO: for debugging; remove this */
+print("Parse result ", stdout); print(i, stdout); print(":\n", stdout);
 print(logical_form_output[i], stdout, terminal_printer); print('\n', stdout);
 print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout); fflush(stdout);
 			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
@@ -3776,7 +3776,7 @@ struct hol_non_head_constants {
 	hol_term* constants;
 
 	hol_non_head_constants() {
-		constants = hol_term::new_any_constant(make_array_view(CONSTANTS, CONSTANT_COUNT));
+		constants = hol_term::new_any(hol_term::new_any_constant(make_array_view(CONSTANTS, CONSTANT_COUNT)));
 	}
 
 	~hol_non_head_constants() {
