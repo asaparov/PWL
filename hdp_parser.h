@@ -3316,12 +3316,30 @@ detect_duplicate_logical_forms = true;
 				break;
 		}
 
+/* TODO: for debugging; delete this */
+bool has_anaphora = false;
+for (unsigned int i = 0; !has_anaphora && i < parse_count; i++)
+	has_anaphora = (iterators[i].anaphora.size != 0);
+if (has_anaphora) {
+	if (resolved_formula_count == 0) {
+		print(CONSOLE_BOLD "\nCoreference resolution failed.\n" CONSOLE_RESET, stdout);
+	} else {
+		print(CONSOLE_BOLD "\nCoreference resolution results:\n" CONSOLE_RESET, stdout);
+		for (unsigned int i = 0; i < resolved_formula_count; i++) {
+			print(CONSOLE_BOLD "[", stdout); print(i, stdout); print("] " CONSOLE_RESET, stdout);
+			print(*resolved_formulas[i], stdout, terminal_printer); print('\n', stdout);
+		}
+	}
+}
+
 		for (unsigned int i = 0; i < parse_count; i++) {
+			core::free(iterators[i]);
 			core::free(*logical_forms[i]); if (logical_forms[i]->reference_count == 0) core::free(logical_forms[i]);
 		} for (unsigned int i = 0; i < resolved_formula_count; i++) {
 			logical_forms[i] = resolved_formulas[i];
 			log_probabilities[i] = resolved_log_probabilities[i];
 		}
+		core::free(iterators);
 		parse_count = resolved_formula_count;
 		return true;
 	}
@@ -3460,7 +3478,7 @@ core::free(nonterminal_name_map);
 			return false;
 		}
 
-		return true;
+		return (parse_count != 0);
 	}
 
 	bool add_definition(const SentenceType& s, Formula* definition,
@@ -34777,6 +34795,8 @@ inline bool invert_select_function(
 
 			hol_term* new_common_ancestor;
 			if (found_conjunct == nullptr) {
+				if (common_ancestor_scope == nullptr)
+					return false;
 				new_common_ancestor = common_ancestor_scope;
 				new_common_ancestor->reference_count++;
 			} else {

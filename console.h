@@ -150,7 +150,7 @@ void run_console(
 					free(*logical_forms[i]); if (logical_forms[i]->reference_count == 0) free(logical_forms[i]);
 				}
 				if (!parse_sentence(parser, line.data + index, names, logical_forms, log_likelihoods, parse_count)) {
-					printf("Failed to parse sentence \"%s\"", line.data + index);
+					printf("Unable to parse sentence \"%s\"", line.data + index);
 					parse_count = 0;
 				}
 
@@ -189,6 +189,7 @@ void run_console(
 				}
 
 				for (unsigned int i = 0; i < parse_count; i++) {
+					print(CONSOLE_BOLD "[", stdout); print(i, stdout); print("] " CONSOLE_RESET, stdout);
 					print(*logical_forms[i], stdout, parser.get_printer());
 					print(" with log likelihood ", stdout); print(log_likelihoods[i], stdout);
 					print(" + log prior ", stdout); print(log_priors[i], stdout);
