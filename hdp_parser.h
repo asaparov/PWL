@@ -21594,7 +21594,8 @@ print("second_head: ", stderr); print(*second_head, stderr, *debug_terminal_prin
 			return nullptr;
 	}
 
-	hol_term* first_parent; hol_term* second_parent;
+	hol_term* first_parent = nullptr;
+	hol_term* second_parent = nullptr;
 	unsigned int first_head_length = 0, second_head_length = 0, first_head_min_length = 0, second_head_min_length = 0;
 	if (first_inverter.outer.length > 1) {
 		first_parent = first_inverter.outer[first_inverter.outer.length - 2];
@@ -22578,7 +22579,7 @@ inline bool invert_select_conjunct(
 		unsigned int head_variable = 0;
 		if (first_head->type == hol_term_type::EXISTS)
 			head_variable = first_head->quantifier.variable;
-		unsigned int second_head_variable;
+		unsigned int second_head_variable = 0;
 		if (second_head->type == hol_term_type::EXISTS) {
 			second_head_variable = second_head->quantifier.variable;
 			if (head_variable == 0)

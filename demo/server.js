@@ -18,7 +18,7 @@ io.on("connection", socket => {
 	var current_id = id;
 	id++;
 	console.log('New connection with ID %d.', current_id);
-	const process = spawn('/usr0/home/asaparov/theory_induction/executive_test_dbg', [], {cwd: '/usr0/home/asaparov/theory_induction'});
+	const process = spawn('/usr0/home/asaparov/theory_induction/executive_test', [], {cwd: '/usr0/home/asaparov/theory_induction'});
 
 	process.stdout.on('data', (data) => {
 		socket.emit('console', data.toString());
