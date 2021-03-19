@@ -608,6 +608,8 @@ struct flagged_logical_form
 		REQUIRE_RIGHT_PREDICATE_IN_SET,
 		REMOVE_INVERSE,
 		REMOVE_GREATEST,
+		REMOVE_CAPABLE_OF,
+		REMOVE_HIGHER_ORDER_PREDICATE,
 		REMOVE_RIGHT_TRACE,
 		SELECT_RIGHT_ARG1_WITHOUT_HEAD,
 		SELECT_RIGHT_ARG2_WITHOUT_HEAD,
@@ -633,6 +635,7 @@ struct flagged_logical_form
 		SELECT_SINGLETON_ARG1_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE,
 		SELECT_SINGLETON_ARG2_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE,
 		SELECT_SINGLETON_ARG3_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE,
+		REQUIRE_PRESENT,
 		REQUIRE_PAST,
 		REMOVE_FUTURE,
 		REQUIRE_NO_FUTURE,
@@ -645,6 +648,8 @@ struct flagged_logical_form
 		REMOVE_ASPECT,
 		TRY_REMOVE_ASPECT,
 		REMOVE_NOT,
+		TRY_REMOVE_NOT,
+		REQUIRE_NO_NOT,
 		REQUIRE_NO_EMPTY_REF,
 		PREDICATE_ONLY,
 		PREDICATE,
@@ -780,6 +785,7 @@ struct flagged_logical_form
 		REMOVE_EITHER,
 		REMOVE_NEITHER,
 		TRY_REMOVE_CORRELATOR,
+		TRY_REMOVE_CORRELATOR_HEAD,
 		REQUIRE_NO_CORRELATOR,
 		REQUIRE_NO_CORRELATOR_PREDICATIVE,
 		ADD_CORRELATED_BY_BOTH,
@@ -1003,6 +1009,8 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_RIGHT_PREDICATE_IN_SET, "require_right_predicate_in_set"},
 	{function_type::REMOVE_INVERSE, "remove_inverse"},
 	{function_type::REMOVE_GREATEST, "remove_greatest"},
+	{function_type::REMOVE_CAPABLE_OF, "remove_capable_of"},
+	{function_type::REMOVE_HIGHER_ORDER_PREDICATE, "remove_higher_order_predicate"},
 	{function_type::REMOVE_RIGHT_TRACE, "remove_right_trace"},
 	{function_type::SELECT_RIGHT_ARG1_WITHOUT_HEAD, "select_right_arg1_without_head"},
 	{function_type::SELECT_RIGHT_ARG2_WITHOUT_HEAD, "select_right_arg2_without_head"},
@@ -1028,6 +1036,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::SELECT_SINGLETON_ARG1_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE, "select_singleton_arg1_of_in_set_without_head_outer_scope_predicative"},
 	{function_type::SELECT_SINGLETON_ARG2_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE, "select_singleton_arg2_of_in_set_without_head_outer_scope_predicative"},
 	{function_type::SELECT_SINGLETON_ARG3_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE, "select_singleton_arg3_of_in_set_without_head_outer_scope_predicative"},
+	{function_type::REQUIRE_PRESENT, "require_present"},
 	{function_type::REQUIRE_PAST, "require_past"},
 	{function_type::REMOVE_FUTURE, "remove_future"},
 	{function_type::REQUIRE_NO_FUTURE, "require_no_future"},
@@ -1040,6 +1049,8 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REMOVE_ASPECT, "remove_aspect"},
 	{function_type::TRY_REMOVE_ASPECT, "try_remove_aspect"},
 	{function_type::REMOVE_NOT, "remove_not"},
+	{function_type::TRY_REMOVE_NOT, "try_remove_not"},
+	{function_type::REQUIRE_NO_NOT, "require_no_not"},
 	{function_type::REQUIRE_NO_EMPTY_REF, "require_no_empty_ref"},
 	{function_type::PREDICATE_ONLY, "predicate_only"},
 	{function_type::PREDICATE, "predicate"},
@@ -1171,6 +1182,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REMOVE_EITHER, "remove_either"},
 	{function_type::REMOVE_NEITHER, "remove_neither"},
 	{function_type::TRY_REMOVE_CORRELATOR, "try_remove_correlator"},
+	{function_type::TRY_REMOVE_CORRELATOR_HEAD, "try_remove_correlator_head"},
 	{function_type::REQUIRE_NO_CORRELATOR, "require_no_correlator"},
 	{function_type::REQUIRE_NO_CORRELATOR_PREDICATIVE, "require_no_correlator_predicative"},
 	{function_type::ADD_CORRELATED_BY_BOTH, "add_correlated_by_both"},
@@ -9646,11 +9658,15 @@ inline bool remove_higher_order_predicate(
 
 					hol_term* expected_predicate = hol_term::new_apply(
 							hol_term::new_apply(
-								hol_term::new_constant(Predicate),
+								(Predicate == UINT_MAX
+									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS)))
+									: &hol_term::constants<Predicate>::value),
 								&HOL_ANY),
 							hol_term::new_variable(head_variable));
 					if (expected_predicate == nullptr) return (hol_term*) nullptr;
 					HOL_ANY.reference_count++;
+					if (Predicate != UINT_MAX)
+						hol_term::constants<Predicate>::value.reference_count++;
 
 					if (!has_intersection<built_in_predicates>(expected_predicate, predicate)) {
 						free(*expected_predicate); free(expected_predicate);
@@ -9778,11 +9794,15 @@ inline bool remove_higher_order_predicate(
 				} else if (head->type == hol_term_type::EXISTS && head->quantifier.operand->type == hol_term_type::AND) {
 					hol_term* expected_predicate = hol_term::new_apply(
 							hol_term::new_apply(
-								hol_term::new_constant(Predicate),
+								(Predicate == UINT_MAX
+									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS)))
+									: &hol_term::constants<Predicate>::value),
 								&HOL_ANY),
 							hol_term::new_variable(head_variable));
 					if (expected_predicate == nullptr) return (hol_term*) nullptr;
 					HOL_ANY.reference_count++;
+					if (Predicate != UINT_MAX)
+						hol_term::constants<Predicate>::value.reference_count++;
 
 					hol_term* operand = head->quantifier.operand;
 					hol_term* predicate = operand->array.operands[predicate_index.index];
@@ -9861,11 +9881,15 @@ inline bool remove_higher_order_predicate(
 						return (hol_term*) nullptr;
 					hol_term* expected_predicate = hol_term::new_apply(
 							hol_term::new_apply(
-								hol_term::new_constant(Predicate),
+								(Predicate == UINT_MAX
+									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS)))
+									: &hol_term::constants<Predicate>::value),
 								&HOL_ANY),
 							hol_term::new_variable(head_variable));
 					if (expected_predicate == nullptr) return (hol_term*) nullptr;
 					HOL_ANY.reference_count++;
+					if (Predicate != UINT_MAX)
+						hol_term::constants<Predicate>::value.reference_count++;
 
 					hol_term* predicate = head->quantifier.operand;
 					if (!has_intersection<built_in_predicates>(expected_predicate, predicate)) {
@@ -9909,28 +9933,18 @@ inline bool remove_higher_order_predicate(
 					dst = new_dst;
 				}
 
-				if (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) {
-					hol_term* new_dst = hol_term::new_any_right(dst);
+				if (head != old_head && (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT)) {
+					hol_term* new_dst = hol_term::new_any_right(dst, old_head->any.excluded_trees, old_head->any.excluded_tree_count);
 					if (new_dst == nullptr) {
 						free(*dst); if (dst->reference_count == 0) free(dst);
 						return (hol_term*) nullptr;
 					}
+					for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
+						old_head->any.excluded_trees[i]->reference_count++;
 					dst = new_dst;
 				}
 				return dst;
 			}, no_op()) && dst != nullptr;
-}
-
-inline bool remove_inverse(
-		hol_term* src, hol_term*& dst)
-{
-	return remove_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE>(src, dst);
-}
-
-inline bool remove_greatest(
-		hol_term* src, hol_term*& dst)
-{
-	return remove_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST>(src, dst);
 }
 
 template<int_fast8_t ConjunctIndex>
@@ -10919,7 +10933,7 @@ inline bool select_arg_without_head_predicative(
 						}
 						if (inner_operand->type == hol_term_type::ANY) {
 							array<hol_term*> diff(1);
-							subtract_any<built_in_predicates>(diff, inner_operand, equals_term);
+							subtract_any<built_in_predicates>(diff, equals_term, inner_operand);
 							free(*equals_term); if (equals_term->reference_count == 0) free(equals_term);
 #if !defined(NDEBUG)
 							if (diff.length > 1)
@@ -12750,6 +12764,7 @@ inline bool remove_perfect(
 			}, no_op()) && dst != nullptr;
 }
 
+template<bool Try>
 inline bool remove_not(
 		hol_term* src, hol_term*& dst)
 {
@@ -12765,25 +12780,34 @@ inline bool remove_not(
 				if (head->type == hol_term_type::NOT) {
 					head->unary.operand->reference_count++;
 					return head->unary.operand;
-				} else if (head->type == hol_term_type::EXISTS && old_head->type == hol_term_type::ANY_RIGHT) {
-					/* make sure negation is not excluded */
-					bool is_excluded = false;
-					for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
-						hol_term* tree = old_head->any.excluded_trees[i];
-						if ((tree->type == hol_term_type::ANY || tree->type == hol_term_type::ANY_RIGHT) && tree->any.included != nullptr)
-							tree = tree->any.included;
-						if (tree->type == hol_term_type::NOT && tree->unary.operand->type == hol_term_type::EXISTS
-						 && tree->unary.operand->quantifier.variable == head->quantifier.variable
-						 && *tree->unary.operand->quantifier.operand == HOL_ANY)
-						{
-							is_excluded = true;
-							break;
-						}
+				} else if (head->type == hol_term_type::EXISTS) {
+					if (Try) {
+						old_head->reference_count++;
+						return old_head;
 					}
-					if (is_excluded)
+
+					if (old_head->type == hol_term_type::ANY_RIGHT) {
+						/* make sure negation is not excluded */
+						bool is_excluded = false;
+						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
+							hol_term* tree = old_head->any.excluded_trees[i];
+							if ((tree->type == hol_term_type::ANY || tree->type == hol_term_type::ANY_RIGHT) && tree->any.included != nullptr)
+								tree = tree->any.included;
+							if (tree->type == hol_term_type::NOT && tree->unary.operand->type == hol_term_type::EXISTS
+							&& tree->unary.operand->quantifier.variable == head->quantifier.variable
+							&& *tree->unary.operand->quantifier.operand == HOL_ANY)
+							{
+								is_excluded = true;
+								break;
+							}
+						}
+						if (is_excluded)
+							return (hol_term*) nullptr;
+						old_head->reference_count++;
+						return old_head;
+					} else {
 						return (hol_term*) nullptr;
-					old_head->reference_count++;
-					return old_head;
+					}
 				} else if (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) {
 					old_head->reference_count++;
 					return old_head;
@@ -12791,6 +12815,44 @@ inline bool remove_not(
 					return (hol_term*) nullptr;
 				}
 			}, no_op()) && dst != nullptr;
+}
+
+inline bool require_no_not(
+		hol_term* src, hol_term*& dst)
+{
+	head_index predicate_index; no_op apply;
+	hol_term* head = find_head(src, predicate_index, find_head<built_in_predicates>, apply);
+	if (head == nullptr)
+		return false;
+
+	if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr
+	 && (head->any.included->type == hol_term_type::NOT || head->any.included->type == hol_term_type::EXISTS))
+		head = head->any.included;
+
+	if (head->type == hol_term_type::NOT) {
+		return false;
+	} else if (head->type == hol_term_type::EXISTS) {
+		/* exclude negation */
+		hol_term* excluded_tree = hol_term::new_any_right(hol_term::new_not(hol_term::new_exists(head->quantifier.variable, &HOL_ANY)));
+		if (excluded_tree == nullptr)
+			return false;
+		HOL_ANY.reference_count++;
+
+		array<hol_term*> difference(2);
+		subtract_any_right<built_in_predicates>(difference, src, excluded_tree);
+		free(*excluded_tree); if (excluded_tree->reference_count == 0) free(excluded_tree);
+		if (difference.length == 0) {
+			return false;
+		} else if (difference.length != 1) {
+			fprintf(stderr, "require_no_not ERROR: Set difference is not unique.\n");
+			free_all(difference);
+			return false;
+		}
+		dst = difference[0];
+		return true;
+	} else {
+		return false;
+	}
 }
 
 inline bool require_no_empty_ref(hol_term* src, hol_term*& dst)
@@ -20818,10 +20880,16 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		return require_predicate_in_set<-1>(src.root, dst.root);
 	case function_type::REMOVE_INVERSE:
 		dst.flags = src.flags;
-		return remove_inverse(src.root, dst.root);
+		return remove_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE>(src.root, dst.root);
 	case function_type::REMOVE_GREATEST:
 		dst.flags = src.flags;
-		return remove_greatest(src.root, dst.root);
+		return remove_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST>(src.root, dst.root);
+	case function_type::REMOVE_CAPABLE_OF:
+		dst.flags = src.flags;
+		return remove_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF>(src.root, dst.root);
+	case function_type::REMOVE_HIGHER_ORDER_PREDICATE:
+		dst.flags = src.flags;
+		return remove_higher_order_predicate<UINT_MAX>(src.root, dst.root);
 	case function_type::REMOVE_RIGHT_TRACE:
 		dst.flags = src.flags;
 		return remove_constant<-1>(src.root, dst.root, &hol_term::constants<(unsigned int) built_in_predicates::TRACE>::value);
@@ -20897,6 +20965,9 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::SELECT_SINGLETON_ARG3_OF_IN_SET_WITHOUT_HEAD_OUTER_SCOPE_PREDICATIVE:
 		dst.flags = src.flags;
 		return select_singleton_arg_in_set_without_head_predicative<(unsigned int) built_in_predicates::ARG3_OF, true, false>(src.root, dst.root);
+	case function_type::REQUIRE_PRESENT:
+		dst.flags = src.flags;
+		return set_tense(src.root, dst.root, (unsigned int) built_in_predicates::PRESENT);
 	case function_type::REQUIRE_PAST:
 		dst.flags = src.flags;
 		return set_tense(src.root, dst.root, (unsigned int) built_in_predicates::PAST);
@@ -20932,7 +21003,13 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		return apply_tense_predicate(src.root, dst.root, ASPECT_PREDICATES, PAST_OR_PRESENT);
 	case function_type::REMOVE_NOT:
 		dst.flags = src.flags;
-		return remove_not(src.root, dst.root);
+		return remove_not<false>(src.root, dst.root);
+	case function_type::TRY_REMOVE_NOT:
+		dst.flags = src.flags;
+		return remove_not<true>(src.root, dst.root);
+	case function_type::REQUIRE_NO_NOT:
+		dst.flags = src.flags;
+		return require_no_not(src.root, dst.root);
 	case function_type::REQUIRE_NO_EMPTY_REF:
 		dst.flags = src.flags;
 		return require_no_empty_ref(src.root, dst.root);
@@ -21305,6 +21382,7 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REMOVE_NEITHER:
 		return remove_correlator(src, dst, correlator::NEITHER);
 	case function_type::TRY_REMOVE_CORRELATOR:
+	case function_type::TRY_REMOVE_CORRELATOR_HEAD:
 		dst = src;
 		dst.flags.corr = correlator::NONE;
 		return true;
@@ -26895,6 +26973,10 @@ inline bool invert_select_only_conjunct_in_set_predicative(
 template<unsigned int Predicate, int_fast8_t PredicateIndex>
 inline hol_term* do_invert_remove_higher_order_predicate(hol_term* second_head)
 {
+	if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) && second_head->any.included != nullptr
+	 && (second_head->any.included->type == hol_term_type::NOT || second_head->any.included->type == hol_term_type::EXISTS))
+		second_head = second_head->any.included;
+
 	unsigned int negation_count = 0;
 	while (second_head->type == hol_term_type::NOT) {
 		second_head = second_head->unary.operand;
@@ -26974,12 +27056,19 @@ inline hol_term* do_invert_remove_higher_order_predicate(hol_term* second_head)
 		head_var->reference_count++;
 
 	} else if (predicate->type == hol_term_type::UNARY_APPLICATION) {
-		expected_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<Predicate>::value, predicate->binary.left), predicate->binary.right);
+		if (Predicate == UINT_MAX) {
+			expected_predicate = hol_term::new_apply(hol_term::new_apply(
+					hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS))),
+					predicate->binary.left), predicate->binary.right);
+		} else {
+			expected_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<Predicate>::value, predicate->binary.left), predicate->binary.right);
+		}
 		if (expected_predicate == nullptr)
 			return nullptr;
 		predicate->binary.left->reference_count++;
 		predicate->binary.right->reference_count++;
-		hol_term::constants<Predicate>::value.reference_count++;
+		if (Predicate != UINT_MAX)
+			hol_term::constants<Predicate>::value.reference_count++;
 	} else {
 		return nullptr;
 	}
@@ -27078,24 +27167,6 @@ inline bool invert_remove_higher_order_predicate(
 	}
 	inverse_count = intersection.length;
 	return true;
-}
-
-inline bool invert_remove_inverse(
-		flagged_logical_form<hol_term>*& inverse,
-		unsigned int& inverse_count,
-		const grammatical_flags& flags,
-		hol_term* first, hol_term* second)
-{
-	return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE, INT_FAST8_MAX>(inverse, inverse_count, flags, first, second);
-}
-
-inline bool invert_remove_greatest(
-		flagged_logical_form<hol_term>*& inverse,
-		unsigned int& inverse_count,
-		const grammatical_flags& flags,
-		hol_term* first, hol_term* second)
-{
-	return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, INT_FAST8_MAX>(inverse, inverse_count, flags, first, second);
 }
 
 template<int_fast8_t ConjunctIndex>
@@ -30740,6 +30811,7 @@ inline bool invert_remove_perfect(
 		});
 }
 
+template<bool Try>
 inline bool invert_remove_not(
 		flagged_logical_form<hol_term>*& inverse,
 		unsigned int& inverse_count,
@@ -30760,6 +30832,34 @@ inline bool invert_remove_not(
 			dst.length++;
 			dst_outer[dst_outer.length++] = &HOL_ZERO;
 			HOL_ZERO.reference_count++;
+
+			if (Try) {
+				hol_term* old_second_head = second_head;
+				if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT)
+				 && second_head->any.included != nullptr && (second_head->any.included->type == hol_term_type::NOT || second_head->any.included->type == hol_term_type::EXISTS))
+					second_head = second_head->any.included;
+
+				if (second_head->type == hol_term_type::NOT)
+					return true;
+
+				if (second_head->type == hol_term_type::EXISTS) {
+					/* exclude negation */
+					hol_term* excluded_tree = hol_term::new_any_right(hol_term::new_not(hol_term::new_exists(second_head->quantifier.variable, &HOL_ANY)));
+					if (excluded_tree == nullptr)
+						return false;
+					HOL_ANY.reference_count++;
+
+					subtract_any_right<built_in_predicates>(dst, old_second_head, excluded_tree);
+					free(*excluded_tree); if (excluded_tree->reference_count == 0) free(excluded_tree);
+
+					if (!dst_outer.ensure_capacity(dst.length))
+						return false;
+					for (unsigned int i = 1; i < dst.length; i++) {
+						dst_outer[dst_outer.length++] = &HOL_ZERO;
+						HOL_ZERO.reference_count++;
+					}
+				}
+			}
 			return true;
 		});
 }
@@ -36012,6 +36112,7 @@ bool invert(
 	case function_type::REQUIRE_LEFT_GREATEST:
 	case function_type::REQUIRE_NO_LEFT_PREDICATE_EXIST:
 	case function_type::REQUIRE_RIGHT_PREDICATE_IN_SET:
+	case function_type::REQUIRE_NO_NOT:
 	case function_type::REQUIRE_NO_PREDICATE_EMPTY:
 	case function_type::REQUIRE_AUX_OR_SUBJUNCTIVE_OR_INFINITIVE_OR_TO_INFINITIVE:
 	case function_type::REQUIRE_PAST_PARTICIPLE:
@@ -36036,6 +36137,7 @@ bool invert(
 		/* the forward application already ensures that `second` satisfies this requirement */
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return intersect(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::REQUIRE_PRESENT:
 	case function_type::REQUIRE_PAST:
 	case function_type::REQUIRE_NO_FUTURE:
 	case function_type::REQUIRE_NO_PERFECT:
@@ -36120,10 +36222,16 @@ bool invert(
 		return invert_select_only_conjunct_in_set_predicative<-1>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_INVERSE:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_inverse(inverse, inverse_count, flags, first.root, second.root);
+		return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_GREATEST:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_greatest(inverse, inverse_count, flags, first.root, second.root);
+		return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::REMOVE_CAPABLE_OF:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::REMOVE_HIGHER_ORDER_PREDICATE:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_remove_higher_order_predicate<UINT_MAX, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_RIGHT_TRACE:
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_remove_constant<-1>(inverse, inverse_count, flags, first.root, second.root, &hol_term::constants<(unsigned int) built_in_predicates::TRACE>::value);
@@ -36222,7 +36330,10 @@ bool invert(
 		return invert_apply_tense_predicate(inverse, inverse_count, flags, first.root, second.root, ASPECT_PREDICATES, PAST_OR_PRESENT);
 	case function_type::REMOVE_NOT:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_not(inverse, inverse_count, flags, first.root, second.root);
+		return invert_remove_not<false>(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::TRY_REMOVE_NOT:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_remove_not<true>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REQUIRE_PREDICATIVE_UNIVERSAL:
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_require_predicative_universal(inverse, inverse_count, flags, first.root, second.root);
@@ -36626,6 +36737,23 @@ bool invert(
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
 			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::TRY_REMOVE_CORRELATOR_HEAD:
+		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
+		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
+		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+		 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
+		 || !intersect(flags.corr, first.flags.corr, correlator::ANY))
+			return false;
+		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+			&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, make_array_finder(find_head<built_in_predicates>));
 	case function_type::REQUIRE_NO_CORRELATOR:
 		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)

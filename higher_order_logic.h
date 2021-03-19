@@ -11789,7 +11789,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	return false;
 }
 
-template<typename BuiltInPredicates, bool MapSecondVariablesToFirst, typename LogicalFormSet>
+template<typename BuiltInPredicates, bool MapSecondVariablesToFirst = false, typename LogicalFormSet>
 bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 {
 #if !defined(NDEBUG)

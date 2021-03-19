@@ -46,6 +46,7 @@ enum class built_in_predicates : unsigned int {
 	REF,
 	PLURAL_REF,
 	ANIMATE,
+	CAPABLE_OF,
 
 AREA, /* TODO: for debugging; delete this */
 SQUARE, /* TODO: for debugging; delete this */
@@ -223,6 +224,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("ref", (unsigned int) built_in_predicates::REF)
 		&& names.put("plural_ref", (unsigned int) built_in_predicates::PLURAL_REF)
 		&& names.put("animate", (unsigned int) built_in_predicates::ANIMATE)
+		&& names.put("capable_of", (unsigned int) built_in_predicates::CAPABLE_OF)
 		&& names.put("area", (unsigned int) built_in_predicates::AREA)
 		&& names.put("square", (unsigned int) built_in_predicates::SQUARE)
 		&& names.put("mile", (unsigned int) built_in_predicates::MILE);

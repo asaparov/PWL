@@ -1347,9 +1347,9 @@ VP_L nonterminal {} {100.0} {0.1} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-#VP_L -> ADVP_L:try_remove_correlator,try_remove_wh_minus,select_left_arg1_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
+#VP_L -> ADVP_L:try_remove_correlator_head,try_remove_wh_minus,select_left_arg1_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
 #VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,add_modifies_event,select_left_arg1_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
-#VP_L -> ADVP_L:try_remove_correlator,try_remove_wh_minus,select_left_arg2_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
+#VP_L -> ADVP_L:try_remove_correlator_head,try_remove_wh_minus,select_left_arg2_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
 #VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,add_modifies_event,select_left_arg2_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
 
 VP_L -> WILL VP_L:try_remove_correlated,remove_future,add_infinitive,add_aux,require_no_subjunctive # future "tense"
@@ -1360,7 +1360,8 @@ VP_L -> NOT VP_L:try_remove_correlated,require_aux_or_subjunctive_or_infinitive_
 #VP_L -> BE:identity VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive # passive voice
 VP_L -> GET:identity VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive # passive voice
 VP_L -> TO VP_L:try_remove_correlated,remove_to_infinitive,add_infinitive,require_no_future,require_no_req_subject,require_no_req_aux
-#VP_L -> MODAL:try_remove_correlator VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive
+VP_L -> MD:try_remove_correlator_head,try_remove_not VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_higher_order_predicate
+VP_L -> MD:try_remove_correlator_head VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_not,remove_higher_order_predicate
 
 # VP_L {?[x]:(U(0,x) & p(x))} -> V {p}
 # NOTE: If subjunctive, and the resulting inflected verb has the same form as
@@ -1390,7 +1391,7 @@ VP_L -> BE:select_left_predicate_and_tense,try_remove_aspect VP_R:try_remove_cor
 #VP_L -> DO:require_no_future,require_no_perfect,require_no_progressive,require_no_req_subject,try_remove_req_aux,require_only_empty_ref,require_no_subjunctive,require_no_correlator # do-support
 #VP_L -> NOT:require_aux_or_subjunctive_or_infinitive_or_to_infinitive,remove_not,require_no_req_subject,try_remove_req_aux,require_only_empty_ref,require_no_correlator
 #VP_L -> BE:require_no_future,require_no_perfect,require_no_progressive,remove_inverse,require_no_req_subject,try_remove_req_aux,require_no_correlator # passive voice,require_only_empty_ref
-#VP_L -> MODAL:require_no_req_subject,try_remove_req_aux,require_empty_ref,require_no_subjunctive,require_no_correlator
+#VP_L -> MD:require_no_req_subject,try_remove_req_aux,require_empty_ref,require_no_subjunctive,require_no_correlator
 
 # VP_L {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
 #  -> V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
@@ -1418,6 +1419,12 @@ VP_L -> V_ADJUNCT:try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 VP_L -> EITHER VP_L:require_no_req_subject,remove_either
 VP_L -> BOTH VP_L:require_no_req_subject,remove_both
 VP_L -> NEITHER VP_L:require_no_req_subject,remove_neither,add_negative
+
+
+MD nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+
+MD -> CAN:require_no_not,remove_capable_of,require_present
+MD -> CANNOT:remove_not,remove_capable_of,require_present
 
 
 # TODO: should this nonterminal change the universal/existential quantifiers into a single kind of quantifier, to improve generalization for the NP nonterminal and further downstream?
@@ -2281,7 +2288,7 @@ PRO nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 PRO -> IT:require_ref_in_set
 
 # PRO {^[P]:?[X]:(plural_ref(X) & ?[x]:(X(x) & P(x)))} -> THEY/THEM
-PRO -> THEY:require_plural_ref_in_set
+PRO -> THEY:try_add_plural,require_plural_ref_in_set
 #PRO -> THEM
 
 # PRO {^[P,x]:?[X]:(X=^[x]:U(0,x) & X(x) & P(x))} -> WHICH/WHAT/WHICHEVER/WHATEVER
@@ -3074,3 +3081,9 @@ THEY -> "they"
 
 SOMEONE preterminal {} {1.0} {1.0} {} 10 1.0 {}
 SOMEONE -> "someone"
+
+CAN preterminal {} {1.0} {1.0} {} 10 1.0 {}
+CAN -> "can"
+
+CANNOT preterminal {} {1.0} {1.0} {} 10 1.0 {}
+CANNOT -> "cannot"

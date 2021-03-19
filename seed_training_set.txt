@@ -2710,6 +2710,38 @@
 )}
 	{?[t]:(?[n]:(name(n) & (arg1_of(t)=n) & (arg2(n)="Triton")) & ?[m]:(moon(m) & (?[x]:((arg1(x)=t) & same(x) & present(x) & (arg2(x)=m)) & ~?[g]:((arg1(g)=t) & gaseous(g) & present(g)))))};
 
+: # A cat cannot fly.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(A:empty "a")
+					(NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
+						(NOMINAL_R:identity_predicative
+							(NOMINAL_L:identity_predicative
+								(N:require_no_correlator_predicative,select_predicate_in_set "cat"/"cat")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_L:require_no_be
+					(MD:try_remove_correlator_head
+						(CANNOT:remove_not,remove_capable_of,require_present "cannot")
+					)
+					(VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_not,remove_higher_order_predicate
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "fly"/"fly")
+					)
+				)
+			)
+		)
+	)
+	(PERIOD:empty ".")
+)}
+	{?[c]:(cat(c) & ~?[f]:((arg1(f)=c) & capable_of(fly)(f) & present(f)))};
+
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
 
