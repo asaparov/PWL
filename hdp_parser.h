@@ -3861,7 +3861,7 @@ const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[] =  {
 
 template<typename BuiltInPredicates>
 inline bool is_built_in(unsigned int constant) {
-	return index_of(constant, hol_non_head_constants<BuiltInPredicates>::CONSTANTS, array_length(hol_non_head_constants<BuiltInPredicates>::CONSTANTS)) < array_length(hol_non_head_constants<BuiltInPredicates>::CONSTANTS);
+	return index_of(constant, hol_non_head_constants<BuiltInPredicates>::CONSTANTS, hol_non_head_constants<BuiltInPredicates>::CONSTANT_COUNT) < hol_non_head_constants<BuiltInPredicates>::CONSTANT_COUNT;
 }
 
 template<typename BuiltInPredicates>
@@ -9659,7 +9659,7 @@ inline bool remove_higher_order_predicate(
 					hol_term* expected_predicate = hol_term::new_apply(
 							hol_term::new_apply(
 								(Predicate == UINT_MAX
-									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS)))
+									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
 									: &hol_term::constants<Predicate>::value),
 								&HOL_ANY),
 							hol_term::new_variable(head_variable));
@@ -9795,7 +9795,7 @@ inline bool remove_higher_order_predicate(
 					hol_term* expected_predicate = hol_term::new_apply(
 							hol_term::new_apply(
 								(Predicate == UINT_MAX
-									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS)))
+									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
 									: &hol_term::constants<Predicate>::value),
 								&HOL_ANY),
 							hol_term::new_variable(head_variable));
@@ -9882,7 +9882,7 @@ inline bool remove_higher_order_predicate(
 					hol_term* expected_predicate = hol_term::new_apply(
 							hol_term::new_apply(
 								(Predicate == UINT_MAX
-									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS)))
+									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
 									: &hol_term::constants<Predicate>::value),
 								&HOL_ANY),
 							hol_term::new_variable(head_variable));
@@ -27058,7 +27058,7 @@ inline hol_term* do_invert_remove_higher_order_predicate(hol_term* second_head)
 	} else if (predicate->type == hol_term_type::UNARY_APPLICATION) {
 		if (Predicate == UINT_MAX) {
 			expected_predicate = hol_term::new_apply(hol_term::new_apply(
-					hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS))),
+					hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
 					predicate->binary.left), predicate->binary.right);
 		} else {
 			expected_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<Predicate>::value, predicate->binary.left), predicate->binary.right);
@@ -37407,7 +37407,7 @@ bool get_head_predicate(hol_term* src, unsigned int& value,
 	}
 
 	hol_term* expected_predicate = hol_term::new_apply(
-			hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS))),
+			hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
 			hol_term::new_variable(head_variable));
 	if (expected_predicate == nullptr)
 		return false;
@@ -38492,7 +38492,7 @@ bool set_head_predicate(hol_term* src, hol_term*& dst, unsigned int value)
 				&HOL_ANY), head_var));
 		excluded_trees[1] = hol_term::new_any(hol_term::new_exists(head_variable, &HOL_ANY));
 		excluded_trees[2] = hol_term::new_apply(
-				hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS))), head_var);
+				hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)), head_var);
 		if (excluded_trees[0] != nullptr) { HOL_ANY.reference_count++; head_var->reference_count++; }
 		if (excluded_trees[1] != nullptr) { HOL_ANY.reference_count++; }
 		if (excluded_trees[2] != nullptr) { head_var->reference_count++; }
@@ -38729,7 +38729,7 @@ inline bool set_set_predicate(hol_term* src, hol_term*& dst, unsigned int predic
 		constexpr unsigned int excluded_tree_count = 3;
 		hol_term* excluded_trees[excluded_tree_count];
 		excluded_trees[0] = hol_term::new_apply(
-				hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, array_length(hol_non_head_constants<built_in_predicates>::CONSTANTS))),
+				hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
 				element_var);
 		excluded_trees[1] = hol_term::new_equals(element_var, hol_term::new_any_constant_except());
 		excluded_trees[2] = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_and(
