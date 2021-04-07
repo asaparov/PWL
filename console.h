@@ -69,6 +69,25 @@ inline void print_help(unsigned int max_parse_count)
 	printf(CONSOLE_BOLD "mcmc" CONSOLE_RESET " <iterations>                               Perform MCMC for the specified number of iterations.\n");
 	printf(CONSOLE_BOLD "print_theory" CONSOLE_RESET "                                    Print the current theory.\n");
 	printf(CONSOLE_BOLD "print_proofs" CONSOLE_RESET "                                    Print the proof of each observation in the theory.\n");
+	printf(CONSOLE_BOLD "examples" CONSOLE_RESET "                                        Suggest some interesting examples.\n");
+}
+
+inline void print_examples()
+{
+	printf("Try the following to see how knowledge in the theory can be exploited to resolve syntactic ambiguity (PP-attachment):\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a net.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read No butterfly has a net.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " add 0\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a net.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n\n");
+	printf("Another example where the PP attaches to the noun with a \"softer\" constraint:\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a spot.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read The butterfly has a spot.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " add 0\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a spot.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n\n");
 }
 
 template<typename Stream, typename Parser>
@@ -281,6 +300,9 @@ void run_console(
 
 			} else if (compare_strings("help", line.data, index)) {
 				print_help(max_parse_count);
+
+			} else if (compare_strings("examples", line.data, index)) {
+				print_examples();
 
 			} else {
 				line[index] = '\0';
