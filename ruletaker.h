@@ -38,26 +38,55 @@ enum class ruletaker_label : uint_fast8_t {
 	UNKNOWN
 };
 
+template<typename T>
+struct empty_value { };
+
+template<>
+struct empty_value<ruletaker_label> {
+	static constexpr ruletaker_label get_value() {
+		return ruletaker_label::UNKNOWN;
+	}
+};
+
+template<>
+struct empty_value<string> {
+	static inline string get_value() {
+		string str;
+		str.data = nullptr;
+		return str;
+	}
+};
+
+inline void set_empty(ruletaker_label& label) {
+	label = ruletaker_label::UNKNOWN;
+}
+
+template<typename LabelType>
 struct ruletaker_reader {
 	ruletaker_reader_state state;
 	ruletaker_key current_key;
 	char* context;
-	pair<char*, ruletaker_label> next_question;
-	array<pair<string, ruletaker_label>> questions;
+	pair<char*, LabelType> next_question;
+	array<pair<string, LabelType>> questions;
 
-	ruletaker_reader() : state(ruletaker_reader_state::START), context(nullptr), next_question(nullptr, ruletaker_label::UNKNOWN), questions(44) { }
+	ruletaker_reader() : state(ruletaker_reader_state::START), context(nullptr), next_question(nullptr, empty_value<LabelType>::get_value()), questions(44) { }
 
 	~ruletaker_reader() {
 		if (context != nullptr)
 			free(context);
 		if (next_question.key != nullptr)
 			free(next_question.key);
-		for (pair<string, ruletaker_label>& question : questions)
+		if (!is_empty(next_question.value))
+			free(next_question.value);
+		for (pair<string, LabelType>& question : questions) {
 			free(question.key);
+			free(question.value);
+		}
 	}
 };
 
-inline bool begin_object(const position& pos, ruletaker_reader& reader) {
+template<typename LabelType>
+inline bool begin_object(const position& pos, ruletaker_reader<LabelType>& reader) {
 	if (reader.state == ruletaker_reader_state::START) {
 		reader.state = ruletaker_reader_state::ROOT_OBJECT;
 	} else if (reader.current_key == ruletaker_key::QUESTIONS) {
@@ -78,7 +107,8 @@ inline bool begin_object(const position& pos, ruletaker_reader& reader) {
 	return true;
 }
 
-inline bool end_object(const position& pos, ruletaker_reader& reader) {
+template<typename LabelType>
+inline bool end_object(const position& pos, ruletaker_reader<LabelType>& reader) {
 	if (reader.state == ruletaker_reader_state::ROOT_OBJECT) {
 		reader.state = ruletaker_reader_state::START;
 	} else if (reader.state == ruletaker_reader_state::QUESTION) {
@@ -86,8 +116,9 @@ inline bool end_object(const position& pos, ruletaker_reader& reader) {
 			return false;
 		reader.questions[reader.questions.length].key.data = reader.next_question.key;
 		reader.questions[reader.questions.length].key.length = strlen(reader.next_question.key);
-		reader.questions[reader.questions.length++].value = reader.next_question.value;
+		move(reader.next_question.value, reader.questions[reader.questions.length++].value);
 		reader.next_question.key = nullptr;
+		set_empty(reader.next_question.value);
 		reader.state = ruletaker_reader_state::QUESTIONS;
 	} else if (reader.state == ruletaker_reader_state::QUESTIONS) {
 		reader.state = ruletaker_reader_state::ROOT_OBJECT;
@@ -105,7 +136,8 @@ inline bool end_object(const position& pos, ruletaker_reader& reader) {
 	return true;
 }
 
-inline bool emit_key(const array<char>& key_name, const position& pos, ruletaker_reader& reader) {
+template<typename LabelType>
+inline bool emit_key(const array<char>& key_name, const position& pos, ruletaker_reader<LabelType>& reader) {
 	if (compare_strings(key_name, "theory")) {
 		reader.current_key = ruletaker_key::THEORY;
 	} else if (compare_strings(key_name, "questions")) {
@@ -120,10 +152,37 @@ inline bool emit_key(const array<char>& key_name, const position& pos, ruletaker
 	return true;
 }
 
-inline constexpr bool begin_list(const position& pos, ruletaker_reader& reader) { return true; }
-inline constexpr bool end_list(const position& pos, ruletaker_reader& reader) { return true; }
+template<typename LabelType> inline constexpr bool begin_list(const position& pos, ruletaker_reader<LabelType>& reader) { return true; }
+template<typename LabelType> inline constexpr bool end_list(const position& pos, ruletaker_reader<LabelType>& reader) { return true; }
 
-inline bool emit_string(const array<char>& str, const position& pos, ruletaker_reader& reader) {
+inline bool parse_label(ruletaker_label& label, const array<char>& str, const position& pos) {
+	if (compare_strings(str, "Unknown")) {
+		label = ruletaker_label::UNKNOWN;
+		return true;
+	} else {
+		read_error("Label must be either `true`, `false`, or \"Unknown\"", pos);
+		return false;
+	}
+}
+
+template<bool Value>
+inline bool parse_label(ruletaker_label& label, const position& pos) {
+	label = (Value ? ruletaker_label::TRUE : ruletaker_label::FALSE);
+	return true;
+}
+
+inline bool parse_label(string& label, const array<char>& str, const position& pos) {
+	return init(label, str.data, str.length);
+}
+
+template<bool Value>
+inline bool parse_label(string& label, const position& pos) {
+	read_error("Label must be a string", pos);
+	return false;
+}
+
+template<typename LabelType>
+inline bool emit_string(const array<char>& str, const position& pos, ruletaker_reader<LabelType>& reader) {
 	if (reader.current_key == ruletaker_key::THEORY) {
 		if (reader.context != nullptr) {
 			read_error("Found duplicate `theory` entry", pos);
@@ -151,30 +210,27 @@ inline bool emit_string(const array<char>& str, const position& pos, ruletaker_r
 			reader.next_question.key[i] = str[i];
 		reader.next_question.key[str.length] = '\0';
 	} else if (reader.current_key == ruletaker_key::ANSWER) {
-		if (compare_strings(str, "Unknown")) {
-			reader.next_question.value = ruletaker_label::UNKNOWN;
-		} else {
-			read_error("Label must be either `true`, `false`, or \"Unknown\"", pos);
-			return false;
-		}
+		return parse_label(reader.next_question.value, str, pos);
 	}
 	return true;
 }
 
-inline bool emit_true(const position& pos, ruletaker_reader& reader) {
+template<typename LabelType>
+inline bool emit_true(const position& pos, ruletaker_reader<LabelType>& reader) {
 	if (reader.current_key == ruletaker_key::ANSWER)
-		reader.next_question.value = ruletaker_label::TRUE;
-	return true;
+		return parse_label<true>(reader.next_question.value, pos);
+	else return true;
 }
 
-inline bool emit_false(const position& pos, ruletaker_reader& reader) {
+template<typename LabelType>
+inline bool emit_false(const position& pos, ruletaker_reader<LabelType>& reader) {
 	if (reader.current_key == ruletaker_key::ANSWER)
-		reader.next_question.value = ruletaker_label::FALSE;
-	return true;
+		return parse_label<false>(reader.next_question.value, pos);
+	else return true;
 }
 
-constexpr bool emit_null(const position& pos, ruletaker_reader& reader) { return true; }
-constexpr bool emit_number(double value, const position& pos, ruletaker_reader& reader) { return true; }
+template<typename LabelType> constexpr bool emit_null(const position& pos, ruletaker_reader<LabelType>& reader) { return true; }
+template<typename LabelType> constexpr bool emit_number(double value, const position& pos, ruletaker_reader<LabelType>& reader) { return true; }
 
 template<typename Stream>
 struct line_reader {
@@ -199,8 +255,8 @@ int ungetc(int c, line_reader<Stream>& lr) {
 	return ungetc(c, lr.in);
 }
 
-template<typename ProcessQuestions>
-bool read_ruletaker_data(const char* filename, ProcessQuestions process_questions)
+template<typename LabelType, typename ProcessQuestionsFunc>
+bool read_ruletaker_data(const char* filename, ProcessQuestionsFunc process_questions)
 {
 	FILE* in = (FILE*) fopen(filename, "rb");
 	if (in == nullptr) {
@@ -216,7 +272,7 @@ bool read_ruletaker_data(const char* filename, ProcessQuestions process_question
 		if (c == -1) continue;
 		ungetc(c, lr);
 
-		ruletaker_reader reader;
+		ruletaker_reader<LabelType> reader;
 		if (!json_parse(lr, reader, current)) {
 			fclose(in);
 			return false;
@@ -754,7 +810,7 @@ fflush(stdout);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 139 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 140 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -1082,7 +1138,7 @@ bool run_ruletaker_experiments(
 		return true;
 	};
 
-	if (!read_ruletaker_data(data_filepath, process_ruletaker_questions))
+	if (!read_ruletaker_data<ruletaker_label>(data_filepath, process_ruletaker_questions))
 		status = false;
 	num_threads_reading_context--;
 
@@ -1204,7 +1260,7 @@ bool run_ruletaker_experiments_single_threaded(
 		return true;
 	};
 
-	if (!read_ruletaker_data(data_filepath, process_ruletaker_questions))
+	if (!read_ruletaker_data<ruletaker_label>(data_filepath, process_ruletaker_questions))
 		status = false;
 
 	do_ruletaker_experiments(status, context_queue, question_queue,

@@ -12049,7 +12049,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 				if (!dst.ensure_capacity(dst.length + intersection.length)) {
 					free_all(differences); free_all(first_differences); free_all(intersection);
 					return false;
-				} else if (intersection.length == 1 && intersection[0].key == get_term(root)->quantifier.operand) {
+				} else if (intersection.length == 1 && first->quantifier.variable_type == get_term(root)->quantifier.variable_type && intersection[0].key == get_term(root)->quantifier.operand) {
 					if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, get_term(root), first, nullptr, get_variable_map(root), make_map_from_second_to_dst(intersection[0].value), get_variable_map(first_child))) {
 						free_all(differences); free_all(first_differences); free_all(intersection);
 						return false;
@@ -12733,12 +12733,32 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		if ((first->type == hol_term_type::FOR_ALL || first->type == hol_term_type::EXISTS || first->type == hol_term_type::LAMBDA)
 		 && is_subset((hol_quantifier_type) first->type, second->any_quantifier.quantifier))
 		{
+			hol_term_type dst_variable_type = hol_term_type::FALSE;
+			if (first->quantifier.variable_type == hol_term_type::VARIABLE_PREIMAGE) {
+				if (MapSecondVariablesToFirst) {
+					fprintf(stderr, "subtract ERROR: Detected preimage of preimage.\n");
+					return false;
+				} else {
+					dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				}
+			} else {
+#if !defined(NDEBUG)
+				if (first->quantifier.variable_type != hol_term_type::VARIABLE)
+					fprintf(stderr, "subtract WARNING: Unexpected quantifier variable type.\n");
+#endif
+				if (relabels_variables<LogicalFormSet>::value && MapSecondVariablesToFirst) {
+					dst_variable_type = hol_term_type::VARIABLE_PREIMAGE;
+				} else {
+					dst_variable_type = hol_term_type::VARIABLE;
+				}
+			}
+
 			array<LogicalFormSet> differences(8);
 			subtract<BuiltInPredicates, MapSecondVariablesToFirst>(differences, first->quantifier.operand, second->any_quantifier.operand);
 			if (!dst.ensure_capacity(dst.length + differences.length)) {
 				free_all(differences);
 				return false;
-			} else if (differences.length == 1 && first->quantifier.operand == get_term(differences[0])) {
+			} else if (differences.length == 1 && first->quantifier.variable_type == dst_variable_type && first->quantifier.operand == get_term(differences[0])) {
 				if (!emplace(dst, first, get_variable_map(differences[0]))) {
 					free_all(differences);
 					return false;
@@ -12755,7 +12775,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				}
 				new_term->type = first->type;
 				new_term->reference_count = 1;
-				new_term->quantifier.variable_type = first->quantifier.variable_type;
+				new_term->quantifier.variable_type = dst_variable_type;
 				new_term->quantifier.variable = first->quantifier.variable;
 				new_term->quantifier.operand = get_term(difference);
 				new_term->quantifier.operand->reference_count++;
@@ -13251,40 +13271,51 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				fprintf(stderr, "subtract WARNING: Unexpected quantifier variable type.\n");
 #endif
 			if (relabels_variables<LogicalFormSet>::value) {
-				hol_term* new_term;
-				if (!dst.ensure_capacity(dst.length + 1)
-				 || !new_hol_term(new_term))
-					return false;
-				new_term->type = first->type;
-				new_term->reference_count = 1;
-				new_term->quantifier.variable_type = (MapSecondVariablesToFirst ? hol_term_type::VARIABLE_PREIMAGE : hol_term_type::VARIABLE);
-				new_term->quantifier.variable = first->quantifier.variable;
-				if (relabels_variables<LogicalFormSet>::value && MapSecondVariablesToFirst) {
+				if (!MapSecondVariablesToFirst) {
+					pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+					new_pair.key = first->quantifier.variable;
+					new_pair.value.type = variable_set_type::ANY_EXCEPT;
+					new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
+					if (new_pair.value.any.array == nullptr)
+						return false;
+					new_pair.value.any.array[0] = second->quantifier.variable;
+					new_pair.value.any.length = 1;
+					if (!emplace_scope<false, MapSecondVariablesToFirst>(dst, first, first, second, new_pair)) {
+						free(new_pair);
+						return false;
+					}
+					free(new_pair);
+				} else {
+					hol_term* new_term;
+					if (!dst.ensure_capacity(dst.length + 1)
+					 || !new_hol_term(new_term))
+						return false;
+					new_term->type = first->type;
+					new_term->reference_count = 1;
+					new_term->quantifier.variable_type = hol_term_type::VARIABLE_PREIMAGE;
+					new_term->quantifier.variable = first->quantifier.variable;
 					new_term->quantifier.operand = change_variables_to_preimages(first->quantifier.operand);
 					if (new_term->quantifier.operand == nullptr) {
 						free(new_term);
 						return false;
 					}
-				} else {
-					new_term->quantifier.operand = first->quantifier.operand;
-					new_term->quantifier.operand->reference_count++;
-				}
 
-				pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
-				new_pair.key = (MapSecondVariablesToFirst ? second->quantifier.variable : first->quantifier.variable);
-				new_pair.value.type = variable_set_type::ANY_EXCEPT;
-				new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
-				if (new_pair.value.any.array == nullptr) {
-					free(*new_term); free(new_term);
-					return false;
+					pair<unsigned int, variable_set>& new_pair = *((pair<unsigned int, variable_set>*) alloca(sizeof(pair<unsigned int, variable_set>)));
+					new_pair.key = second->quantifier.variable;
+					new_pair.value.type = variable_set_type::ANY_EXCEPT;
+					new_pair.value.any.array = (unsigned int*) malloc(sizeof(unsigned int));
+					if (new_pair.value.any.array == nullptr) {
+						free(*new_term); free(new_term);
+						return false;
+					}
+					new_pair.value.any.array[0] = first->quantifier.variable;
+					new_pair.value.any.length = 1;
+					if (!emplace_scope<true, MapSecondVariablesToFirst>(dst, new_term, first, second, new_pair)) {
+						free(*new_term); free(new_term);
+						free(new_pair); return false;
+					}
+					free(new_pair);
 				}
-				new_pair.value.any.array[0] = (MapSecondVariablesToFirst ? first->quantifier.variable : second->quantifier.variable);
-				new_pair.value.any.length = 1;
-				if (!emplace_scope<true, MapSecondVariablesToFirst>(dst, new_term, first, second, new_pair)) {
-					free(*new_term); free(new_term);
-					free(new_pair); return false;
-				}
-				free(new_pair);
 			}
 
 			dst_variable_type = hol_term_type::VARIABLE;
@@ -15135,7 +15166,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
 				}
-				new_term->type = first->type;
+				new_term->type = hol_term_type::NOT;
 				new_term->reference_count = 1;
 				new_term->unary.operand = get_term(first_child);
 				new_term->unary.operand->reference_count++;
@@ -15174,7 +15205,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					array<LogicalFormSet> new_first_differences(max(1, first_differences.length * intersection.length));
 					for (LogicalFormSet& new_term : first_differences) {
 						for (pair<hol_term*, array<node_alignment>>& term : intersection) {
-							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(current_intersection), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
 								free_all(intersection); free_all(new_first_differences);
 								free_all(first_differences); free_all(intersections); free_all(differences);
 								free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -15211,7 +15242,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					new_term->type = first->type;
+					new_term->type = hol_term_type::NOT;
 					new_term->reference_count = 1;
 					new_term->unary.operand = get_term(first_difference);
 					new_term->unary.operand->reference_count++;
@@ -15277,7 +15308,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
 				}
-				new_term->type = first->type;
+				new_term->type = get_term(root)->type;
 				new_term->reference_count = 1;
 				new_term->binary.left = get_term(root)->binary.left;
 				new_term->binary.right = get_term(first_child);
@@ -15320,7 +15351,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					array<LogicalFormSet> new_first_differences(max(1, first_differences.length * intersection.length));
 					for (LogicalFormSet& new_term : first_differences) {
 						for (pair<hol_term*, array<node_alignment>>& term : intersection) {
-							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(current_intersection), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
 								free_all(intersection); free_all(new_first_differences);
 								free_all(first_differences); free_all(intersections); free_all(differences);
 								free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -15357,7 +15388,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 						free(*second_any); if (second_any->reference_count == 0) free(second_any);
 						return false;
 					}
-					new_term->type = first->type;
+					new_term->type = get_term(root)->type;
 					new_term->reference_count = 1;
 					new_term->binary.left = get_term(current_intersection)->binary.left;
 					new_term->binary.right = get_term(first_difference);
@@ -15423,7 +15454,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
 				}
-				new_term->type = first->type;
+				new_term->type = hol_term_type::BINARY_APPLICATION;
 				new_term->reference_count = 1;
 				new_term->ternary.first = get_term(root)->ternary.first;
 				new_term->ternary.second = get_term(root)->ternary.second;
@@ -15467,7 +15498,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					array<LogicalFormSet> new_first_differences(max(1, first_differences.length * intersection.length));
 					for (LogicalFormSet& new_term : first_differences) {
 						for (pair<hol_term*, array<node_alignment>>& term : intersection) {
-							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(first_child), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
 								free_all(intersection); free_all(new_first_differences);
 								free_all(first_differences); free_all(first_intersection); free_all(differences);
 								free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -15562,8 +15593,24 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 		case hol_term_type::AND:
 		case hol_term_type::OR:
 			intersection_not_empty = intersect_with_any_right<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst, AvoidEquivalentIntersection>(first_intersection, get_term(root)->array.operands[get_term(root)->array.length - 1], second_any);
-			for (unsigned int i = 0; i < first_intersection.length; i++)
-				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			if (relabels_variables<LogicalFormSet>::value) {
+				array<pair<hol_term*, array<node_alignment>>> intersection(8);
+				intersect<BuiltInPredicates>(intersection, first->array.operands[first->array.length - 1], get_term(root)->array.operands[get_term(root)->array.length - 1]);
+				array<LogicalFormSet> new_first_intersection(max(1, first_intersection.length * intersection.length));
+				for (LogicalFormSet& first_child : first_intersection) {
+					for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+						if (!emplace<false>(new_first_intersection, get_term(first_child), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(first_child))) {
+							free_all(intersection); free_all(new_first_intersection);
+							free_all(first_intersection); free_all(differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					}
+				}
+				free_all(first_intersection); free_all(intersection);
+				swap(new_first_intersection, first_intersection);
+				intersection_not_empty = (first_intersection.length != 0);
+			}
 			if (!ComputeIntersection && intersection_not_empty) {
 				free_all(differences);
 				free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -15592,7 +15639,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
 				}
-				new_term->type = first->type;
+				new_term->type = get_term(root)->type;
 				new_term->reference_count = 1;
 				new_term->array.length = get_term(root)->array.length;
 				new_term->array.operands = (hol_term**) malloc(sizeof(hol_term*) * get_term(root)->array.length);
@@ -15617,11 +15664,43 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 			first_intersection.clear();
 
 			intersect<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst>(first_intersection, get_term(root), second->any.included);
-			for (unsigned int i = 0; i < first_intersection.length; i++)
-				if (!intersect_variable_map(first_intersection[i], get_variable_map(root))) remove(first_intersection, i--);
+			if (relabels_variables<LogicalFormSet>::value) {
+				array<pair<hol_term*, array<node_alignment>>> intersection(8);
+				intersect<BuiltInPredicates>(intersection, first, get_term(root));
+				array<LogicalFormSet> new_intersections(max(1, first_intersection.length * intersection.length));
+				for (LogicalFormSet& current_intersection : first_intersection) {
+					for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+						if (!emplace<false>(new_intersections, get_term(current_intersection), get_variable_map(root), make_map_from_second_to_src(term.value), get_variable_map(current_intersection))) {
+							free_all(intersection); free_all(new_intersections);
+							free_all(first_intersection); free_all(differences);
+							free(*second_any); if (second_any->reference_count == 0) free(second_any);
+							return false;
+						}
+					}
+				}
+				free_all(first_intersection); free_all(intersection);
+				swap(new_intersections, first_intersection);
+			}
 			for (LogicalFormSet& first_child : first_intersection) {
 				array<LogicalFormSet> first_differences(8);
 				subtract_any_right<BuiltInPredicates, MapSecondVariablesToFirst>(first_differences, get_term(first_child)->array.operands[get_term(first_child)->array.length - 1], second_any);
+				if (relabels_variables<LogicalFormSet>::value) {
+					array<pair<hol_term*, array<node_alignment>>> intersection(8);
+					intersect<BuiltInPredicates>(intersection, first->binary.right, get_term(first_child)->binary.right);
+					array<LogicalFormSet> new_first_differences(max(1, first_differences.length * intersection.length));
+					for (LogicalFormSet& new_term : first_differences) {
+						for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+							if (!emplace<false>(new_first_differences, get_term(new_term), get_variable_map(first_child), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+								free_all(intersection); free_all(new_first_differences);
+								free_all(first_differences); free_all(first_intersection); free_all(differences);
+								free(*second_any); if (second_any->reference_count == 0) free(second_any);
+								return false;
+							}
+						}
+					}
+					free_all(first_differences); free_all(intersection);
+					swap(new_first_differences, first_differences);
+				}
 				if (ComputeIntersection && !dst.ensure_capacity(dst.length + first_differences.length)) {
 					free_all(differences); free_all(first_intersection); free_all(first_differences);
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
@@ -15703,7 +15782,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
 				}
-				new_term->type = first->type;
+				new_term->type = get_term(root)->type;
 				new_term->reference_count = 1;
 				new_term->quantifier.variable_type = get_term(root)->quantifier.variable_type;
 				new_term->quantifier.variable = get_term(root)->quantifier.variable;
@@ -16117,7 +16196,7 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 					free(*second_any); if (second_any->reference_count == 0) free(second_any);
 					return false;
 				}
-				new_term->type = first->type;
+				new_term->type = hol_term_type::ANY_QUANTIFIER;
 				new_term->reference_count = 1;
 				new_term->any_quantifier.quantifier = get_term(root)->any_quantifier.quantifier;
 				new_term->any_quantifier.operand = get_term(first_child);
@@ -16749,7 +16828,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 							for (unsigned int i = 0; i < new_left_length - any_length + 1; i++) {
 								bool is_subset_at_i = true;
 								for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
-									is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_left_intersections[i + j][left_indices[i + j]]));
+									is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(new_left_intersections[i + j][left_indices[i + j]]), get_term(any_intersections[j][any_indices[j]]));
 								if (is_subset_at_i) {
 									new_any_length = 0;
 									break;
@@ -16759,7 +16838,7 @@ bool intersect_with_any_array(array<LogicalFormSet>& dst, hol_term* first, hol_t
 							for (unsigned int i = 0; i < new_right_length - any_length + 1; i++) {
 								bool is_subset_at_i = true;
 								for (unsigned int j = 0; j < any_length && is_subset_at_i; j++)
-									is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(any_intersections[j][any_indices[j]]), get_term(new_right_intersections[i + j][right_indices[i + j]]));
+									is_subset_at_i &= is_subset<BuiltInPredicates>(get_term(new_right_intersections[i + j][right_indices[i + j]]), get_term(any_intersections[j][any_indices[j]]));
 								if (is_subset_at_i) {
 									new_any_length = 0;
 									break;

@@ -65,7 +65,6 @@ enum class grammatical_flag : uint_fast16_t {
 	MEASURE,
 	EMPTY_VERB,
 	PASSIVE,
-	BE,
 	COUNT
 };
 
@@ -91,6 +90,17 @@ enum class coordination : uint_fast8_t {
 
 	ANY,
 	NOT_NONE
+};
+
+enum class be_flag : uint_fast8_t {
+	FALSE = 0,
+	COORDINATED,
+	TRUE,
+
+	TRUE_OR_COORDINATED,
+	FALSE_OR_COORDINATED,
+	NOT_COORDINATED,
+	ANY
 };
 
 template<typename Stream>
@@ -132,6 +142,8 @@ static inline bool print_feature(bool& first, grammatical_comparison comp, Strea
 		return print_comma(first, out) && core::print("sup", out);
 	case grammatical_comparison::ANY:
 		return print_comma(first, out) && core::print("{comp,sup}", out);
+	case grammatical_comparison::NOT_COMPARATIVE:
+		return print_comma(first, out) && core::print("~comp", out);
 	case grammatical_comparison::NONE:
 		return true;
 	}
@@ -268,8 +280,6 @@ static inline bool print_feature_name(grammatical_flag flag, Stream& out) {
 		return core::print("empty_verb", out);
 	case grammatical_flag::PASSIVE:
 		return core::print("passive", out);
-	case grammatical_flag::BE:
-		return core::print("be", out);
 	case grammatical_flag::COUNT: break;
 	}
 	fprintf(stderr, "print_feature_name ERROR: Unrecognized grammatical_flag.\n");
@@ -328,6 +338,28 @@ static inline bool print_feature(const char* prefix, bool& first, coordination c
 	return false;
 }
 
+template<typename Stream>
+static inline bool print_feature(bool& first, be_flag coord, Stream& out) {
+	switch (coord) {
+	case be_flag::TRUE:
+		return print_comma(first, out) && core::print("be", out);
+	case be_flag::COORDINATED:
+		return print_comma(first, out) && core::print("be:coord", out);
+	case be_flag::TRUE_OR_COORDINATED:
+		return print_comma(first, out) && core::print("{be,be:coord}", out);
+	case be_flag::FALSE_OR_COORDINATED:
+		return print_comma(first, out) && core::print("(be:coord)", out);
+	case be_flag::NOT_COORDINATED:
+		return print_comma(first, out) && core::print("(be)", out);
+	case be_flag::ANY:
+		return print_comma(first, out) && core::print("be:*", out);
+	case be_flag::FALSE:
+		return true;
+	}
+	fprintf(stderr, "print_feature ERROR: Unrecognized be_flag.\n");
+	return false;
+}
+
 template<typename GrammaticalFlagType>
 static inline bool intersect(GrammaticalFlagType& out, GrammaticalFlagType first, GrammaticalFlagType second)
 {
@@ -382,6 +414,82 @@ static inline bool intersect(coordination& out, coordination first, coordination
 	}
 }
 
+static inline bool intersect(be_flag& out, be_flag first, be_flag second)
+{
+	if (first == be_flag::ANY) {
+		out = second;
+		return true;
+	} else if (second == be_flag::ANY) {
+		out = first;
+		return true;
+	} else if (first == be_flag::TRUE_OR_COORDINATED) {
+		if (second == be_flag::FALSE) {
+			return false;
+		} else if (second == be_flag::FALSE_OR_COORDINATED) {
+			out = be_flag::COORDINATED;
+			return true;
+		} else if (second == be_flag::NOT_COORDINATED) {
+			out = be_flag::TRUE;
+			return true;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == be_flag::TRUE_OR_COORDINATED) {
+		if (first == be_flag::FALSE) {
+			return false;
+		} else if (first == be_flag::FALSE_OR_COORDINATED) {
+			out = be_flag::COORDINATED;
+			return true;
+		} else if (first == be_flag::NOT_COORDINATED) {
+			out = be_flag::TRUE;
+			return true;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == be_flag::FALSE_OR_COORDINATED) {
+		if (second == be_flag::TRUE) {
+			return false;
+		} else if (second == be_flag::NOT_COORDINATED) {
+			out = be_flag::FALSE;
+			return true;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == be_flag::FALSE_OR_COORDINATED) {
+		if (first == be_flag::TRUE) {
+			return false;
+		} else if (first == be_flag::NOT_COORDINATED) {
+			out = be_flag::FALSE;
+			return true;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == be_flag::NOT_COORDINATED) {
+		if (second == be_flag::COORDINATED) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == be_flag::NOT_COORDINATED) {
+		if (first == be_flag::COORDINATED) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
+	} else if (first == second) {
+		out = first;
+		return true;
+	} else {
+		return false;
+	}
+}
+
 static inline bool intersect(auxiliary_flag& out, auxiliary_flag first, auxiliary_flag second)
 {
 	uint_fast8_t result = (uint_fast8_t) auxiliary_flag::ANY & ((uint_fast8_t) first & (uint_fast8_t) second);
@@ -399,6 +507,7 @@ struct grammatical_flags {
 	correlator corr;
 	correlator correlated_by;
 	coordination coord;
+	be_flag be;
 	auxiliary_flag aux;
 	grammatical_mood mood;
 	bool aux_or_subjunctive_or_inf_or_to_inf;
@@ -408,7 +517,7 @@ struct grammatical_flags {
 			index_number(grammatical_num::NONE), concord_number(grammatical_num::NONE),
 			comp(grammatical_comparison::NONE), cnj(grammatical_conjunction::NONE),
 			corr(correlator::NONE), correlated_by(correlator::NONE), coord(coordination::NONE),
-			aux(auxiliary_flag::NONE), mood(grammatical_mood::INDICATIVE),
+			be(be_flag::FALSE), aux(auxiliary_flag::NONE), mood(grammatical_mood::INDICATIVE),
 			aux_or_subjunctive_or_inf_or_to_inf(false), is_first_token_capital(false) { }
 
 	grammatical_flags(const grammatical_flags& src) {
@@ -427,11 +536,12 @@ struct grammatical_flags {
 			 ^ (53 * default_hash(key.corr))
 			 ^ (97 * default_hash(key.correlated_by))
 			 ^ (193 * default_hash(key.coord))
-			 ^ (389 * default_hash(key.flags, (uint_fast8_t) grammatical_flag::COUNT))
-			 ^ (769 * default_hash(key.aux))
-			 ^ (1543 * default_hash(key.mood))
-			 ^ (3079 * default_hash(key.aux_or_subjunctive_or_inf_or_to_inf))
-			 ^ (6151 * default_hash(key.is_first_token_capital));
+			 ^ (389 * default_hash(key.be))
+			 ^ (769 * default_hash(key.flags, (uint_fast8_t) grammatical_flag::COUNT))
+			 ^ (1543 * default_hash(key.aux))
+			 ^ (3079 * default_hash(key.mood))
+			 ^ (6151 * default_hash(key.aux_or_subjunctive_or_inf_or_to_inf))
+			 ^ (12289 * default_hash(key.is_first_token_capital));
 	}
 
 	static inline void swap(grammatical_flags& first, grammatical_flags& second) {
@@ -442,6 +552,7 @@ struct grammatical_flags {
 		core::swap(first.corr, second.corr);
 		core::swap(first.correlated_by, second.correlated_by);
 		core::swap(first.coord, second.coord);
+		core::swap(first.be, second.be);
 		core::swap(first.aux, second.aux);
 		core::swap(first.mood, second.mood);
 		core::swap(first.aux_or_subjunctive_or_inf_or_to_inf, second.aux_or_subjunctive_or_inf_or_to_inf);
@@ -475,6 +586,7 @@ private:
 		corr = src.corr;
 		correlated_by = src.correlated_by;
 		coord = src.coord;
+		be = src.be;
 		aux = src.aux;
 		mood = src.mood;
 		aux_or_subjunctive_or_inf_or_to_inf = src.aux_or_subjunctive_or_inf_or_to_inf;
@@ -493,6 +605,7 @@ inline bool intersect(grammatical_flags& dst,
 	 || !intersect(dst.corr, first.corr, second.corr)
 	 || !intersect(dst.correlated_by, first.correlated_by, second.correlated_by)
 	 || !intersect(dst.coord, first.coord, second.coord)
+	 || !intersect(dst.be, first.be, second.be)
 	 || !intersect(dst.aux, first.aux, second.aux)
 	 || !intersect(dst.mood, first.mood, second.mood))
 		return false;
@@ -567,6 +680,8 @@ struct flagged_logical_form
 		CONSTANT,
 		PREDICATE,
 		PREDICATE_ONLY,
+		OUTER_PREDICATE,
+		INNER_PREDICATE,
 		HEAD_PREDICATE,
 		UNAMBIGUOUS_PREDICATE_ONLY,
 		SET_DEFINITION,
@@ -580,8 +695,6 @@ struct flagged_logical_form
 	enum class function_type {
 		EMPTY = 0,
 		IDENTITY,
-		IDENTITY_PREDICATIVE,
-		IDENTITY_ROOT,
 		SELECT_RIGHT_CONJUNCT,
 		REMOVE_RIGHT_CONJUNCT,
 		SELECT_LEFT_CONJUNCT,
@@ -605,11 +718,14 @@ struct flagged_logical_form
 		REQUIRE_LEFT_PREDICATE_EXIST,
 		REQUIRE_LEFT_GREATEST,
 		REQUIRE_NO_LEFT_PREDICATE_EXIST,
+		REQUIRE_LEFT_PREDICATE_LOCATE,
 		REQUIRE_RIGHT_PREDICATE_IN_SET,
 		REMOVE_INVERSE,
 		REMOVE_GREATEST,
 		REMOVE_CAPABLE_OF,
 		REMOVE_HIGHER_ORDER_PREDICATE,
+		ADD_HIGH_DEGREE,
+		NEGATIVE_TO_HIGH_DEGREE,
 		REMOVE_RIGHT_TRACE,
 		SELECT_RIGHT_ARG1_WITHOUT_HEAD,
 		SELECT_RIGHT_ARG2_WITHOUT_HEAD,
@@ -707,6 +823,7 @@ struct flagged_logical_form
 		REMOVE_LEFT_HEAD_OPERAND,
 		REPLACE_PREDICATIVE_SUBSET_WITH_EQUALITY,
 		REQUIRE_PREDICATE_OF_LAMBDA,
+		REQUIRE_LOCATE_OF_LAMBDA,
 		SELECT_LAMBDA,
 		REMOVE_LAMBDA,
 		SELECT_FUNCTION_WITH_SUBSTITUTION,
@@ -718,6 +835,8 @@ struct flagged_logical_form
 		REQUIRE_PLURAL_REF_IN_SET,
 		REQUIRE_ANIMATE_IN_SET,
 		REQUIRE_ONE_OR_TWO_CONJUNCTS,
+		REQUIRE_RIGHT_ARG2_LAMBDA,
+		REQUIRE_SIZE_LAMBDA,
 
 		/* functions on strings */
 		REQUIRE_CAPITALIZED,
@@ -785,9 +904,7 @@ struct flagged_logical_form
 		REMOVE_EITHER,
 		REMOVE_NEITHER,
 		TRY_REMOVE_CORRELATOR,
-		TRY_REMOVE_CORRELATOR_HEAD,
 		REQUIRE_NO_CORRELATOR,
-		REQUIRE_NO_CORRELATOR_PREDICATIVE,
 		ADD_CORRELATED_BY_BOTH,
 		ADD_CORRELATED_BY_EITHER,
 		ADD_CORRELATED_BY_NEITHER,
@@ -799,7 +916,6 @@ struct flagged_logical_form
 		REQUIRE_PAST_PARTICIPLE,
 		REQUIRE_PRESENT_PARTICIPLE,
 		ADD_NEGATIVE,
-		ADD_NEGATIVE_PREDICATIVE,
 		REQUIRE_NEGATIVE,
 		ADD_ADV,
 		REMOVE_ADV,
@@ -836,7 +952,8 @@ struct flagged_logical_form
 		REQUIRE_NO_PASSIVE,
 		ADD_BE,
 		REMOVE_BE,
-		TRY_REMOVE_BE,
+		TRY_COORDINATE_BE,
+		TRY_REMOVE_COORDINATED_BE,
 		REQUIRE_NO_BE,
 		ADD_AND,
 		ADD_OR,
@@ -848,7 +965,9 @@ struct flagged_logical_form
 		ADD_COMPARATIVE,
 		ADD_SUPERLATIVE,
 		REQUIRE_SUPERLATIVE,
-		REQUIRE_NO_SUPERLATIVE
+		REQUIRE_NO_SUPERLATIVE,
+		TRY_REMOVE_SUPERLATIVE,
+		REMOVE_SUPERLATIVE
 	};
 
 	static const static_pair<feature, const char*> FEATURE_NAMES[];
@@ -934,6 +1053,8 @@ struct flagged_logical_form
 		case feature::CONSTANT:
 		case feature::PREDICATE:
 		case feature::PREDICATE_ONLY:
+		case feature::INNER_PREDICATE:
+		case feature::OUTER_PREDICATE:
 		case feature::HEAD_PREDICATE:
 		case feature::UNAMBIGUOUS_PREDICATE_ONLY:
 		case feature::SET_DEFINITION:
@@ -967,6 +1088,8 @@ const static_pair<typename flagged_logical_form<Formula>::feature, const char*> 
 	{feature::CONSTANT, "constant"},
 	{feature::PREDICATE, "predicate"},
 	{feature::PREDICATE_ONLY, "predicate_only"},
+	{feature::INNER_PREDICATE, "inner_predicate"},
+	{feature::OUTER_PREDICATE, "outer_predicate"},
 	{feature::HEAD_PREDICATE, "head_predicate"},
 	{feature::UNAMBIGUOUS_PREDICATE_ONLY, "unambiguous_predicate_only"},
 	{feature::SET_DEFINITION, "set_definition"},
@@ -981,8 +1104,6 @@ template<typename Formula>
 const static_pair<typename flagged_logical_form<Formula>::function_type, const char*> flagged_logical_form<Formula>::FUNCTION_NAMES[] = {
 	{function_type::EMPTY, "empty"},
 	{function_type::IDENTITY, "identity"},
-	{function_type::IDENTITY_PREDICATIVE, "identity_predicative"},
-	{function_type::IDENTITY_ROOT, "identity_root"},
 	{function_type::SELECT_RIGHT_CONJUNCT, "select_right_conjunct"},
 	{function_type::REMOVE_RIGHT_CONJUNCT, "remove_right_conjunct"},
 	{function_type::SELECT_LEFT_CONJUNCT, "select_left_conjunct"},
@@ -1006,11 +1127,14 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_LEFT_PREDICATE_EXIST, "require_left_predicate_exist"},
 	{function_type::REQUIRE_LEFT_GREATEST, "require_left_greatest"},
 	{function_type::REQUIRE_NO_LEFT_PREDICATE_EXIST, "require_no_left_predicate_exist"},
+	{function_type::REQUIRE_LEFT_PREDICATE_LOCATE, "require_left_predicate_locate"},
 	{function_type::REQUIRE_RIGHT_PREDICATE_IN_SET, "require_right_predicate_in_set"},
 	{function_type::REMOVE_INVERSE, "remove_inverse"},
 	{function_type::REMOVE_GREATEST, "remove_greatest"},
 	{function_type::REMOVE_CAPABLE_OF, "remove_capable_of"},
 	{function_type::REMOVE_HIGHER_ORDER_PREDICATE, "remove_higher_order_predicate"},
+	{function_type::ADD_HIGH_DEGREE, "add_high_degree"},
+	{function_type::NEGATIVE_TO_HIGH_DEGREE, "negative_to_high_degree"},
 	{function_type::REMOVE_RIGHT_TRACE, "remove_right_trace"},
 	{function_type::SELECT_RIGHT_ARG1_WITHOUT_HEAD, "select_right_arg1_without_head"},
 	{function_type::SELECT_RIGHT_ARG2_WITHOUT_HEAD, "select_right_arg2_without_head"},
@@ -1108,6 +1232,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REMOVE_LEFT_HEAD_OPERAND, "remove_left_head_operand"},
 	{function_type::REPLACE_PREDICATIVE_SUBSET_WITH_EQUALITY, "replace_predicative_subset_with_equality"},
 	{function_type::REQUIRE_PREDICATE_OF_LAMBDA, "require_predicate_of_lambda"},
+	{function_type::REQUIRE_LOCATE_OF_LAMBDA, "require_locate_of_lambda"},
 	{function_type::SELECT_LAMBDA, "select_lambda"},
 	{function_type::REMOVE_LAMBDA, "remove_lambda"},
 	{function_type::SELECT_FUNCTION_WITH_SUBSTITUTION, "select_function_with_substitution"},
@@ -1119,6 +1244,8 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_PLURAL_REF_IN_SET, "require_plural_ref_in_set"},
 	{function_type::REQUIRE_ANIMATE_IN_SET, "require_animate_in_set"},
 	{function_type::REQUIRE_ONE_OR_TWO_CONJUNCTS, "require_one_or_two_conjuncts"},
+	{function_type::REQUIRE_RIGHT_ARG2_LAMBDA, "require_right_arg2_lambda"},
+	{function_type::REQUIRE_SIZE_LAMBDA, "require_size_lambda"},
 	{function_type::REQUIRE_CAPITALIZED, "require_capitalized"},
 	{function_type::ADD_SINGULAR, "add_singular"},
 	{function_type::ADD_PLURAL, "add_plural"},
@@ -1182,9 +1309,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REMOVE_EITHER, "remove_either"},
 	{function_type::REMOVE_NEITHER, "remove_neither"},
 	{function_type::TRY_REMOVE_CORRELATOR, "try_remove_correlator"},
-	{function_type::TRY_REMOVE_CORRELATOR_HEAD, "try_remove_correlator_head"},
 	{function_type::REQUIRE_NO_CORRELATOR, "require_no_correlator"},
-	{function_type::REQUIRE_NO_CORRELATOR_PREDICATIVE, "require_no_correlator_predicative"},
 	{function_type::ADD_CORRELATED_BY_BOTH, "add_correlated_by_both"},
 	{function_type::ADD_CORRELATED_BY_EITHER, "add_correlated_by_either"},
 	{function_type::ADD_CORRELATED_BY_NEITHER, "add_correlated_by_neither"},
@@ -1196,7 +1321,6 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_PAST_PARTICIPLE, "require_past_participle"},
 	{function_type::REQUIRE_PRESENT_PARTICIPLE, "require_present_participle"},
 	{function_type::ADD_NEGATIVE, "add_negative"},
-	{function_type::ADD_NEGATIVE_PREDICATIVE, "add_negative_predicative"},
 	{function_type::REQUIRE_NEGATIVE, "require_negative"},
 	{function_type::ADD_ADV, "add_adv"},
 	{function_type::REMOVE_ADV, "remove_adv"},
@@ -1233,7 +1357,8 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_NO_PASSIVE, "require_no_passive"},
 	{function_type::ADD_BE, "add_be"},
 	{function_type::REMOVE_BE, "remove_be"},
-	{function_type::TRY_REMOVE_BE, "try_remove_be"},
+	{function_type::TRY_COORDINATE_BE, "try_coordinate_be"},
+	{function_type::TRY_REMOVE_COORDINATED_BE, "try_remove_coordinated_be"},
 	{function_type::REQUIRE_NO_BE, "require_no_be"},
 	{function_type::ADD_AND, "add_and"},
 	{function_type::ADD_OR, "add_or"},
@@ -1245,7 +1370,9 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::ADD_COMPARATIVE, "add_comparative"},
 	{function_type::ADD_SUPERLATIVE, "add_superlative"},
 	{function_type::REQUIRE_SUPERLATIVE, "require_superlative"},
-	{function_type::REQUIRE_NO_SUPERLATIVE, "require_no_superlative"}
+	{function_type::REQUIRE_NO_SUPERLATIVE, "require_no_superlative"},
+	{function_type::TRY_REMOVE_SUPERLATIVE, "try_remove_superlative"},
+	{function_type::REMOVE_SUPERLATIVE, "remove_superlative"}
 };
 
 inline void initialize_any(grammatical_flags& flags) {
@@ -1256,6 +1383,7 @@ inline void initialize_any(grammatical_flags& flags) {
 	flags.corr = correlator::ANY;
 	flags.correlated_by = correlator::ANY;
 	flags.coord = coordination::ANY;
+	flags.be = be_flag::ANY;
 	flags.aux = auxiliary_flag::ANY;
 	flags.mood = grammatical_mood::ANY;
 	flags.aux_or_subjunctive_or_inf_or_to_inf = false;
@@ -1287,6 +1415,7 @@ inline bool operator == (
 	 || first.corr != second.corr
 	 || first.correlated_by != second.correlated_by
 	 || first.coord != second.coord
+	 || first.be != second.be
 	 || first.aux != second.aux
 	 || first.mood != second.mood
 	 || first.aux_or_subjunctive_or_inf_or_to_inf != second.aux_or_subjunctive_or_inf_or_to_inf
@@ -1331,6 +1460,7 @@ inline bool operator != (
 	 || first.corr != second.corr
 	 || first.correlated_by != second.correlated_by
 	 || first.coord != second.coord
+	 || first.be != second.be
 	 || first.aux != second.aux
 	 || first.mood != second.mood
 	 || first.aux_or_subjunctive_or_inf_or_to_inf != second.aux_or_subjunctive_or_inf_or_to_inf
@@ -1397,6 +1527,7 @@ inline bool print(const grammatical_flags& flags, Stream& out)
 	 || !print_feature("corr", first, flags.corr, out)
 	 || !print_feature("corr_by", first, flags.correlated_by, out)
 	 || !print_feature("coord", first, flags.coord, out)
+	 || !print_feature(first, flags.be, out)
 	 || !print_feature(first, flags.aux, out)
 	 || !print_feature(first, flags.mood, out))
 		return false;
@@ -2778,6 +2909,7 @@ struct referent_iterator
 };
 
 inline bool init(referent_iterator& iterator, hol_term* logical_form) {
+	iterator.max_variable = 0;
 	if (!array_map_init(iterator.referents, 16)) {
 		return false;
 	} else if (!array_map_init(iterator.anaphora, 8)) {
@@ -3404,8 +3536,9 @@ core::free(nonterminal_name_map);
 /* TODO: for debugging; remove this */
 print(CONSOLE_BOLD "Parse result ", stdout); print(i, stdout); print(":\n" CONSOLE_RESET, stdout);
 print(logical_form_output[i], stdout, terminal_printer); print('\n', stdout);
-print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]); print("\n\n", stdout); fflush(stdout);
+print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]);
 			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
+print("\nLog likelihood: ", stdout); print(log_likelihood, stdout); print("\n\n", stdout); fflush(stdout);
 			/* TODO: compute this prior */
 			double log_prior = 0.0; //log_probability<true>(T, logical_form_output[i]);
 			log_probabilities[i] = log_likelihood + log_prior;
@@ -3430,8 +3563,9 @@ core::free(nonterminal_name_map);
 				}
 
 #if !defined(NDEBUG)
+				logical_form_type copy(logical_form_output[i]);
 				if (!populate_inflected_terminals(parsed_syntax[i], seq.tokens)
-				 || !is_parseable(parsed_syntax[i], logical_form_output[i], G, morph, logical_form_output[i], nonterminal_printer, terminal_printer, *this))
+				 || !is_parseable(parsed_syntax[i], logical_form_output[i], G, morph, copy, nonterminal_printer, terminal_printer, *this))
 					fprintf(stderr, "hdp_parser.parse WARNING: Top logical form output is not parseable. This"
 							" is likely due to a bug in a transformation function in the derivation tree.\n");
 #endif
@@ -3801,7 +3935,29 @@ struct hol_tense_constants {
 
 template<typename BuiltInPredicates>
 struct hol_non_head_constants {
-	static const unsigned int CONSTANTS[];
+	static constexpr unsigned int CONSTANTS[]  =  {
+			(unsigned int) BuiltInPredicates::UNKNOWN,
+			(unsigned int) BuiltInPredicates::ARG1,
+			(unsigned int) BuiltInPredicates::ARG2,
+			(unsigned int) BuiltInPredicates::ARG3,
+			(unsigned int) BuiltInPredicates::ARG1_OF,
+			(unsigned int) BuiltInPredicates::ARG2_OF,
+			(unsigned int) BuiltInPredicates::ARG3_OF,
+			(unsigned int) BuiltInPredicates::SIZE,
+			(unsigned int) BuiltInPredicates::PRESENT,
+			(unsigned int) BuiltInPredicates::PRESENT_PROGRESSIVE,
+			(unsigned int) BuiltInPredicates::PRESENT_PERFECT,
+			(unsigned int) BuiltInPredicates::PRESENT_PERFECT_PROGRESSIVE,
+			(unsigned int) BuiltInPredicates::PAST,
+			(unsigned int) BuiltInPredicates::PAST_PROGRESSIVE,
+			(unsigned int) BuiltInPredicates::PAST_PERFECT,
+			(unsigned int) BuiltInPredicates::PAST_PERFECT_PROGRESSIVE,
+			(unsigned int) BuiltInPredicates::FUTURE,
+			(unsigned int) BuiltInPredicates::FUTURE_PROGRESSIVE,
+			(unsigned int) BuiltInPredicates::FUTURE_PERFECT,
+			(unsigned int) BuiltInPredicates::FUTURE_PERFECT_PROGRESSIVE,
+			(unsigned int) BuiltInPredicates::WIDE_SCOPE
+		};
 	static constexpr unsigned int CONSTANT_COUNT = array_length(CONSTANTS);
 
 	hol_term* constants;
@@ -3835,29 +3991,10 @@ struct hol_non_head_constants {
 };
 
 template<typename BuiltInPredicates>
-const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[] =  {
-	(unsigned int) BuiltInPredicates::UNKNOWN,
-	(unsigned int) BuiltInPredicates::ARG1,
-	(unsigned int) BuiltInPredicates::ARG2,
-	(unsigned int) BuiltInPredicates::ARG3,
-	(unsigned int) BuiltInPredicates::ARG1_OF,
-	(unsigned int) BuiltInPredicates::ARG2_OF,
-	(unsigned int) BuiltInPredicates::ARG3_OF,
-	(unsigned int) BuiltInPredicates::SIZE,
-	(unsigned int) BuiltInPredicates::PRESENT,
-	(unsigned int) BuiltInPredicates::PRESENT_PROGRESSIVE,
-	(unsigned int) BuiltInPredicates::PRESENT_PERFECT,
-	(unsigned int) BuiltInPredicates::PRESENT_PERFECT_PROGRESSIVE,
-	(unsigned int) BuiltInPredicates::PAST,
-	(unsigned int) BuiltInPredicates::PAST_PROGRESSIVE,
-	(unsigned int) BuiltInPredicates::PAST_PERFECT,
-	(unsigned int) BuiltInPredicates::PAST_PERFECT_PROGRESSIVE,
-	(unsigned int) BuiltInPredicates::FUTURE,
-	(unsigned int) BuiltInPredicates::FUTURE_PROGRESSIVE,
-	(unsigned int) BuiltInPredicates::FUTURE_PERFECT,
-	(unsigned int) BuiltInPredicates::FUTURE_PERFECT_PROGRESSIVE,
-	(unsigned int) BuiltInPredicates::WIDE_SCOPE
-};
+const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[];
+
+template<typename BuiltInPredicates>
+const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANT_COUNT;
 
 template<typename BuiltInPredicates>
 inline bool is_built_in(unsigned int constant) {
@@ -4056,7 +4193,15 @@ inline hol_term* find_predicate(unsigned int head_variable, hol_term* conjunctio
 	hol_term* predicate = nullptr;
 	head_index first_predicate_index = predicate_index;
 	if (conjunction->type == hol_term_type::ANY_ARRAY) {
-		for (unsigned int i = 0; i < conjunction->any_array.left.length; i++) {
+		for (unsigned int i = 0; i < conjunction->any_array.any.length; i++) {
+			predicate = get_predicate_of_literal<BuiltInPredicates>(conjunction->any_array.any.operands[i], head_variable);
+			if (predicate != nullptr) {
+				predicate_index = {head_position::ANY, i};
+				break;
+			} else if (has_intersection<BuiltInPredicates>(conjunction->any_array.any.operands[i], expected_predicate) && first_predicate_index.position == head_position::NONE) {
+				first_predicate_index = {head_position::ANY, i};
+			}
+		} for (unsigned int i = 0; predicate == nullptr && i < conjunction->any_array.left.length; i++) {
 			predicate = get_predicate_of_literal<BuiltInPredicates>(conjunction->any_array.left.operands[i], head_variable);
 			if (predicate != nullptr) {
 				predicate_index = {head_position::LEFT, i};
@@ -4071,14 +4216,6 @@ inline hol_term* find_predicate(unsigned int head_variable, hol_term* conjunctio
 				break;
 			} else if (has_intersection<BuiltInPredicates>(conjunction->any_array.right.operands[i], expected_predicate) && first_predicate_index.position == head_position::NONE) {
 				first_predicate_index = {head_position::RIGHT, conjunction->any_array.right.length - i - 1};
-			}
-		} for (unsigned int i = 0; predicate == nullptr && i < conjunction->any_array.any.length; i++) {
-			predicate = get_predicate_of_literal<BuiltInPredicates>(conjunction->any_array.any.operands[i], head_variable);
-			if (predicate != nullptr) {
-				predicate_index = {head_position::ANY, i};
-				break;
-			} else if (has_intersection<BuiltInPredicates>(conjunction->any_array.any.operands[i], expected_predicate) && first_predicate_index.position == head_position::NONE) {
-				first_predicate_index = {head_position::ANY, i};
 			}
 		}
 	} else if (conjunction->type == hol_term_type::AND) {
@@ -5181,19 +5318,10 @@ inline bool apply_head(
 					free(*new_formula);
 					dst = src;
 					dst->reference_count++;
-				} else if (new_formula->type == hol_term_type::ANY && new_formula->any.excluded_tree_count == 0) {
-					dst = new_formula;
-				} else if (new_formula->type == hol_term_type::ANY_RIGHT && new_formula->any.excluded_tree_count == 0) {
-					if (src->type == hol_term_type::ANY_RIGHT) {
-						dst = new_formula;
-					} else {
-						dst = hol_term::new_any(new_formula->any.included);
-						if (dst == nullptr) {
-							free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
-							return false;
-						}
-					}
 				} else if (new_formula->type == hol_term_type::ANY || new_formula->type == hol_term_type::ANY_RIGHT) {
+					bool same_as_new_formula = true;
+					if (src->type == hol_term_type::ANY && new_formula->type == hol_term_type::ANY_RIGHT)
+						same_as_new_formula = false;
 					array<hol_term*> excluded(max(1u, new_formula->any.excluded_tree_count + src->any.excluded_tree_count));
 					for (unsigned int i = 0; i < new_formula->any.excluded_tree_count; i++) {
 						hol_term* tree = new_formula->any.excluded_trees[i];
@@ -5212,6 +5340,7 @@ inline bool apply_head(
 							}
 							if (irreducible)
 								excluded[excluded.length++] = tree;
+							else same_as_new_formula = false;
 						}
 					}
 					unsigned int old_excluded_tree_count = excluded.length;
@@ -5230,22 +5359,28 @@ inline bool apply_head(
 									break;
 								}
 							}
-							if (irreducible)
+							if (irreducible) {
 								excluded[excluded.length++] = tree;
+								same_as_new_formula = false;
+							}
 						}
 					}
-					if (src->type == hol_term_type::ANY || new_formula->type == hol_term_type::ANY)
-						dst = hol_term::new_any(new_formula->any.included, excluded.data, excluded.length);
-					else dst = hol_term::new_any_right(new_formula->any.included, excluded.data, excluded.length);
-					if (dst == nullptr) {
+					if (same_as_new_formula) {
+						dst = new_formula;
+					} else {
+						if (src->type == hol_term_type::ANY || new_formula->type == hol_term_type::ANY)
+							dst = hol_term::new_any(new_formula->any.included, excluded.data, excluded.length);
+						else dst = hol_term::new_any_right(new_formula->any.included, excluded.data, excluded.length);
+						if (dst == nullptr) {
+							free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
+							return false;
+						}
+						if (new_formula->any.included != nullptr)
+							new_formula->any.included->reference_count++;
+						for (hol_term* tree : excluded)
+							tree->reference_count++;
 						free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
-						return false;
 					}
-					if (new_formula->any.included != nullptr)
-						new_formula->any.included->reference_count++;
-					for (hol_term* tree : excluded)
-						tree->reference_count++;
-					free(*new_formula); if (new_formula->reference_count == 0) free(new_formula);
 				} else {
 					/* make sure we remove any subtrees that exclude removed quantifiers */
 					array<hol_term*> excluded_trees(max(1u, src->any.excluded_tree_count));
@@ -5355,49 +5490,80 @@ struct head_substituter {
 	bool parent_is_negation;
 	const hol_term* src;
 	hol_term* dst;
+	hol_term* last_quantifier;
 	unsigned int last_declared_variable;
 
 	head_substituter(bool found_wide_scope, bool could_have_wide_scope, bool first_any, const hol_term* src, hol_term* dst) :
-			found_wide_scope(found_wide_scope), could_have_wide_scope(could_have_wide_scope), first_any(first_any), has_any(false), parent_is_negation(false), src(src), dst(dst), last_declared_variable(0) { }
+			found_wide_scope(found_wide_scope), could_have_wide_scope(could_have_wide_scope), first_any(first_any), has_any(false), parent_is_negation(false), src(src), dst(dst), last_quantifier(nullptr), last_declared_variable(0) { }
 };
 
 template<bool AnyRightOnly>
-inline hol_term* wrap_any_right(hol_term* operand, unsigned int prev_declared_variable, bool exclude_wide_scope)
+inline hol_term* wrap_any_right(hol_term* operand, unsigned int prev_declared_variable, bool exclude_wide_scope, hol_term* last_quantifier)
 {
 	if (prev_declared_variable != 0) {
-		unsigned int excluded_tree_count = 3 + (exclude_wide_scope ? 1 : 0);
+		unsigned int excluded_tree_count = 3 + ((exclude_wide_scope || last_quantifier != nullptr) ? 1 : 0);
 		hol_term* excluded_trees[4];
 		excluded_trees[0] = hol_term::new_any(hol_term::new_for_all(prev_declared_variable, &HOL_ANY));
 		excluded_trees[1] = hol_term::new_any(hol_term::new_exists(prev_declared_variable, &HOL_ANY));
 		excluded_trees[2] = hol_term::new_any(hol_term::new_lambda(prev_declared_variable, &HOL_ANY));
 		if (exclude_wide_scope)
 			excluded_trees[3] = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+		else if (last_quantifier != nullptr) {
+			if (last_quantifier->type == hol_term_type::FOR_ALL) {
+				excluded_trees[3] = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_any_right(hol_term::new_for_all(last_quantifier->quantifier.variable, &HOL_ANY))));
+			} else if (last_quantifier->type == hol_term_type::EXISTS) {
+				excluded_trees[3] = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_any_right(hol_term::new_exists(last_quantifier->quantifier.variable, &HOL_ANY))));
+			} else {
+				excluded_trees[3] = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_any_right(hol_term::new_lambda(last_quantifier->quantifier.variable, &HOL_ANY))));
+			}
+		}
 		if (excluded_trees[0] != nullptr) HOL_ANY.reference_count++;
 		if (excluded_trees[1] != nullptr) HOL_ANY.reference_count++;
 		if (excluded_trees[2] != nullptr) HOL_ANY.reference_count++;
-		if (exclude_wide_scope && excluded_trees[3] != nullptr) HOL_ANY.reference_count++;
-		if (excluded_trees[0] == nullptr || excluded_trees[1] == nullptr || excluded_trees[2] == nullptr || (exclude_wide_scope && excluded_trees[3] == nullptr)) {
+		if ((exclude_wide_scope || last_quantifier != nullptr) && excluded_trees[3] != nullptr) {
+			hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+			HOL_ANY.reference_count++;
+		}
+		if (excluded_trees[0] == nullptr || excluded_trees[1] == nullptr || excluded_trees[2] == nullptr || ((exclude_wide_scope || last_quantifier != nullptr) && excluded_trees[3] == nullptr)) {
 			if (excluded_trees[0] != nullptr) { free(*excluded_trees[0]); free(excluded_trees[0]); }
 			if (excluded_trees[1] != nullptr) { free(*excluded_trees[1]); free(excluded_trees[1]); }
 			if (excluded_trees[2] != nullptr) { free(*excluded_trees[2]); free(excluded_trees[2]); }
 			return nullptr;
 		}
-		hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
 
 		hol_term* term;
 		if (AnyRightOnly)
 			term = hol_term::new_any_right_only(operand, excluded_trees, excluded_tree_count);
 		else term = hol_term::new_any_right(operand, excluded_trees, excluded_tree_count);
 		if (term == nullptr) {
-			free(*excluded_trees[0]); free(excluded_trees[0]);
-			free(*excluded_trees[1]); free(excluded_trees[1]);
-			free(*excluded_trees[2]); free(excluded_trees[2]);
-			free(*excluded_trees[3]); free(excluded_trees[3]);
+			for (unsigned int i = 0; i < excluded_tree_count; i++) {
+				free(*excluded_trees[i]); free(excluded_trees[i]);
+			}
 			return nullptr;
 		}
 		return term;
 	} else if (exclude_wide_scope) {
 		hol_term* excluded = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+		if (excluded == nullptr) return nullptr;
+		hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+		HOL_ANY.reference_count++;
+		hol_term* term;
+		if (AnyRightOnly)
+			term = hol_term::new_any_right_only(operand, &excluded, 1);
+		else term = hol_term::new_any_right(operand, &excluded, 1);
+		if (term == nullptr) {
+			free(*excluded); free(excluded);
+			return nullptr;
+		}
+		return term;
+	} else if (last_quantifier != nullptr) {
+		hol_term* excluded;
+		if (last_quantifier->type == hol_term_type::FOR_ALL)
+			excluded = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_any_right(hol_term::new_for_all(last_quantifier->quantifier.variable, &HOL_ANY))));
+		else if (last_quantifier->type == hol_term_type::EXISTS)
+			excluded = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_any_right(hol_term::new_exists(last_quantifier->quantifier.variable, &HOL_ANY))));
+		else
+			excluded = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_any_right(hol_term::new_lambda(last_quantifier->quantifier.variable, &HOL_ANY))));
 		if (excluded == nullptr) return nullptr;
 		hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
 		HOL_ANY.reference_count++;
@@ -5422,31 +5588,39 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 {
 	if (src == substituter.src) {
 		if (AnyNodePosition == any_node_position::LEFT) {
-			if (substituter.dst->type == hol_term_type::ANY || substituter.dst->type == hol_term_type::ANY_RIGHT
+			if (substituter.dst->type == hol_term_type::ANY || substituter.dst->type == hol_term_type::ANY_RIGHT || substituter.dst->type == hol_term_type::ANY_RIGHT_ONLY
 			 || (substituter.dst->type == hol_term_type::UNARY_APPLICATION && substituter.dst->binary.left->type == hol_term_type::CONSTANT && substituter.dst->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE))
 				substituter.could_have_wide_scope = true;
 			if (substituter.has_any || substituter.dst->type == hol_term_type::ANY || substituter.dst->type == hol_term_type::ANY_RIGHT) {
 				if (substituter.src != substituter.dst)
 					substituter.dst->reference_count++;
+				if (substituter.dst->type == hol_term_type::EXISTS || substituter.dst->type == hol_term_type::FOR_ALL || substituter.dst->type == hol_term_type::LAMBDA)
+					substituter.last_quantifier = substituter.dst;
 				return substituter.dst;
 			} else {
-				hol_term* new_term = wrap_any_right<AnyRightOnly>(substituter.dst, substituter.last_declared_variable, substituter.found_wide_scope || (!substituter.could_have_wide_scope && substituter.first_any));
+				hol_term* new_term = wrap_any_right<AnyRightOnly>(substituter.dst, substituter.last_declared_variable, substituter.found_wide_scope || (!substituter.could_have_wide_scope && substituter.first_any), substituter.last_quantifier);
 				substituter.first_any = false;
 				if (new_term == nullptr)
 					return nullptr;
 				substituter.dst->reference_count++;
+				if (substituter.dst->type == hol_term_type::EXISTS || substituter.dst->type == hol_term_type::FOR_ALL || substituter.dst->type == hol_term_type::LAMBDA)
+					substituter.last_quantifier = substituter.dst;
 				return new_term;
 			}
 		} else if (AnyNodePosition == any_node_position::RIGHT && (src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT)) {
-			hol_term* new_term = wrap_any_right<false>(substituter.dst, substituter.last_declared_variable, substituter.found_wide_scope || (!substituter.could_have_wide_scope && substituter.first_any));
+			hol_term* new_term = wrap_any_right<false>(substituter.dst, substituter.last_declared_variable, substituter.found_wide_scope || (!substituter.could_have_wide_scope && substituter.first_any), substituter.last_quantifier);
 			substituter.first_any = false;
 			if (new_term == nullptr)
 				return nullptr;
 			substituter.dst->reference_count++;
+			if (substituter.dst->type == hol_term_type::EXISTS || substituter.dst->type == hol_term_type::FOR_ALL || substituter.dst->type == hol_term_type::LAMBDA)
+				substituter.last_quantifier = substituter.dst;
 			return new_term;
 		}
 		if (substituter.src != substituter.dst)
 			substituter.dst->reference_count++;
+		if (substituter.dst->type == hol_term_type::EXISTS || substituter.dst->type == hol_term_type::FOR_ALL || substituter.dst->type == hol_term_type::LAMBDA)
+			substituter.last_quantifier = substituter.dst;
 		return substituter.dst;
 	}
 
@@ -5480,11 +5654,13 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		if (second == nullptr)
 			return nullptr;
 
-		if (src->type == hol_term_type::UNARY_APPLICATION && src->binary.left->type == hol_term_type::CONSTANT && src->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
+		if (src->type == hol_term_type::UNARY_APPLICATION && src->binary.left->type == hol_term_type::CONSTANT && src->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE) {
 			substituter.could_have_wide_scope = true;
+			substituter.last_quantifier = nullptr;
+		}
 
 		if (AnyNodePosition == any_node_position::RIGHT && src->type == hol_term_type::IF_THEN && second->type != hol_term_type::ANY && second->type != hol_term_type::ANY_RIGHT && second->type != hol_term_type::ANY_RIGHT_ONLY && !has_any) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(second, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(second, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (second != src->binary.right) { free(*second); if (second->reference_count == 0) free(second); }
 				return nullptr;
@@ -5511,7 +5687,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		}
 
 		if (AnyNodePosition == any_node_position::LEFT && src->type == hol_term_type::UNARY_APPLICATION && !has_any) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (new_term != src) { free(*new_term); if (new_term->reference_count == 0) free(new_term); }
 				return nullptr;
@@ -5541,7 +5717,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 			return nullptr;
 
 		if (AnyNodePosition == any_node_position::RIGHT && third->type != hol_term_type::ANY && third->type != hol_term_type::ANY_RIGHT && third->type != hol_term_type::ANY_RIGHT_ONLY) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(third, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(third, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (third != src->unary.operand) { free(*third); if (third->reference_count == 0) free(third); }
 				return nullptr;
@@ -5570,7 +5746,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		}
 
 		if (AnyNodePosition == any_node_position::LEFT && !has_any) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (new_term != src) { free(*new_term); if (new_term->reference_count == 0) free(new_term); }
 				return nullptr;
@@ -5708,9 +5884,11 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		first = apply(src->quantifier.operand, substituter);
 		if (first == nullptr)
 			return nullptr;
+		if (substituter.last_quantifier == nullptr && (first->type == hol_term_type::FOR_ALL || first->type == hol_term_type::EXISTS || first->type == hol_term_type::LAMBDA))
+			substituter.last_quantifier = first;
 
 		if (AnyNodePosition == any_node_position::RIGHT && src->type == hol_term_type::LAMBDA && first->type != hol_term_type::ANY && first->type != hol_term_type::ANY_RIGHT && first->type != hol_term_type::ANY_RIGHT_ONLY) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(first, src->quantifier.variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(first, src->quantifier.variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (first != src->quantifier.operand) { free(*first); if (first->reference_count == 0) free(first); }
 				return nullptr;
@@ -5735,7 +5913,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		}
 
 		if (AnyNodePosition == any_node_position::LEFT && src->type != hol_term_type::LAMBDA && !parent_is_negation && !has_any) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (new_term != src) { free(*new_term); if (new_term->reference_count == 0) free(new_term); }
 				return nullptr;
@@ -5773,7 +5951,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		}
 
 		if (AnyNodePosition == any_node_position::LEFT && src->any_quantifier.quantifier != hol_quantifier_type::EXISTS && !parent_is_negation && !has_any) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (new_term != src) { free(*new_term); if (new_term->reference_count == 0) free(new_term); }
 				return nullptr;
@@ -5801,7 +5979,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 			return nullptr;
 
 		if (AnyNodePosition == any_node_position::RIGHT && first->type != hol_term_type::ANY && first->type != hol_term_type::ANY_RIGHT && first->type != hol_term_type::ANY_RIGHT_ONLY) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(first, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(first, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (first != src->unary.operand) { free(*first); if (first->reference_count == 0) free(first); }
 				return nullptr;
@@ -5821,7 +5999,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		}
 
 		if (AnyNodePosition == any_node_position::LEFT && !has_any) {
-			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope));
+			hol_term* term = wrap_any_right<AnyRightOnly>(new_term, prev_declared_variable, found_wide_scope || (first_any && !substituter.could_have_wide_scope), substituter.last_quantifier);
 			if (term == nullptr) {
 				if (new_term != src) { free(*new_term); if (new_term->reference_count == 0) free(new_term); }
 				return nullptr;
@@ -5842,6 +6020,7 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 		if (first == nullptr)
 			return nullptr;
 		substituter.could_have_wide_scope = true;
+		substituter.last_quantifier = nullptr;
 
 		if (first == src->any.included) {
 			new_term = src;
@@ -6211,17 +6390,18 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 		} else {
 			array<hol_term*> new_excluded(max(1, temp_excluded_trees.length + src->any.excluded_tree_count));
 			for (unsigned int i = 0; i < temp_excluded_trees.length; i++) {
-				bool contains = false;
-				for (unsigned int j = 0; !contains && j < src->any.excluded_tree_count; j++)
-					if (is_subset<built_in_predicates>(temp_excluded_trees[i], src->any.excluded_trees[j])) contains = true;
-				if (!contains)
-					new_excluded[new_excluded.length++] = temp_excluded_trees[i];
+				new_excluded[new_excluded.length++] = temp_excluded_trees[i];
 			} for (unsigned int i = 0; i < src->any.excluded_tree_count; i++) {
 				bool contains = false;
 				for (unsigned int j = 0; !contains && j < temp_excluded_trees.length; j++)
 					if (is_subset<built_in_predicates>(src->any.excluded_trees[i], temp_excluded_trees[j])) contains = true;
-				if (!contains)
-					new_excluded[new_excluded.length++] = src->any.excluded_trees[i];
+				if (contains) continue;
+
+				for (unsigned int j = 0; j < new_excluded.length; j++)
+					if (is_subset<built_in_predicates>(new_excluded[j], src->any.excluded_trees[i]))
+						new_excluded.remove(j--);
+
+				new_excluded[new_excluded.length++] = src->any.excluded_trees[i];
 			}
 
 			if (src->type == hol_term_type::ANY)
@@ -6240,8 +6420,21 @@ inline hol_term* apply(hol_term* src, any_node_remover<TryFindHeadFunction>& rem
 		return new_term;
 
 	case hol_term_type::ANY_RIGHT_ONLY:
-		if (!remover.excluded_trees.append(src->any.excluded_trees, src->any.excluded_tree_count))
+		if (!remover.excluded_trees.ensure_capacity(remover.excluded_trees.length + src->any.excluded_tree_count))
 			return nullptr;
+		for (unsigned int i = 0; i < src->any.excluded_tree_count; i++) {
+			bool contains = false;
+			for (unsigned int j = 0; !contains && j < remover.excluded_trees.length; j++)
+				if (is_subset<built_in_predicates>(src->any.excluded_trees[i], remover.excluded_trees[j])) contains = true;
+			if (contains) continue;
+
+			for (unsigned int j = 0; j < remover.excluded_trees.length; j++)
+				if (is_subset<built_in_predicates>(remover.excluded_trees[j], src->any.excluded_trees[i]))
+					remover.excluded_trees.remove(j--);
+
+			remover.excluded_trees[remover.excluded_trees.length++] = src->any.excluded_trees[i];
+		}
+
 		first = apply(src->any.included, remover);
 		if (first == src->any.included)
 			first->reference_count++;
@@ -6455,18 +6648,35 @@ inline bool select_conjunct(
 					if (intersection.length == 0)
 						return (hol_term*) nullptr;
 					if (is_array) {
-						dst = hol_term::new_any_right(intersection[0]);
-					} else if (SelectNegation && (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT)) {
+						dst = intersection[0];
+					} else if (SelectNegation) {
 						/* in case the head is negated */
-						dst = hol_term::new_any_right(hol_term::new_any_array(hol_term_type::ANY_ARRAY, hol_term::new_any_right(intersection[0]),
-								make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0)));
+						dst = hol_term::new_any_array(hol_term_type::ANY_ARRAY, hol_term::new_any_right(intersection[0]),
+								make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0));
 					} else {
-						dst = hol_term::new_any_right(hol_term::new_any_array(hol_term_type::ANY_ARRAY, intersection[0],
-								make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0)));
+						dst = hol_term::new_any_array(hol_term_type::ANY_ARRAY, intersection[0],
+								make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0));
 					}
 					if (dst == nullptr) {
 						free(*intersection[0]); if (intersection[0]->reference_count == 0) free(intersection[0]);
 						return (hol_term*) nullptr;
+					}
+					if (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) {
+						hol_term* temp = hol_term::new_any_right(dst, head->any.excluded_trees, head->any.excluded_tree_count);
+						if (temp == nullptr) {
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
+						for (unsigned int i = 0; i < head->any.excluded_tree_count; i++)
+							head->any.excluded_trees[i]->reference_count++;
+						dst = temp;
+					} else {
+						hol_term* temp = hol_term::new_any_right(dst);
+						if (temp == nullptr) {
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
+						dst = temp;
 					}
 					return dst;
 				} else if (head->type == hol_term_type::EXISTS && head->quantifier.operand->type == hol_term_type::ANY_ARRAY) {
@@ -6668,51 +6878,218 @@ inline bool remove_conjunct(
 						free(*excluded_trees[i]); if (excluded_trees[i]->reference_count == 0) free(excluded_trees[i]);
 					}
 
-					array<hol_term*> intersection(2);
-					intersect<built_in_predicates>(intersection, dst, head);
-					if (intersection.length > 1) {
-						fprintf(stderr, "remove_conjunct WARNING: Expected intersection size to be 1.\n");
-						for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					/* make sure to remove any irrelevant excluded trees from `head` */
+					array<unsigned int> dst_variables(8);
+					get_free_variables(*dst, dst_variables);
+					if (dst_variables.length > 1) insertion_sort(dst_variables);
+					if (!prune_independent_siblings(dst_variables, siblings)) {
 						free(*dst); if (dst->reference_count == 0) free(dst);
 						return (hol_term*) nullptr;
 					}
+
+					hol_term* head_any = (head->type == hol_term_type::EXISTS ? head->quantifier.operand : head);
+					array<hol_term*> new_excluded_trees(max(1u, head_any->any.excluded_tree_count));
+					for (unsigned int i = 0; i < head_any->any.excluded_tree_count; i++) {
+						hol_term* excluded_tree = head_any->any.excluded_trees[i];
+						if (excluded_tree->type != hol_term_type::ANY || excluded_tree->any.included == nullptr
+						 || !(excluded_tree->any.included->type == hol_term_type::EXISTS || excluded_tree->any.included->type == hol_term_type::FOR_ALL || excluded_tree->any.included->type == hol_term_type::LAMBDA)
+						 || dst_variables.contains(excluded_tree->any.included->quantifier.variable))
+						{
+							new_excluded_trees[new_excluded_trees.length++] = excluded_tree;
+						}
+					}
+
+					hol_term* new_head;
+					if (new_excluded_trees.length == head_any->any.excluded_tree_count) {
+						new_head = head;
+						head->reference_count++;
+					} else {
+						new_head = (head_any->type == hol_term_type::ANY
+								? hol_term::new_any(head_any->any.included, new_excluded_trees.data, new_excluded_trees.length)
+								: hol_term::new_any_right(head_any->any.included, new_excluded_trees.data, new_excluded_trees.length));
+						if (new_head == nullptr) {
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
+						if (head_any->any.included != nullptr)
+							head_any->any.included->reference_count++;
+						for (hol_term* tree : new_excluded_trees)
+							tree->reference_count++;
+
+						if (head->type == hol_term_type::EXISTS) {
+							hol_term* temp = hol_term::new_exists(head->quantifier.variable, new_head);
+							if (temp == nullptr) {
+								free(*dst); if (dst->reference_count == 0) free(dst);
+								free(*new_head); if (new_head->reference_count == 0) free(new_head);
+								return (hol_term*) nullptr;
+							}
+							new_head = temp;
+						}
+					}
+
+					array<hol_term*> intersection(2);
+					intersect<built_in_predicates>(intersection, dst, new_head);
 					free(*dst); if (dst->reference_count == 0) free(dst);
+					free(*new_head); if (new_head->reference_count == 0) free(new_head);
+					if (intersection.length > 1) {
+						fprintf(stderr, "remove_conjunct WARNING: Expected intersection size to be 1.\n");
+						for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+						return (hol_term*) nullptr;
+					}
 					if (intersection.length == 0)
 						return (hol_term*) nullptr;
 					dst = intersection[0];
 				} else if (head->type == hol_term_type::EXISTS && head->quantifier.operand->type == hol_term_type::ANY_ARRAY) {
 					hol_term* operand = head->quantifier.operand;
 
+					hol_term* head_var = hol_term::new_variable(head_variable);
+					if (head_var == nullptr) return (hol_term*) nullptr;
+					constexpr unsigned int excluded_tree_count = 2;
+					hol_term** excluded_trees = (hol_term**) alloca(sizeof(hol_term) * (excluded_tree_count + hol_non_head_constants<built_in_predicates>::count()));
+					excluded_trees[0] = hol_term::new_any(hol_term::new_equals(hol_term::new_apply(hol_term::new_any_constant(
+								(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
+								(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF),
+							&HOL_ANY), head_var));
+					excluded_trees[1] = hol_term::new_any(hol_term::new_exists(head_variable, &HOL_ANY));
+					if (excluded_trees[0] != nullptr) { HOL_ANY.reference_count++; head_var->reference_count++; }
+					if (excluded_trees[1] != nullptr) { HOL_ANY.reference_count++; }
+					if (excluded_trees[0] == nullptr || excluded_trees[1] == nullptr) {
+						if (excluded_trees[0] != nullptr) { free(*excluded_trees[0]); free(excluded_trees[0]); }
+						free(*head_var); free(head_var);
+						return (hol_term*) nullptr;
+					}
+					free(*head_var);
+
+					for (unsigned int i = 0; i < hol_non_head_constants<built_in_predicates>::count(); i++) {
+						excluded_trees[excluded_tree_count + i] = hol_non_head_constants<built_in_predicates>::get_terms()[i];
+						excluded_trees[excluded_tree_count + i]->reference_count++;
+					}
+
+					hol_term* expected_predicate = hol_term::new_apply(
+								hol_term::new_any(nullptr, excluded_trees, excluded_tree_count + hol_non_head_constants<built_in_predicates>::count()), head_var);
+					if (expected_predicate == nullptr) {
+						for (unsigned int i = 0; i < excluded_tree_count + hol_non_head_constants<built_in_predicates>::count(); i++) {
+							free(*excluded_trees[i]); if (excluded_trees[i]->reference_count == 0) free(excluded_trees[i]);
+						}
+						return (hol_term*) nullptr;
+					}
+					head_var->reference_count++;
+
+					hol_term* existing_predicate;
+					if (predicate_index.position == head_position::LEFT) {
+						existing_predicate = operand->any_array.left.operands[predicate_index.index];
+					} else if (predicate_index.position == head_position::RIGHT) {
+						existing_predicate = operand->any_array.right.operands[operand->any_array.right.length - predicate_index.index - 1];
+					} else {
+						existing_predicate = operand->any_array.any.operands[predicate_index.index];
+					}
+					array<hol_term*> new_predicates(2);
+					intersect<built_in_predicates>(new_predicates, expected_predicate, existing_predicate);
+					free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+					if (new_predicates.length == 0) {
+						return (hol_term*) nullptr;
+					} else if (new_predicates.length != 1) {
+						fprintf(stderr, "remove_conjunct ERROR: Intersection is not unique.\n");
+						free_all(new_predicates);
+						return (hol_term*) nullptr;
+					}
+					expected_predicate = new_predicates[0];
+
 					hol_term* conjunction = nullptr;
 					if (ConjunctIndex >= 0) {
 						if (ConjunctIndex < operand->any_array.left.length) {
-							if (predicate_index.position == head_position::LEFT && predicate_index.index == ConjunctIndex)
+							if (predicate_index.position == head_position::LEFT && predicate_index.index == ConjunctIndex) {
 								/* this operation would remove the predicate */
+								free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 								return (hol_term*) nullptr;
-							conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
-									make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
-									make_excluded_array_view(operand->any_array.left.operands, operand->any_array.left.length, ConjunctIndex),
-									make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							}
+							if (predicate_index.position == head_position::LEFT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_replaced_array_view(make_excluded_array_view(operand->any_array.left.operands, operand->any_array.left.length, ConjunctIndex), expected_predicate, (predicate_index.index > ConjunctIndex ? predicate_index.index - 1 : predicate_index.index)),
+										make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							} else if (predicate_index.position == head_position::RIGHT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_excluded_array_view(operand->any_array.left.operands, operand->any_array.left.length, ConjunctIndex),
+										make_replaced_array_view(make_array_view(operand->any_array.right.operands, operand->any_array.right.length), expected_predicate, operand->any_array.right.length - predicate_index.index - 1));
+							} else {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_replaced_array_view(make_array_view(operand->any_array.any.operands, operand->any_array.any.length), expected_predicate, predicate_index.index),
+										make_excluded_array_view(operand->any_array.left.operands, operand->any_array.left.length, ConjunctIndex),
+										make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							}
+						} else if (expected_predicate != existing_predicate) {
+							if (predicate_index.position == head_position::LEFT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_replaced_array_view(make_array_view(operand->any_array.left.operands, operand->any_array.left.length), expected_predicate, predicate_index.index),
+										make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							} else if (predicate_index.position == head_position::RIGHT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
+										make_replaced_array_view(make_array_view(operand->any_array.right.operands, operand->any_array.right.length), expected_predicate, operand->any_array.right.length - predicate_index.index - 1));
+							} else {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_replaced_array_view(make_array_view(operand->any_array.any.operands, operand->any_array.any.length), expected_predicate, predicate_index.index),
+										make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
+										make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							}
 						} else {
 							conjunction = operand;
 						}
 					} else if (ConjunctIndex < 0) {
 						if (-ConjunctIndex - 1 < operand->any_array.right.length) {
 							unsigned int index = (unsigned int) (-ConjunctIndex) - 1;
-							if (predicate_index.position == head_position::RIGHT && predicate_index.index == index)
+							if (predicate_index.position == head_position::RIGHT && predicate_index.index == index) {
 								/* this operation would remove the predicate */
+								free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 								return (hol_term*) nullptr;
+							}
 							index = operand->any_array.right.length - index - 1;
-							conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
-									make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
-									make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
-									make_excluded_array_view(operand->any_array.right.operands, operand->any_array.right.length, index));
+							if (predicate_index.position == head_position::LEFT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_replaced_array_view(make_array_view(operand->any_array.left.operands, operand->any_array.left.length), expected_predicate, predicate_index.index),
+										make_excluded_array_view(operand->any_array.right.operands, operand->any_array.right.length, index));
+							} else if (predicate_index.position == head_position::RIGHT) {
+								unsigned int right_pred_index = operand->any_array.right.length - predicate_index.index - 1;
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
+										make_replaced_array_view(make_excluded_array_view(operand->any_array.right.operands, operand->any_array.right.length, index), expected_predicate, (right_pred_index > index ? right_pred_index - 1 : right_pred_index)));
+							} else {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_replaced_array_view(make_array_view(operand->any_array.any.operands, operand->any_array.any.length), expected_predicate, predicate_index.index),
+										make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
+										make_excluded_array_view(operand->any_array.right.operands, operand->any_array.right.length, index));
+							}
+						} else if (expected_predicate != existing_predicate) {
+							if (predicate_index.position == head_position::LEFT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_replaced_array_view(make_array_view(operand->any_array.left.operands, operand->any_array.left.length), expected_predicate, predicate_index.index),
+										make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							} else if (predicate_index.position == head_position::RIGHT) {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_array_view(operand->any_array.any.operands, operand->any_array.any.length),
+										make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
+										make_replaced_array_view(make_array_view(operand->any_array.right.operands, operand->any_array.right.length), expected_predicate, operand->any_array.right.length - predicate_index.index - 1));
+							} else {
+								conjunction = hol_term::new_any_array(hol_term_type::AND, operand->any_array.all,
+										make_replaced_array_view(make_array_view(operand->any_array.any.operands, operand->any_array.any.length), expected_predicate, predicate_index.index),
+										make_array_view(operand->any_array.left.operands, operand->any_array.left.length),
+										make_array_view(operand->any_array.right.operands, operand->any_array.right.length));
+							}
 						} else {
 							conjunction = operand;
 						}
 					}
-					if (conjunction == nullptr)
+					if (conjunction == nullptr) {
+						free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 						return (hol_term*) nullptr;
+					}
 					if (conjunction == operand) {
 						operand->reference_count++;
 					} else {
@@ -6724,6 +7101,7 @@ inline bool remove_conjunct(
 						for (unsigned int i = 0; i < conjunction->any_array.right.length; i++)
 							conjunction->any_array.right.operands[i]->reference_count++;
 					}
+					free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 
 					dst = hol_term::new_exists(head_variable, conjunction);
 					if (dst == nullptr) {
@@ -6816,6 +7194,7 @@ inline bool select_set_conjunct(
 			predicative_head_finder<built_in_predicates>(lambda_variable),
 			[](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
+				hol_term* old_head = head;
 				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
 					head = head->any.included;
 
@@ -6903,15 +7282,16 @@ inline bool select_set_conjunct(
 				conjunct->reference_count++;
 				free_all(intersection);
 
-				if (IsDstRoot) {
-					/* check that there are no undeclared variables */
-					array<unsigned int> free_variables(4);
-					if (!get_free_variables(*dst, free_variables) || free_variables.length != 0) {
-						free(*dst); free(dst);
+				if ((old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) && can_have_free_variables(*dst)) {
+					hol_term* temp = hol_term::new_any_right(dst, old_head->any.excluded_trees, old_head->any.excluded_tree_count);
+					if (temp == nullptr) {
+						free(*dst); if (dst->reference_count == 0) free(dst);
 						return (hol_term*) nullptr;
 					}
+					for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
+						old_head->any.excluded_trees[i]->reference_count++;
+					dst = temp;
 				}
-
 				return dst;
 			}, no_op()) && dst != nullptr;
 }
@@ -7475,9 +7855,10 @@ inline bool select_conjunct_in_set(
 					new_predicate = new_predicates[0];
 				}
 
-				/* since we are removing the quantifier over `set_variable`,
-				   remove any excluded quantifiers for `set_variable` from
-				   `new_conjunct`, if they exist */
+				/* since we are removing the quantifiers over `set_variable`
+				   and `lambda_variable`, remove any excluded quantifiers for
+				   `set_variable` and `lambda_variable` from `new_conjunct`, if
+				   they exist */
 				hol_term* other_conjunct;
 				if (new_conjunct->type == hol_term_type::ANY || new_conjunct->type == hol_term_type::ANY_RIGHT) {
 					array<hol_term*> excluded_trees(max(1, new_conjunct->any.excluded_tree_count));
@@ -7571,8 +7952,49 @@ inline bool select_conjunct_in_set(
 					dst = new_dst;
 				}
 				if (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) {
-					hol_term* new_dst = hol_term::new_any_right(dst);
+					array<unsigned int> dst_variables(8);
+					get_free_variables(*dst, dst_variables);
+					if (dst_variables.length > 1) insertion_sort(dst_variables);
+					if (!prune_independent_siblings(dst_variables, siblings)) {
+						free(*dst); if (dst->reference_count == 0) free(dst);
+						return (hol_term*) nullptr;
+					}
+
+					array<hol_term*> excluded_trees(max(1u, old_head->any.excluded_tree_count));
+					for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
+						hol_term* excluded_tree = old_head->any.excluded_trees[i];
+						if (excluded_tree->type == hol_term_type::ANY_RIGHT && excluded_tree->any.included != nullptr
+						 && excluded_tree->any.included->type == hol_term_type::UNARY_APPLICATION
+						 && excluded_tree->any.included->binary.left->type == hol_term_type::CONSTANT
+						 && excluded_tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+						 && excluded_tree->any.included->binary.right->type == hol_term_type::ANY_RIGHT
+						 && excluded_tree->any.included->binary.right->any.included != nullptr
+						 && excluded_tree->any.included->binary.right->any.included->type == hol_term_type::EXISTS
+						 && excluded_tree->any.included->binary.right->any.included->quantifier.variable == set_variable)
+						{
+							excluded_trees[excluded_trees.length] = hol_term::new_any_right(hol_term::new_apply(
+									&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value,
+									hol_term::new_any_right(hol_term::new_exists(element_variable, &HOL_ANY))));
+							if (excluded_trees[excluded_trees.length] == nullptr) {
+								free_all(excluded_trees);
+								free(*dst); free(dst);
+								return (hol_term*) nullptr;
+							}
+							hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+							HOL_ANY.reference_count++;
+							excluded_trees.length++;
+						} else if (excluded_tree->type != hol_term_type::ANY || excluded_tree->any.included == nullptr
+								|| !(excluded_tree->any.included->type == hol_term_type::EXISTS || excluded_tree->any.included->type == hol_term_type::FOR_ALL || excluded_tree->any.included->type == hol_term_type::LAMBDA)
+								|| dst_variables.contains(excluded_tree->any.included->quantifier.variable))
+						{
+							excluded_trees[excluded_trees.length++] = excluded_tree;
+							excluded_tree->reference_count++;
+						}
+					}
+
+					hol_term* new_dst = hol_term::new_any_right(dst, excluded_trees.data, excluded_trees.length);
 					if (new_dst == nullptr) {
+						free_all(excluded_trees);
 						free(*dst); free(dst);
 						return (hol_term*) nullptr;
 					}
@@ -8682,7 +9104,7 @@ inline bool select_only_conjunct_in_set_predicative(
 			}, no_op()) && dst != nullptr;
 }
 
-template<int_fast8_t PredicateIndex>
+template<int_fast8_t PredicateIndex, uint_fast8_t ConjunctCount = UINT_FAST8_MAX>
 inline bool require_predicate(
 		hol_term* src, hol_term*& dst,
 		hol_term* predicate)
@@ -8757,62 +9179,75 @@ inline bool require_predicate(
 					}
 
 					hol_term* conjunction;
-					if (!new_hol_term(conjunction)) return (hol_term*) nullptr;
-					conjunction->type = hol_term_type::ANY_ARRAY;
-					conjunction->reference_count = 1;
-					conjunction->any_array.oper = hol_term_type::AND;
-					conjunction->any_array.all = conjunct;
-					if (PredicateIndex >= 0 && PredicateIndex != INT_FAST8_MAX) {
-						conjunction->any_array.left.length = PredicateIndex + 1;
-						conjunction->any_array.left.operands = (hol_term**) malloc(sizeof(hol_term*) * (PredicateIndex + 1));
-						if (conjunction->any_array.left.operands == nullptr) {
+					if (ConjunctCount == UINT_FAST8_MAX) {
+						if (!new_hol_term(conjunction)) {
+							free(*conjunct); free(conjunct);
+							return (hol_term*) nullptr;
+						}
+						conjunction->type = hol_term_type::ANY_ARRAY;
+						conjunction->reference_count = 1;
+						conjunction->any_array.oper = hol_term_type::AND;
+						conjunction->any_array.all = conjunct;
+						if (PredicateIndex >= 0 && PredicateIndex != INT_FAST8_MAX) {
+							conjunction->any_array.left.length = PredicateIndex + 1;
+							conjunction->any_array.left.operands = (hol_term**) malloc(sizeof(hol_term*) * (PredicateIndex + 1));
+							if (conjunction->any_array.left.operands == nullptr) {
+								free(conjunction); free(*conjunct); free(conjunct);
+								return (hol_term*) nullptr;
+							}
+							for (unsigned int i = 0; i < PredicateIndex; i++)
+								conjunction->any_array.left.operands[i] = conjunct;
+							conjunction->any_array.left.operands[PredicateIndex] = current_predicate;
+							conjunction->any_array.right.length = 0;
+							conjunction->any_array.right.operands = nullptr;
+							conjunction->any_array.any.length = 0;
+							conjunction->any_array.any.operands = nullptr;
+							conjunct->reference_count += 1 + PredicateIndex;
+						} else if (PredicateIndex < 0) {
+							unsigned int index = (unsigned int) (-PredicateIndex) - 1;
+							conjunction->any_array.right.length = index + 1;
+							conjunction->any_array.right.operands = (hol_term**) malloc(sizeof(hol_term*) * (index + 1));
+							if (conjunction->any_array.right.operands == nullptr) {
+								free(conjunction); free(*conjunct); free(conjunct);
+								return (hol_term*) nullptr;
+							}
+							for (unsigned int i = 1; i < index + 1; i++)
+								conjunction->any_array.right.operands[i] = conjunct;
+							conjunction->any_array.right.operands[0] = current_predicate;
+							conjunction->any_array.left.length = 0;
+							conjunction->any_array.left.operands = nullptr;
+							conjunction->any_array.any.length = 0;
+							conjunction->any_array.any.operands = nullptr;
+							conjunct->reference_count += 1 + index;
+						} else if (PredicateIndex == INT_FAST8_MAX) {
+							conjunction->any_array.left.length = 0;
+							conjunction->any_array.left.operands = nullptr;
+							conjunction->any_array.right.length = 0;
+							conjunction->any_array.right.operands = nullptr;
+							conjunction->any_array.any.length = 1;
+							conjunction->any_array.any.operands = (hol_term**) malloc(sizeof(hol_term*) * 1);
+							if (conjunction->any_array.any.operands == nullptr) {
+								free(conjunction); free(*conjunct); free(conjunct);
+								return (hol_term*) nullptr;
+							}
+							conjunction->any_array.any.operands[0] = current_predicate;
+							conjunct->reference_count += 1;
+						} else {
+							fprintf(stderr, "require_predicate ERROR: Unsupported value of `PredicateIndex`.\n");
 							free(conjunction); free(*conjunct); free(conjunct);
 							return (hol_term*) nullptr;
 						}
-						for (unsigned int i = 0; i < PredicateIndex; i++)
-							conjunction->any_array.left.operands[i] = conjunct;
-						conjunction->any_array.left.operands[PredicateIndex] = current_predicate;
-						conjunction->any_array.right.length = 0;
-						conjunction->any_array.right.operands = nullptr;
-						conjunction->any_array.any.length = 0;
-						conjunction->any_array.any.operands = nullptr;
-						conjunct->reference_count += 1 + PredicateIndex;
-					} else if (PredicateIndex < 0) {
-						unsigned int index = (unsigned int) (-PredicateIndex) - 1;
-						conjunction->any_array.right.length = index + 1;
-						conjunction->any_array.right.operands = (hol_term**) malloc(sizeof(hol_term*) * (index + 1));
-						if (conjunction->any_array.right.operands == nullptr) {
-							free(conjunction); free(*conjunct); free(conjunct);
-							return (hol_term*) nullptr;
-						}
-						for (unsigned int i = 1; i < index + 1; i++)
-							conjunction->any_array.right.operands[i] = conjunct;
-						conjunction->any_array.right.operands[0] = current_predicate;
-						conjunction->any_array.left.length = 0;
-						conjunction->any_array.left.operands = nullptr;
-						conjunction->any_array.any.length = 0;
-						conjunction->any_array.any.operands = nullptr;
-						conjunct->reference_count += 1 + index;
-					} else if (PredicateIndex == INT_FAST8_MAX) {
-						conjunction->any_array.left.length = 0;
-						conjunction->any_array.left.operands = nullptr;
-						conjunction->any_array.right.length = 0;
-						conjunction->any_array.right.operands = nullptr;
-						conjunction->any_array.any.length = 1;
-						conjunction->any_array.any.operands = (hol_term**) malloc(sizeof(hol_term*) * 1);
-						if (conjunction->any_array.any.operands == nullptr) {
-							free(conjunction); free(*conjunct); free(conjunct);
-							return (hol_term*) nullptr;
-						}
-						conjunction->any_array.any.operands[0] = current_predicate;
-						conjunct->reference_count += 1;
+						free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
+						current_predicate->reference_count++;
 					} else {
-						fprintf(stderr, "require_predicate ERROR: Unsupported value of `PredicateIndex`.\n");
-						free(conjunction); free(*conjunct); free(conjunct);
-						return (hol_term*) nullptr;
+						conjunction = hol_term::new_and(make_replaced_array_view(make_repeated_array_view(conjunct, ConjunctCount), current_predicate, index));
+						if (conjunction == nullptr) {
+							free(*conjunct); free(conjunct);
+							return (hol_term*) nullptr;
+						}
+						for (unsigned int i = 0; i < conjunction->array.length; i++)
+							conjunction->array.operands[i]->reference_count++;
 					}
-					free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
-					current_predicate->reference_count++;
 
 					dst = hol_term::new_exists(head_variable, conjunction);
 					if (dst == nullptr) {
@@ -8824,7 +9259,7 @@ inline bool require_predicate(
 					intersect<built_in_predicates>(intersection, dst, head);
 					if (intersection.length > 1) {
 						fprintf(stderr, "require_predicate ERROR: Expected intersection size to be 1.\n");
-						for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+						free_all(intersection);
 						free(*dst); if (dst->reference_count == 0) free(dst);
 						return (hol_term*) nullptr;
 					}
@@ -8853,101 +9288,129 @@ inline bool require_predicate(
 					} else {
 						predicate = operand->any_array.any.operands[predicate_index.index];
 					}
-					array<hol_term*> intersection(2);
-					intersect<built_in_predicates>(intersection, predicate, current_predicate);
-					if (intersection.length > 1) {
-						fprintf(stderr, "require_predicate ERROR: Expected intersection size to be 1.\n");
-						for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-						return (hol_term*) nullptr;
-					}
-					if (intersection.length == 0)
-						return (hol_term*) nullptr;
 
-					if (intersection[0] == predicate) {
-						for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-						dst = head;
-						head->reference_count++;
-					} else {
-						hol_term* conjunction;
-						if (!new_hol_term(conjunction)) {
-							for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+					if (ConjunctCount != UINT_FAST8_MAX) {
+						unsigned int index = (PredicateIndex >= 0 ? PredicateIndex : ConjunctCount + PredicateIndex);
+						hol_term* conjunction = hol_term::new_and(make_replaced_array_view(make_repeated_array_view(&HOL_ANY, ConjunctCount), current_predicate, index));
+						if (conjunction == nullptr)
+							return (hol_term*) nullptr;
+						for (unsigned int i = 0; i < conjunction->array.length; i++)
+							conjunction->array.operands[i]->reference_count++;
+
+						array<hol_term*> intersection(2);
+						intersect<built_in_predicates>(intersection, conjunction, operand);
+						free(*conjunction); if (conjunction->reference_count == 0) free(conjunction);
+						if (intersection.length == 0) {
+							return (hol_term*) nullptr;
+						} else if (intersection.length != 1) {
+							fprintf(stderr, "require_predicate ERROR: Expected intersection size to be 1.\n");
+							free_all(intersection);
 							return (hol_term*) nullptr;
 						}
-						conjunction->type = hol_term_type::ANY_ARRAY;
-						conjunction->reference_count = 1;
-						conjunction->any_array.oper = hol_term_type::AND;
-						conjunction->any_array.all = operand->any_array.all;
-						conjunction->any_array.all->reference_count++;
-						conjunction->any_array.left.length = 0;
-						conjunction->any_array.left.operands = nullptr;
-						conjunction->any_array.right.length = 0;
-						conjunction->any_array.right.operands = nullptr;
-						conjunction->any_array.any.length = 0;
-						conjunction->any_array.any.operands = nullptr;
 
-						conjunction->any_array.left.length = operand->any_array.left.length;
-						if (conjunction->any_array.left.length == 0) {
-							conjunction->any_array.left.operands = nullptr;
-						} else {
-							conjunction->any_array.left.operands = (hol_term**) malloc(sizeof(hol_term*) * conjunction->any_array.left.length);
-							if (conjunction->any_array.left.operands == nullptr) {
-								for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-								free(*conjunction); free(conjunction);
-								return (hol_term*) nullptr;
-							}
-							for (unsigned int i = 0; i < conjunction->any_array.left.length; i++) {
-								if (predicate_index.position == head_position::LEFT && predicate_index.index == i) {
-									conjunction->any_array.left.operands[i] = intersection[0];
-								} else {
-									conjunction->any_array.left.operands[i] = operand->any_array.left.operands[i];
-								}
-								conjunction->any_array.left.operands[i]->reference_count++;
-							}
-						}
-						conjunction->any_array.right.length = operand->any_array.right.length;
-						if (conjunction->any_array.right.length == 0) {
-							conjunction->any_array.right.operands = nullptr;
-						} else {
-							conjunction->any_array.right.operands = (hol_term**) malloc(sizeof(hol_term*) * conjunction->any_array.right.length);
-							if (conjunction->any_array.right.operands == nullptr) {
-								for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-								free(*conjunction); free(conjunction);
-								return (hol_term*) nullptr;
-							}
-							for (unsigned int i = 0; i < conjunction->any_array.right.length; i++) {
-								if (predicate_index.position == head_position::RIGHT && predicate_index.index == conjunction->any_array.right.length - i - 1) {
-									conjunction->any_array.right.operands[i] = intersection[0];
-								} else {
-									conjunction->any_array.right.operands[i] = operand->any_array.right.operands[i];
-								}
-								conjunction->any_array.right.operands[i]->reference_count++;
-							}
-						}
-						conjunction->any_array.any.length = operand->any_array.any.length;
-						if (conjunction->any_array.any.length == 0) {
-							conjunction->any_array.any.operands = nullptr;
-						} else {
-							conjunction->any_array.any.operands = (hol_term**) malloc(sizeof(hol_term*) * conjunction->any_array.any.length);
-							if (conjunction->any_array.any.operands == nullptr) {
-								for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-								free(*conjunction); free(conjunction);
-								return (hol_term*) nullptr;
-							}
-							for (unsigned int i = 0; i < conjunction->any_array.any.length; i++) {
-								if (predicate_index.position == head_position::ANY && predicate_index.index == i) {
-									conjunction->any_array.any.operands[i] = intersection[0];
-								} else {
-									conjunction->any_array.any.operands[i] = operand->any_array.any.operands[i];
-								}
-								conjunction->any_array.any.operands[i]->reference_count++;
-							}
-						}
-						for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-
-						dst = hol_term::new_exists(head->quantifier.variable, conjunction);
+						dst = hol_term::new_exists(head->quantifier.variable, intersection[0]);
 						if (dst == nullptr) {
-							free(*conjunction); free(conjunction);
+							free_all(intersection);
 							return (hol_term*) nullptr;
+						}
+
+					} else {
+						array<hol_term*> intersection(2);
+						intersect<built_in_predicates>(intersection, predicate, current_predicate);
+						if (intersection.length == 0) {
+							return (hol_term*) nullptr;
+						} else if (intersection.length != 1) {
+							fprintf(stderr, "require_predicate ERROR: Expected intersection size to be 1.\n");
+							free_all(intersection);
+							return (hol_term*) nullptr;
+						}
+
+						if (intersection[0] == predicate) {
+							free_all(intersection);
+							dst = head;
+							head->reference_count++;
+						} else {
+							hol_term* conjunction;
+							if (!new_hol_term(conjunction)) {
+								free_all(intersection);
+								return (hol_term*) nullptr;
+							}
+							conjunction->type = hol_term_type::ANY_ARRAY;
+							conjunction->reference_count = 1;
+							conjunction->any_array.oper = hol_term_type::AND;
+							conjunction->any_array.all = operand->any_array.all;
+							conjunction->any_array.all->reference_count++;
+							conjunction->any_array.left.length = 0;
+							conjunction->any_array.left.operands = nullptr;
+							conjunction->any_array.right.length = 0;
+							conjunction->any_array.right.operands = nullptr;
+							conjunction->any_array.any.length = 0;
+							conjunction->any_array.any.operands = nullptr;
+
+							conjunction->any_array.left.length = operand->any_array.left.length;
+							if (conjunction->any_array.left.length == 0) {
+								conjunction->any_array.left.operands = nullptr;
+							} else {
+								conjunction->any_array.left.operands = (hol_term**) malloc(sizeof(hol_term*) * conjunction->any_array.left.length);
+								if (conjunction->any_array.left.operands == nullptr) {
+									free_all(intersection);
+									free(*conjunction); free(conjunction);
+									return (hol_term*) nullptr;
+								}
+								for (unsigned int i = 0; i < conjunction->any_array.left.length; i++) {
+									if (predicate_index.position == head_position::LEFT && predicate_index.index == i) {
+										conjunction->any_array.left.operands[i] = intersection[0];
+									} else {
+										conjunction->any_array.left.operands[i] = operand->any_array.left.operands[i];
+									}
+									conjunction->any_array.left.operands[i]->reference_count++;
+								}
+							}
+							conjunction->any_array.right.length = operand->any_array.right.length;
+							if (conjunction->any_array.right.length == 0) {
+								conjunction->any_array.right.operands = nullptr;
+							} else {
+								conjunction->any_array.right.operands = (hol_term**) malloc(sizeof(hol_term*) * conjunction->any_array.right.length);
+								if (conjunction->any_array.right.operands == nullptr) {
+									free_all(intersection);
+									free(*conjunction); free(conjunction);
+									return (hol_term*) nullptr;
+								}
+								for (unsigned int i = 0; i < conjunction->any_array.right.length; i++) {
+									if (predicate_index.position == head_position::RIGHT && predicate_index.index == conjunction->any_array.right.length - i - 1) {
+										conjunction->any_array.right.operands[i] = intersection[0];
+									} else {
+										conjunction->any_array.right.operands[i] = operand->any_array.right.operands[i];
+									}
+									conjunction->any_array.right.operands[i]->reference_count++;
+								}
+							}
+							conjunction->any_array.any.length = operand->any_array.any.length;
+							if (conjunction->any_array.any.length == 0) {
+								conjunction->any_array.any.operands = nullptr;
+							} else {
+								conjunction->any_array.any.operands = (hol_term**) malloc(sizeof(hol_term*) * conjunction->any_array.any.length);
+								if (conjunction->any_array.any.operands == nullptr) {
+									free_all(intersection);
+									free(*conjunction); free(conjunction);
+									return (hol_term*) nullptr;
+								}
+								for (unsigned int i = 0; i < conjunction->any_array.any.length; i++) {
+									if (predicate_index.position == head_position::ANY && predicate_index.index == i) {
+										conjunction->any_array.any.operands[i] = intersection[0];
+									} else {
+										conjunction->any_array.any.operands[i] = operand->any_array.any.operands[i];
+									}
+									conjunction->any_array.any.operands[i]->reference_count++;
+								}
+							}
+							free_all(intersection);
+
+							dst = hol_term::new_exists(head->quantifier.variable, conjunction);
+							if (dst == nullptr) {
+								free(*conjunction); free(conjunction);
+								return (hol_term*) nullptr;
+							}
 						}
 					}
 				} else {
@@ -8966,6 +9429,13 @@ inline bool require_predicate(
 
 					if (operand->type != hol_term_type::AND && predicate_index.index != 0)
 						return (hol_term*) nullptr;
+
+					if (ConjunctCount != UINT_FAST8_MAX) {
+						if (operand->type == hol_term_type::AND && operand->array.length != ConjunctCount)
+							return (hol_term*) nullptr;
+						if (operand->type != hol_term_type::AND && ConjunctCount != 1)
+							return (hol_term*) nullptr;
+					}
 
 					hol_term* predicate = (operand->type == hol_term_type::AND ? operand->array.operands[predicate_index.index] : operand);
 					array<hol_term*> intersection(2);
@@ -9043,6 +9513,7 @@ inline bool require_predicate(
 	for (auto entry : predicates) {
 		free(*entry.value); if (entry.value->reference_count == 0) free(entry.value);
 	}
+	if (!result) return false;
 	if (src->type == hol_term_type::LAMBDA && !(dst->type == hol_term_type::LAMBDA && dst->quantifier.variable == src->quantifier.variable)) {
 		hol_term* temp = hol_term::new_lambda(src->quantifier.variable, dst);
 		if (temp == nullptr) {
@@ -9051,7 +9522,7 @@ inline bool require_predicate(
 		}
 		dst = temp;
 	}
-	return result;
+	return true;
 }
 
 inline bool require_no_inverse(hol_term* src, hol_term*& dst)
@@ -9191,28 +9662,69 @@ inline bool require_left_greatest(hol_term* src, hol_term*& dst)
 
 inline bool require_no_left_predicate_exist(hol_term* src, hol_term*& dst)
 {
-	hol_term* hol_exist = &HOL_EXIST;
+	hol_term** excluded_constants = (hol_term**) malloc(sizeof(hol_term*) * (hol_non_head_constants<built_in_predicates>::count() + 1));
+	if (excluded_constants == nullptr) {
+		fprintf(stderr, "require_no_predicate_same ERROR: Out of memory.\n");
+		return false;
+	}
+	for (unsigned int i = 0; i < hol_non_head_constants<built_in_predicates>::count(); i++)
+		excluded_constants[i] = hol_non_head_constants<built_in_predicates>::get_terms()[i];
+	excluded_constants[hol_non_head_constants<built_in_predicates>::count()] = &hol_term::constants<(unsigned int) built_in_predicates::EXIST>::value;
+
 	hol_term* predicate = hol_term::new_apply(
-			hol_term::new_any(nullptr, &hol_exist, 1),
+			hol_term::new_any(nullptr, excluded_constants, hol_non_head_constants<built_in_predicates>::count() + 1),
 			&hol_term::variables<0>::value);
-	if (predicate == nullptr) return false;
+	if (predicate == nullptr) {
+		free(excluded_constants);
+		return false;
+	}
+	hol_non_head_constants<built_in_predicates>::increment_terms();
+	hol_term::constants<(unsigned int) built_in_predicates::EXIST>::value.reference_count++;
 	hol_term::variables<0>::value.reference_count++;
-	HOL_EXIST.reference_count++;
+	free(excluded_constants);
 
 	bool result = require_predicate<0>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
 	return result;
 }
 
+inline bool require_left_predicate_locate(hol_term* src, hol_term*& dst)
+{
+	hol_term* predicate = hol_term::new_apply(
+			&hol_term::constants<(unsigned int) built_in_predicates::LOCATE>::value,
+			&hol_term::variables<0>::value);
+	if (predicate == nullptr)
+		return false;
+	hol_term::constants<(unsigned int) built_in_predicates::LOCATE>::value.reference_count++;
+	hol_term::variables<0>::value.reference_count++;
+
+	bool result = require_predicate<0, 2>(src, dst, predicate);
+	free(*predicate); if (predicate->reference_count == 0) free(predicate);
+	return result;
+}
+
 inline bool require_no_predicate_empty(hol_term* src, hol_term*& dst)
 {
-	hol_term* hol_empty = &HOL_EMPTY;
+	hol_term** excluded_constants = (hol_term**) malloc(sizeof(hol_term*) * (hol_non_head_constants<built_in_predicates>::count() + 1));
+	if (excluded_constants == nullptr) {
+		fprintf(stderr, "require_no_predicate_same ERROR: Out of memory.\n");
+		return false;
+	}
+	for (unsigned int i = 0; i < hol_non_head_constants<built_in_predicates>::count(); i++)
+		excluded_constants[i] = hol_non_head_constants<built_in_predicates>::get_terms()[i];
+	excluded_constants[hol_non_head_constants<built_in_predicates>::count()] = &hol_term::constants<(unsigned int) built_in_predicates::EMPTY>::value;
+
 	hol_term* predicate = hol_term::new_apply(
-			hol_term::new_any(nullptr, &hol_empty, 1),
+			hol_term::new_any(nullptr, excluded_constants, hol_non_head_constants<built_in_predicates>::count() + 1),
 			&hol_term::variables<0>::value);
-	if (predicate == nullptr) return false;
+	if (predicate == nullptr) {
+		free(excluded_constants);
+		return false;
+	}
+	hol_non_head_constants<built_in_predicates>::increment_terms();
+	hol_term::constants<(unsigned int) built_in_predicates::EMPTY>::value.reference_count++;
 	hol_term::variables<0>::value.reference_count++;
-	HOL_EMPTY.reference_count++;
+	free(excluded_constants);
 
 	bool result = require_predicate<INT_FAST8_MAX>(src, dst, predicate);
 	free(*predicate); if (predicate->reference_count == 0) free(predicate);
@@ -9616,8 +10128,8 @@ inline bool require_predicate_in_set(hol_term* src, hol_term*& dst)
 	return result;
 }
 
-template<unsigned int Predicate>
-inline bool remove_higher_order_predicate(
+template<unsigned int SrcPredicate, unsigned int DstPredicate>
+inline bool apply_higher_order_predicate(
 		hol_term* src, hol_term*& dst)
 {
 	array<hol_term*> siblings(8);
@@ -9656,58 +10168,71 @@ inline bool remove_higher_order_predicate(
 						predicate = operand->any_array.any.operands[predicate_index.index];
 					}
 
-					hol_term* expected_predicate = hol_term::new_apply(
-							hol_term::new_apply(
-								(Predicate == UINT_MAX
-									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
-									: &hol_term::constants<Predicate>::value),
-								&HOL_ANY),
-							hol_term::new_variable(head_variable));
-					if (expected_predicate == nullptr) return (hol_term*) nullptr;
-					HOL_ANY.reference_count++;
-					if (Predicate != UINT_MAX)
-						hol_term::constants<Predicate>::value.reference_count++;
+					hol_term* expected_predicate;
+					if (SrcPredicate != 0) {
+						expected_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									(SrcPredicate == UINT_MAX
+										? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
+										: &hol_term::constants<SrcPredicate>::value),
+									&HOL_ANY),
+								hol_term::new_variable(head_variable));
+						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+						HOL_ANY.reference_count++;
+						if (SrcPredicate != UINT_MAX)
+							hol_term::constants<SrcPredicate>::value.reference_count++;
+					} else {
+						expected_predicate = hol_term::new_apply(
+								hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+								hol_term::new_variable(head_variable));
+						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+					}
 
-					if (!has_intersection<built_in_predicates>(expected_predicate, predicate)) {
-						free(*expected_predicate); free(expected_predicate);
+					array<hol_term*> intersection(2);
+					intersect<built_in_predicates>(intersection, expected_predicate, predicate);
+					free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+					if (intersection.length == 0) {
+						return (hol_term*) nullptr;
+					} else if (intersection.length != 1) {
+						fprintf(stderr, "apply_higher_order_predicate ERROR: Intersection is not unique.\n");
+						free_all(intersection);
 						return (hol_term*) nullptr;
 					}
-					free(*expected_predicate); free(expected_predicate);
+					expected_predicate = intersection[0];
 
 					hol_term* new_predicate = nullptr;
-					if (predicate->type == hol_term_type::UNARY_APPLICATION) {
-						if (predicate->binary.left->type == hol_term_type::UNARY_APPLICATION) {
-							new_predicate = hol_term::new_apply(predicate->binary.left->binary.right, predicate->binary.right);
-							if (new_predicate == nullptr) return (hol_term*) nullptr;
-							new_predicate->binary.left->reference_count++;
-							new_predicate->binary.right->reference_count++;
-						} else if (predicate->binary.left->type == hol_term_type::ANY) {
-							/* remove excluded trees that are constants */
-							array<hol_term*> new_excluded(max(1, predicate->binary.left->any.excluded_tree_count));
-							for (unsigned int i = 0; i < predicate->binary.left->any.excluded_tree_count; i++) {
-								if (predicate->binary.left->any.excluded_trees[i]->type == hol_term_type::CONSTANT
-								 || predicate->binary.left->any.excluded_trees[i]->type == hol_term_type::ANY_CONSTANT
-								 || predicate->binary.left->any.excluded_trees[i]->type == hol_term_type::ANY_CONSTANT_EXCEPT)
-									continue;
-								new_excluded[new_excluded.length++] = predicate->binary.left->any.excluded_trees[i];
-							}
-							if (new_excluded.length == predicate->binary.left->any.excluded_tree_count) {
-								new_predicate = predicate;
-								new_predicate->reference_count++;
-							} else {
-								new_predicate = hol_term::new_apply(hol_term::new_any(predicate->binary.left->any.included, new_excluded.data, new_excluded.length), predicate->binary.right);
-								if (new_predicate == nullptr) return (hol_term*) nullptr;
-								if (predicate->binary.left->any.included != nullptr)
-									predicate->binary.left->any.included->reference_count++;
-								for (hol_term* tree : new_excluded)
-									tree->reference_count++;
-								predicate->binary.right->reference_count++;
-							}
+					hol_term* inner_predicate = (SrcPredicate == 0 ? expected_predicate->binary.left : expected_predicate->binary.left->binary.right);
+					if (DstPredicate == 0) {
+						new_predicate = hol_term::new_apply(inner_predicate, expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
 						}
-					} else if (predicate->type == hol_term_type::ANY) {
-						new_predicate = predicate;
-						new_predicate->reference_count++;
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
+					} else if (DstPredicate != UINT_MAX) {
+						new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<DstPredicate>::value, inner_predicate), expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
+						hol_term::constants<DstPredicate>::value.reference_count++;
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
+					} else {
+						new_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+									inner_predicate),
+								expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
 					}
+					free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 
 					hol_term* conjunction;
 					if (!new_hol_term(conjunction)) {
@@ -9791,132 +10316,105 @@ inline bool remove_higher_order_predicate(
 						return (hol_term*) nullptr;
 					}
 
-				} else if (head->type == hol_term_type::EXISTS && head->quantifier.operand->type == hol_term_type::AND) {
-					hol_term* expected_predicate = hol_term::new_apply(
-							hol_term::new_apply(
-								(Predicate == UINT_MAX
-									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
-									: &hol_term::constants<Predicate>::value),
-								&HOL_ANY),
-							hol_term::new_variable(head_variable));
-					if (expected_predicate == nullptr) return (hol_term*) nullptr;
-					HOL_ANY.reference_count++;
-					if (Predicate != UINT_MAX)
-						hol_term::constants<Predicate>::value.reference_count++;
+				} else if (head->type == hol_term_type::EXISTS) {
+					hol_term* expected_predicate;
+					if (SrcPredicate != 0) {
+						expected_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									(SrcPredicate == UINT_MAX
+										? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
+										: &hol_term::constants<SrcPredicate>::value),
+									&HOL_ANY),
+								hol_term::new_variable(head_variable));
+						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+						HOL_ANY.reference_count++;
+						if (SrcPredicate != UINT_MAX)
+							hol_term::constants<SrcPredicate>::value.reference_count++;
+					} else {
+						expected_predicate = hol_term::new_apply(
+								hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+								hol_term::new_variable(head_variable));
+						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+					}
 
+					array<hol_term*> intersection(2);
 					hol_term* operand = head->quantifier.operand;
-					hol_term* predicate = operand->array.operands[predicate_index.index];
-					if (!has_intersection<built_in_predicates>(expected_predicate, predicate)) {
-						free(*expected_predicate); free(expected_predicate);
+					hol_term* predicate = (operand->type == hol_term_type::AND ? operand->array.operands[predicate_index.index] : operand);
+					intersect<built_in_predicates>(intersection, expected_predicate, predicate);
+					free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+					if (intersection.length == 0) {
+						return (hol_term*) nullptr;
+					} else if (intersection.length != 1) {
+						fprintf(stderr, "apply_higher_order_predicate ERROR: Intersection is not unique.\n");
+						free_all(intersection);
 						return (hol_term*) nullptr;
 					}
-					free(*expected_predicate); free(expected_predicate);
+					expected_predicate = intersection[0];
 
 					hol_term* new_predicate = nullptr;
-					if (predicate->type == hol_term_type::UNARY_APPLICATION) {
-						if (predicate->binary.left->type == hol_term_type::UNARY_APPLICATION) {
-							new_predicate = hol_term::new_apply(predicate->binary.left->binary.right, predicate->binary.right);
-							if (new_predicate == nullptr) return (hol_term*) nullptr;
-							new_predicate->binary.left->reference_count++;
-							new_predicate->binary.right->reference_count++;
-						} else if (predicate->binary.left->type == hol_term_type::ANY) {
-							/* remove excluded trees that are constants */
-							array<hol_term*> new_excluded(max(1, predicate->binary.left->any.excluded_tree_count));
-							for (unsigned int i = 0; i < predicate->binary.left->any.excluded_tree_count; i++) {
-								if (predicate->binary.left->any.excluded_trees[i]->type == hol_term_type::CONSTANT
-								 || predicate->binary.left->any.excluded_trees[i]->type == hol_term_type::ANY_CONSTANT
-								 || predicate->binary.left->any.excluded_trees[i]->type == hol_term_type::ANY_CONSTANT_EXCEPT)
-									continue;
-								new_excluded[new_excluded.length++] = predicate->binary.left->any.excluded_trees[i];
-							}
-							if (new_excluded.length == predicate->binary.left->any.excluded_tree_count) {
-								new_predicate = predicate;
-								new_predicate->reference_count++;
-							} else {
-								new_predicate = hol_term::new_apply(hol_term::new_any(predicate->binary.left->any.included, new_excluded.data, new_excluded.length), predicate->binary.right);
-								if (new_predicate == nullptr) return (hol_term*) nullptr;
-								if (predicate->binary.left->any.included != nullptr)
-									predicate->binary.left->any.included->reference_count++;
-								for (hol_term* tree : new_excluded)
-									tree->reference_count++;
-								predicate->binary.right->reference_count++;
-							}
+					hol_term* inner_predicate = (SrcPredicate == 0 ? expected_predicate->binary.left : expected_predicate->binary.left->binary.right);
+					if (DstPredicate == 0) {
+						new_predicate = hol_term::new_apply(inner_predicate, expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
 						}
-					} else if (predicate->type == hol_term_type::ANY) {
-						new_predicate = predicate;
-						new_predicate->reference_count++;
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
+					} else if (DstPredicate != UINT_MAX) {
+						new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<DstPredicate>::value, inner_predicate), expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
+						hol_term::constants<DstPredicate>::value.reference_count++;
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
+					} else {
+						new_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+									inner_predicate),
+								expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
 					}
+					free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 
 					hol_term* conjunction;
-					if (!new_hol_term(conjunction)) {
-						free(*new_predicate); if (new_predicate->reference_count == 0) free(new_predicate);
-						return (hol_term*) nullptr;
-					}
-					conjunction->type = hol_term_type::AND;
-					conjunction->reference_count = 1;
-					conjunction->array.length = operand->array.length;
-					conjunction->array.operands = (hol_term**) malloc(sizeof(hol_term*) * operand->array.length);
-					if (conjunction->array.operands == nullptr) {
-						fprintf(stderr, "remove_higher_order_predicate ERROR: Out of memory.\n");
-						free(*new_predicate); if (new_predicate->reference_count == 0) free(new_predicate);
-						free(conjunction); return (hol_term*) nullptr;
-					}
-					for (unsigned int i = 0; i < operand->array.length; i++) {
-						if (i == predicate_index.index) {
-							conjunction->array.operands[i] = new_predicate;
-						} else {
-							conjunction->array.operands[i] = operand->array.operands[i];
-							conjunction->array.operands[i]->reference_count++;
+					if (operand->type == hol_term_type::AND) {
+						if (!new_hol_term(conjunction)) {
+							free(*new_predicate); if (new_predicate->reference_count == 0) free(new_predicate);
+							return (hol_term*) nullptr;
 						}
+						conjunction->type = hol_term_type::AND;
+						conjunction->reference_count = 1;
+						conjunction->array.length = operand->array.length;
+						conjunction->array.operands = (hol_term**) malloc(sizeof(hol_term*) * operand->array.length);
+						if (conjunction->array.operands == nullptr) {
+							fprintf(stderr, "apply_higher_order_predicate ERROR: Out of memory.\n");
+							free(*new_predicate); if (new_predicate->reference_count == 0) free(new_predicate);
+							free(conjunction); return (hol_term*) nullptr;
+						}
+						for (unsigned int i = 0; i < operand->array.length; i++) {
+							if (i == predicate_index.index) {
+								conjunction->array.operands[i] = new_predicate;
+							} else {
+								conjunction->array.operands[i] = operand->array.operands[i];
+								conjunction->array.operands[i]->reference_count++;
+							}
+						}
+					} else {
+						conjunction = new_predicate;
 					}
 
 					dst = hol_term::new_exists(head_variable, conjunction);
 					if (dst == nullptr) {
 						free(*conjunction); free(conjunction);
-						return (hol_term*) nullptr;
-					}
-
-				} else if (head->type == hol_term_type::EXISTS) {
-					if (predicate_index.position != head_position::LEFT || predicate_index.index != 0)
-						return (hol_term*) nullptr;
-					hol_term* expected_predicate = hol_term::new_apply(
-							hol_term::new_apply(
-								(Predicate == UINT_MAX
-									? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
-									: &hol_term::constants<Predicate>::value),
-								&HOL_ANY),
-							hol_term::new_variable(head_variable));
-					if (expected_predicate == nullptr) return (hol_term*) nullptr;
-					HOL_ANY.reference_count++;
-					if (Predicate != UINT_MAX)
-						hol_term::constants<Predicate>::value.reference_count++;
-
-					hol_term* predicate = head->quantifier.operand;
-					if (!has_intersection<built_in_predicates>(expected_predicate, predicate)) {
-						free(*expected_predicate); free(expected_predicate);
-						return (hol_term*) nullptr;
-					}
-					free(*expected_predicate); free(expected_predicate);
-
-					hol_term* new_predicate = nullptr;
-					if (predicate->type == hol_term_type::UNARY_APPLICATION) {
-						if (predicate->binary.left->type == hol_term_type::UNARY_APPLICATION) {
-							new_predicate = hol_term::new_apply(predicate->binary.left->binary.right, predicate->binary.right);
-							if (new_predicate == nullptr) return (hol_term*) nullptr;
-							new_predicate->binary.left->reference_count++;
-							new_predicate->binary.right->reference_count++;
-						} else if (predicate->binary.left->type == hol_term_type::ANY) {
-							new_predicate = predicate;
-							new_predicate->reference_count++;
-						}
-					} else if (predicate->type == hol_term_type::ANY) {
-						new_predicate = predicate;
-						new_predicate->reference_count++;
-					}
-
-					dst = hol_term::new_exists(head_variable, new_predicate);
-					if (dst == nullptr) {
-						free(*new_predicate); free(new_predicate);
 						return (hol_term*) nullptr;
 					}
 
@@ -10234,6 +10732,7 @@ inline bool select_arg_without_head_predicative(
 	bool result = apply_head<false>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, find_head<built_in_predicates>,
 			[&scopes,lambda_variable,&narrow_scope,&next_universal_scope,&parent](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
+				hol_term* old_head = head;
 				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
 					head = head->any.included;
 
@@ -10251,7 +10750,6 @@ inline bool select_arg_without_head_predicative(
 					unsigned int element_variable = lambda_variable + 1;
 					dst = make_selected_arg_without_head(negation_count, element_variable, lambda_variable);
 					if (dst == nullptr) return (hol_term*) nullptr;
-					remove_wide_scope_marker = true;
 				} else if (head->type == hol_term_type::EXISTS) {
 					hol_term* operand = head->quantifier.operand;
 
@@ -10321,7 +10819,6 @@ inline bool select_arg_without_head_predicative(
 						unsigned int element_variable = lambda_variable + 1;
 						dst = make_selected_arg_without_head(negation_count, element_variable, lambda_variable);
 						if (dst == nullptr) return (hol_term*) nullptr;
-						remove_wide_scope_marker = true;
 					} else if (conjunct->type == hol_term_type::EQUALS) {
 						if (!has_intersection<built_in_predicates>(expected_left_side, conjunct->binary.left)) {
 							free(*expected_left_side); free(expected_left_side);
@@ -10334,7 +10831,6 @@ inline bool select_arg_without_head_predicative(
 							unsigned int element_variable = lambda_variable + 1;
 							dst = make_selected_arg_without_head(negation_count, element_variable, lambda_variable);
 							if (dst == nullptr) return (hol_term*) nullptr;
-							remove_wide_scope_marker = true;
 						} else if (arg->type == hol_term_type::CONSTANT || arg->type == hol_term_type::ANY_CONSTANT || arg->type == hol_term_type::ANY_CONSTANT_EXCEPT
 								|| arg->type == hol_term_type::STRING || arg->type == hol_term_type::NUMBER)
 						{
@@ -11058,6 +11554,57 @@ inline bool select_arg_without_head_predicative(
 						return (hol_term*) nullptr;
 					}
 				}
+
+				if ((old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) && can_have_free_variables(*dst)) {
+					if (dst->type == hol_term_type::ANY || dst->type == hol_term_type::ANY_RIGHT) {
+						array<hol_term*> excluded(max(1, old_head->any.excluded_tree_count + dst->any.excluded_tree_count));
+						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
+							/* make sure this tree isn't a subset of any tree in `dst->any.excluded_trees` */
+							bool irreducible = true;
+							for (unsigned int j = 0; j < dst->any.excluded_tree_count; j++) {
+								if (is_subset<built_in_predicates>(old_head->any.excluded_trees[i], dst->any.excluded_trees[j])) {
+									irreducible = false;
+									break;
+								}
+							}
+							if (irreducible)
+								excluded[excluded.length++] = old_head->any.excluded_trees[i];
+						}
+						unsigned int old_excluded_tree_count = excluded.length;
+						for (unsigned int i = 0; i < dst->any.excluded_tree_count; i++) {
+							/* make sure this tree isn't a subset of any tree in `excluded` so far */
+							bool irreducible = true;
+							for (unsigned int j = 0; j < old_excluded_tree_count; j++) {
+								if (is_subset<built_in_predicates>(dst->any.excluded_trees[i], excluded[j])) {
+									irreducible = false;
+									break;
+								}
+							}
+							if (irreducible)
+								excluded[excluded.length++] = dst->any.excluded_trees[i];
+						}
+						hol_term* new_dst = hol_term::new_any_right(dst->any.included, excluded.data, excluded.length);
+						if (new_dst == nullptr) {
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
+						if (dst->any.included != nullptr)
+							dst->any.included->reference_count++;
+						for (hol_term* tree : excluded)
+							tree->reference_count++;
+						free(*dst); if (dst->reference_count == 0) free(dst);
+						dst = new_dst;
+					} else {
+						hol_term* new_dst = hol_term::new_any_right(dst, old_head->any.excluded_trees, old_head->any.excluded_tree_count);
+						if (new_dst == nullptr) {
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
+						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
+							old_head->any.excluded_trees[i]->reference_count++;
+						dst = new_dst;
+					}
+				}
 				return dst;
 			}, gather_scope) && dst != nullptr;
 
@@ -11105,7 +11652,7 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 					negated = true;
 				}
 
-				unsigned int set_variable, element_variable = 0;
+				unsigned int set_variable, element_variable = 0, right_element_variable = 0;
 				hol_term* left = nullptr;
 				if (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT)
 				{
@@ -11168,25 +11715,35 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 						}
 					}
 
-					if (element_variable == 0 && right != nullptr) {
+					if (right != nullptr) {
 						/* try to get the element variable from the right conjunct, since we couldn't get it from the left conjunct */
 						if ((right->type == hol_term_type::ANY || right->type == hol_term_type::ANY_RIGHT) && right->any.included != nullptr)
 							right = right->any.included;
 						if (right->type == hol_term_type::UNARY_APPLICATION && right->binary.left->type == hol_term_type::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
 							right = right->binary.right;
 						if (right->type == hol_term_type::ANY || right->type == hol_term_type::ANY_RIGHT) {
-							element_variable = ++max_variable;
+							right_element_variable = ++max_variable;
 						} else if (right->type == hol_term_type::EXISTS || right->type == hol_term_type::FOR_ALL) {
-							element_variable = right->quantifier.variable;
+							right_element_variable = right->quantifier.variable;
 						} else if (right->type == hol_term_type::AND && right->array.length == 2 && right->array.operands[1]->type == hol_term_type::UNARY_APPLICATION
 								&& right->array.operands[1]->binary.left->type == hol_term_type::VARIABLE && right->array.operands[1]->binary.left->variable == set_variable
 								&& right->array.operands[1]->binary.right->type == hol_term_type::VARIABLE)
 						{
-							element_variable = right->array.operands[1]->binary.right->variable;
+							right_element_variable = right->array.operands[1]->binary.right->variable;
 						} else {
 							return (hol_term*) nullptr;
 						}
 					}
+				}
+
+				if (element_variable == 0) {
+					if (right_element_variable == 0) {
+						return (hol_term*) nullptr;
+					} else {
+						element_variable = right_element_variable;
+					}
+				} else if (right_element_variable == 0) {
+					right_element_variable = element_variable;
 				}
 
 				hol_term* element_var = hol_term::new_variable(element_variable);
@@ -11228,12 +11785,10 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 					free(*element_var); free(element_var);
 					return (hol_term*) nullptr;
 				}
-				element_var->reference_count++;
 
 				hol_term* set_var = hol_term::new_variable(set_variable);
 				if (set_var == nullptr) {
 					free(*singleton); free(singleton);
-					free(*element_var); free(element_var);
 					return (hol_term*) nullptr;
 				}
 
@@ -11241,44 +11796,37 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 				if (set_definition == nullptr) {
 					free(*singleton); free(singleton);
 					free(*set_var); free(set_var);
-					free(*element_var); free(element_var);
 					return (hol_term*) nullptr;
 				}
 				set_var->reference_count++;
 
-				hol_term* lambda_var = hol_term::new_variable(lambda_variable);
-				if (lambda_var == nullptr) {
+				hol_term* excluded_quantifier = hol_term::new_any(hol_term::new_exists(set_variable, &HOL_ANY));
+				if (excluded_quantifier == nullptr) {
 					free(*set_definition); free(set_definition);
 					free(*set_var); free(set_var);
-					free(*element_var); free(element_var);
 					return (hol_term*) nullptr;
 				}
+				HOL_ANY.reference_count++;
 
-				hol_term* dst = hol_term::new_exists(set_variable, hol_term::new_and(set_definition, hol_term::new_exists(element_variable, hol_term::new_and(
-						hol_term::new_apply(set_var, element_var), hol_term::new_apply(lambda_var, element_var)))));
+				hol_term* dst = hol_term::new_exists(set_variable, hol_term::new_and(
+						set_definition, hol_term::new_any(nullptr, &excluded_quantifier, 1)));
 				if (dst == nullptr) {
 					free(*set_definition); free(set_definition);
+					free(*excluded_quantifier); free(excluded_quantifier);
 					free(*set_var); free(set_var);
-					free(*element_var); free(element_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				}
-				element_var->reference_count += 2 - 1;
-				set_var->reference_count++;
-				lambda_var->reference_count++;
 
 				array<hol_term*> intersection(2);
 				intersect<built_in_predicates>(intersection, dst, head);
 				free(*dst); if (dst->reference_count == 0) free(dst);
 				if (intersection.length == 0) {
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				} else if (intersection.length != 1) {
 					fprintf(stderr, "select_singleton_arg_in_set_without_head_predicative ERROR: Expected intersection to be unique.\n");
 					free_all(intersection);
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				}
 
@@ -11303,31 +11851,29 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 				if (inner_operand->type == hol_term_type::EXISTS) {
 					second_inner_operand = inner_operand->quantifier.operand;
 				} else if (inner_operand->type == hol_term_type::ANY_RIGHT) {
-					free_all(intersection);
-
-					unsigned int new_element_variable = ++max_variable;
-					hol_term* new_element_var = hol_term::new_variable(new_element_variable);
-					if (new_element_var == nullptr) {
-						free(*set_var); free(set_var);
-						free(*lambda_var); free(lambda_var);
-						return (hol_term*) nullptr;
+					hol_term* right;
+					if (operand->type == hol_term_type::AND) {
+						right = operand->array.operands[operand->array.length - 1];
+					} else {
+						right = operand->any_array.right.operands[operand->any_array.right.length - 1];
 					}
+					right->reference_count++;
+					free_all(intersection);
 
 					hol_term* excluded_terms[2];
 					excluded_terms[0] = hol_term::new_any(hol_term::new_exists(set_variable, &HOL_ANY));
 					if (excluded_terms[0] == nullptr) {
 						free(*set_var); free(set_var);
-						free(*new_element_var); free(new_element_var);
-						free(*lambda_var); free(lambda_var);
+						free(*right); if (right->reference_count == 1) free(right);
 						return (hol_term*) nullptr;
 					}
 					HOL_ANY.reference_count++;
 
+					unsigned int new_element_variable = ++max_variable;
 					excluded_terms[1] = hol_term::new_any(hol_term::new_lambda(new_element_variable, &HOL_ANY));
 					if (excluded_terms[1] == nullptr) {
 						free(*set_var); free(set_var);
-						free(*new_element_var); free(new_element_var);
-						free(*lambda_var); free(lambda_var);
+						free(*right); if (right->reference_count == 1) free(right);
 						free(*excluded_terms[0]); free(excluded_terms[0]);
 						return (hol_term*) nullptr;
 					}
@@ -11344,8 +11890,7 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 						if (excluded_quantifiers[0] != nullptr) { free(*excluded_quantifiers[0]); free(excluded_quantifiers[0]); }
 						if (excluded_quantifiers[1] != nullptr) { free(*excluded_quantifiers[1]); free(excluded_quantifiers[1]); }
 						free(*set_var); free(set_var);
-						free(*new_element_var); free(new_element_var);
-						free(*lambda_var); free(lambda_var);
+						free(*right); if (right->reference_count == 1) free(right);
 						free(*excluded_terms[0]); free(excluded_terms[0]);
 						free(*excluded_terms[1]); free(excluded_terms[1]);
 						return (hol_term*) nullptr;
@@ -11353,28 +11898,21 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 
 					hol_term* dst = hol_term::new_any_right(hol_term::new_exists(set_variable, hol_term::new_and(
 							hol_term::new_equals(set_var, hol_term::new_lambda(new_element_variable, hol_term::new_any(nullptr, excluded_terms, array_length(excluded_terms)))),
-							hol_term::new_exists(new_element_variable, hol_term::new_and(
-									hol_term::new_apply(set_var, new_element_var),
-									hol_term::new_apply(lambda_var, new_element_var)
-							))
+							right
 						)), excluded_quantifiers, array_length(excluded_quantifiers));
 					if (dst == nullptr) {
 						for (unsigned int i = 0; i < array_length(excluded_quantifiers); i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
 						free(*set_var); free(set_var);
-						free(*new_element_var); free(new_element_var);
-						free(*lambda_var); free(lambda_var);
+						free(*right); if (right->reference_count == 1) free(right);
 						free(*excluded_terms[0]); free(excluded_terms[0]);
 						free(*excluded_terms[1]); free(excluded_terms[1]);
 						return (hol_term*) nullptr;
 					}
-					new_element_var->reference_count += 2 - 1;
-					set_var->reference_count += 2 - 1;
 					remove_wide_scope_marker = true;
 					return dst;
 				} else {
 					free_all(intersection);
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				}
 
@@ -11392,7 +11930,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 				} else {
 					free_all(intersection);
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				}
 
@@ -11403,7 +11940,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 					if (!OuterScope) {
 						free_all(intersection);
 						free(*set_var); free(set_var);
-						free(*lambda_var); free(lambda_var);
 						return (hol_term*) nullptr;
 					}
 					last_inner_operand = inner_right->quantifier.operand;
@@ -11418,7 +11954,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 					} else {
 						free_all(intersection);
 						free(*set_var); free(set_var);
-						free(*lambda_var); free(lambda_var);
 						return (hol_term*) nullptr;
 					}
 					new_element_variable = inner_right->quantifier.variable;
@@ -11429,7 +11964,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 				} else {
 					free_all(intersection);
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				}
 
@@ -11443,7 +11977,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 				{
 					free_all(intersection);
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				} else if (InvertArg && (last_conjunct->type != hol_term_type::EQUALS
 				 || last_conjunct->binary.right->type != hol_term_type::VARIABLE
@@ -11455,7 +11988,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 				{
 					free_all(intersection);
 					free(*set_var); free(set_var);
-					free(*lambda_var); free(lambda_var);
 					return (hol_term*) nullptr;
 				}
 
@@ -11469,7 +12001,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 						if (new_last_inner_operand == nullptr) {
 							free_all(intersection);
 							free(*set_var); free(set_var);
-							free(*lambda_var); free(lambda_var);
 							return (hol_term*) nullptr;
 						}
 						for (unsigned int i = 0; i < new_last_inner_operand->array.length; i++)
@@ -11484,7 +12015,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 						if (new_last_inner_operand == nullptr) {
 							free_all(intersection);
 							free(*set_var); free(set_var);
-							free(*lambda_var); free(lambda_var);
 							return(hol_term*) nullptr;
 						}
 						new_last_inner_operand->any_array.all->reference_count++;
@@ -11500,29 +12030,21 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 					}
 				}
 
-				hol_term* new_element_var = hol_term::new_variable(new_element_variable);
-				if (new_element_var == nullptr) {
-					free(*new_last_inner_operand); if (new_last_inner_operand->reference_count == 0) free(new_last_inner_operand);
-					free(*set_var); if (set_var->reference_count == 0) free(set_var);
-					free(*lambda_var); if (lambda_var->reference_count == 0) free(lambda_var);
-					free_all(intersection); return (hol_term*) nullptr;
+				hol_term* right;
+				if (operand->type == hol_term_type::AND) {
+					right = operand->array.operands[operand->array.length - 1];
+				} else {
+					right = operand->any_array.right.operands[operand->any_array.right.length - 1];
 				}
 
 				dst = hol_term::new_exists(set_variable, hol_term::new_and(
-						hol_term::new_equals(set_var, hol_term::new_lambda(new_element_variable, new_last_inner_operand)),
-						hol_term::new_exists(new_element_variable, hol_term::new_and(
-								hol_term::new_apply(set_var, new_element_var),
-								hol_term::new_apply(lambda_var, new_element_var)
-						))
-					));
+						hol_term::new_equals(set_var, hol_term::new_lambda(new_element_variable, new_last_inner_operand)), right));
 				if (dst == nullptr) {
 					free(*new_last_inner_operand); if (new_last_inner_operand->reference_count == 0) free(new_last_inner_operand);
 					free(*set_var); if (set_var->reference_count == 0) free(set_var);
-					free(*lambda_var); if (lambda_var->reference_count == 0) free(lambda_var);
 					free_all(intersection); return (hol_term*) nullptr;
 				}
-				new_element_var->reference_count += 2 - 1;
-				set_var->reference_count += 2 - 1;
+				right->reference_count++;
 
 				if (last_inner_operand != second_inner_operand) {
 					hol_term* new_second_inner_operand;
@@ -11688,6 +12210,7 @@ inline bool select_arg_without_head(
 	return apply_head<false>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, find_head<built_in_predicates>,
 			[](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
+				hol_term* old_head = head;
 				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && predicate_index.position != head_position::NONE)
 					head = head->any.included;
 
@@ -11804,8 +12327,17 @@ inline bool select_arg_without_head(
 					if (intersection[0]->type == hol_term_type::ANY || intersection[0]->type == hol_term_type::ANY_RIGHT) {
 						free_all(intersection);
 						free(*excluded); free(excluded);
-						HOL_ANY.reference_count++;
-						return &HOL_ANY;
+						if ((old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) && old_head->any.excluded_tree_count != 0) {
+							hol_term* dst = hol_term::new_any_right(nullptr, old_head->any.excluded_trees, old_head->any.excluded_tree_count);
+							if (dst == nullptr)
+								return (hol_term*) nullptr;
+							for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
+								old_head->any.excluded_trees[i]->reference_count++;
+							return dst;
+						} else {
+							HOL_ANY.reference_count++;
+							return &HOL_ANY;
+						}
 
 					} else if (intersection[0]->type == hol_term_type::ANY_ARRAY) {
 						hol_term* all = select_arg_without_head_process_operand(intersection[0]->any_array.all, &HOL_ANY);
@@ -12794,8 +13326,8 @@ inline bool remove_not(
 							if ((tree->type == hol_term_type::ANY || tree->type == hol_term_type::ANY_RIGHT) && tree->any.included != nullptr)
 								tree = tree->any.included;
 							if (tree->type == hol_term_type::NOT && tree->unary.operand->type == hol_term_type::EXISTS
-							&& tree->unary.operand->quantifier.variable == head->quantifier.variable
-							&& *tree->unary.operand->quantifier.operand == HOL_ANY)
+							 && tree->unary.operand->quantifier.variable == head->quantifier.variable
+							 && *tree->unary.operand->quantifier.operand == HOL_ANY)
 							{
 								is_excluded = true;
 								break;
@@ -13158,12 +13690,20 @@ inline bool require_predicative_quantifier(hol_term* src, hol_term*& dst)
 		return false;
 	}
 
+	hol_term* parent = nullptr;
+	hol_term* current = nullptr;
+	auto get_parent = [&parent, &current](hol_term* term) {
+		parent = current;
+		current = term;
+		return true;
+	};
+
 	array<hol_term*> siblings(8);
 	array<unsigned int> dst_variables(8);
 	bool removed_quantifier, remove_wide_scope_marker = false, remove_negations = false;
 	bool success = apply_head<true>(src, dst, dst_variables, siblings, max_variable, removed_quantifier, remove_negations, remove_wide_scope_marker,
 			predicative_head_finder<built_in_predicates>(lambda_variable),
-			[&max_variable,lambda_variable](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
+			[&max_variable,&parent,lambda_variable](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
 				hol_term* old_head = head;
 				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr
@@ -13183,8 +13723,25 @@ inline bool require_predicative_quantifier(hol_term* src, hol_term*& dst)
 				bool must_have_wide_scope_marker_before_lambda_term = false;
 				bool could_have_wide_scope_marker_before_lambda_term = false;
 				if (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) {
+					/* check if wide scope is excluded */
+					bool wide_scope_excluded = false;
+					for (unsigned int i = 0; i < head->any.excluded_tree_count; i++) {
+						hol_term* tree = head->any.excluded_trees[i];
+						if (tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+						 && tree->any.included->type == hol_term_type::UNARY_APPLICATION
+						 && tree->any.included->binary.left->type == hol_term_type::CONSTANT
+						 && tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+						 && *tree->any.included->binary.right == HOL_ANY)
+						{
+							wide_scope_excluded = true;
+							break;
+						}
+					}
+
 					if (head_variable > max_variable)
 						max_variable = head_variable;
+					could_have_wide_scope_marker_before_lambda_term = true;
+					could_have_wide_scope_marker_before_quantifier = true;
 					if (head->any.included != nullptr && head->any.included->type == hol_term_type::UNARY_APPLICATION
 					 && head->any.included->binary.left->type == hol_term_type::VARIABLE
 					 && head->any.included->binary.left->variable == lambda_variable
@@ -13193,14 +13750,22 @@ inline bool require_predicative_quantifier(hol_term* src, hol_term*& dst)
 						element_variable = head->any.included->binary.right->variable;
 						if (element_variable > max_variable)
 							max_variable = element_variable;
+						if (wide_scope_excluded)
+							could_have_wide_scope_marker_before_lambda_term = false;
 					} else {
 						element_variable = ++max_variable;
 					}
 					if (head_variable != 0)
 						set_variable = head_variable;
 					else set_variable = ++max_variable;
-					could_have_wide_scope_marker_before_lambda_term = true;
-					could_have_wide_scope_marker_before_quantifier = true;
+					if (parent != nullptr && parent->type == hol_term_type::UNARY_APPLICATION
+					 && parent->binary.left->type == hol_term_type::CONSTANT
+					 && parent->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
+					{
+						remove_wide_scope_marker = true;
+					} else if (wide_scope_excluded) {
+						could_have_wide_scope_marker_before_quantifier = false;
+					}
 				} else if (head->type == hol_term_type::EXISTS) {
 					hol_term* operand = head->quantifier.operand;
 					set_variable = head->quantifier.variable;
@@ -13441,8 +14006,42 @@ inline bool require_predicative_quantifier(hol_term* src, hol_term*& dst)
 					}
 					HOL_ANY.reference_count++;
 
+					/* check if we need to remove an excluded wide scope from `head` */
+					hol_term* current_head;
+					if (remove_wide_scope_marker && (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT)) {
+						array<hol_term*> excluded(max(1, head->any.excluded_tree_count));
+						for (unsigned int i = 0; i < head->any.excluded_tree_count; i++) {
+							hol_term* tree = head->any.excluded_trees[i];
+							if (tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+							 && tree->any.included->type == hol_term_type::UNARY_APPLICATION
+							 && tree->any.included->binary.left->type == hol_term_type::CONSTANT
+							 && tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+							 && *tree->any.included->binary.right == HOL_ANY)
+							{
+								continue;
+							}
+							excluded[excluded.length++] = tree;
+						}
+						if (excluded.length == head->any.excluded_tree_count) {
+							current_head = head;
+							head->reference_count++;
+						} else {
+							current_head = hol_term::new_any_right(head->any.included, excluded.data, excluded.length);
+							if (current_head == nullptr)
+								return (hol_term*) nullptr;
+							if (head->any.included != nullptr)
+								head->any.included->reference_count++;
+							for (hol_term* tree : excluded)
+								tree->reference_count++;
+						}
+					} else {
+						current_head = head;
+						head->reference_count++;
+					}
+
 					array<hol_term*> intersection(2);
-					intersect<built_in_predicates>(intersection, new_head, head);
+					intersect<built_in_predicates>(intersection, new_head, current_head);
+					free(*current_head); if (current_head->reference_count == 0) free(current_head);
 					free(*new_head); if (new_head->reference_count == 0) free(new_head);
 					if (intersection.length == 0) {
 						return (hol_term*) nullptr;
@@ -13476,7 +14075,7 @@ inline bool require_predicative_quantifier(hol_term* src, hol_term*& dst)
 					dst = new_dst;
 				}
 				return dst;
-			}, no_op()) && dst != nullptr;
+			}, get_parent) && dst != nullptr;
 	if (!success) return false;
 
 	if (dst->type != hol_term_type::LAMBDA) {
@@ -14722,16 +15321,16 @@ inline bool select_scope_arg_in_set(array<hol_term*>& out,
 		return (hol_term*) nullptr;
 	}
 
-	hol_term* excluded_lambdas[3];
-	excluded_lambdas[0] = hol_term::new_any(hol_term::new_exists(element_variable, &HOL_ANY));
-	excluded_lambdas[1] = hol_term::new_any(hol_term::new_for_all(element_variable, &HOL_ANY));
-	excluded_lambdas[2] = hol_term::new_any(hol_term::new_lambda(element_variable, &HOL_ANY));
+	hol_term* excluded_lambdas[2];
+	excluded_lambdas[0] = hol_term::new_any(hol_term::new_equals(hol_term::new_apply(hol_term::new_any_constant(
+				(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
+				(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF),
+			&HOL_ANY), hol_term::new_variable(element_variable)));
+	excluded_lambdas[1] = hol_term::new_any(hol_term::new_lambda(element_variable, &HOL_ANY));
 	if (excluded_lambdas[0] != nullptr) HOL_ANY.reference_count++;
 	if (excluded_lambdas[1] != nullptr) HOL_ANY.reference_count++;
-	if (excluded_lambdas[2] != nullptr) HOL_ANY.reference_count++;
-	if (excluded_lambdas[0] == nullptr || excluded_lambdas[1] == nullptr || excluded_lambdas[2] == nullptr) {
+	if (excluded_lambdas[0] == nullptr || excluded_lambdas[1] == nullptr) {
 		if (excluded_lambdas[0] != nullptr) { free(*excluded_lambdas[0]); free(excluded_lambdas[0]); }
-		if (excluded_lambdas[1] != nullptr) { free(*excluded_lambdas[1]); free(excluded_lambdas[1]); }
 		for (unsigned int i = 0; i < array_length(excluded_quantifiers); i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
 		return (hol_term*) nullptr;
 	}
@@ -15488,7 +16087,7 @@ inline bool mark_wide_scope(hol_term* src, hol_term*& dst)
 }
 
 template<bool WideScope>
-inline hol_term* do_require_narrow_or_wide_scope(hol_term* head,
+inline hol_term* do_require_narrow_or_wide_scope(hol_term* head, hol_term* parent,
 		unsigned int lambda_variable, unsigned int max_variable, bool can_have_wide_scope)
 {
 	hol_term* old_head = head;
@@ -15640,9 +16239,51 @@ inline hol_term* do_require_narrow_or_wide_scope(hol_term* head,
 		}
 		HOL_ANY.reference_count++;
 
+		/* check if we need to remove an excluded wide scope from `head` */
+		hol_term* current_head;
+		if (head->type == hol_term_type::ANY_RIGHT
+		 && head->any.included != nullptr && head->any.included->type == hol_term_type::UNARY_APPLICATION
+		 && head->any.included->binary.left->type == hol_term_type::VARIABLE
+		 && head->any.included->binary.left->variable == lambda_variable
+		 && head->any.included->binary.right->type == hol_term_type::VARIABLE
+		 && parent != nullptr && parent->type == hol_term_type::UNARY_APPLICATION
+		 && parent->binary.left->type == hol_term_type::CONSTANT
+		 && parent->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
+		{
+			array<hol_term*> excluded(max(1, head->any.excluded_tree_count));
+			for (unsigned int i = 0; i < head->any.excluded_tree_count; i++) {
+				hol_term* tree = head->any.excluded_trees[i];
+				if (tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+				 && tree->any.included->type == hol_term_type::UNARY_APPLICATION
+				 && tree->any.included->binary.left->type == hol_term_type::CONSTANT
+				 && tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+				 && *tree->any.included->binary.right == HOL_ANY)
+				{
+					continue;
+				}
+				excluded[excluded.length++] = tree;
+			}
+			if (excluded.length == head->any.excluded_tree_count) {
+				current_head = head;
+				head->reference_count++;
+			} else {
+				current_head = hol_term::new_any_right(head->any.included, excluded.data, excluded.length);
+				if (current_head == nullptr)
+					return (hol_term*) nullptr;
+				if (head->any.included != nullptr)
+					head->any.included->reference_count++;
+				for (hol_term* tree : excluded)
+					tree->reference_count++;
+			}
+		} else {
+			current_head = head;
+			head->reference_count++;
+		}
+
 		array<hol_term*> intersection(2);
-		intersect<built_in_predicates>(intersection, new_head, head);
+		intersect<built_in_predicates>(intersection, new_head, current_head);
 		free(*new_head); if (new_head->reference_count == 0) free(new_head);
+		free(*current_head); if (current_head->reference_count == 0) free(current_head);
 		if (intersection.length == 0) {
 			return (hol_term*) nullptr;
 		} else if (intersection.length > 1) {
@@ -15684,12 +16325,16 @@ bool require_narrow_or_wide_scope(hol_term* src, hol_term*& dst)
 	}
 
 	bool can_have_wide_scope = false;
-	auto check_wide_scope = [&can_have_wide_scope](hol_term* term) {
+	hol_term* parent = nullptr;
+	hol_term* current = nullptr;
+	auto check_wide_scope = [&can_have_wide_scope,&parent,&current](hol_term* term) {
 		if (term->type == hol_term_type::ANY || term->type == hol_term_type::ANY_RIGHT) {
 			can_have_wide_scope = true;
 		} else if (term->type == hol_term_type::UNARY_APPLICATION && term->binary.left->type == hol_term_type::CONSTANT && term->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE) {
 			can_have_wide_scope = true;
 		}
+		parent = current;
+		current = term;
 		return true;
 	};
 
@@ -15699,11 +16344,18 @@ bool require_narrow_or_wide_scope(hol_term* src, hol_term*& dst)
 	if (head == nullptr)
 		return false;
 
-	hol_term* new_head = do_require_narrow_or_wide_scope<WideScope>(head, lambda_variable, max_variable, can_have_wide_scope);
+	hol_term* new_head = do_require_narrow_or_wide_scope<WideScope>(head, parent, lambda_variable, max_variable, can_have_wide_scope);
 	if (new_head == nullptr)
 		return false;
 
-	dst = substitute_head<any_node_position::NONE>(src, head, new_head);
+	if (parent != nullptr && parent->type == hol_term_type::UNARY_APPLICATION
+	 && parent->binary.left->type == hol_term_type::CONSTANT
+	 && parent->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
+	{
+		dst = substitute_head<any_node_position::NONE>(src, parent, new_head);
+	} else {
+		dst = substitute_head<any_node_position::NONE>(src, head, new_head);
+	}
 	free(*new_head); if (new_head->reference_count == 0) free(new_head);
 	return (dst != nullptr);
 }
@@ -15789,6 +16441,13 @@ bool remove_wide_scope(hol_term* src, hol_term*& dst)
 
 	array<hol_term*> difference(2);
 	subtract<built_in_predicates>(difference, new_term, excluded);
+if (difference.length > 1) {
+print("new_term: ", stderr); print(*new_term, stderr, *debug_terminal_printer); print('\n', stderr);
+print("excluded: ", stderr); print(*excluded, stderr, *debug_terminal_printer); print('\n', stderr);
+for (unsigned int i = 0; i < difference.length; i++) {
+fprintf(stderr, "difference[%u]: ", i); print(*difference[i], stderr, *debug_terminal_printer); print('\n', stderr);
+}
+}
 	free(*new_term); if (new_term->reference_count == 0) free(new_term);
 	free(*excluded); if (excluded->reference_count == 0) free(excluded);
 	if (difference.length == 0) {
@@ -16168,6 +16827,8 @@ inline bool require_name_in_set(hol_term* src, hol_term*& dst)
 						free_all(out);
 						return (hol_term*) nullptr;
 					}
+					for (unsigned int i = 0; i < head->any.excluded_tree_count; i++)
+						head->any.excluded_trees[i]->reference_count++;
 					out[0] = temp;
 				}
 				return out[0];
@@ -16752,7 +17413,8 @@ inline bool set_size(hol_term* src, hol_term*& dst)
 			predicative_head_finder<built_in_predicates>(lambda_variable),
 			[lambda_variable,&max_variable](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
-				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
+				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT)
+				 && head->any.included != nullptr && head->any.included->type == hol_term_type::EXISTS)
 					head = head->any.included;
 
 				unsigned int set_variable;
@@ -18089,6 +18751,7 @@ bool apply_to_predicative_set_function(hol_term* head,
 		array<hol_term*>& dst, unsigned int& max_variable,
 		unsigned int src_predicate, unsigned int dst_predicate)
 {
+	hol_term* old_head = head;
 	if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
 		head = head->any.included;
 
@@ -18170,6 +18833,18 @@ bool apply_to_predicative_set_function(hol_term* head,
 		set_var->reference_count++;
 		set_definition->reference_count++;
 		right->reference_count++;
+
+		if (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) {
+			hol_term* new_dst = hol_term::new_any_right(dst[dst.length], old_head->any.excluded_trees, old_head->any.excluded_tree_count);
+			if (new_dst == nullptr) {
+				free(*dst[dst.length]); free(dst[dst.length]);
+				free_all(intersection); free_all(dst);
+				return false;
+			}
+			for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
+				old_head->any.excluded_trees[i]->reference_count++;
+			dst[dst.length] = new_dst;
+		}
 		dst.length++;
 	}
 	free_all(intersection);
@@ -18193,21 +18868,23 @@ inline bool apply_to_predicative_set_function(
 		return false;
 	}
 
-	array<hol_term*> siblings(8);
-	array<unsigned int> dst_variables(8);
-	bool removed_quantifier, remove_wide_scope_marker = false, remove_negations = false;
-	return apply_head<true>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, predicative_head_finder<built_in_predicates>(lambda_variable),
-			[&max_variable,src_predicate,dst_predicate](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
-			{
-				array<hol_term*> dst(2);
-				if (!apply_to_predicative_set_function(head, dst, max_variable, src_predicate, dst_predicate))
-					return (hol_term*) nullptr;
-				if (dst.length != 1) {
-					fprintf(stderr, "apply_to_predicative_set_function ERROR: Intersection is not unique.\n");
-					free_all(dst); return (hol_term*) nullptr;
-				}
-				return dst[0];
-			}, no_op()) && dst != nullptr;
+	head_index predicate_index; no_op apply;
+	auto head_finder = predicative_head_finder<built_in_predicates>(lambda_variable);
+	hol_term* head = find_head(src, predicate_index, head_finder, apply);
+	if (head == nullptr)
+		return false;
+
+	array<hol_term*> new_heads(2);
+	if (!apply_to_predicative_set_function(head, new_heads, max_variable, src_predicate, dst_predicate))
+		return false;
+	if (new_heads.length != 1) {
+		fprintf(stderr, "apply_to_predicative_set_function ERROR: Intersection is not unique.\n");
+		free_all(new_heads); return false;
+	}
+
+	dst = substitute_head<any_node_position::NONE>(src, head, new_heads[0]);
+	free_all(new_heads);
+	return (dst != nullptr);
 }
 
 inline bool require_predicate_of_lambda(
@@ -18245,6 +18922,163 @@ inline bool require_predicate_of_lambda(
 		return false;
 	} else if (intersection.length != 1) {
 		fprintf(stderr, "require_predicate_of_lambda ERROR: Intersection is not unique.\n");
+		free_all(intersection); return false;
+	}
+	dst = intersection[0];
+	return true;
+}
+
+inline bool require_locate_of_lambda(
+		hol_term* src, hol_term*& dst)
+{
+	unsigned int max_variable = 0;
+	max_bound_variable(*src, max_variable);
+
+	unsigned int lambda_predicate_variable = 0;
+	unsigned int lambda_query_variable = 0;
+	unsigned int set_variable = 0;
+	unsigned int lambda_set_variable = 0;
+	unsigned int event_variable = 0;
+	if (src->type == hol_term_type::LAMBDA) {
+		lambda_predicate_variable = src->quantifier.variable;
+		if (src->quantifier.operand->type == hol_term_type::LAMBDA) {
+			lambda_query_variable = src->quantifier.operand->quantifier.variable;
+			hol_term* operand = src->quantifier.operand->quantifier.operand;
+			if (operand->type == hol_term_type::EXISTS) {
+				set_variable = operand->quantifier.variable;
+				hol_term* left = nullptr;
+				if (operand->quantifier.operand->type == hol_term_type::AND) {
+					left = operand->quantifier.operand->array.operands[0];
+				} else if (operand->quantifier.operand->type == hol_term_type::ANY_ARRAY) {
+					if (operand->quantifier.operand->any_array.left.length != 0)
+						left = operand->quantifier.operand->any_array.left.operands[0];
+				} else if (operand->quantifier.operand->type != hol_term_type::ANY && operand->quantifier.operand->type != hol_term_type::ANY_RIGHT) {
+					return false;
+				}
+
+				if (left == nullptr) {
+					lambda_set_variable = ++max_variable;
+					event_variable = ++max_variable;
+				} else {
+					if (left->type == hol_term_type::EQUALS) {
+						if (left->binary.right->type == hol_term_type::LAMBDA) {
+							lambda_set_variable = left->binary.right->quantifier.variable;
+							if (left->binary.right->quantifier.operand->type == hol_term_type::EXISTS) {
+								event_variable = left->binary.right->quantifier.operand->quantifier.variable;
+							} else if (left->binary.right->quantifier.operand->type == hol_term_type::ANY || left->binary.right->quantifier.operand->type == hol_term_type::ANY_RIGHT) {
+								event_variable = ++max_variable;
+							} else {
+								return false;
+							}
+						} else {
+							return false;
+						}
+					} else if (left->type == hol_term_type::ANY || left->type == hol_term_type::ANY_RIGHT) {
+						if (left->any.included != nullptr && left->any.included->type == hol_term_type::LAMBDA) {
+							lambda_set_variable = left->any.included->quantifier.variable;
+							if (left->any.included->quantifier.operand->type == hol_term_type::EXISTS) {
+								event_variable = left->any.included->quantifier.operand->quantifier.variable;
+							} else if (left->any.included->quantifier.operand->type == hol_term_type::ANY || left->any.included->quantifier.operand->type == hol_term_type::ANY_RIGHT) {
+								event_variable = ++max_variable;
+							} else {
+								return false;
+							}
+						} else {
+							lambda_set_variable = ++max_variable;
+							event_variable = ++max_variable;
+						}
+					} else {
+						return false;
+					}
+				}
+			} else if (operand->type == hol_term_type::ANY || operand->type == hol_term_type::ANY_RIGHT) {
+				set_variable = ++max_variable;
+				lambda_set_variable = ++max_variable;
+				event_variable = ++max_variable;
+			} else {
+				return false;
+			}
+		} else if (src->quantifier.operand->type == hol_term_type::ANY || src->quantifier.operand->type == hol_term_type::ANY_RIGHT) {
+			if (src->quantifier.operand->any.included != nullptr && src->quantifier.operand->any.included->type == hol_term_type::UNARY_APPLICATION
+			 && src->quantifier.operand->any.included->binary.left->type == hol_term_type::VARIABLE
+			 && src->quantifier.operand->any.included->binary.left->variable == lambda_predicate_variable
+			 && src->quantifier.operand->any.included->binary.right->type == hol_term_type::VARIABLE)
+			{
+				lambda_set_variable = src->quantifier.operand->any.included->binary.right->variable;
+				max_variable = max(lambda_predicate_variable, lambda_set_variable);
+				lambda_query_variable = ++max_variable;
+				set_variable = ++max_variable;
+				event_variable = ++max_variable;
+			} else {
+				lambda_query_variable = ++max_variable;
+				set_variable = ++max_variable;
+				lambda_set_variable = ++max_variable;
+				event_variable = ++max_variable;
+			}
+		} else {
+			return false;
+		}
+	} else if (src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT) {
+		lambda_predicate_variable = ++max_variable;
+		lambda_query_variable = ++max_variable;
+		set_variable = ++max_variable;
+		lambda_set_variable = ++max_variable;
+		event_variable = ++max_variable;
+	} else {
+		return false;
+	}
+
+	hol_term* set_var = hol_term::new_variable(set_variable);
+	if (set_var == nullptr)
+		return false;
+
+	hol_term* lambda_set_var = hol_term::new_variable(lambda_set_variable);
+	if (lambda_set_var == nullptr) {
+		free(*set_var); free(set_var);
+		return false;
+	}
+
+	hol_term* event_var = hol_term::new_variable(event_variable);
+	if (event_var == nullptr) {
+		free(*set_var); free(set_var);
+		free(*lambda_set_var); free(lambda_set_var);
+		return false;
+	}
+
+	hol_term* expected_term = hol_term::new_lambda(lambda_predicate_variable, hol_term::new_lambda(lambda_query_variable,
+			hol_term::new_exists(set_variable, hol_term::new_and(
+				hol_term::new_equals(set_var, hol_term::new_lambda(lambda_set_variable,
+					hol_term::new_exists(event_variable, hol_term::new_and(
+						hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::LOCATE>::value, event_var),
+						hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value, lambda_set_var), event_var),
+						hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, event_var), hol_term::new_variable(lambda_query_variable))
+					))
+				)),
+				hol_term::new_exists(lambda_set_variable, hol_term::new_and(
+					hol_term::new_apply(set_var, lambda_set_var),
+					hol_term::new_apply(hol_term::new_variable(lambda_predicate_variable), lambda_set_var)
+				))
+			))));
+	if (expected_term == nullptr) {
+		free(*set_var); free(set_var);
+		free(*lambda_set_var); free(lambda_set_var);
+		free(*event_var); free(event_var);
+		return false;
+	}
+	set_var->reference_count += 2 - 1;
+	lambda_set_var->reference_count += 3 - 1;
+	event_var->reference_count += 3 - 1;
+	hol_term::constants<(unsigned int) built_in_predicates::LOCATE>::value.reference_count++;
+	hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value.reference_count++;
+	hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, src, expected_term);
+	free(*expected_term); if (expected_term->reference_count == 0) free(expected_term);
+	if (intersection.length == 0) {
+		return false;
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "require_locate_of_lambda ERROR: Intersection is not unique.\n");
 		free_all(intersection); return false;
 	}
 	dst = intersection[0];
@@ -18668,7 +19502,7 @@ hol_term* substitute_scope(
 			break;
 
 		case hol_term_type::UNARY_APPLICATION:
-			next_scope = hol_term::new_if_then(current_scope->binary.left, new_scope);
+			next_scope = hol_term::new_apply(current_scope->binary.left, new_scope);
 			if (next_scope == nullptr) {
 				free(*new_scope); if (new_scope->reference_count == 0) free(new_scope);
 				return nullptr;
@@ -19054,7 +19888,6 @@ inline bool find_conjunct(
 	case hol_term_type::NUMBER:
 	case hol_term_type::STRING:
 	case hol_term_type::UINT_LIST:
-	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::BINARY_APPLICATION:
 	case hol_term_type::TRUE:
 	case hol_term_type::FALSE:
@@ -19107,6 +19940,7 @@ inline bool find_conjunct(
 			return scopes.add({src, {head_position::NONE, 0}});
 		return true;
 	case hol_term_type::IF_THEN:
+	case hol_term_type::UNARY_APPLICATION:
 		return find_conjunct(src->binary.right, conjunct, scopes, found_conjunct, could_have_conjunct)
 			&& (found_conjunct == nullptr || scopes.add({src, {head_position::LEFT, 1}}));
 	case hol_term_type::FOR_ALL:
@@ -20023,6 +20857,178 @@ inline bool require_one_or_two_conjuncts(
 			}, no_op()) && dst != nullptr;
 }
 
+template<int_fast8_t ConjunctIndex>
+bool require_arg2_lambda(hol_term* src, hol_term*& dst)
+{
+	unsigned int max_variable = 0;
+	max_bound_variable(*src, max_variable);
+
+	unsigned int lambda_variable = 0;
+	if (src->type == hol_term_type::LAMBDA) {
+		lambda_variable = src->quantifier.variable;
+	} else if (src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT) {
+		lambda_variable = ++max_variable;
+	} else {
+		return false;
+	}
+
+	head_index predicate_index; no_op apply;
+	hol_term* head = find_head(src, predicate_index, find_head<built_in_predicates>, apply);
+	if (head == nullptr)
+		return false;
+
+	unsigned int head_variable;
+	if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
+		head = head->any.included;
+	while (head->type == hol_term_type::NOT)
+		head = head->unary.operand;
+	if (head->type == hol_term_type::EXISTS) {
+		head_variable = head->quantifier.variable;
+	} else {
+		head_variable = ++max_variable;
+	}
+
+	hol_term* expected_conjunct = hol_term::new_equals(
+			hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, hol_term::new_variable(head_variable)),
+			hol_term::new_variable(lambda_variable));
+	if (expected_conjunct == nullptr)
+		return (hol_term*) nullptr;
+	hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+
+	hol_term* excluded_quantifiers[3];
+	excluded_quantifiers[0] = hol_term::new_any(hol_term::new_exists(head_variable, &HOL_ANY));
+	excluded_quantifiers[1] = hol_term::new_any(hol_term::new_for_all(head_variable, &HOL_ANY));
+	excluded_quantifiers[2] = hol_term::new_any(hol_term::new_lambda(head_variable, &HOL_ANY));
+	if (excluded_quantifiers[0] != nullptr) HOL_ANY.reference_count++;
+	if (excluded_quantifiers[1] != nullptr) HOL_ANY.reference_count++;
+	if (excluded_quantifiers[2] != nullptr) HOL_ANY.reference_count++;
+	if (excluded_quantifiers[0] == nullptr || excluded_quantifiers[1] == nullptr || excluded_quantifiers[2] == nullptr) {
+		if (excluded_quantifiers[0] != nullptr) { free(*excluded_quantifiers[0]); free(excluded_quantifiers[0]); }
+		if (excluded_quantifiers[1] != nullptr) { free(*excluded_quantifiers[1]); free(excluded_quantifiers[1]); }
+		free(*expected_conjunct); free(expected_conjunct);
+		return (hol_term*) nullptr;
+	}
+
+	hol_term* excluded_tree = hol_term::new_any(nullptr, excluded_quantifiers, array_length(excluded_quantifiers));
+	if (excluded_tree == nullptr) {
+		for (unsigned int i = 0; i < array_length(excluded_quantifiers); i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
+		free(*expected_conjunct); free(expected_conjunct);
+		return (hol_term*) nullptr;
+	}
+
+	hol_term* expected_head;
+	if (ConjunctIndex >= 0) {
+		expected_head = hol_term::new_exists(head_variable, hol_term::new_any_array(
+				hol_term_type::AND, excluded_tree, make_array_view((hol_term**) nullptr, 0),
+				make_appended_array_view(make_repeated_array_view(excluded_tree, ConjunctIndex), expected_conjunct),
+				make_array_view((hol_term**) nullptr, 0)));
+		if (expected_head == nullptr) {
+			free(*expected_conjunct); free(expected_conjunct);
+			free(*excluded_tree); free(excluded_tree);
+			return false;
+		}
+		excluded_tree->reference_count += ConjunctIndex;
+	} else {
+		unsigned int index = (unsigned int) (-ConjunctIndex) - 1;
+		expected_head = hol_term::new_exists(head_variable, hol_term::new_any_array(
+				hol_term_type::AND, excluded_tree, make_array_view((hol_term**) nullptr, 0),
+				make_array_view((hol_term**) nullptr, 0),
+				make_prepended_array_view(expected_conjunct, make_repeated_array_view(excluded_tree, index))));
+		if (expected_head == nullptr) {
+			free(*expected_conjunct); free(expected_conjunct);
+			free(*excluded_tree); free(excluded_tree);
+			return false;
+		}
+		excluded_tree->reference_count += index;
+	}
+
+	array<hol_term*> result(2);
+	intersect<built_in_predicates>(result, head, expected_head);
+	free(*expected_head); if (expected_head->reference_count == 0) free(expected_head);
+	if (result.length == 0) {
+		return false;
+	} else if (result.length != 1) {
+		fprintf(stderr, "require_arg2_lambda ERROR: Set intersection is not unique.\n");
+		free_all(result); return false;
+	}
+
+	dst = substitute_head<any_node_position::NONE>(src, head, result[0]);
+	free_all(result);
+	if (dst == nullptr)
+		return false;
+
+	if (dst->type != hol_term_type::LAMBDA) {
+		hol_term* new_dst = hol_term::new_lambda(lambda_variable, dst);
+		if (new_dst == nullptr) {
+			free(*dst); if (dst->reference_count == 0) free(dst);
+			return (hol_term*) nullptr;
+		}
+		dst = new_dst;
+	}
+	return dst;
+}
+
+bool require_size_lambda(hol_term* src, hol_term*& dst)
+{
+	unsigned int max_variable = 0;
+	max_bound_variable(*src, max_variable);
+
+	unsigned int lambda_variable = 0;
+	if (src->type == hol_term_type::LAMBDA) {
+		lambda_variable = src->quantifier.variable;
+		src = src->quantifier.operand;
+	} else if (src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT) {
+		lambda_variable = ++max_variable;
+	} else {
+		return false;
+	}
+
+	unsigned int head_variable;
+	if ((src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT) && src->any.included != nullptr)
+		src = src->any.included;
+	while (src->type == hol_term_type::NOT)
+		src = src->unary.operand;
+	if (src->type == hol_term_type::EXISTS) {
+		head_variable = src->quantifier.variable;
+	} else {
+		head_variable = ++max_variable;
+	}
+
+	hol_term* expected_conjunct = hol_term::new_equals(
+			hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value, hol_term::new_variable(head_variable)),
+			hol_term::new_variable(lambda_variable));
+	if (expected_conjunct == nullptr)
+		return (hol_term*) nullptr;
+	hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value.reference_count++;
+
+	hol_term* expected_head = hol_term::new_exists(head_variable, expected_conjunct);
+	if (expected_head == nullptr) {
+		free(*expected_conjunct); free(expected_conjunct);
+		return false;
+	}
+
+	array<hol_term*> result(2);
+	intersect<built_in_predicates>(result, src, expected_head);
+	free(*expected_head); if (expected_head->reference_count == 0) free(expected_head);
+	if (result.length == 0) {
+		return false;
+	} else if (result.length != 1) {
+		fprintf(stderr, "require_arg2_lambda ERROR: Set intersection is not unique.\n");
+		free_all(result); return false;
+	}
+
+	dst = result[0];
+	if (dst->type != hol_term_type::LAMBDA) {
+		hol_term* new_dst = hol_term::new_lambda(lambda_variable, dst);
+		if (new_dst == nullptr) {
+			free(*dst); if (dst->reference_count == 0) free(dst);
+			return (hol_term*) nullptr;
+		}
+		dst = new_dst;
+	}
+	return dst;
+}
+
 inline bool is_preposition(const string& str) {
 	return (str == "of" || str == "in" || str == "through" || str == "with"
 		 || str == "to" || str == "on" || str == "for" || str == "by"
@@ -20085,8 +21091,8 @@ inline bool require_capitalized(
 		if (!isupper(tokens[0][0]) || !isupper(tokens[tokens.length - 1][0]))
 			return false;
 		for (unsigned int i = 1; i + 1 < tokens.length; i++) {
-			if (is_preposition(tokens[i]))
-				continue;
+			/*if (is_preposition(tokens[i]))
+				continue;*/
 			if (!isupper(tokens[i][0]) || is_article(tokens[i]))
 				return false;
 		}
@@ -20575,6 +21581,76 @@ inline bool remove_coordination(
 }
 
 template<typename Formula>
+inline bool add_be(
+		const flagged_logical_form<Formula>& src,
+		flagged_logical_form<Formula>& dst,
+		be_flag be)
+{
+	if (!has_intersection(src.flags.be, be_flag::FALSE))
+		return false;
+	dst = src;
+	dst.flags.be = be;
+	return true;
+}
+
+template<typename Formula>
+inline bool remove_be(
+		const flagged_logical_form<Formula>& src,
+		flagged_logical_form<Formula>& dst,
+		be_flag be)
+{
+	if (!has_intersection(src.flags.be, be))
+		return false;
+	dst = src;
+	dst.flags.be = be_flag::FALSE;
+	return true;
+}
+
+template<typename Formula>
+inline bool try_remove_coordinated_be(
+		const flagged_logical_form<Formula>& src,
+		flagged_logical_form<Formula>& dst)
+{
+	if (!has_intersection(src.flags.be, be_flag::FALSE_OR_COORDINATED))
+		return false;
+	dst = src;
+	dst.flags.be = be_flag::FALSE;
+	return true;
+}
+
+template<typename Formula>
+inline bool require_no_be(
+		const flagged_logical_form<Formula>& src,
+		flagged_logical_form<Formula>& dst)
+{
+	if (!has_intersection(src.flags.be, be_flag::FALSE))
+		return false;
+	dst = src;
+	dst.flags.be = be_flag::FALSE;
+	return true;
+}
+
+template<typename Formula>
+inline bool try_coordinate_be(
+		const flagged_logical_form<Formula>& src,
+		flagged_logical_form<Formula>& dst)
+{
+	if (src.flags.be == be_flag::FALSE) {
+		dst = src;
+		return true;
+	} else if (src.flags.be == be_flag::TRUE || src.flags.be == be_flag::TRUE_OR_COORDINATED) {
+		dst = src;
+		dst.flags.be = be_flag::COORDINATED;
+	} else if (src.flags.be == be_flag::COORDINATED) {
+		return false;
+	} else {
+		dst = src;
+		dst.flags.be = be_flag::FALSE_OR_COORDINATED;
+	}
+	return true;
+}
+
+template<typename Formula>
 inline bool apply_auxiliary(
 		const flagged_logical_form<Formula>& src,
 		flagged_logical_form<Formula>& dst,
@@ -20785,6 +21861,7 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		dst.flags.corr = correlator::NONE;
 		dst.flags.correlated_by = correlator::NONE;
 		dst.flags.coord = coordination::NONE;
+		dst.flags.be = be_flag::FALSE;
 		dst.flags.aux = auxiliary_flag::NONE;
 		dst.flags.mood = grammatical_mood::INDICATIVE;
 		dst.flags.aux_or_subjunctive_or_inf_or_to_inf = false;
@@ -20793,8 +21870,6 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 			dst.flags.flags[i] = grammatical_flag_value::FALSE;
 		return dst.root != nullptr;
 	case function_type::IDENTITY:
-	case function_type::IDENTITY_PREDICATIVE:
-	case function_type::IDENTITY_ROOT:
 		dst = src;
 		return true;
 	case function_type::SELECT_RIGHT_CONJUNCT:
@@ -20875,21 +21950,30 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REQUIRE_NO_LEFT_PREDICATE_EXIST:
 		dst.flags = src.flags;
 		return require_no_left_predicate_exist(src.root, dst.root);
+	case function_type::REQUIRE_LEFT_PREDICATE_LOCATE:
+		dst.flags = src.flags;
+		return require_left_predicate_locate(src.root, dst.root);
 	case function_type::REQUIRE_RIGHT_PREDICATE_IN_SET:
 		dst.flags = src.flags;
 		return require_predicate_in_set<-1>(src.root, dst.root);
 	case function_type::REMOVE_INVERSE:
 		dst.flags = src.flags;
-		return remove_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE>(src.root, dst.root);
+		return apply_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE, 0>(src.root, dst.root);
 	case function_type::REMOVE_GREATEST:
 		dst.flags = src.flags;
-		return remove_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST>(src.root, dst.root);
+		return apply_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, 0>(src.root, dst.root);
 	case function_type::REMOVE_CAPABLE_OF:
 		dst.flags = src.flags;
-		return remove_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF>(src.root, dst.root);
+		return apply_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF, 0>(src.root, dst.root);
 	case function_type::REMOVE_HIGHER_ORDER_PREDICATE:
 		dst.flags = src.flags;
-		return remove_higher_order_predicate<UINT_MAX>(src.root, dst.root);
+		return apply_higher_order_predicate<UINT_MAX, 0>(src.root, dst.root);
+	case function_type::ADD_HIGH_DEGREE:
+		dst.flags = src.flags;
+		return apply_higher_order_predicate<0, (unsigned int) built_in_predicates::HIGH_DEGREE>(src.root, dst.root);
+	case function_type::NEGATIVE_TO_HIGH_DEGREE:
+		dst.flags = src.flags;
+		return apply_higher_order_predicate<(unsigned int) built_in_predicates::NEGATIVE, (unsigned int) built_in_predicates::HIGH_DEGREE>(src.root, dst.root);
 	case function_type::REMOVE_RIGHT_TRACE:
 		dst.flags = src.flags;
 		return remove_constant<-1>(src.root, dst.root, &hol_term::constants<(unsigned int) built_in_predicates::TRACE>::value);
@@ -21172,6 +22256,9 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REQUIRE_PREDICATE_OF_LAMBDA:
 		dst.flags = src.flags;
 		return require_predicate_of_lambda(src.root, dst.root);
+	case function_type::REQUIRE_LOCATE_OF_LAMBDA:
+		dst.flags = src.flags;
+		return require_locate_of_lambda(src.root, dst.root);
 	case function_type::SELECT_LAMBDA:
 		dst.flags = src.flags;
 		return select_lambda(src.root, dst.root);
@@ -21205,6 +22292,12 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REQUIRE_ONE_OR_TWO_CONJUNCTS:
 		dst.flags = src.flags;
 		return require_one_or_two_conjuncts<true>(src.root, dst.root);
+	case function_type::REQUIRE_RIGHT_ARG2_LAMBDA:
+		dst.flags = src.flags;
+		return require_arg2_lambda<-1>(src.root, dst.root);
+	case function_type::REQUIRE_SIZE_LAMBDA:
+		dst.flags = src.flags;
+		return require_size_lambda(src.root, dst.root);
 	case function_type::REQUIRE_CAPITALIZED:
 		dst.flags = src.flags;
 		return require_capitalized<true>(src.root, dst.root);
@@ -21382,12 +22475,10 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REMOVE_NEITHER:
 		return remove_correlator(src, dst, correlator::NEITHER);
 	case function_type::TRY_REMOVE_CORRELATOR:
-	case function_type::TRY_REMOVE_CORRELATOR_HEAD:
 		dst = src;
 		dst.flags.corr = correlator::NONE;
 		return true;
 	case function_type::REQUIRE_NO_CORRELATOR:
-	case function_type::REQUIRE_NO_CORRELATOR_PREDICATIVE:
 		if (src.flags.corr != correlator::NONE && src.flags.corr != correlator::ANY)
 			return false;
 		dst = src;
@@ -21420,7 +22511,6 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REQUIRE_PRESENT_PARTICIPLE:
 		return require_mood(src, dst, grammatical_mood::PRESENT_PARTICIPLE);
 	case function_type::ADD_NEGATIVE:
-	case function_type::ADD_NEGATIVE_PREDICATIVE:
 		return add_flag(src, dst, grammatical_flag::NEGATIVE);
 	case function_type::REQUIRE_NEGATIVE:
 		return require_flag(src, dst, grammatical_flag::NEGATIVE);
@@ -21553,13 +22643,15 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REQUIRE_NO_PASSIVE:
 		return require_no_flag(src, dst, grammatical_flag::PASSIVE);
 	case function_type::ADD_BE:
-		return add_flag(src, dst, grammatical_flag::BE);
+		return add_be(src, dst, be_flag::TRUE);
 	case function_type::REMOVE_BE:
-		return remove_flag(src, dst, grammatical_flag::BE);
-	case function_type::TRY_REMOVE_BE:
-		return try_remove_flag(src, dst, grammatical_flag::BE);
+		return remove_be(src, dst, be_flag::TRUE_OR_COORDINATED);
+	case function_type::TRY_REMOVE_COORDINATED_BE:
+		return try_remove_coordinated_be(src, dst);
 	case function_type::REQUIRE_NO_BE:
-		return require_no_flag(src, dst, grammatical_flag::BE);
+		return require_no_be(src, dst);
+	case function_type::TRY_COORDINATE_BE:
+		return try_coordinate_be(src, dst);
 	case function_type::ADD_AND:
 		return add_coordination(src, dst, coordination::AND);
 	case function_type::ADD_OR:
@@ -21595,6 +22687,18 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		if (!has_intersection(src.flags.comp, grammatical_comparison::NONE))
 			return false;
 		dst = src;
+		return true;
+	case function_type::TRY_REMOVE_SUPERLATIVE:
+		if (src.flags.comp == grammatical_comparison::COMPARATIVE)
+			return false;
+		dst = src;
+		dst.flags.comp = grammatical_comparison::NONE;
+		return true;
+	case function_type::REMOVE_SUPERLATIVE:
+		if (!has_intersection(src.flags.comp, grammatical_comparison::SUPERLATIVE))
+			return false;
+		dst = src;
+		dst.flags.comp = grammatical_comparison::NONE;
 		return true;
 	}
 	fprintf(stderr, "apply ERROR: Unrecognized transformation function.\n");
@@ -22517,19 +23621,39 @@ bool remap_scopes(array_map<unsigned int, variable_set>& free_variable_map,
 	return true;
 }
 
+template<typename Formula>
+bool copy(
+		flagged_logical_form<Formula>*& inverse,
+		unsigned int& inverse_count,
+		grammatical_flags flags,
+		hol_term* src)
+{
+	inverse = (flagged_logical_form<Formula>*) malloc(sizeof(flagged_logical_form<Formula>));
+	if (inverse == nullptr) {
+		fprintf(stderr, "copy ERROR: Insufficient memory for `copy`.\n");
+		return false;
+	}
+	inverse[0].flags = flags;
+	inverse[0].root = src;
+	src->reference_count++;
+	inverse_count = 1;
+	return true;
+}
+
+template<typename Formula>
 bool intersect(
-		flagged_logical_form<hol_term>*& inverse,
+		flagged_logical_form<Formula>*& inverse,
 		unsigned int& inverse_count,
 		grammatical_flags flags,
 		hol_term* first, hol_term* second)
 {
-	array<hol_term*> intersection(8);
+	array<Formula*> intersection(8);
 	if (!intersect<built_in_predicates>(intersection, first, second))
 		return false;
-	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>) * intersection.length);
+	inverse = (flagged_logical_form<Formula>*) malloc(sizeof(flagged_logical_form<Formula>) * intersection.length);
 	if (inverse == nullptr) {
 		fprintf(stderr, "intersect ERROR: Insufficient memory for `inverse`.\n");
-		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		free_all(intersection);
 		return false;
 	}
 	for (unsigned int i = 0; i < intersection.length; i++) {
@@ -22662,6 +23786,71 @@ inline bool invert_select_conjunct(
 			second_head_variable = second_head->quantifier.variable;
 			if (head_variable == 0)
 				head_variable = second_head_variable;
+		}
+
+		/* make sure the non-right-leaning trees in `second` don't declare
+		   variables that have already been declared in the right-leaning path
+		   in `first` from the root to the head */
+		array<unsigned int> declared_variables(8);
+		for (hol_term* node : first_head_inverter.outer) {
+			if (node->type == hol_term_type::EXISTS || node->type == hol_term_type::FOR_ALL || node->type == hol_term_type::LAMBDA) {
+				if (!declared_variables.add(node->quantifier.variable)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			}
+		}
+		array<hol_term*> second_scopes(16);
+		for (unsigned int j = 0; j < second_head_inverter.outer.length; j++) {
+			if (second_head_is_array && j + 2 >= second_head_inverter.outer.length)
+				break;
+			hol_term* node = second_head_inverter.outer[j];
+			if (node->type == hol_term_type::AND || node->type == hol_term_type::OR || node->type == hol_term_type::IFF) {
+				for (unsigned int i = 0; i + 1 < node->array.length; i++) {
+					if (!get_scopes(*node->array.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				}
+			} else if (node->type == hol_term_type::IF_THEN || node->type == hol_term_type::UNARY_APPLICATION || node->type == hol_term_type::EQUALS) {
+				if (!get_scopes(*node->binary.left, second_scopes)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			} else if (node->type == hol_term_type::BINARY_APPLICATION) {
+				if (!get_scopes(*node->ternary.first, second_scopes)
+				 || !get_scopes(*node->ternary.second, second_scopes))
+				{
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			} else if (node->type == hol_term_type::ANY_ARRAY) {
+				for (unsigned int i = 0; i < node->any_array.left.length; i++) {
+					if (!get_scopes(*node->any_array.left.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				} for (unsigned int i = 0; i < node->any_array.any.length; i++) {
+					if (!get_scopes(*node->any_array.any.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				} for (unsigned int i = 0; i + 1 < node->any_array.right.length; i++) {
+					if (!get_scopes(*node->any_array.right.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				}
+			}
+		}
+		for (hol_term* scope : second_scopes) {
+			if ((scope->type == hol_term_type::EXISTS || scope->type == hol_term_type::FOR_ALL || scope->type == hol_term_type::LAMBDA)
+			 && declared_variables.contains(scope->quantifier.variable)
+			 && !second_variable_map.put(scope, ++max_variable))
+			{
+				for (auto entry : second_variable_map) free(entry.value);
+				return false;
+			}
 		}
 
 		hol_term* expected_head;
@@ -23074,9 +24263,19 @@ inline bool invert_select_conjunct(
 					}
 
 					if (could_be_zero_negations && expected_first_negations > 0) {
-						hol_term* temp = hol_term::new_any_right(new_second_head);
+						hol_term* excluded_tree = hol_term::new_any_array(hol_term_type::ANY_ARRAY, &HOL_ANY,
+								make_array_view((hol_term**) nullptr, 0), make_repeated_array_view(&HOL_ANY, 2),
+								make_array_view((hol_term**) nullptr, 0));
+						if (excluded_tree == nullptr) {
+							free(*new_second_head); free(new_second_head);
+							return false;
+						}
+						HOL_ANY.reference_count += 3;
+
+						hol_term* temp = hol_term::new_any_right(new_second_head, &excluded_tree, 1);
 						if (temp == nullptr) {
 							free(*new_second_head); free(new_second_head);
+							free(*excluded_tree); free(excluded_tree);
 							return false;
 						}
 						new_second_head = temp;
@@ -24024,7 +25223,6 @@ inline bool invert_remove_conjunct(
 			}
 		}
 
-
 		/* make sure the initial lambda variables are correctly mapped */
 		if (first_head_inverter.outer[0]->type == hol_term_type::LAMBDA) {
 			if (second_head_inverter.outer[0]->type == hol_term_type::LAMBDA) {
@@ -24555,26 +25753,35 @@ inline bool invert_select_set_conjunct(
 	unsigned int max_variable = 0;
 	max_bound_variable(*first, max_variable);
 
-	unsigned int lambda_variable = 0;
+	unsigned int first_lambda_variable = 0;
 	if (first->type == hol_term_type::LAMBDA) {
-		lambda_variable = first->quantifier.variable;
+		first_lambda_variable = first->quantifier.variable;
+		first = first->quantifier.operand;
 	} else if (first->type == hol_term_type::ANY) {
-		lambda_variable = ++max_variable;
+		first_lambda_variable = ++max_variable;
 	} else {
 		return false;
 	}
 
+	unsigned int second_lambda_variable = 0;
+	if (second->type == hol_term_type::LAMBDA) {
+		second_lambda_variable = second->quantifier.variable;
+		second = second->quantifier.operand;
+	}
+	if (second_lambda_variable == first_lambda_variable) {
+		second_lambda_variable = 0;
+		if (second->type == hol_term_type::LAMBDA) {
+			second_lambda_variable = second->quantifier.variable;
+			second = second->quantifier.operand;
+		}
+	}
+
 	bool result = invert_apply_head(inverse, inverse_count, flags, first, second,
-		predicative_head_finder<built_in_predicates>(lambda_variable), IsSecondRoot ? find_root : find_head<built_in_predicates>, no_op(),
+		predicative_head_finder<built_in_predicates>(first_lambda_variable), IsSecondRoot ? find_root : find_head<built_in_predicates>, no_op(),
 		[](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array) {
 			hol_term* old_first_head = first_head;
 			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr)
 				first_head = first_head->any.included;
-
-#if !defined(NDEBUG)
-			if (first_head->type != hol_term_type::EXISTS || second_head->type != hol_term_type::EXISTS)
-				fprintf(stderr, "invert_select_set_conjunct WARNING: Expected an existential quantification.\n");
-#endif
 
 			unsigned int set_variable = first_head->quantifier.variable;
 
@@ -24654,8 +25861,16 @@ inline bool invert_select_set_conjunct(
 	if (!result) return false;
 
 	for (unsigned int i = 0; i < inverse_count; i++) {
-		if (inverse[i].root->type != hol_term_type::LAMBDA) {
-			hol_term* new_inverse = hol_term::new_lambda(lambda_variable, inverse[i].root);
+		if (second_lambda_variable != 0 && !(inverse[i].root->type == hol_term_type::LAMBDA && inverse[i].root->quantifier.variable == second_lambda_variable)) {
+			hol_term* new_inverse = hol_term::new_lambda(second_lambda_variable, inverse[i].root);
+			if (new_inverse == nullptr) {
+				for (unsigned int j = 0; j < inverse_count; j++) free(inverse[j]);
+				free(inverse); return false;
+			}
+			inverse[i].root = new_inverse;
+		}
+		if (first_lambda_variable != second_lambda_variable) {
+			hol_term* new_inverse = hol_term::new_lambda(first_lambda_variable, inverse[i].root);
 			if (new_inverse == nullptr) {
 				for (unsigned int j = 0; j < inverse_count; j++) free(inverse[j]);
 				free(inverse); return false;
@@ -24948,7 +26163,7 @@ inline bool invert_remove_set_conjunct(
 	if (!result) return false;
 
 	for (unsigned int i = 0; i < inverse_count; i++) {
-		if (inverse[i].root->type != hol_term_type::LAMBDA) {
+		if (inverse[i].root->type != hol_term_type::LAMBDA || inverse[i].root->quantifier.variable != first_lambda_variable) {
 			hol_term* new_inverse = hol_term::new_lambda(first_lambda_variable, inverse[i].root);
 			if (new_inverse == nullptr) {
 				for (unsigned int j = 0; j < inverse_count; j++) free(inverse[j]);
@@ -24997,6 +26212,7 @@ inline bool invert_select_conjunct_in_set(
 
 		hol_term* first_lambda = nullptr;
 		hol_term* first_conjunct_in_set = nullptr;
+		array_map<unsigned int, variable_set> free_variable_map(8);
 		if (first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) {
 			if (first_head->any.included != nullptr && first_head->any.included->type == hol_term_type::UNARY_APPLICATION
 			 && first_head->any.included->binary.right->type == hol_term_type::VARIABLE)
@@ -25094,29 +26310,9 @@ inline bool invert_select_conjunct_in_set(
 							/* make sure the variable arguments in the predicates are correctly mapped */
 							unsigned int first_variable = first_predicate->binary.left->binary.right->variable;
 							unsigned int second_variable = second_head->quantifier.operand->array.operands[0]->binary.left->binary.right->variable;
-
-							hol_term* second_scope = nullptr;
-							for (hol_term* scope : second_head_inverter.outer) {
-								if ((scope->type == hol_term_type::EXISTS || scope->type == hol_term_type::FOR_ALL || scope->type == hol_term_type::LAMBDA) && scope->quantifier.variable == second_variable) {
-									second_scope = scope;
-									break;
-								}
-							}
-
-							if (!second_variable_map.ensure_capacity(second_variable_map.size + 1))
-								return false;
-							unsigned int index = second_variable_map.index_of(second_scope);
-							if (index < second_variable_map.size && first_variable == second_variable) {
-								/* `second_variable_map` should map `var` to itself */
-								second_variable_map.remove_at(index);
-							} else {
-								/* `second_variable_map` should map `var` to `first_variable` */
-								second_variable_map.values[index] = first_variable;
-								if (index == second_variable_map.size) {
-									second_variable_map.keys[index] = second_head;
-									second_variable_map.size++;
-								}
-							}
+							free_variable_map.keys[free_variable_map.size] = second_variable;
+							free_variable_map.values[free_variable_map.size].type = variable_set_type::SINGLETON;
+							free_variable_map.values[free_variable_map.size++].variable = first_variable;
 						} else if (first_predicate->binary.right->type != hol_term_type::ANY && first_predicate->binary.right->type != hol_term_type::ANY_RIGHT) {
 							return false;
 						}
@@ -25126,6 +26322,69 @@ inline bool invert_select_conjunct_in_set(
 				} else if (first_predicate->type != hol_term_type::ANY && first_predicate->type != hol_term_type::ANY_RIGHT) {
 					return false;
 				}
+			}
+		}
+
+		/* make sure the non-right-leaning trees in `second` don't declare
+		   variables that have already been declared in the right-leaning path
+		   in `first` from the root to the head, excluding the head */
+		array<unsigned int> declared_variables(8);
+		for (unsigned int i = 0; i + 1 < first_head_inverter.outer.length; i++) {
+			hol_term* node = first_head_inverter.outer[i];
+			if (node->type == hol_term_type::EXISTS || node->type == hol_term_type::FOR_ALL || node->type == hol_term_type::LAMBDA) {
+				if (!declared_variables.add(node->quantifier.variable)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			}
+		}
+		array<hol_term*> second_scopes(16);
+		for (hol_term* node : second_head_inverter.outer) {
+			if (node->type == hol_term_type::AND || node->type == hol_term_type::OR || node->type == hol_term_type::IFF) {
+				for (unsigned int i = 0; i + 1 < node->array.length; i++) {
+					if (!get_scopes(*node->array.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				}
+			} else if (node->type == hol_term_type::IF_THEN || node->type == hol_term_type::UNARY_APPLICATION || node->type == hol_term_type::EQUALS) {
+				if (!get_scopes(*node->binary.left, second_scopes)) {
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			} else if (node->type == hol_term_type::BINARY_APPLICATION) {
+				if (!get_scopes(*node->ternary.first, second_scopes)
+				 || !get_scopes(*node->ternary.second, second_scopes))
+				{
+					for (auto entry : second_variable_map) free(entry.value);
+					return false;
+				}
+			} else if (node->type == hol_term_type::ANY_ARRAY) {
+				for (unsigned int i = 0; i < node->any_array.left.length; i++) {
+					if (!get_scopes(*node->any_array.left.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				} for (unsigned int i = 0; i < node->any_array.any.length; i++) {
+					if (!get_scopes(*node->any_array.any.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				} for (unsigned int i = 0; i + 1 < node->any_array.right.length; i++) {
+					if (!get_scopes(*node->any_array.right.operands[i], second_scopes)) {
+						for (auto entry : second_variable_map) free(entry.value);
+						return false;
+					}
+				}
+			}
+		}
+		for (hol_term* scope : second_scopes) {
+			if ((scope->type == hol_term_type::EXISTS || scope->type == hol_term_type::FOR_ALL || scope->type == hol_term_type::LAMBDA)
+			 && declared_variables.contains(scope->quantifier.variable)
+			 && !second_variable_map.put(scope, ++max_variable))
+			{
+				for (auto entry : second_variable_map) free(entry.value);
+				return false;
 			}
 		}
 
@@ -25168,7 +26427,6 @@ inline bool invert_select_conjunct_in_set(
 			}
 		}
 
-		array_map<unsigned int, variable_set> free_variable_map(8);
 		for (const auto& entry : var_map.free_variables) {
 			const variable_set& set = entry.value;
 			if (set.type == variable_set_type::SINGLETON && set.variable == first_lambda->quantifier.variable) {
@@ -25548,7 +26806,6 @@ inline bool invert_remove_conjunct_in_set(
 	unsigned int first_lambda_variable = 0;
 	if (first->type == hol_term_type::LAMBDA) {
 		first_lambda_variable = first->quantifier.variable;
-		first = first->quantifier.operand;
 	} else if (first->type == hol_term_type::ANY) {
 		first_lambda_variable = ++max_variable;
 	} else {
@@ -25559,7 +26816,6 @@ inline bool invert_remove_conjunct_in_set(
 	if (Predicative) {
 		if (second->type == hol_term_type::LAMBDA) {
 			second_lambda_variable = second->quantifier.variable;
-			second = second->quantifier.operand;
 		} else if (second->type == hol_term_type::ANY) {
 			second_lambda_variable = ++max_variable;
 		} else {
@@ -25572,6 +26828,29 @@ inline bool invert_remove_conjunct_in_set(
 			array_map<const hol_term*, unsigned int>& second_variable_map, unsigned int max_variable,
 			bool first_head_is_array, bool second_head_is_array)
 	{
+		/* make sure the initial lambda variables are correctly mapped */
+		if (first_head_inverter.outer[0]->type == hol_term_type::LAMBDA && second_head_inverter.outer[0]->type == hol_term_type::LAMBDA) {
+			if (!second_variable_map.ensure_capacity(second_variable_map.size + 1)) {
+				for (auto entry : second_variable_map) free(entry.value);
+				return false;
+			}
+
+			unsigned int first_lambda_variable = first_head_inverter.outer[0]->quantifier.variable;
+			hol_term* second_lambda = second_head_inverter.outer[0];
+			unsigned int index = second_variable_map.index_of(second_lambda);
+			if (index < second_variable_map.size && first_lambda_variable == second_variable_map.values[index]) {
+				/* `second_variable_map` should map `var` to itself */
+				second_variable_map.remove_at(index);
+			} else {
+				/* `second_variable_map` should map `var` to `target_var` */
+				second_variable_map.values[index] = first_lambda_variable;
+				if (index == second_variable_map.size) {
+					second_variable_map.keys[index] = second_lambda;
+					second_variable_map.size++;
+				}
+			}
+		}
+
 		if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) && second_head->any.included != nullptr)
 			second_head = second_head->any.included;
 
@@ -26282,27 +27561,15 @@ inline bool invert_remove_conjunct_in_set(
 			return true;
 		};
 
-	bool result;
 	if (Predicative) {
-		result = invert_apply_head(inverse, inverse_count, flags, first, second,
+		return invert_apply_head(inverse, inverse_count, flags, first, second,
 			predicative_head_finder<built_in_predicates>(first_lambda_variable),
 			predicative_head_finder<built_in_predicates>(second_lambda_variable), on_remap_variables, invert_second_head);
 	} else {
-		result = invert_apply_head(inverse, inverse_count, flags, first, second,
+		return invert_apply_head(inverse, inverse_count, flags, first, second,
 			predicative_head_finder<built_in_predicates>(first_lambda_variable),
 			find_head<built_in_predicates>, on_remap_variables, invert_second_head);
 	}
-	if (!result) return false;
-
-	for (unsigned int i = 0; i < inverse_count; i++) {
-		hol_term* new_inverse = hol_term::new_lambda(first_lambda_variable, inverse[i].root);
-		if (new_inverse == nullptr) {
-			for (unsigned int j = 0; j < inverse_count; j++) free(inverse[j]);
-			free(inverse); return false;
-		}
-		inverse[i].root = new_inverse;
-	}
-	return true;
 }
 
 template<int_fast8_t ConjunctIndex>
@@ -26970,202 +28237,25 @@ inline bool invert_select_only_conjunct_in_set_predicative(
 	return true;
 }
 
-template<unsigned int Predicate, int_fast8_t PredicateIndex>
-inline hol_term* do_invert_remove_higher_order_predicate(hol_term* second_head)
-{
-	if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) && second_head->any.included != nullptr
-	 && (second_head->any.included->type == hol_term_type::NOT || second_head->any.included->type == hol_term_type::EXISTS))
-		second_head = second_head->any.included;
-
-	unsigned int negation_count = 0;
-	while (second_head->type == hol_term_type::NOT) {
-		second_head = second_head->unary.operand;
-		negation_count++;
-	}
-
-	unsigned int head_variable;
-	if (second_head->type == hol_term_type::EXISTS) {
-		head_variable = second_head->quantifier.variable;
-	} else {
-		unsigned int max_variable = 0;
-		max_bound_variable(*second_head, max_variable);
-		head_variable = ++max_variable;
-	}
-
-	hol_term* predicate = nullptr;
-	head_index second_predicate_index;
-	if (second_head->type == hol_term_type::EXISTS) {
-		hol_term* operand = second_head->quantifier.operand;
-		find_predicate<built_in_predicates>(head_variable, operand, second_predicate_index);
-		if (second_predicate_index.position == head_position::NONE)
-			return nullptr;
-		if (operand->type == hol_term_type::AND) {
-			predicate = operand->array.operands[second_predicate_index.index];
-		} else if (operand->type == hol_term_type::ANY_ARRAY) {
-			if (second_predicate_index.position == head_position::LEFT) {
-				predicate = operand->any_array.left.operands[second_predicate_index.index];
-			} else if (second_predicate_index.position == head_position::ANY) {
-				predicate = operand->any_array.any.operands[second_predicate_index.index];
-			} else if (second_predicate_index.position == head_position::RIGHT) {
-				predicate = operand->any_array.right.operands[operand->any_array.right.length - second_predicate_index.index - 1];
-			}
-		} else {
-			if (second_predicate_index.position != head_position::LEFT || second_predicate_index.index != 0)
-				return nullptr;
-			predicate = operand;
-		}
-	} else if (second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT) {
-		second_predicate_index = {head_position::LEFT, 0};
-	} else {
-		return nullptr;
-	}
-
-	hol_term* expected_predicate;
-	if (predicate == nullptr || predicate->type == hol_term_type::ANY || predicate->type == hol_term_type::ANY_RIGHT) {
-		hol_term* head_var = hol_term::new_variable(head_variable);
-		if (head_var == nullptr) return (hol_term*) nullptr;
-		constexpr unsigned int excluded_tree_count = 2;
-		hol_term** excluded_trees = (hol_term**) alloca(sizeof(hol_term) * (excluded_tree_count + hol_non_head_constants<built_in_predicates>::count()));
-		excluded_trees[0] = hol_term::new_any(hol_term::new_equals(hol_term::new_apply(hol_term::new_any_constant(
-					(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
-					(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF),
-				&HOL_ANY), head_var));
-		excluded_trees[1] = hol_term::new_any(hol_term::new_exists(head_variable, &HOL_ANY));
-		if (excluded_trees[0] != nullptr) { HOL_ANY.reference_count++; head_var->reference_count++; }
-		if (excluded_trees[1] != nullptr) { HOL_ANY.reference_count++; }
-		if (excluded_trees[0] == nullptr || excluded_trees[1] == nullptr) {
-			if (excluded_trees[0] != nullptr) { free(*excluded_trees[0]); free(excluded_trees[0]); }
-			free(*head_var); free(head_var);
-			return nullptr;
-		}
-		free(*head_var);
-
-		for (unsigned int i = 0; i < hol_non_head_constants<built_in_predicates>::count(); i++) {
-			excluded_trees[excluded_tree_count + i] = hol_non_head_constants<built_in_predicates>::get_terms()[i];
-			excluded_trees[excluded_tree_count + i]->reference_count++;
-		}
-
-		expected_predicate = hol_term::new_apply(
-					hol_term::new_any(nullptr, excluded_trees, excluded_tree_count + hol_non_head_constants<built_in_predicates>::count()), head_var);
-		if (expected_predicate == nullptr) {
-			for (unsigned int i = 0; i < excluded_tree_count + hol_non_head_constants<built_in_predicates>::count(); i++) {
-				free(*excluded_trees[i]); if (excluded_trees[i]->reference_count == 0) free(excluded_trees[i]);
-			}
-			return nullptr;
-		}
-		head_var->reference_count++;
-
-	} else if (predicate->type == hol_term_type::UNARY_APPLICATION) {
-		if (Predicate == UINT_MAX) {
-			expected_predicate = hol_term::new_apply(hol_term::new_apply(
-					hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
-					predicate->binary.left), predicate->binary.right);
-		} else {
-			expected_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<Predicate>::value, predicate->binary.left), predicate->binary.right);
-		}
-		if (expected_predicate == nullptr)
-			return nullptr;
-		predicate->binary.left->reference_count++;
-		predicate->binary.right->reference_count++;
-		if (Predicate != UINT_MAX)
-			hol_term::constants<Predicate>::value.reference_count++;
-	} else {
-		return nullptr;
-	}
-
-	hol_term* new_head = apply_predicate<PredicateIndex>(second_head, head_variable, second_predicate_index, &HOL_ANY, expected_predicate);
-	free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
-
-	for (unsigned int i = 0; i < negation_count; i++) {
-		hol_term* temp = hol_term::new_not(new_head);
-		if (temp == nullptr) {
-			free(*new_head); if (new_head->reference_count == 0) free(new_head);
-			return nullptr;
-		}
-		new_head = temp;
-	}
-	return new_head;
-}
-
-template<unsigned int Predicate, int_fast8_t PredicateIndex>
-inline bool invert_remove_higher_order_predicate(
+template<unsigned int SrcPredicate, unsigned int DstPredicate>
+inline bool invert_apply_higher_order_predicate(
 		flagged_logical_form<hol_term>*& inverse,
 		unsigned int& inverse_count,
 		const grammatical_flags& flags,
 		hol_term* first, hol_term* second)
 {
-	hol_term* second_parent = nullptr;
-	hol_term* current = nullptr;
-	auto apply = [&second_parent,&current](hol_term* term) {
-		second_parent = current;
-		current = term;
-	};
-
-	head_index first_predicate_index; no_op first_apply;
-	auto first_head_finder = make_array_finder(find_head<built_in_predicates>);
-	hol_term* first_head = find_head(first, first_predicate_index, first_head_finder, first_apply);
-	if (first_head == nullptr)
+	hol_term* dst;
+	if (!apply_higher_order_predicate<DstPredicate, SrcPredicate>(second, dst))
 		return false;
 
-	if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr)
-		first_head = first_head->any.included;
-
-	head_index second_predicate_index;
-	hol_term* second_head = find_head(second, second_predicate_index, find_head<built_in_predicates>, apply);
-	if (second_head == nullptr)
-		return false;
-
-	if (first_head->type == hol_term_type::EXISTS) {
-		while (second_head->type == hol_term_type::NOT)
-			second_head = second_head->unary.operand;
-	}
-
-	hol_term* new_head = apply_array(second_head, second_parent, do_invert_remove_higher_order_predicate<Predicate, PredicateIndex>);
-	if (new_head == nullptr)
-		return false;
-
-	array<hol_term*> new_heads(4);
-	intersect<built_in_predicates>(new_heads, first_head, new_head);
-	free(*new_head); if (new_head->reference_count == 0) free(new_head);
-
-	hol_term* first_outer = substitute_head<any_node_position::NONE>(first, first_head, &HOL_ZERO);
-	if (first_outer == nullptr) {
-		free_all(new_heads);
-		return false;
-	}
-	hol_term* second_outer = substitute_head<any_node_position::NONE>(second, second_head, &HOL_ZERO);
-	if (second_outer == nullptr) {
-		free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
-		free_all(new_heads); return false;
-	}
-	array<hol_term*> new_outer(4);
-	intersect<built_in_predicates>(new_outer, first_outer, second_outer);
-	free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
-	free(*second_outer); if (second_outer->reference_count == 0) free(second_outer);
-
-	array<hol_term*> intersection(max((size_t) 1, new_heads.length * new_outer.length));
-	for (hol_term* new_head : new_heads) {
-		for (hol_term* outer : new_outer) {
-			hol_term* new_inverse = substitute_head<any_node_position::NONE>(outer, &HOL_ZERO, new_head);
-			if (new_inverse == nullptr) {
-				free_all(intersection); free_all(new_heads); free_all(new_outer);
-				return false;
-			}
-			intersection[intersection.length++] = new_inverse;
-		}
-	}
-	free_all(new_heads); free_all(new_outer);
-
-	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>) * intersection.length);
+	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>));
 	if (inverse == nullptr) {
-		free_all(intersection);
+		free(*dst); if (dst->reference_count == 0) free(dst);
 		return false;
 	}
-	for (unsigned int i = 0; i < intersection.length; i++) {
-		inverse[i].flags = flags;
-		inverse[i].root = intersection[i];
-	}
-	inverse_count = intersection.length;
+	inverse[0].flags = flags;
+	inverse[0].root = dst;
+	inverse_count = 1;
 	return true;
 }
 
@@ -28164,8 +29254,9 @@ inline bool invert_select_arg_without_head_predicative(
 					return false;
 				}
 
-				bool could_have_wide_scope_marker_before_quantifier = true;
+				bool could_have_wide_scope_marker_before_quantifier = element_narrow_scope;
 				if (old_right->type == hol_term_type::ANY || old_right->type == hol_term_type::ANY_RIGHT) {
+					could_have_wide_scope_marker_before_quantifier = true;
 					hol_term* temp_right = old_right;
 					for (unsigned int i = 0; could_have_wide_scope_marker_before_quantifier && i < temp_right->any.excluded_tree_count; i++) {
 						hol_term* excluded = temp_right->any.excluded_trees[i];
@@ -28544,6 +29635,23 @@ inline bool invert_select_arg_without_head_predicative(
 							if (is_array) {
 								hol_term* quantified_term;
 								if (right->type == hol_term_type::FOR_ALL) {
+									if ((could_have_wide_scope_marker_before_quantifier && right->type == hol_term_type::FOR_ALL) || (wide_scope_marker && element_narrow_scope)) {
+										excluded_quantifiers[excluded_quantifier_count] = hol_term::new_any_right(hol_term::new_apply(
+												&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+										if (excluded_quantifiers[excluded_quantifier_count] == nullptr) {
+											for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
+											free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
+											free(*arg_term); if (arg_term->reference_count == 0) free(arg_term);
+											free(*set_var); if (set_var->reference_count == 0) free(set_var);
+											for (unsigned int i = 0; i < excluded_quantifier_count; i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
+											free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+											free_all(dst); free_all(dst_outer); return false;
+										}
+										excluded_quantifier_count++;
+										hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+										HOL_ANY.reference_count++;
+									}
+
 									quantified_term = hol_term::new_for_all(element_variable, hol_term::new_if_then(set_definition, hol_term::new_any_right(&HOL_ZERO, excluded_quantifiers, excluded_quantifier_count)));
 									if (quantified_term == nullptr) {
 										for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
@@ -28586,24 +29694,11 @@ inline bool invert_select_arg_without_head_predicative(
 									if (wide_scope_marker && !element_narrow_scope) {
 										quantified_term = hol_term::new_exists(element_variable, hol_term::new_and(set_definition, hol_term::new_any_right(
 												hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ZERO), excluded_quantifiers, excluded_quantifier_count)));
-									} else {
-										if (!could_have_wide_scope_marker_before_head) {
-											excluded_quantifiers[excluded_quantifier_count] = hol_term::new_any_right(hol_term::new_apply(
-													&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
-											if (excluded_quantifiers[excluded_quantifier_count] == nullptr) {
-												for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
-												free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
-												free(*arg_term); if (arg_term->reference_count == 0) free(arg_term);
-												free(*set_var); if (set_var->reference_count == 0) free(set_var);
-												for (unsigned int i = 0; i < excluded_quantifier_count; i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
-												free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
-												free_all(dst); free_all(dst_outer); return false;
-											}
-											excluded_quantifier_count++;
-											hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
-											HOL_ANY.reference_count++;
-										}
+									} else if (could_have_wide_scope_marker_before_head) {
 										quantified_term = hol_term::new_exists(element_variable, hol_term::new_and(set_definition, hol_term::new_any_right(&HOL_ZERO, excluded_quantifiers, excluded_quantifier_count)));
+									} else {
+										quantified_term = hol_term::new_exists(element_variable, hol_term::new_and(set_definition, &HOL_ZERO));
+										for (unsigned int i = 0; i < excluded_quantifier_count; i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
 									}
 									if (quantified_term == nullptr) {
 										for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
@@ -28647,6 +29742,17 @@ inline bool invert_select_arg_without_head_predicative(
 										free_all(dst); free_all(dst_outer); return false;
 									}
 									hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+								} else if (could_have_wide_scope_marker_before_quantifier) {
+									dst_outer[dst_outer.length] = hol_term::new_any_right(quantified_term);
+									if (dst_outer[dst_outer.length] == nullptr) {
+										for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
+										free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
+										free(*arg_term); if (arg_term->reference_count == 0) free(arg_term);
+										free(*set_var); if (set_var->reference_count == 0) free(set_var);
+										free(*quantified_term); free(quantified_term);
+										free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+										free_all(dst); free_all(dst_outer); return false;
+									}
 								} else {
 									dst_outer[dst_outer.length] = quantified_term;
 								}
@@ -28654,6 +29760,23 @@ inline bool invert_select_arg_without_head_predicative(
 							} else {
 								hol_term* quantified_term;
 								if (right->type == hol_term_type::FOR_ALL) {
+									if ((could_have_wide_scope_marker_before_quantifier && right->type == hol_term_type::FOR_ALL) || (wide_scope_marker && element_narrow_scope)) {
+										excluded_quantifiers[excluded_quantifier_count] = hol_term::new_any_right(hol_term::new_apply(
+												&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+										if (excluded_quantifiers[excluded_quantifier_count] == nullptr) {
+											for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
+											free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
+											free(*arg_term); if (arg_term->reference_count == 0) free(arg_term);
+											free(*set_var); if (set_var->reference_count == 0) free(set_var);
+											for (unsigned int i = 0; i < excluded_quantifier_count; i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
+											free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+											free_all(dst); free_all(dst_outer); return false;
+										}
+										excluded_quantifier_count++;
+										hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+										HOL_ANY.reference_count++;
+									}
+
 									quantified_term = hol_term::new_for_all(element_variable, hol_term::new_if_then(set_definition, hol_term::new_any_right(&HOL_ZERO, excluded_quantifiers, excluded_quantifier_count)));
 									if (quantified_term == nullptr) {
 										for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
@@ -28761,7 +29884,7 @@ inline bool invert_select_arg_without_head_predicative(
 								}
 								dst_outer.length++;
 							}
-							could_have_wide_scope = could_have_wide_scope_marker_before_quantifier;
+							could_have_wide_scope = (wide_scope_marker || could_have_wide_scope_marker_before_quantifier);
 						} else {
 							for (hol_term* term : left_intersections) { free(*term); if (term->reference_count == 0) free(term); }
 							free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
@@ -28836,8 +29959,8 @@ inline bool invert_select_arg_without_head_predicative(
 						dst[dst.length++] = new_head;
 						new_head->reference_count++;
 
-						hol_term* excluded_quantifiers[6];
-						constexpr unsigned int excluded_quantifier_count = array_length(excluded_quantifiers);
+						hol_term* excluded_quantifiers[7];
+						unsigned int excluded_quantifier_count = 6;
 						excluded_quantifiers[0] = hol_term::new_any(hol_term::new_exists(set_variable, &HOL_ANY));
 						excluded_quantifiers[1] = hol_term::new_any(hol_term::new_for_all(set_variable, &HOL_ANY));
 						excluded_quantifiers[2] = hol_term::new_any(hol_term::new_lambda(set_variable, &HOL_ANY));
@@ -28887,6 +30010,21 @@ inline bool invert_select_arg_without_head_predicative(
 							HOL_ZERO.reference_count++;
 						} else {
 							if (wide_scope_marker) {
+								excluded_quantifiers[excluded_quantifier_count] = hol_term::new_any_right(hol_term::new_apply(
+										&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+								if (excluded_quantifiers[excluded_quantifier_count] == nullptr) {
+									free_all(new_heads);
+									free(*arg_term); if (arg_term->reference_count == 0) free(arg_term);
+									free(*set_var); if (set_var->reference_count == 0) free(set_var);
+									free(*conjunct); if (conjunct->reference_count == 0) free(conjunct);
+									for (unsigned int i = 0; i < excluded_quantifier_count; i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return false;
+								}
+								excluded_quantifier_count++;
+								hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+								HOL_ANY.reference_count++;
+
 								new_right_conjunct = hol_term::new_any_right_only(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_for_all(element_variable,
 										hol_term::new_if_then(hol_term::new_apply(set_var, element_var), hol_term::new_any_right_only(&HOL_ZERO, excluded_quantifiers + 3, excluded_quantifier_count - 3)))), excluded_quantifiers, 3);
 							} else {
@@ -28919,7 +30057,7 @@ inline bool invert_select_arg_without_head_predicative(
 							return false;
 						}
 						dst_outer.length++;
-						could_have_wide_scope = could_have_wide_scope_marker_before_quantifier;
+						could_have_wide_scope = (wide_scope_marker || could_have_wide_scope_marker_before_quantifier);
 					}
 					free_all(new_heads);
 				}
@@ -29116,9 +30254,9 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 		unsigned int first_element_variable;
 		if (first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) {
 			if (first_head->any.included != nullptr && first_head->any.included->type == hol_term_type::UNARY_APPLICATION
-				&& first_head->any.included->binary.left->type == hol_term_type::VARIABLE
-				&& first_head->any.included->binary.left->variable == lambda_variable
-				&& first_head->any.included->binary.right->type == hol_term_type::VARIABLE)
+			 && first_head->any.included->binary.left->type == hol_term_type::VARIABLE
+			 && first_head->any.included->binary.left->variable == lambda_variable
+			 && first_head->any.included->binary.right->type == hol_term_type::VARIABLE)
 			{
 				first_element_variable = first_head->any.included->binary.right->variable;
 			} else {
@@ -29181,7 +30319,7 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					right = right->binary.right;
 				if (right->type == hol_term_type::ANY || right->type == hol_term_type::ANY_RIGHT) {
 					first_element_variable = ++max_variable;
-				} else if (right->type == hol_term_type::EXISTS) {
+				} else if (right->type == hol_term_type::EXISTS || right->type == hol_term_type::FOR_ALL) {
 					first_element_variable = right->quantifier.variable;
 				} else {
 					return false;
@@ -29607,7 +30745,7 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 			if (first_head->type == hol_term_type::NOT)
 				first_head = first_head->unary.operand;
 
-			unsigned int first_set_variable, first_element_variable;
+			unsigned int first_set_variable, first_element_variable, first_right_element_variable = 0;
 			hol_term* first_left = nullptr;
 			hol_term* first_set_operand = nullptr;
 			if (first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) {
@@ -29671,16 +30809,21 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					first_element_variable = 0;
 				}
 
-				if (first_element_variable == 0 && right != nullptr) {
+				if (right != nullptr) {
 					/* try to get the element variable from the right conjunct, since we couldn't get it from the left conjunct */
 					if ((right->type == hol_term_type::ANY || right->type == hol_term_type::ANY_RIGHT) && right->any.included != nullptr)
 						right = right->any.included;
 					if (right->type == hol_term_type::UNARY_APPLICATION && right->binary.left->type == hol_term_type::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
 						right = right->binary.right;
 					if (right->type == hol_term_type::ANY || right->type == hol_term_type::ANY_RIGHT) {
-						first_element_variable = ++max_variable;
-					} else if (right->type == hol_term_type::EXISTS) {
-						first_element_variable = right->quantifier.variable;
+						first_right_element_variable = ++max_variable;
+					} else if (right->type == hol_term_type::EXISTS || right->type == hol_term_type::FOR_ALL) {
+						first_right_element_variable = right->quantifier.variable;
+					} else if (right->type == hol_term_type::AND && right->array.length == 2 && right->array.operands[1]->type == hol_term_type::UNARY_APPLICATION
+							&& right->array.operands[1]->binary.left->type == hol_term_type::VARIABLE && right->array.operands[1]->binary.left->variable == first_set_variable
+							&& right->array.operands[1]->binary.right->type == hol_term_type::VARIABLE)
+					{
+						first_right_element_variable = right->array.operands[1]->binary.right->variable;
 					} else {
 						return false;
 					}
@@ -29726,6 +30869,16 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 				return false;
 			}
 
+			if (first_element_variable == 0) {
+				if (first_right_element_variable == 0) {
+					return false;
+				} else {
+					first_element_variable = first_right_element_variable;
+				}
+			} else if (first_right_element_variable == 0) {
+				first_right_element_variable = first_element_variable;
+			}
+
 			if (first_set_variable == 0)
 				first_set_variable = second_set_variable;
 			if (first_element_variable == 0)
@@ -29746,7 +30899,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					free(*first_element_var); free(first_element_var);
 					return false;
 				}
-				first_element_var->reference_count++;
 				for (unsigned int i = 0; i < set_definition->array.length; i++)
 					set_definition->array.operands[i]->reference_count++;
 			} else if (set_definition->type == hol_term_type::ANY_ARRAY && set_definition->any_array.oper == hol_term_type::AND) {
@@ -29763,7 +30915,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					return false;
 				}
 				HOL_ANY.reference_count++;
-				first_element_var->reference_count++;
 				for (unsigned int i = 0; i < set_definition->any_array.any.length; i++)
 					set_definition->any_array.any.operands[i]->reference_count++;
 				for (unsigned int i = 0; i < set_definition->any_array.left.length; i++)
@@ -29780,14 +30931,12 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					free(*first_element_var); free(first_element_var);
 					return false;
 				}
-				first_element_var->reference_count++;
 				set_definition->reference_count++;
 			}
 
 			hol_term* first_set_var = hol_term::new_variable(first_set_variable);
 			if (first_set_var == nullptr) {
 				free(*new_operand); free(new_operand);
-				free(*first_element_var); free(first_element_var);
 				return false;
 			}
 
@@ -29803,13 +30952,11 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					free(*new_operand); if (new_operand->reference_count == 0) free(new_operand);
 					if (new_inner_operands.length == 0) {
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					} else if (new_inner_operands.length != 1) {
 						fprintf(stderr, "select_singleton_arg_in_set_without_head_predicative ERROR: Intersection is not unique.\n");
 						free_all(new_inner_operands);
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					}
 					new_operand = new_inner_operands[0];
@@ -29829,7 +30976,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 						if (excluded_quantifiers[1] != nullptr) { free(*excluded_quantifiers[1]); free(excluded_quantifiers[1]); }
 						free(*new_operand); free(new_operand);
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					}
 
@@ -29838,7 +30984,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 						for (unsigned int i = 0; i < array_length(excluded_quantifiers); i++) { free(*excluded_quantifiers[i]); free(excluded_quantifiers[i]); }
 						free(*new_operand); free(new_operand);
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					}
 				} else {
@@ -29846,7 +30991,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					if (new_set_operand == nullptr) {
 						free(*new_operand); free(new_operand);
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					}
 				}
@@ -29858,7 +31002,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					if (new_set_operand == nullptr) {
 						free(*new_operand); free(new_operand);
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					}
 					for (unsigned int i = 0; i + 1 < new_set_operand->array.length; i++)
@@ -29872,7 +31015,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 					if (new_set_operand == nullptr) {
 						free(*new_operand); free(new_operand);
 						free(*first_set_var); free(first_set_var);
-						free(*first_element_var); free(first_element_var);
 						return false;
 					}
 					new_set_operand->any_array.all->reference_count++;
@@ -29885,7 +31027,6 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 				} else {
 					free(*new_operand); free(new_operand);
 					free(*first_set_var); free(first_set_var);
-					free(*first_element_var); free(first_element_var);
 					return false;
 				}
 			}
@@ -29896,22 +31037,24 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 			else new_set_definition = hol_term::new_equals(first_set_var, hol_term::new_lambda(first_element_variable, new_set_operand));
 			if (new_set_definition == nullptr) {
 				free(*new_set_operand); free(new_set_operand);
-				free(*first_element_var); free(first_element_var);
 				free(*first_set_var); free(first_set_var);
 				return false;
 			}
-			first_set_var->reference_count++;
 
-			dst[dst.length] = hol_term::new_exists(first_set_variable, hol_term::new_and(new_set_definition,
-					hol_term::new_exists(first_element_variable, hol_term::new_and(
-						hol_term::new_apply(first_set_var, first_element_var), hol_term::new_apply(hol_term::new_variable(lambda_variable), first_element_var)))));
+			hol_term* excluded_quantifier = hol_term::new_any(hol_term::new_exists(first_set_variable, &HOL_ANY));
+			if (excluded_quantifier == nullptr) {
+				free(*new_set_definition); free(new_set_definition);
+				return false;
+			}
+			HOL_ANY.reference_count++;
+
+			dst[dst.length] = hol_term::new_exists(first_set_variable, hol_term::new_and(
+					new_set_definition, hol_term::new_any(nullptr, &excluded_quantifier, 1)));
 			if (dst[dst.length] == nullptr) {
 				free(*new_set_definition); free(new_set_definition);
-				free(*first_set_var); free(first_set_var);
-				free(*first_element_var); free(first_element_var);
+				free(*excluded_quantifier); free(excluded_quantifier);
 				return false;
 			}
-			first_element_var->reference_count += 2 - 1;
 			dst.length++;
 
 			hol_term* new_outer = &HOL_ZERO;
@@ -29981,13 +31124,68 @@ inline bool invert_select_singleton_arg_in_set_without_head_predicative(
 			if ((old_first_head->type == hol_term_type::ANY || old_first_head->type == hol_term_type::ANY_RIGHT)
 			 && (old_second_head->type == hol_term_type::ANY || old_second_head->type == hol_term_type::ANY_RIGHT))
 			{
-				dst_outer[dst_outer.length] = hol_term::new_any_right(new_outer, old_second_head->any.excluded_trees, old_second_head->any.excluded_tree_count);
+				array<hol_term*> new_excluded(old_second_head->any.excluded_tree_count + 1);
+				for (unsigned int i = 0; i < old_second_head->any.excluded_tree_count; i++) {
+					new_excluded[new_excluded.length] = old_second_head->any.excluded_trees[i];
+					new_excluded[new_excluded.length++]->reference_count++;
+				}
+
+				bool second_could_have_wide_scope = false;
+				for (unsigned int i = second_inverter.outer.length - 1; i > 0; i--) {
+					const hol_term* node = second_inverter.outer[i - 1];
+					if (node->type == hol_term_type::ANY || node->type == hol_term_type::ANY_RIGHT) {
+						bool wide_scope_excluded = false;
+						for (unsigned int i = 0; i < node->any.excluded_tree_count; i++) {
+							if ((node->any.excluded_trees[i]->type == hol_term_type::ANY || node->any.excluded_trees[i]->type == hol_term_type::ANY_RIGHT)
+							 && node->any.excluded_trees[i]->any.included->type == hol_term_type::UNARY_APPLICATION
+							 && node->any.excluded_trees[i]->any.included->binary.left->type == hol_term_type::CONSTANT
+							 && node->any.excluded_trees[i]->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+							 && *node->any.excluded_trees[i]->any.included->binary.right == HOL_ANY)
+							{
+								wide_scope_excluded = true;
+								break;
+							}
+						}
+						if (!wide_scope_excluded) {
+							second_could_have_wide_scope = true;
+							break;
+						}
+					}
+				}
+
+				if (!second_could_have_wide_scope) {
+					/* check if the wide scope is already excluded */
+					bool wide_scope_excluded = false;
+					for (unsigned int i = 0; i < new_excluded.length; i++) {
+						if ((new_excluded[i]->type == hol_term_type::ANY || new_excluded[i]->type == hol_term_type::ANY_RIGHT)
+						 && new_excluded[i]->any.included->type == hol_term_type::UNARY_APPLICATION
+						 && new_excluded[i]->any.included->binary.left->type == hol_term_type::CONSTANT
+						 && new_excluded[i]->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+						 && *new_excluded[i]->any.included->binary.right == HOL_ANY)
+						{
+							wide_scope_excluded = true;
+							break;
+						}
+					}
+
+					if (!wide_scope_excluded) {
+						new_excluded[new_excluded.length] = hol_term::new_any_right(hol_term::new_apply(
+								&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+						if (new_excluded[new_excluded.length] == nullptr) {
+							free(*new_outer); if (new_outer->reference_count == 0) free(new_outer);
+							free_all(new_excluded); return false;
+						}
+						hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+						HOL_ANY.reference_count++;
+						new_excluded.length++;
+					}
+				}
+
+				dst_outer[dst_outer.length] = hol_term::new_any_right(new_outer, new_excluded.data, new_excluded.length);
 				if (dst_outer[dst_outer.length] == nullptr) {
 					free(*new_outer); if (new_outer->reference_count == 0) free(new_outer);
-					return false;
+					free_all(new_excluded); return false;
 				}
-				for (unsigned int i = 0; i < old_second_head->any.excluded_tree_count; i++)
-					old_second_head->any.excluded_trees[i]->reference_count++;
 				dst_outer.length++;
 			} else {
 				dst_outer[dst_outer.length++] = new_outer;
@@ -30555,9 +31753,9 @@ inline bool invert_apply_tense_predicate(
 					first_conjuncts[first_conjuncts.length++] = first_operand->any_array.left.operands[i];
 					second_conjuncts[second_conjuncts.length++] = second_operand->array.operands[i];
 				} for (unsigned int i = 0; i < first_operand->any_array.right.length; i++) {
-					if (second_operand->array.length - i + 1 == second_predicate_index.index + 1) continue;
+					if (second_operand->array.length - i - 1 == second_predicate_index.index + 1) continue;
 					first_conjuncts[first_conjuncts.length++] = first_operand->any_array.right.operands[first_operand->any_array.right.length - i - 1];
-					second_conjuncts[second_conjuncts.length++] = second_operand->array.operands[second_operand->array.length - i + 1];
+					second_conjuncts[second_conjuncts.length++] = second_operand->array.operands[second_operand->array.length - i - 1];
 				}
 				if (second_predicate_index.position == head_position::ANY) {
 					if (second_predicate_index.index < first_predicate_index.index
@@ -30825,20 +32023,30 @@ inline bool invert_remove_not(
 			if (!dst.ensure_capacity(dst.length + 1))
 				return false;
 
+			hol_term* old_second_head = second_head;
+			if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT)
+			 && second_head->any.included != nullptr && (second_head->any.included->type == hol_term_type::NOT || second_head->any.included->type == hol_term_type::EXISTS))
+				second_head = second_head->any.included;
+
 			dst[dst.length] = hol_term::new_not(second_head);
 			if (dst[dst.length] == nullptr)
 				return false;
 			second_head->reference_count++;
+			if (old_second_head->type == hol_term_type::ANY || old_second_head->type == hol_term_type::ANY_RIGHT) {
+				hol_term* temp = hol_term::new_any_right(dst[dst.length], old_second_head->any.excluded_trees, old_second_head->any.excluded_tree_count);
+				if (temp == nullptr) {
+					free(*dst[dst.length]); if (dst[dst.length]->reference_count == 0) free(dst[dst.length]);
+					return false;
+				}
+				for (unsigned int i = 0; i < old_second_head->any.excluded_tree_count; i++)
+					old_second_head->any.excluded_trees[i]->reference_count++;
+				dst[dst.length] = temp;
+			}
 			dst.length++;
 			dst_outer[dst_outer.length++] = &HOL_ZERO;
 			HOL_ZERO.reference_count++;
 
 			if (Try) {
-				hol_term* old_second_head = second_head;
-				if ((second_head->type == hol_term_type::ANY || second_head->type == hol_term_type::ANY_RIGHT)
-				 && second_head->any.included != nullptr && (second_head->any.included->type == hol_term_type::NOT || second_head->any.included->type == hol_term_type::EXISTS))
-					second_head = second_head->any.included;
-
 				if (second_head->type == hol_term_type::NOT)
 					return true;
 
@@ -30938,7 +32146,7 @@ inline bool invert_require_predicative_universal(
 	excluded_quantifiers[0] = hol_term::new_any(hol_term::new_exists(set_variable, &HOL_ANY));
 	excluded_quantifiers[1] = hol_term::new_any(hol_term::new_for_all(set_variable, &HOL_ANY));
 	excluded_quantifiers[2] = hol_term::new_any(hol_term::new_lambda(set_variable, &HOL_ANY));
-	excluded_quantifiers[3] = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, hol_term::new_for_all(element_variable, &HOL_ANY)));
+	excluded_quantifiers[3] = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
 	excluded_quantifiers[4] = hol_term::new_any(hol_term::new_exists(element_variable, &HOL_ANY));
 	excluded_quantifiers[5] = hol_term::new_any(hol_term::new_for_all(element_variable, &HOL_ANY));
 	excluded_quantifiers[6] = hol_term::new_any(hol_term::new_lambda(element_variable, &HOL_ANY));
@@ -31768,6 +32976,7 @@ inline bool invert_select_predicate_in_set(
 		predicative_head_finder<built_in_predicates>(lambda_variable), find_root, no_op(),
 		[lambda_variable](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array) {
 			array<hol_term*> new_heads(2);
+			could_have_wide_scope = true;
 			select_predicate_in_set<false, false, false, false, false>(new_heads, first_head, second_head, max_variable, lambda_variable);
 			if (new_heads.length == 0)
 				return false;
@@ -32387,7 +33596,7 @@ inline bool invert_require_narrow_or_wide_scope(
 	} if (last->type == hol_term_type::UNARY_APPLICATION && last->binary.left->type == hol_term_type::CONSTANT && last->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE) {
 		last = last->binary.right;
 		if (WideScope) {
-			return intersect(inverse, inverse_count, flags, first, second);
+			return copy(inverse, inverse_count, flags, second);
 		} else {
 			return false;
 		}
@@ -32667,20 +33876,59 @@ inline bool invert_remove_wide_scope(
 	if (intersection.length == 0)
 		return false;
 
-	hol_term* first_outer = substitute_head<any_node_position::NONE>(first, first_head, &HOL_ZERO);
+	hol_term* new_first_head;
+	if (first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) {
+		new_first_head = hol_term::new_any_right(&HOL_ZERO, first_head->any.excluded_trees, first_head->any.excluded_tree_count);
+		if (new_first_head == nullptr) {
+			free_all(intersection);
+			return false;
+		}
+		HOL_ZERO.reference_count++;
+		for (unsigned int i = 0; i < first_head->any.excluded_tree_count; i++)
+			first_head->any.excluded_trees[i]->reference_count++;
+	} else {
+		new_first_head = &HOL_ZERO;
+		HOL_ZERO.reference_count++;
+	}
+
+	hol_term* first_outer = substitute_head<any_node_position::NONE>(first, first_head, new_first_head);
+	free(*new_first_head); if (new_first_head->reference_count == 0) free(new_first_head);
 	if (first_outer == nullptr) {
 		free_all(intersection);
 		return false;
 	}
 
-	if (first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) {
-		hol_term* new_first_outer = hol_term::new_any_right(first_outer, first_head->any.excluded_trees, first_head->any.excluded_tree_count);
-		if (new_first_outer == nullptr) {
+	hol_term* actual_first_head = first_head;
+	if ((actual_first_head->type == hol_term_type::ANY || actual_first_head->type == hol_term_type::ANY_RIGHT) && actual_first_head->any.included != nullptr
+	 && (actual_first_head->any.included->type == hol_term_type::NOT || actual_first_head->any.included->type == hol_term_type::EXISTS))
+		actual_first_head = actual_first_head->any.included;
+	while (actual_first_head->type == hol_term_type::NOT)
+		actual_first_head = actual_first_head->unary.operand;
+	hol_term* src_first_head = nullptr;
+	hol_term* dst_first_head = nullptr;
+	if (actual_first_head->type == hol_term_type::EXISTS) {
+		src_first_head = hol_term::new_any_right(hol_term::new_exists(actual_first_head->quantifier.variable, &HOL_ANY));
+		if (src_first_head == nullptr) {
 			free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
 			free_all(intersection); return false;
 		}
-		for (unsigned int i = 0; i < first_head->any.excluded_tree_count; i++)
-			first_head->any.excluded_trees[i]->reference_count++;
+		HOL_ANY.reference_count++;
+
+		dst_first_head = hol_term::new_any_right(&hol_term::constants<(unsigned int) built_in_predicates::ZERO>::value);
+		if (dst_first_head == nullptr) {
+			free(*src_first_head); free(src_first_head);
+			free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+			free_all(intersection); return false;
+		}
+		hol_term::constants<(unsigned int) built_in_predicates::ZERO>::value.reference_count++;
+
+		hol_term* new_first_outer = substitute(first_outer, src_first_head, dst_first_head);
+		free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+		if (new_first_outer == nullptr) {
+			free(*src_first_head); if (src_first_head->reference_count == 0) free(src_first_head);
+			free(*dst_first_head); if (dst_first_head->reference_count == 0) free(dst_first_head);
+			free_all(intersection); return false;
+		}
 		first_outer = new_first_outer;
 	}
 
@@ -32689,6 +33937,10 @@ inline bool invert_remove_wide_scope(
 		hol_term* new_outer = remove_any_nodes(term, find_zero);
 		if (new_outer == nullptr) {
 			free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+			if (src_first_head != nullptr) {
+				free(*src_first_head); if (src_first_head->reference_count == 0) free(src_first_head);
+				free(*dst_first_head); if (dst_first_head->reference_count == 0) free(dst_first_head);
+			}
 			free_all(inverted_logical_forms); free_all(intersection);
 			return false;
 		}
@@ -32698,13 +33950,37 @@ inline bool invert_remove_wide_scope(
 		free(*new_outer); if (new_outer->reference_count == 0) free(new_outer);
 		if (!inverted_logical_forms.ensure_capacity(inverted_logical_forms.length + new_intersection.length)) {
 			free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+			if (src_first_head != nullptr) {
+				free(*src_first_head); if (src_first_head->reference_count == 0) free(src_first_head);
+				free(*dst_first_head); if (dst_first_head->reference_count == 0) free(dst_first_head);
+			}
 			free_all(inverted_logical_forms); free_all(new_intersection); free_all(intersection);
 			return false;
 		}
 		for (hol_term* merged_outer : new_intersection) {
-			hol_term* new_term = substitute_head<any_node_position::NONE>(merged_outer, &HOL_ZERO, second_head);
+			hol_term* new_merged_outer;
+			if (src_first_head != nullptr) {
+				new_merged_outer = substitute(merged_outer, dst_first_head, src_first_head);
+				if (new_merged_outer == nullptr) {
+					free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+					free(*src_first_head); if (src_first_head->reference_count == 0) free(src_first_head);
+					free(*dst_first_head); if (dst_first_head->reference_count == 0) free(dst_first_head);
+					free_all(inverted_logical_forms); free_all(new_intersection); free_all(intersection);
+					return false;
+				}
+			} else {
+				new_merged_outer = merged_outer;
+				new_merged_outer->reference_count++;
+			}
+
+			hol_term* new_term = substitute_head<any_node_position::NONE>(new_merged_outer, &HOL_ZERO, second_head);
+			free(*new_merged_outer); if (new_merged_outer->reference_count == 0) free(new_merged_outer);
 			if (new_term == nullptr) {
 				free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+				if (src_first_head != nullptr) {
+					free(*src_first_head); if (src_first_head->reference_count == 0) free(src_first_head);
+					free(*dst_first_head); if (dst_first_head->reference_count == 0) free(dst_first_head);
+				}
 				free_all(inverted_logical_forms); free_all(new_intersection); free_all(intersection);
 				return false;
 			}
@@ -32713,6 +33989,10 @@ inline bool invert_remove_wide_scope(
 		free_all(new_intersection);
 	}
 	free(*first_outer); if (first_outer->reference_count == 0) free(first_outer);
+	if (src_first_head != nullptr) {
+		free(*src_first_head); if (src_first_head->reference_count == 0) free(src_first_head);
+		free(*dst_first_head); if (dst_first_head->reference_count == 0) free(dst_first_head);
+	}
 	free_all(intersection);
 
 	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>) * inverted_logical_forms.length);
@@ -33387,11 +34667,22 @@ inline bool invert_factor(
 		unsigned int& inverse_count,
 		const grammatical_flags& flags,
 		hol_term* first, hol_term* second,
+		unsigned int first_lambda_variable,
 		FindHeadFunction find_head_function)
 {
+	hol_term* grandparent = nullptr;
+	hol_term* parent = nullptr;
+	hol_term* current = nullptr;
+	auto get_parent = [&grandparent,&parent, &current](hol_term* term) {
+		grandparent = parent;
+		parent = current;
+		current = term;
+		return true;
+	};
+
 	head_index first_predicate_index, second_predicate_index; no_op apply;
 	auto find_array_head = make_array_finder(find_head_function);
-	hol_term* first_head = find_head(first, first_predicate_index, find_array_head, apply);
+	hol_term* first_head = find_head(first, first_predicate_index, find_array_head, get_parent);
 	hol_term* second_head = find_head(second, second_predicate_index, find_head_function, apply);
 	if (first_head == nullptr || second_head == nullptr)
 		return false;
@@ -33400,7 +34691,7 @@ inline bool invert_factor(
 	 && first_head->type != hol_term_type::ANY_ARRAY && first_head->type != hol_term_type::AND
 	 && first_head->type != hol_term_type::OR)
 	{
-		return intersect(inverse, inverse_count, flags, first, second);
+		return copy(inverse, inverse_count, flags, second);
 	}
 
 	hol_term* new_second_head = hol_term::new_any_array(hol_term_type::ANY_ARRAY, second_head,
@@ -33411,6 +34702,21 @@ inline bool invert_factor(
 
 	array<hol_term*> new_heads(4);
 	intersect<built_in_predicates>(new_heads, first_head, new_second_head);
+
+	if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT)
+	 && first_head->any.included != nullptr && first_head->any.included->type == hol_term_type::UNARY_APPLICATION
+	 && first_head->any.included->binary.left->type == hol_term_type::VARIABLE
+	 && first_head->any.included->binary.left->variable == first_lambda_variable
+	 && first_head->any.included->binary.right->type == hol_term_type::VARIABLE
+	 && parent != nullptr && parent->type == hol_term_type::UNARY_APPLICATION
+	 && parent->binary.left->type == hol_term_type::CONSTANT
+	 && parent->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+	 && grandparent != nullptr && (grandparent->type == hol_term_type::ANY || grandparent->type == hol_term_type::ANY_RIGHT))
+	{
+		/* the wide scope could be inside the head */
+		intersect<built_in_predicates>(new_heads, grandparent, new_second_head);
+	}
+
 	free(*new_second_head); if (new_second_head->reference_count == 0) free(new_second_head);
 	if (new_heads.length == 0)
 		return false;
@@ -33445,7 +34751,7 @@ inline bool invert_factor(
 		const grammatical_flags& flags,
 		hol_term* first, hol_term* second)
 {
-	return invert_factor(inverse, inverse_count, flags, first, second, find_head<built_in_predicates>);
+	return invert_factor(inverse, inverse_count, flags, first, second, 0, find_head<built_in_predicates>);
 }
 
 inline bool invert_factor_predicative(
@@ -33473,7 +34779,7 @@ inline bool invert_factor_predicative(
 		return false;
 	}
 
-	bool result = invert_factor(inverse, inverse_count, flags, first, second, predicative_head_finder<built_in_predicates>(second_lambda_variable));
+	bool result = invert_factor(inverse, inverse_count, flags, first, second, first_lambda_variable, predicative_head_finder<built_in_predicates>(second_lambda_variable));
 	if (!result) return false;
 	for (unsigned int i = 0; i < inverse_count; i++) {
 		hol_term* new_inverse = hol_term::new_lambda(first_lambda_variable, inverse[i].root);
@@ -33683,12 +34989,22 @@ inline bool invert_select_conjuncts_without_head(
 			}
 
 			if (old_first_head->type == hol_term_type::ANY || old_first_head->type == hol_term_type::ANY_RIGHT) {
+				bool wide_scope_excluded = false;
 				array<hol_term*> excluded(old_first_head->any.excluded_tree_count + 1);
 				for (unsigned int i = 0; i < old_first_head->any.excluded_tree_count; i++) {
-					excluded[excluded.length] = old_first_head->any.excluded_trees[i];
+					hol_term* excluded_tree = old_first_head->any.excluded_trees[i];
+					if (excluded_tree->type == hol_term_type::ANY_RIGHT && excluded_tree->any.included != nullptr
+					 && excluded_tree->any.included->type == hol_term_type::UNARY_APPLICATION
+					 && excluded_tree->any.included->binary.left->type == hol_term_type::CONSTANT
+					 && excluded_tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+					 && *excluded_tree->any.included->binary.right == HOL_ANY)
+					{
+						wide_scope_excluded = true;
+					}
+					excluded[excluded.length] = excluded_tree;
 					excluded[excluded.length++]->reference_count++;
 				}
-				if (can_have_free_variable_references) {
+				if (can_have_free_variable_references && !wide_scope_excluded) {
 					excluded[excluded.length] = hol_term::new_any_right(hol_term::new_apply(
 							&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
 					if (excluded[excluded.length] == nullptr) {
@@ -34132,28 +35448,41 @@ inline bool invert_apply_to_predicative_set_function(
 	unsigned int lambda_variable = 0;
 	if (second->type == hol_term_type::LAMBDA) {
 		lambda_variable = second->quantifier.variable;
-		second = second->quantifier.operand;
 	} else if (second->type == hol_term_type::ANY) {
 		lambda_variable = ++max_variable;
 	} else {
 		return false;
 	}
 
-	return invert_apply_head(inverse, inverse_count, flags, first, second,
-		predicative_head_finder<built_in_predicates>(lambda_variable), predicative_head_finder<built_in_predicates>(lambda_variable), no_op(),
-		[src_predicate,dst_predicate](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array)
-		{
-			if (!apply_to_predicative_set_function(second_head, dst, max_variable, dst_predicate, src_predicate))
-				return false;
-			if (!dst_outer.ensure_capacity(dst.length)) {
-				free_all(dst);
-				return false;
-			}
-			for (unsigned int i = 0; i < dst.length; i++)
-				dst_outer[dst_outer.length++] = &HOL_ZERO;
-			HOL_ZERO.reference_count += dst.length;
-			return true;
-		});
+	head_index predicate_index; no_op apply;
+	auto head_finder = predicative_head_finder<built_in_predicates>(lambda_variable);
+	hol_term* head = find_head(second, predicate_index, head_finder, apply);
+	if (head == nullptr)
+		return false;
+
+	array<hol_term*> new_heads(2);
+	if (!apply_to_predicative_set_function(head, new_heads, max_variable, dst_predicate, src_predicate))
+		return false;
+	if (new_heads.length == 0)
+		return false;
+
+	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>) * new_heads.length);
+	if (inverse == nullptr) {
+		free_all(new_heads);
+		return false;
+	}
+	for (unsigned int i = 0; i < new_heads.length; i++) {
+		inverse[i].root = substitute_head<any_node_position::NONE>(second, head, new_heads[i]);
+		if (inverse[i].root == nullptr) {
+			for (unsigned int j = 0; j < i; j++) free(inverse[j]);
+			free(inverse); free_all(new_heads);
+			return false;
+		}
+		inverse[i].flags = flags;
+	}
+	inverse_count = new_heads.length;
+	free_all(new_heads);
+	return true;
 }
 
 inline bool invert_select_lambda(
@@ -34701,6 +36030,11 @@ inline bool invert_select_function(
 		find_head<built_in_predicates>, find_root, on_remap_variables,
 		[&lambda_variable](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array)
 		{
+			hol_term* old_second_head = second_head;
+			if (second_head->type == hol_term_type::UNARY_APPLICATION && second_head->binary.left->type == hol_term_type::CONSTANT
+			 && second_head->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
+				second_head = second_head->binary.right;
+
 			/* first try to get these variables from `first` */
 			unsigned int function_variable, first_function_variable, second_function_variable, head_variable;
 			if ((first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) && first_head->any.included != nullptr && first_head->any.included->type == hol_term_type::EXISTS)
@@ -34781,6 +36115,9 @@ inline bool invert_select_function(
 			hol_term* common_ancestor_scope;
 			unsigned int last_common_ancestor_scope;
 			if (found_conjunct == nullptr) {
+				if (SubstitutionSetting == substitution_setting::EMPTY)
+					return false;
+
 				/* scopes is empty if the precise conjunct is not found */
 				hol_term* first_any_right = nullptr;
 				hol_term* current = second_head;
@@ -35221,7 +36558,7 @@ inline bool invert_select_function(
 			}
 			HOL_ZERO.reference_count++;
 
-			dst_outer[dst_outer.length] = substitute_head<any_node_position::LEFT>(second_head, common_ancestor_scope, new_outer);
+			dst_outer[dst_outer.length] = substitute_head<any_node_position::LEFT>(old_second_head, common_ancestor_scope, new_outer);
 			free(*new_outer); if (new_outer->reference_count == 0) free(new_outer);
 			if (dst_outer[dst_outer.length] == nullptr)
 				return false;
@@ -35294,7 +36631,7 @@ inline bool invert_require_capitalized(
 	if (!require_capitalized<false>(second, new_head))
 		return false;
 
-	if (!intersect(inverse, inverse_count, flags, first, new_head)) {
+	if (!copy(inverse, inverse_count, flags, new_head)) {
 		free(*new_head); if (new_head->reference_count == 0) free(new_head);
 		return false;
 	}
@@ -35319,6 +36656,7 @@ inline bool invert_add_flag(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
@@ -35329,38 +36667,7 @@ inline bool invert_add_flag(
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
-}
-
-template<typename Formula, typename FindHeadFunction>
-inline bool invert_add_flag(
-		flagged_logical_form<Formula>*& inverse,
-		unsigned int& inverse_count,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second,
-		grammatical_flag flag,
-		FindHeadFunction find_head_function)
-{
-	grammatical_flags flags;
-	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
-		return false;
-	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
-		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-	}
-	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, find_head_function);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35380,6 +36687,7 @@ inline bool invert_try_add_flag(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 		return false;
@@ -35390,7 +36698,7 @@ inline bool invert_try_add_flag(
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35410,6 +36718,7 @@ inline bool invert_remove_flag(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::TRUE))
@@ -35420,38 +36729,7 @@ inline bool invert_remove_flag(
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
-}
-
-template<typename Formula, typename FindHeadFunction>
-inline bool invert_remove_flag(
-		flagged_logical_form<Formula>*& inverse,
-		unsigned int& inverse_count,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second,
-		grammatical_flag flag,
-		FindHeadFunction find_head_function)
-{
-	grammatical_flags flags;
-	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::TRUE))
-		return false;
-	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
-		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-	}
-	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, find_head_function);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35471,6 +36749,7 @@ inline bool invert_try_remove_flag(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 		return false;
@@ -35481,38 +36760,7 @@ inline bool invert_try_remove_flag(
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
-}
-
-template<typename Formula, typename FindHeadFunction>
-inline bool invert_try_remove_flag(
-		flagged_logical_form<Formula>*& inverse,
-		unsigned int& inverse_count,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second,
-		grammatical_flag flag,
-		FindHeadFunction find_head_function)
-{
-	grammatical_flags flags;
-	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-	 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
-		return false;
-	flags.flags[(uint_fast8_t) flag] = first.flags.flags[(uint_fast8_t) flag];
-	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
-		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-	}
-	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, find_head_function);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35532,6 +36780,7 @@ inline bool invert_require_flag(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::TRUE))
@@ -35542,38 +36791,7 @@ inline bool invert_require_flag(
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
-}
-
-template<typename Formula, typename FindHeadFunction>
-inline bool invert_require_flag(
-		flagged_logical_form<Formula>*& inverse,
-		unsigned int& inverse_count,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second,
-		grammatical_flag flag,
-		FindHeadFunction find_head_function)
-{
-	grammatical_flags flags;
-	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::TRUE))
-		return false;
-	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
-		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-	}
-	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, find_head_function);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35593,6 +36811,7 @@ inline bool invert_require_no_flag(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
@@ -35603,38 +36822,7 @@ inline bool invert_require_no_flag(
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	}
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
-}
-
-template<typename Formula, typename FindHeadFunction>
-inline bool invert_require_no_flag(
-		flagged_logical_form<Formula>*& inverse,
-		unsigned int& inverse_count,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second,
-		grammatical_flag flag,
-		FindHeadFunction find_head_function)
-{
-	grammatical_flags flags;
-	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-	 || !intersect(flags.flags[(uint_fast8_t) flag], first.flags.flags[(uint_fast8_t) flag], grammatical_flag_value::FALSE))
-		return false;
-	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++) {
-		if ((grammatical_flag) i == flag) continue;
-		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-	}
-	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, find_head_function);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35653,6 +36841,7 @@ inline bool invert_add_conjunction(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.cnj, first.flags.cnj, grammatical_conjunction::NONE))
@@ -35661,7 +36850,7 @@ inline bool invert_add_conjunction(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35680,6 +36869,7 @@ inline bool invert_remove_conjunction(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.cnj, first.flags.cnj, cnj))
@@ -35688,7 +36878,7 @@ inline bool invert_remove_conjunction(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35707,6 +36897,7 @@ inline bool invert_require_no_conjunction(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.cnj, first.flags.cnj, grammatical_conjunction::ANY))
@@ -35715,7 +36906,7 @@ inline bool invert_require_no_conjunction(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35734,6 +36925,7 @@ inline bool invert_add_correlator(
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.corr, first.flags.corr, correlator::NONE))
@@ -35742,7 +36934,7 @@ inline bool invert_add_correlator(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35761,6 +36953,7 @@ inline bool invert_remove_correlator(
 	 || !intersect(flags.corr, first.flags.corr, corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj))
@@ -35769,7 +36962,7 @@ inline bool invert_remove_correlator(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35788,6 +36981,7 @@ inline bool invert_add_correlated_by(
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, correlator::NONE))
@@ -35796,7 +36990,7 @@ inline bool invert_add_correlated_by(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35814,6 +37008,7 @@ inline bool invert_add_coordination(
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
@@ -35823,7 +37018,7 @@ inline bool invert_add_coordination(
 	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-		&& intersect(inverse, inverse_count, flags, first.root, second.root);
+		&& copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35842,6 +37037,7 @@ inline bool invert_remove_coordination(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj))
@@ -35871,6 +37067,150 @@ inline bool invert_remove_coordination(
 }
 
 template<typename Formula>
+inline bool invert_add_be(
+		flagged_logical_form<Formula>*& inverse,
+		unsigned int& inverse_count,
+		const flagged_logical_form<Formula>& first,
+		const flagged_logical_form<Formula>& second,
+		be_flag be)
+{
+	grammatical_flags flags;
+	if (!has_intersection(second.flags.be, be)
+	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
+	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
+	 || !intersect(flags.be, first.flags.be, be_flag::FALSE))
+		return false;
+	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+		&& copy(inverse, inverse_count, flags, second.root);
+}
+
+template<typename Formula>
+inline bool invert_remove_be(
+		flagged_logical_form<Formula>*& inverse,
+		unsigned int& inverse_count,
+		const flagged_logical_form<Formula>& first,
+		const flagged_logical_form<Formula>& second,
+		be_flag be)
+{
+	grammatical_flags flags;
+	if (!has_intersection(second.flags.be, be_flag::FALSE)
+	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
+	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
+	 || !intersect(flags.be, first.flags.be, be))
+		return false;
+	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+		&& copy(inverse, inverse_count, flags, second.root);
+}
+
+template<typename Formula>
+inline bool invert_try_remove_coordinated_be(
+		flagged_logical_form<Formula>*& inverse,
+		unsigned int& inverse_count,
+		const flagged_logical_form<Formula>& first,
+		const flagged_logical_form<Formula>& second)
+{
+	grammatical_flags flags;
+	if (!has_intersection(second.flags.be, be_flag::FALSE)
+	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
+	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
+	 || !intersect(flags.be, first.flags.be, be_flag::FALSE_OR_COORDINATED))
+		return false;
+	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+		&& copy(inverse, inverse_count, flags, second.root);
+}
+
+template<typename Formula>
+inline bool invert_require_no_be(
+		flagged_logical_form<Formula>*& inverse,
+		unsigned int& inverse_count,
+		const flagged_logical_form<Formula>& first,
+		const flagged_logical_form<Formula>& second)
+{
+	grammatical_flags flags;
+	if (!has_intersection(second.flags.be, be_flag::FALSE)
+	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
+	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
+	 || !intersect(flags.be, first.flags.be, be_flag::FALSE))
+		return false;
+	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+		&& copy(inverse, inverse_count, flags, second.root);
+}
+
+template<typename Formula>
+inline bool invert_try_coordinate_be(
+		flagged_logical_form<Formula>*& inverse,
+		unsigned int& inverse_count,
+		const flagged_logical_form<Formula>& first,
+		const flagged_logical_form<Formula>& second)
+{
+	grammatical_flags flags;
+	if (second.flags.be == be_flag::FALSE) {
+		flags.be = be_flag::FALSE;
+	} else if (second.flags.be == be_flag::COORDINATED) {
+		flags.be = be_flag::TRUE;
+	} else if (!has_intersection(second.flags.be, be_flag::FALSE_OR_COORDINATED)
+			|| !intersect(flags.be, first.flags.be, be_flag::NOT_COORDINATED))
+	{
+		return false;
+	}
+	if (!intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
+	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+	 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
+		return false;
+	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+	return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+		&& copy(inverse, inverse_count, flags, second.root);
+}
+
+template<typename Formula>
 inline bool invert_apply_auxiliary(
 		flagged_logical_form<Formula>*& inverse,
 		unsigned int& inverse_count,
@@ -35888,6 +37228,7 @@ inline bool invert_apply_auxiliary(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 	 || !intersect(flags.aux, expected_aux, first.flags.aux))
 		return false;
@@ -35903,44 +37244,7 @@ inline bool invert_apply_auxiliary(
 	} else if (!flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
 		return false;
 	}
-	return intersect(inverse, inverse_count, flags, first.root, second.root);
-}
-
-template<typename Formula, typename FindHeadFunction>
-inline bool invert_apply_auxiliary(
-		flagged_logical_form<Formula>*& inverse,
-		unsigned int& inverse_count,
-		const flagged_logical_form<Formula>& first,
-		const flagged_logical_form<Formula>& second,
-		const auxiliary_flag expected_aux,
-		auxiliary_flag dst_aux,
-		FindHeadFunction find_head_function)
-{
-	grammatical_flags flags;
-	if (!has_intersection(dst_aux, second.flags.aux)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-	 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-	 || !intersect(flags.aux, expected_aux, first.flags.aux))
-		return false;
-	flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-	for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-		if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-	if (!second.flags.aux_or_subjunctive_or_inf_or_to_inf && first.flags.aux_or_subjunctive_or_inf_or_to_inf) {
-		if (flags.aux == auxiliary_flag::AUX || flags.mood == grammatical_mood::SUBJUNCTIVE || flags.mood == grammatical_mood::BARE_INFINITIVE || flags.mood == grammatical_mood::TO_INFINITIVE)
-			flags.aux_or_subjunctive_or_inf_or_to_inf = false;
-		else if (has_intersection(flags.aux, auxiliary_flag::AUX))
-			flags.aux_or_subjunctive_or_inf_or_to_inf = true;
-		else flags.aux_or_subjunctive_or_inf_or_to_inf = false;
-	} else if (!flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
-		return false;
-	}
-	return intersect_with_head(inverse, inverse_count, flags, first.root, second.root, find_head_function);
+	return copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35960,6 +37264,7 @@ inline bool invert_add_mood(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, grammatical_mood::INDICATIVE))
 		return false;
@@ -35977,7 +37282,7 @@ inline bool invert_add_mood(
 	} else if (!flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
 		return false;
 	}
-	return intersect(inverse, inverse_count, flags, first.root, second.root);
+	return copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -35997,6 +37302,7 @@ inline bool invert_remove_mood(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, grammatical_mood::ANY))
 		return false;
@@ -36018,7 +37324,7 @@ inline bool invert_remove_mood(
 	} else if (!flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
 		return false;
 	}
-	return intersect(inverse, inverse_count, flags, first.root, second.root);
+	return copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -36037,6 +37343,7 @@ inline bool invert_try_remove_mood(
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 	 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+	 || !intersect(flags.be, first.flags.be, second.flags.be)
 	 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 	 || !intersect(flags.mood, first.flags.mood, grammatical_mood::ANY))
 		return false;
@@ -36058,7 +37365,7 @@ inline bool invert_try_remove_mood(
 	} else if (!flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
 		return false;
 	}
-	return intersect(inverse, inverse_count, flags, first.root, second.root);
+	return copy(inverse, inverse_count, flags, second.root);
 }
 
 template<typename Formula>
@@ -36090,30 +37397,12 @@ bool invert(
 		*inverse = first;
 		return true;
 	case function_type::IDENTITY:
-		if (intersect(flags, first.flags, second.flags)) {
-			auto head_finder = make_array_finder(find_head<built_in_predicates>);
-			return intersect_with_head(inverse, inverse_count, flags, first.root, second.root, head_finder);
-		} else {
-			return false;
-		}
-	case function_type::IDENTITY_PREDICATIVE:
-		if (intersect(flags, first.flags, second.flags)) {
-			unsigned int lambda_variable;
-			if (second.root->type == hol_term_type::LAMBDA)
-				lambda_variable = second.root->quantifier.variable;
-			else return false;
-			auto head_finder = predicative_head_finder<built_in_predicates>(lambda_variable);
-			return intersect_with_head(inverse, inverse_count, flags, first.root, second.root, head_finder);
-		} else {
-			return false;
-		}
-	case function_type::IDENTITY_ROOT:
 	case function_type::REQUIRE_LEFT_PREDICATE_EXIST:
 	case function_type::REQUIRE_LEFT_GREATEST:
 	case function_type::REQUIRE_NO_LEFT_PREDICATE_EXIST:
+	case function_type::REQUIRE_LEFT_PREDICATE_LOCATE:
 	case function_type::REQUIRE_RIGHT_PREDICATE_IN_SET:
 	case function_type::REQUIRE_NO_NOT:
-	case function_type::REQUIRE_NO_PREDICATE_EMPTY:
 	case function_type::REQUIRE_AUX_OR_SUBJUNCTIVE_OR_INFINITIVE_OR_TO_INFINITIVE:
 	case function_type::REQUIRE_PAST_PARTICIPLE:
 	case function_type::REQUIRE_PRESENT_PARTICIPLE:
@@ -36127,6 +37416,7 @@ bool invert(
 	case function_type::REQUIRE_LEFT_ARG1:
 	case function_type::REQUIRE_NO_LAMBDA:
 	case function_type::REQUIRE_PREDICATE_OF_LAMBDA:
+	case function_type::REQUIRE_LOCATE_OF_LAMBDA:
 	case function_type::REQUIRE_SINGULAR:
 	case function_type::REQUIRE_PLURAL:
 	case function_type::REQUIRE_SUPERLATIVE:
@@ -36134,9 +37424,6 @@ bool invert(
 	case function_type::REQUIRE_REF_IN_SET:
 	case function_type::REQUIRE_PLURAL_REF_IN_SET:
 	case function_type::REQUIRE_ANIMATE_IN_SET:
-		/* the forward application already ensures that `second` satisfies this requirement */
-		if (!intersect(flags, first.flags, second.flags)) return false;
-		return intersect(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REQUIRE_PRESENT:
 	case function_type::REQUIRE_PAST:
 	case function_type::REQUIRE_NO_FUTURE:
@@ -36149,6 +37436,7 @@ bool invert(
 	case function_type::REQUIRE_NO_PREDICATE_SAME:
 	case function_type::REQUIRE_LEFT_PREDICATE_INVERSE:
 	case function_type::REQUIRE_LEFT_PREDICATE_INVERSE_HAS:
+	case function_type::REQUIRE_NO_PREDICATE_EMPTY:
 	case function_type::REQUIRE_CONJUNCTION:
 	case function_type::REQUIRE_BINARY_CONJUNCTION:
 	case function_type::REQUIRE_DISJUNCTION:
@@ -36163,8 +37451,11 @@ bool invert(
 	case function_type::REQUIRE_NO_REQ_AUX:
 	case function_type::REQUIRE_NO_REQ_NO_AUX:
 	case function_type::REQUIRE_NO_REQ_SUBJECT:
+	case function_type::REQUIRE_RIGHT_ARG2_LAMBDA:
+	case function_type::REQUIRE_SIZE_LAMBDA:
+		/* the forward application already ensures that `second` satisfies this requirement */
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return intersect_with_head(inverse, inverse_count, flags, first.root, second.root, make_array_finder(find_head<built_in_predicates>));
+		return copy(inverse, inverse_count, flags, second.root);
 	case function_type::SELECT_RIGHT_CONJUNCT:
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_select_conjunct<-1>(inverse, inverse_count, flags, first.root, second.root);
@@ -36222,16 +37513,22 @@ bool invert(
 		return invert_select_only_conjunct_in_set_predicative<-1>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_INVERSE:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
+		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::INVERSE, 0>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_GREATEST:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
+		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, 0>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_CAPABLE_OF:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
+		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF, 0>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_HIGHER_ORDER_PREDICATE:
 		if (!intersect(flags, first.flags, second.flags)) return false;
-		return invert_remove_higher_order_predicate<UINT_MAX, INT_FAST8_MAX>(inverse, inverse_count, flags, first.root, second.root);
+		return invert_apply_higher_order_predicate<UINT_MAX, 0>(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::ADD_HIGH_DEGREE:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_apply_higher_order_predicate<0, (unsigned int) built_in_predicates::HIGH_DEGREE>(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::NEGATIVE_TO_HIGH_DEGREE:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::NEGATIVE, (unsigned int) built_in_predicates::HIGH_DEGREE>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_RIGHT_TRACE:
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_remove_constant<-1>(inverse, inverse_count, flags, first.root, second.root, &hol_term::constants<(unsigned int) built_in_predicates::TRACE>::value);
@@ -36479,6 +37776,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36486,7 +37784,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_PLURAL:
 		if (!has_intersection(second.flags.index_number, grammatical_num::PLURAL)
 		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::NONE)
@@ -36496,6 +37794,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36503,7 +37802,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_ADD_SINGULAR:
 		if (!has_intersection(second.flags.index_number, grammatical_num::SINGULAR)
 		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::SINGULAR_OR_NONE)
@@ -36513,6 +37812,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36520,7 +37820,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_ADD_PLURAL:
 		if (!has_intersection(second.flags.index_number, grammatical_num::PLURAL)
 		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::PLURAL_OR_NONE)
@@ -36530,6 +37830,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36537,7 +37838,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_REMOVE_NUMBER:
 		if (!has_intersection(second.flags.index_number, grammatical_num::NONE)
 		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
@@ -36546,6 +37847,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36554,7 +37856,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_CONCORD_SINGULAR:
 		if ((second.flags.concord_number != grammatical_num::SINGULAR && second.flags.concord_number != grammatical_num::ANY)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
@@ -36564,6 +37866,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36571,7 +37874,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_CONCORD_PLURAL:
 		if ((second.flags.concord_number != grammatical_num::PLURAL && second.flags.concord_number != grammatical_num::ANY)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
@@ -36581,6 +37884,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36588,7 +37892,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_THAT:
 		return invert_add_conjunction(inverse, inverse_count, first, second, grammatical_conjunction::THAT);
 	case function_type::REMOVE_THAT:
@@ -36619,6 +37923,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 		 || !intersect(flags.cnj, first.flags.cnj, grammatical_conjunction::NONE))
@@ -36627,7 +37932,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_IS_ADJUNCT:
 		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::IS_ADJUNCT);
 	case function_type::TRY_REMOVE_IS_ADJUNCT:
@@ -36649,11 +37954,11 @@ bool invert(
 	case function_type::REQUIRE_NO_SUBORDINATE:
 		return invert_require_no_flag(inverse, inverse_count, first, second, grammatical_flag::SUBORDINATE);
 	case function_type::ADD_PREPOSITION:
-		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::PREPOSITION, make_array_finder(find_head<built_in_predicates>));
+		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::PREPOSITION);
 	case function_type::REQUIRE_PREPOSITION:
-		return invert_require_flag(inverse, inverse_count, first, second, grammatical_flag::PREPOSITION, make_array_finder(find_head<built_in_predicates>));
+		return invert_require_flag(inverse, inverse_count, first, second, grammatical_flag::PREPOSITION);
 	case function_type::REQUIRE_NO_PREPOSITION:
-		return invert_require_no_flag(inverse, inverse_count, first, second, grammatical_flag::PREPOSITION, make_array_finder(find_head<built_in_predicates>));
+		return invert_require_no_flag(inverse, inverse_count, first, second, grammatical_flag::PREPOSITION);
 	case function_type::ADD_PARTICLE:
 		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::PARTICLE);
 	case function_type::ADD_AUX:
@@ -36667,6 +37972,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
 		if (flags.aux == auxiliary_flag::AUX) {
@@ -36682,7 +37988,7 @@ bool invert(
 		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	}
 	case function_type::TRY_REMOVE_AUX:
 		return invert_apply_auxiliary(inverse, inverse_count, first, second, ~auxiliary_flag::REQ_AUX, auxiliary_flag::NONE);
@@ -36693,7 +37999,7 @@ bool invert(
 	case function_type::REMOVE_REQ_AUX:
 		return invert_apply_auxiliary(inverse, inverse_count, first, second, auxiliary_flag::REQ_AUX, auxiliary_flag::NONE);
 	case function_type::TRY_REMOVE_REQ_AUX:
-		return invert_apply_auxiliary(inverse, inverse_count, first, second, ~auxiliary_flag::REQ_NO_AUX, auxiliary_flag::NONE, make_array_finder(find_head<built_in_predicates>));
+		return invert_apply_auxiliary(inverse, inverse_count, first, second, ~auxiliary_flag::REQ_NO_AUX, auxiliary_flag::NONE);
 	case function_type::ADD_REQ_NO_AUX:
 		return invert_apply_auxiliary(inverse, inverse_count, first, second, auxiliary_flag::NONE, auxiliary_flag::REQ_NO_AUX);
 	case function_type::REMOVE_REQ_SUBJECT:
@@ -36728,6 +38034,7 @@ bool invert(
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 		 || !intersect(flags.corr, first.flags.corr, correlator::ANY))
@@ -36736,24 +38043,7 @@ bool invert(
 		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
-	case function_type::TRY_REMOVE_CORRELATOR_HEAD:
-		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-		 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-		 || !intersect(flags.corr, first.flags.corr, correlator::ANY))
-			return false;
-		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect_with_head(inverse, inverse_count, flags, first.root, second.root, make_array_finder(find_head<built_in_predicates>));
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::REQUIRE_NO_CORRELATOR:
 		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
@@ -36762,6 +38052,7 @@ bool invert(
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
 		 || !intersect(flags.corr, first.flags.corr, correlator::NONE))
@@ -36770,33 +38061,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		if (flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
-			auto head_finder = find_head<built_in_predicates>;
-			return intersect_with_head(inverse, inverse_count, flags, first.root, second.root, make_array_finder(head_finder));
-		} else {
-			return false;
-		}
-	case function_type::REQUIRE_NO_CORRELATOR_PREDICATIVE:
-		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
-		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-		 || !intersect(flags.mood, first.flags.mood, second.flags.mood)
-		 || !intersect(flags.corr, first.flags.corr, correlator::NONE))
-			return false;
-		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-		if (flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)) {
-			unsigned int lambda_variable;
-			if (second.root->type == hol_term_type::LAMBDA)
-				lambda_variable = second.root->quantifier.variable;
-			else return false;
-			auto head_finder = predicative_head_finder<built_in_predicates>(lambda_variable);
-			return intersect_with_head(inverse, inverse_count, flags, first.root, second.root, make_array_finder(head_finder));
+			return copy(inverse, inverse_count, flags, second.root);
 		} else {
 			return false;
 		}
@@ -36815,6 +38080,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, correlator::ANY)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36822,7 +38088,7 @@ bool invert(
 		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::REQUIRE_NOT_CORRELATED:
 		if ((second.flags.correlated_by != correlator::NONE && second.flags.correlated_by != correlator::ANY)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
@@ -36832,6 +38098,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, correlator::NONE)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -36839,7 +38106,7 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_PAST_PARTICIPLE:
 		return invert_add_mood(inverse, inverse_count, first, second, grammatical_mood::PAST_PARTICIPLE);
 	case function_type::ADD_PRESENT_PARTICIPLE:
@@ -36847,18 +38114,7 @@ bool invert(
 	case function_type::TRY_REMOVE_PARTICIPLE:
 		return invert_try_remove_mood(inverse, inverse_count, first, second);
 	case function_type::ADD_NEGATIVE:
-		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::NEGATIVE, make_array_finder(find_head<built_in_predicates>));
-	case function_type::ADD_NEGATIVE_PREDICATIVE:
-	{
-		unsigned int lambda_variable;
-		if (second.root->type == hol_term_type::LAMBDA) {
-			lambda_variable = second.root->quantifier.variable;
-		} else {
-			return false;
-		}
-		auto head_finder = predicative_head_finder<built_in_predicates>(lambda_variable);
-		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::NEGATIVE, head_finder);
-	}
+		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::NEGATIVE);
 	case function_type::REQUIRE_NEGATIVE:
 		return invert_require_flag(inverse, inverse_count, first, second, grammatical_flag::NEGATIVE);
 	case function_type::ADD_ADV:
@@ -37036,13 +38292,15 @@ bool invert(
 	case function_type::REQUIRE_NO_PASSIVE:
 		return invert_require_no_flag(inverse, inverse_count, first, second, grammatical_flag::PASSIVE);
 	case function_type::ADD_BE:
-		return invert_add_flag(inverse, inverse_count, first, second, grammatical_flag::BE);
+		return invert_add_be(inverse, inverse_count, first, second, be_flag::TRUE);
 	case function_type::REMOVE_BE:
-		return invert_remove_flag(inverse, inverse_count, first, second, grammatical_flag::BE);
-	case function_type::TRY_REMOVE_BE:
-		return invert_try_remove_flag(inverse, inverse_count, first, second, grammatical_flag::BE);
+		return invert_remove_be(inverse, inverse_count, first, second, be_flag::TRUE_OR_COORDINATED);
+	case function_type::TRY_REMOVE_COORDINATED_BE:
+		return invert_try_remove_coordinated_be(inverse, inverse_count, first, second);
 	case function_type::REQUIRE_NO_BE:
-		return invert_require_no_flag(inverse, inverse_count, first, second, grammatical_flag::BE);
+		return invert_require_no_be(inverse, inverse_count, first, second);
+	case function_type::TRY_COORDINATE_BE:
+		return invert_try_coordinate_be(inverse, inverse_count, first, second);
 	case function_type::ADD_AND:
 		return invert_add_coordination(inverse, inverse_count, first, second, coordination::AND);
 	case function_type::ADD_OR:
@@ -37058,7 +38316,7 @@ bool invert(
 	case function_type::REMOVE_COORD:
 		return invert_remove_coordination(inverse, inverse_count, first, second, coordination::NOT_NONE);
 	case function_type::ADD_COMPARATIVE:
-		if ((second.flags.comp != grammatical_comparison::COMPARATIVE && second.flags.comp != grammatical_comparison::ANY)
+		if (!has_intersection(second.flags.comp, grammatical_comparison::COMPARATIVE)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
 		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
 		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::NONE)
@@ -37066,6 +38324,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -37073,9 +38332,9 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_SUPERLATIVE:
-		if ((second.flags.comp != grammatical_comparison::SUPERLATIVE && second.flags.comp != grammatical_comparison::ANY)
+		if (!has_intersection(second.flags.comp, grammatical_comparison::SUPERLATIVE)
 		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
 		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
 		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::NONE)
@@ -37083,6 +38342,7 @@ bool invert(
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
 		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
 		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
@@ -37090,7 +38350,43 @@ bool invert(
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& intersect(inverse, inverse_count, flags, first.root, second.root);
+			&& copy(inverse, inverse_count, flags, second.root);
+	case function_type::TRY_REMOVE_SUPERLATIVE:
+		if (!has_intersection(second.flags.comp, grammatical_comparison::NONE)
+		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::NOT_COMPARATIVE)
+		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
+		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
+			return false;
+		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+			&& copy(inverse, inverse_count, flags, second.root);
+	case function_type::REMOVE_SUPERLATIVE:
+		if (!has_intersection(second.flags.comp, grammatical_comparison::NONE)
+		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
+		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::SUPERLATIVE)
+		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
+		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
+		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
+		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
+		 || !intersect(flags.be, first.flags.be, second.flags.be)
+		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
+		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
+			return false;
+		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
+			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
+		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
+			&& copy(inverse, inverse_count, flags, second.root);
 	}
 	fprintf(stderr, "invert ERROR: Unrecognized transformation function.\n");
 	return false;
@@ -37264,6 +38560,7 @@ bool get_predicate(hol_term* src, unsigned int& value,
 	return true;
 }
 
+template<bool AllowHigherOrder>
 bool get_predicate_only(hol_term* src, unsigned int& value,
 		unsigned int*& excluded, unsigned int& excluded_count)
 {
@@ -37319,11 +38616,63 @@ bool get_predicate_only(hol_term* src, unsigned int& value,
 	array<hol_term*> intersection(2);
 	intersect<built_in_predicates>(intersection, term, src);
 	free(*term); if (term->reference_count == 0) free(term);
-	if (intersection.length == 0) {
+	if (!AllowHigherOrder && intersection.length == 0) {
 		return false;
-	} else if (intersection.length != 1) {
+	} else if (intersection.length > 1) {
 		fprintf(stderr, "get_predicate_only ERROR: Expected intersection size to be 1.\n");
 		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	}
+
+	if (intersection.length == 0) {
+		value = 0;
+	} else {
+		hol_term* operand;
+		if (intersection[0]->type == hol_term_type::EXISTS) {
+			operand = intersection[0]->quantifier.operand;
+		} else {
+			operand = intersection[0]->any_quantifier.operand;
+		}
+
+		hol_term* predicate = operand->binary.left;
+		if (predicate->type == hol_term_type::CONSTANT) {
+			value = predicate->constant;
+			excluded_count = 0;
+		} else if (predicate->type == hol_term_type::ANY_CONSTANT) {
+			value = UNION_NODE;
+			if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
+				free_all(intersection);
+				return false;
+			}
+		} else {
+#if !defined(NDEBUG)
+			if (predicate->type != hol_term_type::ANY_CONSTANT_EXCEPT)
+				fprintf(stderr, "get_predicate_only WARNING: Unexpected formula type in intersection.\n");
+#endif
+			value = IMPLICIT_NODE;
+			if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
+				free_all(intersection);
+				return false;
+			}
+		}
+		free_all(intersection);
+		if (!AllowHigherOrder)
+			return true;
+	}
+
+	intersection.clear();
+	term = hol_term::new_exists(head_variable,
+			hol_term::new_apply(hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_any_constant_except()), hol_term::new_variable(head_variable)));
+	if (term == nullptr)
+		return false;
+
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length == 0) {
+		return (value != 0);
+	} else if (intersection.length != 1) {
+		fprintf(stderr, "get_predicate_only ERROR: Expected intersection size to be 1.\n");
+		free_all(intersection);
 		return false;
 	}
 
@@ -37334,29 +38683,233 @@ bool get_predicate_only(hol_term* src, unsigned int& value,
 		operand = intersection[0]->any_quantifier.operand;
 	}
 
-	hol_term* predicate = operand->binary.left;
+	hol_term* predicate = operand->binary.left->binary.right;
 	if (predicate->type == hol_term_type::CONSTANT) {
-		value = predicate->constant;
-		excluded_count = 0;
+		if (value == 0) {
+			value = predicate->constant;
+			excluded_count = 0;
+		} else if (value != predicate->constant) {
+			excluded = (unsigned int*) malloc(sizeof(unsigned int) * 2);
+			if (excluded == nullptr) {
+				fprintf(stderr, "get_predicate_only ERROR: Out of memory.\n");
+				free_all(intersection);
+				return false;
+			}
+			if (value < predicate->constant) {
+				excluded[0] = value;
+				excluded[1] = predicate->constant;
+			} else {
+				excluded[0] = predicate->constant;
+				excluded[1] = value;
+			}
+			value = UNION_NODE;
+			excluded_count = 2;
+		}
 	} else if (predicate->type == hol_term_type::ANY_CONSTANT) {
-		value = UNION_NODE;
-		if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
-			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
+		if (value == 0) {
+			value = UNION_NODE;
+			if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
+				free_all(intersection);
+				return false;
+			}
+		} else if (value == IMPLICIT_NODE) {
+			array<unsigned int> difference(max(1, excluded_count));
+			set_subtract(difference.data, difference.length, excluded, excluded_count, predicate->any_constant.constants, predicate->any_constant.length);
+			swap(difference.data, excluded);
+			excluded_count = difference.length;
+		} else {
+			array<unsigned int> union_result(predicate->any_constant.length + (value == UNION_NODE ? excluded_count : 1));
+			if (value == UNION_NODE)
+				set_union(union_result.data, union_result.length, excluded, excluded_count, predicate->any_constant.constants, predicate->any_constant.length);
+			else set_union(union_result.data, union_result.length, &value, 1, predicate->any_constant.constants, predicate->any_constant.length);
+			swap(union_result.data, excluded);
+			excluded_count = union_result.length;
 		}
 	} else {
 #if !defined(NDEBUG)
 		if (predicate->type != hol_term_type::ANY_CONSTANT_EXCEPT)
 			fprintf(stderr, "get_predicate_only WARNING: Unexpected formula type in intersection.\n");
 #endif
-		value = IMPLICIT_NODE;
-		if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
-			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
-			return false;
+		if (value == 0) {
+			value = IMPLICIT_NODE;
+			if (!copy_array(predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count)) {
+				free_all(intersection);
+				return false;
+			}
+		} else if (value == IMPLICIT_NODE) {
+			set_intersect(excluded, excluded_count, predicate->any_constant.constants, predicate->any_constant.length);
+		} else {
+			array<unsigned int> difference(max(1, excluded_count));
+			if (value == UNION_NODE)
+				set_subtract(difference.data, difference.length, predicate->any_constant.constants, predicate->any_constant.length, excluded, excluded_count);
+			else set_subtract(difference.data, difference.length, predicate->any_constant.constants, predicate->any_constant.length, &value, 1);
+			swap(difference.data, excluded);
+			excluded_count = difference.length;
+			value = IMPLICIT_NODE;
 		}
 	}
-	for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+	free_all(intersection);
 	return true;
+}
+
+bool get_outer_predicate_only(hol_term* src, unsigned int& value,
+		unsigned int*& excluded, unsigned int& excluded_count)
+{
+	hol_term* head = src;
+	if ((src->type == hol_term_type::ANY || src->type == hol_term_type::ANY_RIGHT) && src->any.included != nullptr
+	 && (src->any.included->type == hol_term_type::EXISTS || src->any.included->type == hol_term_type::ANY_ARRAY))
+		head = head->any.included;
+
+	unsigned int head_variable;
+	if (head->type == hol_term_type::EXISTS) {
+		head_variable = head->quantifier.variable;
+	} else if (head->type == hol_term_type::ANY_ARRAY) {
+		if (head->any_array.any.length > 1 || head->any_array.left.length > 1 || head->any_array.right.length > 1)
+			return false;
+		if (head->any_array.left.length == 1 && head->any_array.left.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.left.operands[0]->quantifier.variable;
+		} else if (head->any_array.left.length == 1 && head->any_array.left.operands[0]->type == hol_term_type::ANY_RIGHT
+		 && head->any_array.left.operands[0]->any.included != nullptr && head->any_array.left.operands[0]->any.included->type == hol_term_type::EXISTS)
+		{
+			head_variable = head->any_array.left.operands[0]->any.included->quantifier.variable;
+		} else if (head->any_array.right.length == 1 && head->any_array.right.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.right.operands[0]->quantifier.variable;
+		} else if (head->any_array.right.length == 1 && head->any_array.right.operands[0]->type == hol_term_type::ANY_RIGHT
+				&& head->any_array.right.operands[0]->any.included != nullptr && head->any_array.right.operands[0]->any.included->type == hol_term_type::EXISTS)
+		{
+			head_variable = head->any_array.right.operands[0]->any.included->quantifier.variable;
+		} else if (head->any_array.any.length == 1 && head->any_array.any.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.any.operands[0]->quantifier.variable;
+		} else if (head->any_array.any.length == 1 && head->any_array.any.operands[0]->type == hol_term_type::ANY_RIGHT
+				&& head->any_array.any.operands[0]->any.included != nullptr && head->any_array.any.operands[0]->any.included->type == hol_term_type::EXISTS)
+		{
+			head_variable = head->any_array.any.operands[0]->any.included->quantifier.variable;
+		} else if (head->any_array.all->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.all->quantifier.variable;
+		} else if (head->any_array.all->type == hol_term_type::ANY_RIGHT && head->any_array.all->any.included != nullptr && head->any_array.all->any.included->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.all->any.included->quantifier.variable;
+		} else {
+			unsigned int max_variable = 0;
+			max_bound_variable(*head, max_variable);
+			head_variable = ++max_variable;
+		}
+	} else {
+		unsigned int max_variable = 0;
+		max_bound_variable(*head, max_variable);
+		head_variable = ++max_variable;
+	}
+
+	hol_term* term = hol_term::new_exists(head_variable,
+			hol_term::new_apply(hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_any_constant_except()), hol_term::new_variable(head_variable)));
+	if (term == nullptr)
+		return false;
+
+	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (intersection.length > 1) {
+		fprintf(stderr, "get_outer_predicate_only ERROR: Expected intersection size to be 1.\n");
+		free_all(intersection);
+		return false;
+	}
+
+	term = hol_term::new_exists(head_variable,
+			hol_term::new_apply(
+				hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+				hol_term::new_variable(head_variable)));
+	if (term == nullptr) {
+		free_all(intersection);
+		return false;
+	}
+
+	array<hol_term*> simple_intersection(2);
+	intersect<built_in_predicates>(simple_intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (simple_intersection.length > 1) {
+		fprintf(stderr, "get_outer_predicate_only ERROR: Expected intersection size to be 1.\n");
+		free_all(intersection); free_all(simple_intersection);
+		return false;
+	}
+
+	if (intersection.length == 0) {
+		if (simple_intersection.length == 0) {
+			return false;
+		} else {
+			value = (unsigned int) built_in_predicates::ZERO;
+			free_all(simple_intersection);
+			return true;
+		}
+	} else {
+		hol_term* operand;
+		if (intersection[0]->type == hol_term_type::EXISTS) {
+			operand = intersection[0]->quantifier.operand;
+		} else {
+			operand = intersection[0]->any_quantifier.operand;
+		}
+		hol_term* outer_predicate = operand->binary.left->binary.left;
+
+		if (simple_intersection.length == 0) {
+			if (outer_predicate->type == hol_term_type::CONSTANT) {
+				value = outer_predicate->constant;
+				excluded_count = 0;
+			} else if (outer_predicate->type == hol_term_type::ANY_CONSTANT) {
+				value = UNION_NODE;
+				if (!copy_array(outer_predicate->any_constant.constants, outer_predicate->any_constant.length, excluded, excluded_count)) {
+					free_all(intersection);
+					return false;
+				}
+			} else {
+#if !defined(NDEBUG)
+				if (outer_predicate->type != hol_term_type::ANY_CONSTANT_EXCEPT)
+					fprintf(stderr, "get_outer_predicate_only WARNING: Unexpected formula type in intersection.\n");
+#endif
+				value = IMPLICIT_NODE;
+				if (!copy_array(outer_predicate->any_constant.constants, outer_predicate->any_constant.length, excluded, excluded_count)) {
+					free_all(intersection);
+					return false;
+				}
+			}
+			free_all(intersection);
+			return true;
+		} else {
+			if (outer_predicate->type == hol_term_type::CONSTANT) {
+				value = UNION_NODE;
+				excluded = (unsigned int*) malloc(sizeof(unsigned int) * 2);
+				if (excluded == nullptr) {
+					fprintf(stderr, "get_outer_predicate_only ERROR: Out of memory.\n");
+					free_all(intersection); free_all(simple_intersection);
+					return false;
+				}
+				excluded[0] = (unsigned int) built_in_predicates::ZERO;
+				excluded[1] = outer_predicate->constant;
+				excluded_count = 2;
+			} else if (outer_predicate->type == hol_term_type::ANY_CONSTANT) {
+				value = UNION_NODE;
+				excluded = (unsigned int*) malloc(sizeof(unsigned int) * (outer_predicate->any_constant.length + 1));
+				if (excluded == nullptr) {
+					fprintf(stderr, "get_outer_predicate_only ERROR: Out of memory.\n");
+					free_all(intersection); free_all(simple_intersection);
+					return false;
+				}
+				excluded[0] = (unsigned int) built_in_predicates::ZERO;
+				for (unsigned int i = 0; i < outer_predicate->any_constant.length; i++)
+					excluded[1 + i] = outer_predicate->any_constant.constants[i];
+				excluded_count = outer_predicate->any_constant.length + 1;
+			} else {
+#if !defined(NDEBUG)
+				if (outer_predicate->type != hol_term_type::ANY_CONSTANT_EXCEPT)
+					fprintf(stderr, "get_outer_predicate_only WARNING: Unexpected formula type in intersection.\n");
+#endif
+				value = IMPLICIT_NODE;
+				if (!copy_array(outer_predicate->any_constant.constants, outer_predicate->any_constant.length, excluded, excluded_count)) {
+					free_all(intersection);
+					return false;
+				}
+			}
+			free_all(intersection); free_all(simple_intersection);
+			return true;
+		}
+	}
 }
 
 bool get_head_predicate(hol_term* src, unsigned int& value,
@@ -38262,7 +39815,11 @@ bool get_feature(
 		return get_predicate(src.root, value, excluded, excluded_count);
 	case feature_type::PREDICATE_ONLY:
 	case feature_type::UNAMBIGUOUS_PREDICATE_ONLY:
-		return get_predicate_only(src.root, value, excluded, excluded_count);
+		return get_predicate_only<false>(src.root, value, excluded, excluded_count);
+	case feature_type::INNER_PREDICATE:
+		return get_predicate_only<true>(src.root, value, excluded, excluded_count);
+	case feature_type::OUTER_PREDICATE:
+		return get_outer_predicate_only(src.root, value, excluded, excluded_count);
 	case feature_type::HEAD_PREDICATE:
 		return get_head_predicate(src.root, value, excluded, excluded_count);
 	case feature_type::SET_DEFINITION:
@@ -38342,6 +39899,7 @@ bool set_predicate(hol_term* src, hol_term*& dst, unsigned int value)
 	return true;
 }
 
+template<bool AllowHigherOrder>
 bool set_predicate_only(hol_term* src, hol_term*& dst, unsigned int value)
 {
 	hol_term* head = src;
@@ -38395,6 +39953,24 @@ bool set_predicate_only(hol_term* src, hol_term*& dst, unsigned int value)
 	array<hol_term*> intersection(2);
 	intersect<built_in_predicates>(intersection, term, src);
 	free(*term); if (term->reference_count == 0) free(term);
+	if (!AllowHigherOrder && intersection.length == 0) {
+		return false;
+	} else if (intersection.length > 1) {
+		fprintf(stderr, "set_predicate_only ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	} else if (intersection.length != 0) {
+		dst = intersection[0];
+		return true;
+	}
+
+	term = hol_term::new_exists(head_variable,
+			hol_term::new_apply(hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_constant(value)), hol_term::new_variable(head_variable)));
+	if (term == nullptr)
+		return false;
+
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
 	if (intersection.length == 0) {
 		return false;
 	} else if (intersection.length != 1) {
@@ -38404,6 +39980,92 @@ bool set_predicate_only(hol_term* src, hol_term*& dst, unsigned int value)
 	}
 	dst = intersection[0];
 	return true;
+}
+
+bool set_outer_predicate_only(hol_term* src, hol_term*& dst, unsigned int value)
+{
+	hol_term* head = src;
+	if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
+		head = head->any.included;
+
+	unsigned int head_variable;
+	if (head->type == hol_term_type::EXISTS) {
+		head_variable = head->quantifier.variable;
+	} else if (head->type == hol_term_type::ANY_ARRAY) {
+		if (head->any_array.any.length > 1 || head->any_array.left.length > 1 || head->any_array.right.length > 1)
+			return false;
+		if (head->any_array.left.length == 1 && head->any_array.left.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.left.operands[0]->quantifier.variable;
+		} else if (head->any_array.left.length == 1 && head->any_array.left.operands[0]->type == hol_term_type::ANY_RIGHT
+		 && head->any_array.left.operands[0]->any.included != nullptr && head->any_array.left.operands[0]->any.included->type == hol_term_type::EXISTS)
+		{
+			head_variable = head->any_array.left.operands[0]->any.included->quantifier.variable;
+		} else if (head->any_array.right.length == 1 && head->any_array.right.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.right.operands[0]->quantifier.variable;
+		} else if (head->any_array.right.length == 1 && head->any_array.right.operands[0]->type == hol_term_type::ANY_RIGHT
+				&& head->any_array.right.operands[0]->any.included != nullptr && head->any_array.right.operands[0]->any.included->type == hol_term_type::EXISTS)
+		{
+			head_variable = head->any_array.right.operands[0]->any.included->quantifier.variable;
+		} else if (head->any_array.any.length == 1 && head->any_array.any.operands[0]->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.any.operands[0]->quantifier.variable;
+		} else if (head->any_array.any.length == 1 && head->any_array.any.operands[0]->type == hol_term_type::ANY_RIGHT
+				&& head->any_array.any.operands[0]->any.included != nullptr && head->any_array.any.operands[0]->any.included->type == hol_term_type::EXISTS)
+		{
+			head_variable = head->any_array.any.operands[0]->any.included->quantifier.variable;
+		} else if (head->any_array.all->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.all->quantifier.variable;
+		} else if (head->any_array.all->type == hol_term_type::ANY_RIGHT && head->any_array.all->any.included != nullptr && head->any_array.all->any.included->type == hol_term_type::EXISTS) {
+			head_variable = head->any_array.all->any.included->quantifier.variable;
+		} else {
+			unsigned int max_variable = 0;
+			max_bound_variable(*head, max_variable);
+			head_variable = ++max_variable;
+		}
+	} else {
+		unsigned int max_variable = 0;
+		max_bound_variable(*head, max_variable);
+		head_variable = ++max_variable;
+	}
+
+	if (value == (unsigned int) built_in_predicates::ZERO) {
+		hol_term* term = hol_term::new_exists(head_variable,
+				hol_term::new_apply(
+					hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+					hol_term::new_variable(head_variable)));
+		if (term == nullptr)
+			return false;
+
+		array<hol_term*> intersection(2);
+		intersect<built_in_predicates>(intersection, term, src);
+		free(*term); if (term->reference_count == 0) free(term);
+		if (intersection.length == 0) {
+			return false;
+		} else if (intersection.length != 1) {
+			fprintf(stderr, "set_outer_predicate_only ERROR: Expected intersection size to be 1.\n");
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		dst = intersection[0];
+		return true;
+	} else {
+		hol_term* term = hol_term::new_exists(head_variable,
+				hol_term::new_apply(hol_term::new_apply(hol_term::new_constant(value), hol_term::new_any_constant_except()), hol_term::new_variable(head_variable)));
+		if (term == nullptr)
+			return false;
+
+		array<hol_term*> intersection(2);
+		intersect<built_in_predicates>(intersection, term, src);
+		free(*term); if (term->reference_count == 0) free(term);
+		if (intersection.length == 0) {
+			return false;
+		} else if (intersection.length != 1) {
+			fprintf(stderr, "set_outer_predicate_only ERROR: Expected intersection size to be 1.\n");
+			for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+			return false;
+		}
+		dst = intersection[0];
+		return true;
+	}
 }
 
 bool set_head_predicate(hol_term* src, hol_term*& dst, unsigned int value)
@@ -39133,7 +40795,19 @@ bool set_feature(
 		return true;
 	case feature_type::PREDICATE_ONLY:
 	case feature_type::UNAMBIGUOUS_PREDICATE_ONLY:
-		if (!set_predicate_only(exp.root, new_logical_form, value))
+		if (!set_predicate_only<false>(exp.root, new_logical_form, value))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
+	case feature_type::INNER_PREDICATE:
+		if (!set_predicate_only<true>(exp.root, new_logical_form, value))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
+	case feature_type::OUTER_PREDICATE:
+		if (!set_outer_predicate_only(exp.root, new_logical_form, value))
 			return false;
 		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
 		exp.root = new_logical_form;
@@ -39216,6 +40890,7 @@ bool exclude_predicates(hol_term* src, hol_term*& dst,
 	return true;
 }
 
+template<bool AllowHigherOrder>
 bool exclude_predicates_only(hol_term* src, hol_term*& dst,
 		const unsigned int* values, unsigned int count)
 {
@@ -39238,6 +40913,24 @@ bool exclude_predicates_only(hol_term* src, hol_term*& dst,
 		return false;
 
 	array<hol_term*> intersection(2);
+	intersect<built_in_predicates>(intersection, term, src);
+	free(*term); if (term->reference_count == 0) free(term);
+	if (!AllowHigherOrder && intersection.length == 0) {
+		return false;
+	} else if (intersection.length > 1) {
+		fprintf(stderr, "exclude_predicates_only ERROR: Expected intersection size to be 1.\n");
+		for (hol_term* term : intersection) { free(*term); if (term->reference_count == 0) free(term); }
+		return false;
+	} else if (intersection.length != 0) {
+		dst = intersection[0];
+		return true;
+	}
+
+	term = hol_term::new_exists(head_variable,
+			hol_term::new_apply(hol_term::new_apply(hol_term::new_any_constant_except(), hol_term::new_any_constant_except(make_array_view(values, count))), hol_term::new_variable(head_variable)));
+	if (term == nullptr)
+		return false;
+
 	intersect<built_in_predicates>(intersection, term, src);
 	free(*term); if (term->reference_count == 0) free(term);
 	if (intersection.length == 0) {
@@ -39532,20 +41225,15 @@ inline bool exclude_set_predicates(
 		excluded_tree_count++;
 	} if (named_entity_excluded) {
 		excluded_trees[excluded_tree_count] = hol_term::new_any_quantifier(hol_quantifier_type::EXISTS, hol_term::new_and(
-				hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::NAME>::value, &HOL_ANY),
-				hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value, element_var), &HOL_ANY),
-				hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, &HOL_ANY), &HOL_ANY)
-			));
+				hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::NAME>::value, &HOL_ANY), &HOL_ANY, &HOL_ANY));
 		if (excluded_trees[excluded_tree_count] == nullptr) {
 			for (unsigned int i = 0; i < excluded_tree_count; i++) { free(*excluded_trees[i]); free(excluded_trees[i]); }
 			free(*element_var); free(element_var);
 			return false;
 		}
 		hol_term::constants<(unsigned int) built_in_predicates::NAME>::value.reference_count++;
-		hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value.reference_count++;
-		hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
 		element_var->reference_count++;
-		HOL_ANY.reference_count += 4;
+		HOL_ANY.reference_count += 3;
 		excluded_tree_count++;
 	}
 
@@ -39763,7 +41451,13 @@ bool exclude_features(typename flagged_logical_form<Formula>::feature feature,
 		exp.root = new_logical_form;
 		return true;
 	case feature_type::PREDICATE_ONLY:
-		if (!exclude_predicates_only(exp.root, new_logical_form, values, count))
+		if (!exclude_predicates_only<false>(exp.root, new_logical_form, values, count))
+			return false;
+		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
+		exp.root = new_logical_form;
+		return true;
+	case feature_type::INNER_PREDICATE:
+		if (!exclude_predicates_only<true>(exp.root, new_logical_form, values, count))
 			return false;
 		free(*exp.root); if (exp.root->reference_count == 0) free(exp.root);
 		exp.root = new_logical_form;
@@ -39801,6 +41495,7 @@ bool exclude_features(typename flagged_logical_form<Formula>::feature feature,
 	case feature_type::SET_DEFINITION:
 	case feature_type::LEFT_ARG:
 	case feature_type::UNAMBIGUOUS_PREDICATE_ONLY:
+	case feature_type::OUTER_PREDICATE:
 		return false;
 	case feature_type::EMPTY: break;
 	}

@@ -2,6 +2,7 @@
 #include "hdp_parser.h"
 #include "executive.h"
 #include "ruletaker.h"
+#include "geoquery.h"
 #include "console.h"
 #include "theory_prior.h"
 
@@ -433,7 +434,14 @@ return EXIT_SUCCESS;*/
 	}
 
 /* run RuleTaker experiments */
-run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl", "ruletaker_results.txt");
+/*run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl", "ruletaker_results.txt");
+for (auto entry : names) free(entry.key);
+// to avoid breakpoints being moved due to eliminated code
+if (seed_training_set.length > 0)
+return EXIT_SUCCESS;*/
+
+/* run GeoQuery experiments */
+run_geoquery_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "geoquery.jsonl", "geoquery_results.txt");
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)

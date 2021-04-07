@@ -775,7 +775,7 @@ S'' nonterminal {left_arg} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 # S'' {(~)?[e]:(U(i,e) & exist(e) & ...)} -> THERE VP_R {(~)?[e]:(U(i,e) & exist(e) & ...)}
 # NOTE: This above rule is only really useful if we choose to represent "there
 # is a cat" as something like ?[x]:(U(0,x) & cat(x)).
-S'' -> THERE VP_R:try_remove_nullable_subject,require_no_lambda,try_remove_correlated,require_no_correlator,require_left_predicate_exist,set_predicate_empty,has_arg2
+S'' -> THERE VP_R:try_remove_nullable_subject,try_remove_correlated,require_no_correlator,require_left_predicate_exist,set_predicate_empty,has_arg2
 
 # S'' {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
 #  -> V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
@@ -895,13 +895,13 @@ S'' -> V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_
 S'' -> VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
 
 
-VP_R nonterminal {head_predicate} {100.0, 1.0} {0.1, 1.0} {} 10 1.0 {}
+VP_R nonterminal {head_predicate} {100.0, 100.0} {0.1, 1.0} {} 10 1.0 {}
 
 # VP_R {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
 #     V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
-VP_R -> VP_R:remove_right_conjunct V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_be
-VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_be,add_preposition
+VP_R -> VP_R:remove_right_conjunct V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_coordinated_be
+VP_R -> VP_R:remove_right_conjunct,add_preposition V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_coordinated_be,add_preposition
 
 VP_R -> VP_L:remove_be,remove_progressive,add_present_participle # progressive aspect
 VP_R -> VP_R:remove_be,require_no_progressive,remove_inverse,add_past_participle,add_passive # passive voice
@@ -1044,30 +1044,30 @@ VP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # VP_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
 # VP_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) VP_R {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-VP_COORDINATION -> COMMA VP_R:remove_comma,select_left_head_operand,remove_coord VP_COORDINATION:remove_left_head_operand
+VP_COORDINATION -> COMMA VP_R:remove_comma,select_left_head_operand,remove_coord,try_coordinate_be VP_COORDINATION:remove_left_head_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) VP_R {(~)A1}
-VP_COORDINATION -> COMMA VP_R:remove_coord,remove_comma
+VP_COORDINATION -> COMMA VP_R:remove_coord,remove_comma,try_coordinate_be
 
 # VP_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) AND VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
 VP_COORDINATION -> AND VP_R:require_no_comma,select_left_head_operand,remove_and VP_COORDINATION:remove_left_head_operand
-VP_COORDINATION -> COMMA AND VP_R:remove_comma,select_left_head_operand,remove_and VP_COORDINATION:remove_left_head_operand
+VP_COORDINATION -> COMMA AND VP_R:remove_comma,select_left_head_operand,remove_and,try_coordinate_be VP_COORDINATION:remove_left_head_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) AND VP_R {(~)A1}
-VP_COORDINATION -> AND VP_R:remove_and,require_no_comma
-VP_COORDINATION -> COMMA AND VP_R:remove_and,remove_comma
+VP_COORDINATION -> AND VP_R:remove_and,require_no_comma,try_coordinate_be
+VP_COORDINATION -> COMMA AND VP_R:remove_and,remove_comma,try_coordinate_be
 
 # VP_COORDINATION {(~)A1 & ... & (~)An} -> (COMMA) OR VP_R {(~)A1} VP_COORDINATION {(~)A2 & ... & (~)An}
-VP_COORDINATION -> OR VP_R:require_no_comma,select_left_head_operand,remove_or VP_COORDINATION:remove_left_head_operand
-VP_COORDINATION -> COMMA OR VP_R:remove_comma,select_left_head_operand,remove_or VP_COORDINATION:remove_left_head_operand
+VP_COORDINATION -> OR VP_R:require_no_comma,select_left_head_operand,remove_or,try_coordinate_be VP_COORDINATION:remove_left_head_operand
+VP_COORDINATION -> COMMA OR VP_R:remove_comma,select_left_head_operand,remove_or,try_coordinate_be VP_COORDINATION:remove_left_head_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) OR VP_R {(~)A1}
-VP_COORDINATION -> OR VP_R:remove_or,require_no_comma
-VP_COORDINATION -> COMMA OR VP_R:remove_or,remove_comma
+VP_COORDINATION -> OR VP_R:remove_or,require_no_comma,try_coordinate_be
+VP_COORDINATION -> COMMA OR VP_R:remove_or,remove_comma,try_coordinate_be
 
 # VP_COORDINATION {(~)A1 | ... | (~)An} -> (COMMA) NOR VP_R {(~)A1} VP_COORDINATION {(~)A2 | ... | (~)An}
-VP_COORDINATION -> NOR VP_R:add_req_aux,require_no_comma,add_negative,select_left_head_operand,remove_nor VP_COORDINATION:remove_left_head_operand
-VP_COORDINATION -> COMMA NOR VP_R:add_req_aux,remove_comma,add_negative,select_left_head_operand,remove_nor VP_COORDINATION:remove_left_head_operand
+VP_COORDINATION -> NOR VP_R:add_req_aux,require_no_comma,add_negative,select_left_head_operand,remove_nor,try_coordinate_be VP_COORDINATION:remove_left_head_operand
+VP_COORDINATION -> COMMA NOR VP_R:add_req_aux,remove_comma,add_negative,select_left_head_operand,remove_nor,try_coordinate_be VP_COORDINATION:remove_left_head_operand
 # VP_COORDINATION {(~)A1} -> (COMMA) NOR VP_R {(~)A1}
-VP_COORDINATION -> NOR VP_R:remove_nor,add_req_aux,require_no_comma,add_negative
-VP_COORDINATION -> COMMA NOR VP_R:remove_nor,add_req_aux,remove_comma,add_negative
+VP_COORDINATION -> NOR VP_R:remove_nor,add_req_aux,require_no_comma,add_negative,try_coordinate_be
+VP_COORDINATION -> COMMA NOR VP_R:remove_nor,add_req_aux,remove_comma,add_negative,try_coordinate_be
 
 
 V_ADJUNCT nonterminal {head_predicate} {100.0, 1.0} {0.1, 10.0} {} 10 1.0 {}
@@ -1347,9 +1347,9 @@ VP_L nonterminal {} {100.0} {0.1} {} 10 1.0 {}
 #
 # An example of a sentence with coordination in both the verb and adverb is:
 #  "she walked and sat under every tree and near every rock"
-#VP_L -> ADVP_L:try_remove_correlator_head,try_remove_wh_minus,select_left_arg1_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
+#VP_L -> ADVP_L:try_remove_correlator,try_remove_wh_minus,select_left_arg1_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
 #VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,add_modifies_event,select_left_arg1_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
-#VP_L -> ADVP_L:try_remove_correlator_head,try_remove_wh_minus,select_left_arg2_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
+#VP_L -> ADVP_L:try_remove_correlator,try_remove_wh_minus,select_left_arg2_of_without_head VP_L:require_no_req_subject,require_no_req_aux,try_remove_correlated,remove_left_conjunct
 #VP_L -> COMMA PP:require_no_req_subject,require_no_req_aux,require_no_correlator,try_remove_wh_minus,add_modifies_event,select_left_arg2_of_without_head COMMA VP_L:try_remove_correlated,remove_left_conjunct
 
 VP_L -> WILL VP_L:try_remove_correlated,remove_future,add_infinitive,add_aux,require_no_subjunctive # future "tense"
@@ -1360,8 +1360,8 @@ VP_L -> NOT VP_L:try_remove_correlated,require_aux_or_subjunctive_or_infinitive_
 #VP_L -> BE:identity VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive # passive voice
 VP_L -> GET:identity VP_R:try_remove_correlated,require_no_future,require_no_perfect,require_no_progressive,remove_inverse,add_past_participle,add_aux,add_passive # passive voice
 VP_L -> TO VP_L:try_remove_correlated,remove_to_infinitive,add_infinitive,require_no_future,require_no_req_subject,require_no_req_aux
-VP_L -> MD:try_remove_correlator_head,try_remove_not VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_higher_order_predicate
-VP_L -> MD:try_remove_correlator_head VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_not,remove_higher_order_predicate
+VP_L -> MD:try_remove_correlator,try_remove_not VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_higher_order_predicate
+VP_L -> MD:try_remove_correlator VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_not,remove_higher_order_predicate
 
 # VP_L {?[x]:(U(0,x) & p(x))} -> V {p}
 # NOTE: If subjunctive, and the resulting inflected verb has the same form as
@@ -1431,28 +1431,28 @@ MD -> CANNOT:remove_not,remove_capable_of,require_present
 NP nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
 # NP {A} -> A NP' {A}
-NP -> A NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_no_constant_in_set
+NP -> A NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_no_constant_in_set
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))
-NP -> NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_universal
+NP -> NP':try_add_plural,try_remove_adv,require_no_correlator,require_predicative_universal
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & W(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x)))))
 #    or A = ^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ... & W(... & ?[x]:(X(x) & P(x)))))
-NP -> NP':try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_wide_scope,require_no_string_or_number_or_name_in_set
+NP -> NP':try_add_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_wide_scope,require_no_string_or_number_or_name_in_set
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:?[n]:(name(n) & arg1_of(x)=n & arg2(n)=s)) & ... & ?[x]:(X(x) & P(x))))
-NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_name_in_set
+NP -> NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X=^[x]:(x=s)) & ... & ?[x]:(X(x) & P(x))))
-NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_string_or_number_in_set
+NP -> NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_string_or_number_in_set
 # TODO: we need a plural rule for this, i think; or just split the rules into two: one for strings and one for numbers, and remove "try_add_singular" for the number rule
 
 # NP {A} -> NP' {A}
 # where A = ^[P]:(... & ?[X]:(F(X) & size(X)=1 & ... & ?[x]:(X(x) & P(x))))
-NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_singleton
+NP -> NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_singleton
 
 # quantities with units
 # NP {^[P]:(... & ?[y]:(f(y) & ... & ?[X]:(F(X=^[x]:(measure(x) & arg1(x)=n & arg2(x)=y)) & ?[x]:(X(x) & P(x)))))}
@@ -1460,8 +1460,8 @@ NP -> NP':try_add_singular,try_remove_adv,require_no_correlator_predicative,requ
 #     NOMINAL_R {^[P]:(... & ?[Y]:(Y=^[y]:f(y) & ?[y]:(Y(y) & P(y))))}
 # We distinguish between "count" readings and "measure" readings, where this rule provides the measure interpretation.
 # See: Rothstein S. (2011). Counting, Measuring And The Semantics Of Classifiers. Baltic International Yearbook of Cognition, Logic and Communication: Vol. 6.
-NP -> Q:try_add_singular,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_measure_in_set,select_second_left_conjunct_in_set,right_arg1 NOMINAL_R:add_measure,try_add_singular,try_remove_adv,try_remove_correlated,select_right_conjunct_in_set,select_right_arg2_without_head_predicative,require_predicative_existential
-NP -> Q:try_add_plural,try_remove_adv,require_no_correlator_predicative,require_predicative_existential,require_measure_in_set,select_second_left_conjunct_in_set,right_arg1 NOMINAL_R:add_measure,try_add_plural,try_remove_adv,try_remove_correlated,select_right_conjunct_in_set,select_right_arg2_without_head_predicative,require_predicative_existential
+NP -> Q:try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_measure_in_set,select_second_left_conjunct_in_set,right_arg1 NOMINAL_R:add_measure,try_add_singular,try_remove_adv,try_remove_correlated,select_right_conjunct_in_set,select_right_arg2_without_head_predicative,require_predicative_existential
+NP -> Q:try_add_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_measure_in_set,select_second_left_conjunct_in_set,right_arg1 NOMINAL_R:add_measure,try_add_plural,try_remove_adv,try_remove_correlated,select_right_conjunct_in_set,select_right_arg2_without_head_predicative,require_predicative_existential
 
 # pronouns
 # NP {A} -> PRO {A}
@@ -1475,41 +1475,41 @@ NP -> PRO:try_remove_adv
 # NP {^[P]:(... & ?[X]:(f(X=^[x]:~f(x)) & ?[x]:(X(x) & P(x))))} -> NOT NP {^[P]:?[X]:(f(X=^[x]:f(x)) & ?[x]:(X(x) & P(x)))}
 # NP {^[P]:(... & ?[X]:(f(X) & ~?[x]:(X(x) & P(x))))} -> NEITHER NP {^[P]:?[X]:(f(X) & ?[x]:(X(x) & P(x)))}
 # this depends on whether the head quantifier is negated
-NP -> NO NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,add_negative_predicative,remove_predicative_not,require_predicative_existential
-NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative_predicative,remove_predicative_not
-#NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative_predicative,remove_predicative_set_complement
-#NP -> NEITHER NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,add_negative_predicative,remove_predicative_not,require_predicative_existential
+NP -> NO NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential
+NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative,remove_predicative_not
+#NP -> NOT NP:try_remove_adv,try_remove_correlated,add_negative,remove_predicative_set_complement
+#NP -> NEITHER NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,add_negative,remove_predicative_not,require_predicative_existential
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> EACH NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-NP -> EACH NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator_predicative,require_wide_scope,require_predicative_universal
+NP -> EACH NOMINAL_R:try_add_singular,require_no_adv,try_remove_correlated,require_no_correlator,require_wide_scope,require_predicative_universal
 
 # NP {A} -> A NOMINAL_R {A}
 #   e.g. "A group of students walks down the street."
-#NP -> A NOMINAL_R:add_concord_singular,try_remove_adv,try_remove_correlated,require_no_correlator_predicative
+#NP -> A NOMINAL_R:add_concord_singular,try_remove_adv,try_remove_correlated,require_no_correlator
 # TODO: in the above example, maybe we should model "students" as the head, rather than "group"
 
 # NP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> SOME NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(subset(X,^[x]:f(x))) & ?[x]:(X(x) & P(x))))} -> SOME NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
 # this depends on whether the set is defined using `subset` rather than with functions like `half` or as S=^[x]:f(x);
-#NP -> SOME NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_subset_with_equality
+#NP -> SOME NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_subset_with_equality
 
 # NP {A} -> DEF_NP {A}
-NP -> DEF_NP:try_remove_adv,require_no_correlator_predicative,require_no_wh_minus
+NP -> DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> ALL DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined as S=^[x]:f(x) rather than with functions like `subset` or `half`;
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-NP -> ALL DEF_NP:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,require_no_wh_minus,require_predicative_universal
-NP -> ALL NP':try_remove_adv,try_remove_correlated,require_no_correlator_predicative,require_predicative_universal
+NP -> ALL DEF_NP:try_remove_adv,try_remove_correlated,require_no_correlator,require_no_wh_minus,require_predicative_universal
+NP -> ALL NP':try_remove_adv,try_remove_correlated,require_no_correlator,require_predicative_universal
 
 # NP {^[P]:(... & ?[X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> HALF DEF_NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(half(X,^[x]:f(x))) & ![x]:(X(x) => P(x))))} -> HALF A NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # this depends on whether the set is defined using `half` rather than with functions like `subset` or as S=^[x]:f(x);
 # it also depends on whether the head predicate of the left conjunct is `this`, `that`, [TODO: add features for possessive]
-#NP -> HALF DEF_NP:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,require_no_wh_minus,replace_predicative_half_with_equality
-#NP -> HALF A NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_half_with_equality
+#NP -> HALF DEF_NP:try_remove_adv,try_remove_correlated,require_no_correlator,require_no_wh_minus,replace_predicative_half_with_equality
+#NP -> HALF A NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_half_with_equality
 
 # NP {^[P]:(... & ?[X]:(F(p(X,A)) & (~)![x]:(X(x) => P(x))))} -> ADV {p} NP {^[P]:(... & ?[X]:(F(X=A) & (~)![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(p(X,A)) & (~)?[x]:(X(x) & P(x))))} -> ADV {p} NP {^[P]:(... & ?[X]:(F(X=A) & (~)?[x]:(X(x) & P(x))))}
@@ -1521,22 +1521,24 @@ NP -> ALL NP':try_remove_adv,try_remove_correlated,require_no_correlator_predica
 # NP {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1}
 # NP {^[P]:(... & ?[X]:(X=^[x]:(first_name(x)=n1 & last_name(x)=n2) & ?[x]:(X(x) & P(x))))} -> NAME {first_name(x)=n1 & last_name(x)=n2}
 # NP {^[P]:(... & ?[X]:(X=^[x]:(nickname(x,n1)) & ?[x]:(X(x) & P(x))))} -> NAME {nickname(x,n1)}
-#NP -> NAME:try_remove_adv,require_no_correlator_predicative,select_name
+#NP -> NAME:try_remove_adv,require_no_correlator,select_name
 
 # NP {^[P,x]:(... & ?[X]:(X=^[x]:f(x) & ... & X(x) & P(x)))}
 #  -> WHICH/WHAT NOMINAL_R {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ?[x]:(X(x) & P(x))))}
-NP -> WHICH:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
-NP -> WHAT:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+NP -> WHICH:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+NP -> WHAT:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+NP -> WHICH:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_plural
+NP -> WHAT:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_plural
 
 # TODO: wait what? what happened to NOMINAL_R lol?
 # NP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ?[x]:(X(x) & P(x))))} -> WHATEVER/WHICHEVER
 # NP {^[P]:(... & ?[X]:(X=^[x]:f(x) & ... & ![x]:(X(x) => P(x))))} -> WHATEVER/WHICHEVER
-#NP -> WHICHEVER:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative
-#NP -> WHATEVER:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator_predicative
+#NP -> WHICHEVER:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator
+#NP -> WHATEVER:require_no_wh_minus NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator
 
 NP -> EITHER NP:remove_either
 NP -> BOTH NP:remove_both
-NP -> NEITHER NP:remove_neither,add_negative_predicative
+NP -> NEITHER NP:remove_neither,add_negative
 
 # for correlated coordination
 # NOTE: For the following rules, the coordination doesn't have to be at head
@@ -1560,7 +1562,7 @@ NP -> NEITHER NP:remove_neither,add_negative_predicative
 # NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ~?[x]:(S(x) & P(x))))}
 #  -> NEITHER NP {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x1 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
 #NP -> NP:require_not_correlated,add_neither,add_correlated_by_neither # this transformation requires the coordination is at the head
-#NP -> NEITHER:require_not_correlated NP:add_correlated_by_neither,add_negative_predicative # this transformation requires the coordination is a descendant of the head descendant of the head
+#NP -> NEITHER:require_not_correlated NP:add_correlated_by_neither,add_negative # this transformation requires the coordination is a descendant of the head descendant of the head
 
 # NOTE: In the below rules, we require that none of the Ai are themselves
 # coordinations with the coordinator (unless Ai is negated).
@@ -1704,15 +1706,15 @@ NP_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #     NP_COORDINATION {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
 #     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-#NP_COORDINATION -> NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative_predicative NP_COORDINATION
-#NP_COORDINATION -> COMMA:require_comma NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative_predicative NP_COORDINATION
+#NP_COORDINATION -> NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative NP_COORDINATION
+#NP_COORDINATION -> COMMA:require_comma NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative NP_COORDINATION
 # NP_COORDINATION {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & S=^[x]:x=x1) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
 # or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & S=^[x]:x=x1) & ?[x]:(S(x) & P(x))))}
 #  -> (COMMA) NOR NP {^[P]:(... & ?[x1]:(f1(x1) & P(x1)))}
 #     or {^[P]:(... & ?[x1]:(f1(x1) & ![x]:(x1(x) => P(x))))} if x1 is a set
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-#NP_COORDINATION -> NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative_predicative
-#NP_COORDINATION -> COMMA:require_comma NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative_predicative
+#NP_COORDINATION -> NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative
+#NP_COORDINATION -> COMMA:require_comma NOR:require_nor NP:add_req_aux,remove_coordinator,remove_comma,try_has_arg2_in_set,add_negative
 
 
 NAME nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1802,14 +1804,18 @@ DEF_NP -> THE NP':try_remove_correlated,require_predicative_universal,try_add_pl
 
 NP' nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
-# NP {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & f(S) & ...))} -> Q {f(x_1)} NOMINAL_R {^[P]:(?[S]:(g(S=^[x]:f(x)) & ...))}
+# NP' {^[P]:(... & ?[S]:(g(S=^[x]:f(x)) & f(S) & ...))} -> Q {f(x_1)} NOMINAL_R {^[P]:(?[S]:(g(S=^[x]:f(x)) & ...))}
 # this depends on whether the head predicate of the left conjunct f(S) is one that expresses information about the size of the set
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
 
+# NP' {^[n]:^[P]:(... & ?[S]:(subset(S,^[x]:f(x)) & size(S)=n & ... & ![x]:(S(s) → P(s))))}
+#  -> HOW MANY NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ... & ![x]:(S(s) → P(s))))}
+NP' -> HOW:require_no_wh_minus,select_second_left_set_conjunct_root,require_size_lambda MANY NOMINAL_R:try_remove_correlated,try_add_plural,require_wide_scope,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}
-NP' -> NOMINAL_R:identity_predicative
+NP' -> NOMINAL_R:identity
 
 
 Q nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -1826,7 +1832,7 @@ Q nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #Q -> ADVP_L:try_remove_wh_minus Q:try_remove_correlated
 
 # Q {n} -> NUMBER {n}
-Q -> NUMBER:identity_root
+Q -> NUMBER:identity
 
 # comparative constructions where sizes of sets are compared
 # Q {?[R]:size(X)>size(R)} -> MORE
@@ -1857,7 +1863,7 @@ Q -> NUMBER:identity_root
 NOMINAL_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # NOMINAL_R {A} -> NOMINAL_L {A}
-NOMINAL_R -> NOMINAL_L:identity_predicative
+NOMINAL_R -> NOMINAL_L:identity
 
 # NOMINAL_R {^[P]:(... & ?[S]:(F(S=^[x]:(f(x) & g(x))) & ...))}
 #  -> NOMINAL_R {^[P]:?[S]:(S=^[x]:f(x) & ...)}
@@ -1902,6 +1908,12 @@ NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_witho
 #     OF
 #     NP {^[P]:(... & ?[S]:(S=^[x]:?[n]:(name(n) & arg1_of(x)=n & arg2(n)=s) & ?[x]:(S(x) & P(x))))}
 NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set,require_right_predicate_in_set OF NP:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_only_right_conjunct_in_set_predicative,require_name_in_set,try_remove_number
+
+# NOMINAL_R {^[P]:(... & ?[a]:(g(a) & ... & ?[S]:(S=^[x]:(f(x) & ?[l]:(locate(l) & arg2(l)=a & arg1_of(x)=l)) & ?[x]:(S(x) & P(x)))))}
+#  -> NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ?[x]:(S(x) & P(x))))}
+#     COMMA
+#     NOMINAL_L {^[P]:(... & ?[A]:(A=^[a]:g(a) & ?[x]:(A(x) & P(x))))}
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set COMMA NOMINAL_L:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_right_conjunct_in_set,remove_wide_scope,try_remove_number,select_right_arg1_of_without_head,require_left_predicate_locate,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
 
 # comparative constructions
 # NOMINAL_R {^[P]:(... & ?[X,r]:(... & F(X=^[x]:(?[g1]:(U(i1,g1) & p(f1)(g1) & arg1(g1)=x & arg2(g1)=r) & ... & ?[gn]:(U(in,gn) & p(fn)(gn) & arg1(gn)=x & arg2(gn)=r) & ... & h(r) & ...)) & ...))}
@@ -2077,15 +2089,15 @@ NOMINAL_COORDINATION nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #     NOMINAL_COORDINATION {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
 #     or {^[P]:(... & ?[S]:(?[x2]:(f2(x2) & ... & ?[xn]:(fn(xn) & S=^[x]:(x=x2 | ... | x=xn))) & ?[x]:(S(x) & P(x))))}
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-#NOMINAL_COORDINATION -> NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative_predicative NOMINAL_COORDINATION
-#NOMINAL_COORDINATION -> COMMA:require_comma NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative_predicative NOMINAL_COORDINATION
+#NOMINAL_COORDINATION -> NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative NOMINAL_COORDINATION
+#NOMINAL_COORDINATION -> COMMA:require_comma NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative NOMINAL_COORDINATION
 # NOMINAL_COORDINATION {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & S=^[x]:x=x1) & ?[x]:(S(x) & ?[y]:(x(y) & P(y)))))}
 # or {^[P]:(... & ?[S]:(?[x1]:(f1(x1) & S=^[x]:x=x1) & ?[x]:(S(x) & P(x))))}
 #  -> (COMMA) NOR NOMINAL_R {^[P]:(... & ?[x1]:(f1(x1) & P(x1)))}
 #     or {^[P]:(... & ?[x1]:(f1(x1) & ![x]:(x1(x) => P(x))))} if x1 is a set
 # NOTE: xi could also be constants, rather than existentially-quantified variables
-#NOMINAL_COORDINATION -> NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative_predicative
-#NOMINAL_COORDINATION -> COMMA:require_comma NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative_predicative
+#NOMINAL_COORDINATION -> NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative
+#NOMINAL_COORDINATION -> COMMA:require_comma NOR:require_nor NOMINAL_R:add_req_aux,remove_coordinator,remove_comma,add_negative
 
 
 N_ADJUNCT nonterminal {} {1.0} {1.0} {} 10 1.0 {}
@@ -2153,7 +2165,7 @@ N_ADJUNCT -> S':select_right_arg1_of_without_head,add_that,add_nullable_subject
 # NOTE: This second rule does not allow a comma.
 # e.g. "last time (that) i went to campus"
 #N_ADJUNCT -> S' # TODO: remove grammatical features from S'
-#N_ADJUNCT -> S':add_that,add_nullable_subject # TODO: remove grammatical features from S'
+N_ADJUNCT -> S':select_right_arg2_of_without_head,add_that,add_nullable_subject # TODO: remove grammatical features from S'
 #N_ADJUNCT -> COMMA S':add_that,add_nullable_subject COMMA # TODO: remove grammatical features from S'
 # e.g. "the demand that she be here"
 #N_ADJUNCT -> S':add_that,add_subjunctive # TODO: remove grammatical features from S'
@@ -2308,8 +2320,8 @@ PRO -> WHATEVER:require_no_wh_minus,require_predicate_of_lambda
 #PRO -> WHOMEVER:require_no_wh_minus
 
 # PRO {^[P,x]:?[X]:(X=^[x]:(U(0,x) & location(x)) & X(x) & P(x))} -> WHERE/WHEREVER
-#PRO -> WHERE:require_no_wh_minus
-#PRO -> WHEREVER:require_no_wh_minus
+PRO -> WHERE:require_no_wh_minus,require_locate_of_lambda
+PRO -> WHEREVER:require_no_wh_minus,require_locate_of_lambda
 
 PRO -> SOMEONE:require_animate_in_set,require_singular
 
@@ -2318,36 +2330,36 @@ PRO -> SOMEONE:require_animate_in_set,require_singular
 NOMINAL_L nonterminal {} {0.01} {100.0} {} 10 1.0 {}
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))} -> N {a}
-NOMINAL_L -> N:require_no_correlator_predicative,select_constant_in_set
+NOMINAL_L -> N:require_no_correlator,select_constant_in_set
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & p(x)) & ?[x]:(X(x) & P(x)))} -> N {p}
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & p(x)) & ![x]:(X(x) => P(x)))} -> N {p}
 # This depends on whether `p` is an event (i.e. typically has arguments, even
 # if it doesnt in this particular logical form).
-NOMINAL_L -> N:require_no_correlator_predicative,select_predicate_in_set
+NOMINAL_L -> N:require_no_correlator,select_predicate_in_set
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & ?[n]:(name(n) & arg1_of(x)=n & arg2(n)=s)) & ?[x]:(X(x) & P(x)))} -> STRING {s}
-NOMINAL_L -> STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized
+NOMINAL_L -> STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & x=s) & ?[x]:(X(x) & P(x)))} -> STRING {s}
-NOMINAL_L -> STRING:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_string_in_set,require_capitalized
+NOMINAL_L -> STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_string_in_set,require_capitalized
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & x=n) & ?[x]:(X(x) & P(x)))} -> NUMBER {n}
-NOMINAL_L -> NUMBER:require_no_correlator_predicative,require_no_measure,require_predicative_existential,select_number_in_set
+NOMINAL_L -> NUMBER:require_no_correlator,require_no_measure,require_predicative_existential,select_number_in_set
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:T & size(X)=n & ...)} -> NUMBER {n}
-NOMINAL_L -> NUMBER:require_no_correlator_predicative,require_no_measure,set_size
+NOMINAL_L -> NUMBER:require_no_correlator,require_no_measure,set_size
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(x=a) & ?[x]:(X(x) & P(x)))} -> V {a}
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & p(x)) & ?[x]:(X(x) & P(x)))} -> V {p}
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(U(0,x) & p(x)) & ![x]:(X(x) => P(x)))} -> V {p}
 # This depends on whether `p` is an event (i.e. typically has arguments, even
 # if it doesnt in this particular logical form).
-#NOMINAL_L -> V:require_no_correlator_predicative,require_no_measure,select_predicate_in_set,add_tion
+#NOMINAL_L -> V:require_no_correlator,require_no_measure,select_predicate_in_set,add_tion
 
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(?[y]:(U(0,y) & p(y) & arg1(p)=x)) & ?[x]:(X(x) & P(x)))} -> V {p}
 # NOMINAL_L {^[P]:?[X]:(X=^[x]:(?[y]:(U(0,y) & p(y) & arg1(p)=x)) & ![x]:(X(x) => P(x)))} -> V {p}
-#NOMINAL_L -> V:require_no_correlator_predicative,require_no_measure,add_er # this adds "ers" if the number is plural, as well as any duplicated consonants if appropriate (i.e. "programmers")
+#NOMINAL_L -> V:require_no_correlator,require_no_measure,add_er # this adds "ers" if the number is plural, as well as any duplicated consonants if appropriate (i.e. "programmers")
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(... & f(x))) & ... & ![x]:(X(x) => P(x))))}
 #  -> ADJP_R {... & f'}
@@ -2356,7 +2368,7 @@ NOMINAL_L -> NUMBER:require_no_correlator_predicative,require_no_measure,set_siz
 #    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) & ... & (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:h1(z1) & ... & (~)?[zn]:hn(zn)
 #    or f(x) = (~)?[z1]:(h1(z1) & arg1/arg2(z1)=x) | ... | (~)?[zn]:(hn(zn) & arg1/arg2(zn)=x) and f' = (~)?[z1]:h1(z1) | ... | (~)?[zn]:hn(zn)
 # NOTE: This rule also works if X is existentially-quantified or used collectively.
-NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set
+NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set,try_remove_superlative
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(... & f(x))) & ... & ![x]:(X(x) => P(x))))}
 #  -> ADJP_R {... & f'}
@@ -2373,7 +2385,13 @@ NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,s
 # NOTE: the `h` and `z` scopes could be the same
 # e.g. "tallest mountain", "closest and brightest star"
 NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
-NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution NOMINAL_R:try_add_plural,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+NOMINAL_L -> ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution NOMINAL_R:try_add_plural,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
+
+# NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(f(x) & g(x)))) & ...)}
+#  -> NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:f(x))) & ...)}
+#     NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:g(x))) & ...)}
+# e.g. "capital city"
+NOMINAL_L -> NOMINAL_L:require_no_superlative,try_remove_genitive,try_remove_wh_minus,try_remove_measure,remove_right_conjunct_in_set,try_remove_number,add_singular NOMINAL_L:try_remove_correlated,select_only_right_conjunct_in_set_predicative
 
 # NOMINAL_L {^[P]:(... & ?[X]:(F(X=^[x]:(?[s]:(arg2(s)=a & ... & arg1(s)=x) & U(0,x)))) & ...)}
 #  -> NOMINAL_L {^[P]:?[Y]:(Y=^[y]:(y=a) & ?[y]:(Y(y) & P(y)))}
@@ -2649,7 +2667,7 @@ ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # ADJP_R {^[x]:?[r]:(... & arg2(r)=x)}
 #  -> HOW ADJP_R {?[r]:(...)}
-#ADJP_R -> HOW:require_no_wh_minus ADJP_R:try_remove_is_adjunct,remove_right_arg2_lambda
+ADJP_R -> HOW:require_no_wh_minus ADJP_R:try_remove_is_adjunct,require_right_arg2_lambda,remove_right_conjunct
 
 # ADJP_R {A} -> ADJP_L {A}
 ADJP_R -> ADJP_L:try_remove_is_adjunct
@@ -2725,17 +2743,17 @@ ADJP_COORDINATION -> COMMA NOR ADJP_R:remove_nor,add_req_aux,remove_comma,add_ne
 ADJP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 
 # ADJP_L {?[g]:(U(0,g) & p(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
-ADJP_L -> ADJ:require_no_correlator
+ADJP_L -> ADJ:require_no_correlator,remove_wide_scope
 
 # ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJ {?[g]:(U(0,g) & p(g))}
-ADJP_L -> ADJ:require_no_correlator,require_superlative,remove_right_trace
+ADJP_L -> ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace
 
 # ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJP_L {?[g]:(U(0,g) & p(g))}
-#ADJP_L -> MOST ADJP_L:try_remove_correlated,remove_superlative,remove_right_trace # for `greatest` only
-#ADJP_L -> LEAST ADJP_L:try_remove_correlated,remove_superlative,remove_right_trace # for `least` only
+ADJP_L -> MOST ADJP_L:try_remove_correlated,remove_superlative,add_high_degree,remove_right_trace # for `greatest` only
+ADJP_L -> LEAST ADJP_L:try_remove_correlated,remove_superlative,negative_to_high_degree,remove_right_trace # for `least` only
 
 # ADJP_L {?[g]:(U(0,g) & greater/less(p)(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
-#ADJP_L -> ADJ:require_no_correlator,add_comparative
+#ADJP_L -> ADJ:require_no_correlator,remove_wide_scope,add_comparative
 
 # ADJP_L {?[g]:(U(0,g) & greater/less(p)(g))} -> ADJP_L {?[g]:(U(0,g) & p(g))}
 #ADJP_L -> MORE ADJP_L:try_remove_correlated # for `greater` only
@@ -2923,7 +2941,7 @@ V preterminal {predicate, has_arg2} {10000000000000000000.0, 10.0, 0.1} {1.0, 1.
 
 N preterminal {constant, has_arg2, measure} {10000000000000000000.0, 16.0, 10.0, 0.1} {1.0, 1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000000000000000000 0.99 noun {}
 
-ADJ preterminal {predicate_only} {10000.0, 0.1} {1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000 1.0 adjective {}
+ADJ preterminal {outer_predicate, inner_predicate} {10000000000000000000.0, 10000.0, 0.1} {1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000000000000000000 1.0 adjective {}
 
 ADV preterminal {} {1.0} {1.0} {} 10000 1.0 adverb {}
 
@@ -3064,6 +3082,15 @@ WHICH -> "which"
 WHICHEVER preterminal {} {1.0} {1.0} {} 10 1.0 {}
 WHICHEVER -> "whichever"
 
+WHERE preterminal {} {1.0} {1.0} {} 10 1.0 {}
+WHERE -> "where"
+
+WHEREVER preterminal {} {1.0} {1.0} {} 10 1.0 {}
+WHEREVER -> "wherever"
+
+HOW preterminal {} {1.0} {1.0} {} 10 1.0 {}
+HOW -> "how"
+
 HYPHEN preterminal {} {1.0} {1.0} {} 10 1.0 {}
 HYPHEN -> "-"
 
@@ -3087,3 +3114,15 @@ CAN -> "can"
 
 CANNOT preterminal {} {1.0} {1.0} {} 10 1.0 {}
 CANNOT -> "cannot"
+
+MOST preterminal {} {1.0} {1.0} {} 10 1.0 {}
+MOST -> "most"
+
+LEAST preterminal {} {1.0} {1.0} {} 10 1.0 {}
+LEAST -> "least"
+
+MANY preterminal {} {1.0} {1.0} {} 10 1.0 {}
+MANY -> "many"
+
+MUCH preterminal {} {1.0} {1.0} {} 10 1.0 {}
+MUCH -> "much"

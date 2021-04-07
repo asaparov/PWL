@@ -603,7 +603,8 @@ enum class grammatical_comparison : uint_fast8_t {
 	COMPARATIVE,
 	SUPERLATIVE,
 
-	ANY
+	ANY,
+	NOT_COMPARATIVE
 };
 
 enum class grammatical_tense : uint_fast8_t {
@@ -785,6 +786,20 @@ inline bool intersect(grammatical_comparison& out, grammatical_comparison first,
 		out = second;
 	} else if (second == grammatical_comparison::ANY) {
 		out = first;
+	} else if (first == grammatical_comparison::NOT_COMPARATIVE) {
+		if (second == grammatical_comparison::COMPARATIVE) {
+			return false;
+		} else {
+			out = second;
+			return true;
+		}
+	} else if (second == grammatical_comparison::NOT_COMPARATIVE) {
+		if (first == grammatical_comparison::COMPARATIVE) {
+			return false;
+		} else {
+			out = first;
+			return true;
+		}
 	} else if (first == second) {
 		out = first;
 	} else {

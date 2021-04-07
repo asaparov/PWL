@@ -35,6 +35,9 @@ enum class built_in_predicates : unsigned int {
 	GREATEST,
 	GREATER_THAN_OR_EQUAL,
 	NUMBER,
+	LOCATE,
+	NEGATIVE,
+	HIGH_DEGREE,
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
@@ -219,6 +222,9 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("same", (unsigned int) built_in_predicates::SAME)
 		&& names.put("object", (unsigned int) built_in_predicates::OBJECT)
 		&& names.put("number", (unsigned int) built_in_predicates::NUMBER)
+		&& names.put("locate", (unsigned int) built_in_predicates::LOCATE)
+		&& names.put("negative", (unsigned int) built_in_predicates::NEGATIVE)
+		&& names.put("high_degree", (unsigned int) built_in_predicates::HIGH_DEGREE)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)
 		&& names.put("measure", (unsigned int) built_in_predicates::MEASURE)
 		&& names.put("ref", (unsigned int) built_in_predicates::REF)
