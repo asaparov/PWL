@@ -18,6 +18,10 @@
 	display: contents;
 }
 
+#console style {
+	display: none;
+}
+
 sub {
 	font-variant-position: sub;
 }
