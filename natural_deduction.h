@@ -49,6 +49,44 @@ enum class nd_step_type : uint_fast16_t
 	COUNT
 };
 
+template<bool Intuitionistic, typename Stream>
+inline bool print(nd_step_type type, Stream& out) {
+	switch (type) {
+	case nd_step_type::AXIOM: return print("Ax", out);
+	case nd_step_type::PARAMETER: return print("PARAMETER", out);
+	case nd_step_type::ARRAY_PARAMETER: return print("ARRAY_PARAMETER", out);
+	case nd_step_type::TERM_PARAMETER: return print("TERM_PARAMETER", out);
+	case nd_step_type::FORMULA_PARAMETER: return print("FORMULA_PARAMETER", out);
+	case nd_step_type::BETA_EQUIVALENCE: return print("β", out);
+	case nd_step_type::CONJUNCTION_INTRODUCTION: return print("∧I", out);
+	case nd_step_type::CONJUNCTION_ELIMINATION: return print("∧E", out);
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT: return print("∧Eᴸ", out);
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT: return print("∧Eᴿ", out);
+	case nd_step_type::DISJUNCTION_INTRODUCTION: return print("∨I", out);
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT: return print("∨Iᴸ", out);
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT: return print("∨Iᴿ", out);
+	case nd_step_type::DISJUNCTION_ELIMINATION: return print("∨E", out);
+	case nd_step_type::IMPLICATION_INTRODUCTION: return print("→I", out);
+	case nd_step_type::IMPLICATION_ELIMINATION: return print("→E", out);
+	case nd_step_type::BICONDITIONAL_INTRODUCTION: return print("↔I", out);
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT: return print("↔Eᴸ", out);
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT: return print("↔Eᴿ", out);
+	case nd_step_type::EQUALITY_ELIMINATION: return print("=E", out);
+	case nd_step_type::PROOF_BY_CONTRADICTION: return print(Intuitionistic ? "¬I" : "⊥ᶜ", out);
+	case nd_step_type::NEGATION_ELIMINATION: return print("¬E", out);
+	case nd_step_type::FALSITY_ELIMINATION: return print("⊥E", out);
+	case nd_step_type::COMPARISON_INTRODUCTION: return print("≥I", out);
+	case nd_step_type::INEQUALITY_INTRODUCTION: return print("≠I", out);
+	case nd_step_type::UNIVERSAL_INTRODUCTION: return print("∀I", out);
+	case nd_step_type::UNIVERSAL_ELIMINATION: return print("∀E", out);
+	case nd_step_type::EXISTENTIAL_INTRODUCTION: return print("∃I", out);
+	case nd_step_type::EXISTENTIAL_ELIMINATION: return print("∃E", out);
+	case nd_step_type::COUNT: break;
+	}
+	fprintf(stderr, "print ERROR: Unrecognized `nd_step_type`.\n");
+	return false;
+}
+
 constexpr static unsigned int ND_OPERAND_COUNT = 3;
 static double LOG_ND_RULE_COUNT = log((double) nd_step_type::COUNT);
 
@@ -732,6 +770,12 @@ template<typename K, typename Formula>
 inline void free_proof_states(hash_map<K, proof_state<Formula>>& map) {
 	for (auto entry : map)
 		free(entry.value);
+}
+
+template<typename K, typename Formula>
+inline void free_proof_states(hash_map<K, pair<proof_state<Formula>, unsigned int>>& map) {
+	for (auto entry : map)
+		free(entry.value.key);
 }
 
 template<typename FormulaPtr>
@@ -1594,6 +1638,118 @@ bool new_nd_step(nd_step<Formula>*& step, nd_step_type type)
 		free(step); return false;
 	}
 	step->type = type;
+	return true;
+}
+
+template<typename BuiltInPredicates, typename Canonicalizer, bool Intuitionistic, typename Formula, typename Stream, typename... Printer>
+bool print(const nd_step<Formula>& proof, Stream& out, Printer&&... printer)
+{
+	/* first list the proof steps in reverse topological order */
+	hash_map<const nd_step<Formula>*, unsigned int> in_degrees(128);
+	if (!compute_in_degrees(&proof, in_degrees)) return false;
+
+	array<const nd_step<Formula>*> stack(32);
+	for (const auto& entry : in_degrees) {
+		if (entry.value == 0 && !stack.add(entry.key))
+			return false;
+	}
+
+	array<const nd_step<Formula>*> topological_order(64);
+	while (stack.length > 0) {
+		const nd_step<Formula>* node = stack.pop();
+		if (!node->is_parameter() && !topological_order.add(node)) return false;
+
+		unsigned int operand_count;
+		const nd_step<Formula>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
+			const nd_step<Formula>* operand = operands[i];
+			unsigned int& degree = in_degrees.get(operand);
+			degree--;
+
+			if (degree == 0 && !stack.add(operand))
+				return false;
+		}
+	}
+
+	/* process the proof steps in reverse topological order */
+	hash_map<const nd_step<Formula>*, pair<proof_state<Formula>, unsigned int>> proof_states(128);
+	array<proof_state<Formula>*> operand_states(16);
+	array<unsigned int> operand_indices(16);
+	unsigned int proof_step_index = 0;
+	for (unsigned int k = topological_order.length; k > 0; k--) {
+		const nd_step<Formula>* node = topological_order[k - 1];
+		if (!proof_states.check_size()) return false;
+
+		bool contains; unsigned int bucket;
+		pair<proof_state<Formula>, unsigned int>& state = proof_states.get(node, contains, bucket);
+		if (contains) {
+			fprintf(stderr, "print ERROR: The proof state at this node should be uninitialized.\n");
+			free_proof_states(proof_states); return false;
+		} else if (!init(state.key)) {
+			fprintf(stderr, "print ERROR: Unable to initialize new proof_state.\n");
+			free_proof_states(proof_states); return false;
+		}
+		if (!node->is_parameter())
+			state.value = ++proof_step_index;
+		else state.value = 0;
+		proof_states.table.keys[bucket] = node;
+		proof_states.table.size++;
+
+		/* get the proof states of the operands */
+		unsigned int operand_count;
+		const nd_step<Formula>* const* operands;
+		node->get_subproofs(operands, operand_count);
+		if (!operand_states.ensure_capacity(operand_count)
+		 || !operand_indices.ensure_capacity(operand_count))
+		{
+			free_proof_states(proof_states);
+			return false;
+		}
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) break;
+			const nd_step<Formula>* operand = operands[i];
+			pair<proof_state<Formula>, unsigned int>& operand_state = proof_states.get(operand, contains);
+			operand_states[i] = &operand_state.key;
+			if (!operand->is_parameter() && !contains) {
+				fprintf(stderr, "print ERROR: The proof is not topologically ordered.\n");
+				free_proof_states(proof_states); return false;
+			}
+			operand_states.length++;
+			if (!operand->is_parameter()) {
+				operand_indices[i] = operand_state.value;
+				operand_indices.length++;
+			}
+		}
+
+		/* compute the conclusion at this proof step */
+		if (!check_proof<BuiltInPredicates, Canonicalizer, Intuitionistic>(state.key, *node, operand_states.data, operand_states.length)) {
+			free_proof_states(proof_states);
+			return false;
+		}
+
+		if (!node->is_parameter()) {
+			/* print this proof step */
+			if (!print("  [", out) || !print(state.value, out) || !print("] ", out)
+			 || !print(*state.key.formula, out, std::forward<Printer>(printer)...)
+			 || !print(" by ", out) || !print<Intuitionistic>(node->type, out))
+				return false;
+			if (operand_indices.length != 0) {
+				if (!print(", Premises: [", out) || !print(operand_indices[0], out)) return false;
+				for (unsigned int i = 1; i < operand_indices.length; i++) {
+					if (!print("], [", out) || !print(operand_indices[i], out)) return false;
+				}
+				if (!print("]", out)) return false;
+			}
+			if (!print('\n', out))
+				return false;
+		}
+
+		operand_states.clear();
+		operand_indices.clear();
+	}
+	free_proof_states(proof_states);
 	return true;
 }
 

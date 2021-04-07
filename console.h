@@ -156,7 +156,7 @@ void run_console(
 				T.print_axioms(stdout, parser.get_printer());
 
 			} else if (compare_strings("print_proofs", line.data, index)) {
-				T.print_disjunction_introductions(stdout, parser.get_printer());
+				T.print_proofs(stdout, parser.get_printer());
 
 			} else if (compare_strings("read", line.data, index)) {
 				while (isspace(line[index])) index++;

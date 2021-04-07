@@ -3603,6 +3603,15 @@ struct theory
 		return true;
 	}
 
+	template<typename Stream, typename... Printer>
+	bool print_proofs(Stream& out, Printer&&... printer) const {
+		for (const Proof* observation : observations) {
+			if (!print<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*observation, out, std::forward<Printer>(printer)...) || !print('\n', out))
+				return false;
+		}
+		return true;
+	}
+
 	inline bool get_concept_names(unsigned int constant, array<Term*>& name_terms) const {
 		if (constant < new_constant_offset)
 			return true;

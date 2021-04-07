@@ -1365,10 +1365,11 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 	case hol_term_type::NOT:
 		if (!print(not_symbol<Syntax>::symbol, out))
 			return false;
-		if (term.unary.operand->type == hol_term_type::AND
-		 || term.unary.operand->type == hol_term_type::EQUALS
+		if (term.unary.operand->type == hol_term_type::EQUALS
+		 || term.unary.operand->type == hol_term_type::AND
 		 || term.unary.operand->type == hol_term_type::IFF
-		 || term.unary.operand->type == hol_term_type::OR)
+		 || term.unary.operand->type == hol_term_type::OR
+		 || term.unary.operand->type == hol_term_type::IF_THEN)
 		{
 			return print('(', out) && print(*term.unary.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
@@ -1389,9 +1390,33 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 			&& print(if_then_symbol<Syntax>::symbol, out) && print(*term.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case hol_term_type::EQUALS:
-		return print(*term.binary.left, out, std::forward<Printer>(printer)...)
-			&& print(equals_symbol<Syntax>::symbol, out)
-			&& print(*term.binary.right, out, std::forward<Printer>(printer)...);
+		if (term.binary.left->type == hol_term_type::EQUALS
+		 || term.binary.left->type == hol_term_type::AND
+		 || term.binary.left->type == hol_term_type::IFF
+		 || term.binary.left->type == hol_term_type::OR
+		 || term.binary.left->type == hol_term_type::IF_THEN)
+		{
+			if (!print('(', out) || !print(*term.binary.left, out, std::forward<Printer>(printer)...) || !print(')', out))
+				return false;
+		} else {
+			if (!print(*term.binary.left, out, std::forward<Printer>(printer)...))
+				return false;
+		}
+		if (!print(equals_symbol<Syntax>::symbol, out))
+			return false;
+		if (term.binary.right->type == hol_term_type::EQUALS
+		 || term.binary.right->type == hol_term_type::AND
+		 || term.binary.right->type == hol_term_type::IFF
+		 || term.binary.right->type == hol_term_type::OR
+		 || term.binary.right->type == hol_term_type::IF_THEN)
+		{
+			if (!print('(', out) || !print(*term.binary.right, out, std::forward<Printer>(printer)...) || !print(')', out))
+				return false;
+		} else {
+			if (!print(*term.binary.right, out, std::forward<Printer>(printer)...))
+				return false;
+		}
+		return true;
 
 	case hol_term_type::UNARY_APPLICATION:
 		return print(*term.binary.left, out, std::forward<Printer>(printer)...) && print('(', out)
@@ -1404,10 +1429,11 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 
 	case hol_term_type::FOR_ALL:
 		if (!print_quantifier<Syntax>(hol_quantifier_type::FOR_ALL, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
-		if (term.quantifier.operand->type == hol_term_type::AND
-		 || term.quantifier.operand->type == hol_term_type::EQUALS
+		if (term.quantifier.operand->type == hol_term_type::EQUALS
+		 || term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::IFF
-		 || term.quantifier.operand->type == hol_term_type::OR)
+		 || term.quantifier.operand->type == hol_term_type::OR
+		 || term.quantifier.operand->type == hol_term_type::IF_THEN)
 		{
 			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
@@ -1416,10 +1442,11 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 
 	case hol_term_type::EXISTS:
 		if (!print_quantifier<Syntax>(hol_quantifier_type::EXISTS, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
-		if (term.quantifier.operand->type == hol_term_type::AND
-		 || term.quantifier.operand->type == hol_term_type::EQUALS
+		if (term.quantifier.operand->type == hol_term_type::EQUALS
+		 || term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::IFF
-		 || term.quantifier.operand->type == hol_term_type::OR)
+		 || term.quantifier.operand->type == hol_term_type::OR
+		 || term.quantifier.operand->type == hol_term_type::IF_THEN)
 		{
 			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
@@ -1428,10 +1455,11 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 
 	case hol_term_type::LAMBDA:
 		if (!print_quantifier<Syntax>(hol_quantifier_type::LAMBDA, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
-		if (term.quantifier.operand->type == hol_term_type::AND
-		 || term.quantifier.operand->type == hol_term_type::EQUALS
+		if (term.quantifier.operand->type == hol_term_type::EQUALS
+		 || term.quantifier.operand->type == hol_term_type::AND
 		 || term.quantifier.operand->type == hol_term_type::IFF
-		 || term.quantifier.operand->type == hol_term_type::OR)
+		 || term.quantifier.operand->type == hol_term_type::OR
+		 || term.quantifier.operand->type == hol_term_type::IF_THEN)
 		{
 			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
@@ -1499,11 +1527,11 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 
 	case hol_term_type::ANY_QUANTIFIER:
 		if (!print_quantifier<Syntax>(term.any_quantifier.quantifier, hol_term_type::VARIABLE, ANY_VARIABLE, out)) return false;
-		if (term.any_quantifier.operand->type == hol_term_type::AND
-		 || term.any_quantifier.operand->type == hol_term_type::EQUALS
-		 || term.any_quantifier.operand->type == hol_term_type::IF_THEN
+		if (term.any_quantifier.operand->type == hol_term_type::EQUALS
+		 || term.any_quantifier.operand->type == hol_term_type::AND
 		 || term.any_quantifier.operand->type == hol_term_type::IFF
-		 || term.any_quantifier.operand->type == hol_term_type::OR)
+		 || term.any_quantifier.operand->type == hol_term_type::OR
+		 || term.any_quantifier.operand->type == hol_term_type::IF_THEN)
 		{
 			return print('(', out) && print(*term.any_quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
