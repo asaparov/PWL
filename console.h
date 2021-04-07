@@ -75,19 +75,19 @@ inline void print_help(unsigned int max_parse_count)
 inline void print_examples()
 {
 	printf("Try the following to see how knowledge in the theory can be exploited to resolve syntactic ambiguity (PP-attachment):\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a net.\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read No butterfly has a net.\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " add 0\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a net.\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " read Sally caught a butterfly with a net.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " rerank\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " read No butterfly has a net.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " add 0\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " read Sally caught a butterfly with a net.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " rerank\n\n");
 	printf("Another example where the PP attaches to the noun with a \"softer\" constraint:\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a spot.\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read The butterfly has a spot.\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " add 0\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " read Sally caught a butterfly with a spot.\n");
-	printf(" " CONSOLE_BOLD ">" CONSOLE_BOLD " rerank\n\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " read Sally caught a butterfly with a spot.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " rerank\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " read The butterfly has a spot.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " add 0\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " read Sally caught a butterfly with a spot.\n");
+	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " rerank\n\n");
 }
 
 template<typename Stream, typename Parser>
