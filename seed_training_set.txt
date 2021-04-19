@@ -1,7 +1,7 @@
 : # Cats are mammals.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_plural,try_remove_adv,require_no_correlator,require_predicative_universal
@@ -41,7 +41,7 @@
 : # Mercury is a planet in the Solar System.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -100,7 +100,7 @@
 : # Mercury is in the Solar System.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -145,7 +145,7 @@
 : # Neptune is one of the 8 planets in the Solar System.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -257,7 +257,7 @@
 : # There are four gaseous planets.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(THERE "there")
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,require_no_correlator,require_left_predicate_exist,set_predicate_empty,has_arg2
 				(VP_R:remove_right_conjunct
@@ -296,7 +296,7 @@
 : # Each cat is a mammal.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "each")
@@ -335,7 +335,7 @@
 : # Each mammal is female or male.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "each")
@@ -381,7 +381,7 @@
 : # One planet is Earth.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_singleton
@@ -423,7 +423,7 @@
 : # Jupiter is gaseous.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -459,7 +459,7 @@
 #: # A mammal is female or male.
 #{(S
 #	(S':require_no_lambda,mark_wide_scope
-#		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+#		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 #			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 #				(NP:require_no_preposition,require_no_inverse,try_remove_req_aux,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 #					(A "a")
@@ -632,7 +632,7 @@
 {(S
 	(S':require_no_lambda,mark_wide_scope
 		(S':require_conjunction,select_left_operand,mark_wide_scope
-			(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 				(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 					(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 						(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -668,7 +668,7 @@
 		(S_COORDINATION:try_remove_correlator,remove_left_operand,add_and
 			(AND "and")
 			(S':require_no_comma,select_left_operand,remove_and,mark_wide_scope
-				(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+				(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 					(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 						(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 							(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -704,7 +704,7 @@
 			(S_COORDINATION:remove_left_operand
 				(AND "and")
 				(S':remove_and,require_no_comma
-					(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+					(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 						(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 							(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 								(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -747,7 +747,7 @@
 : # No mammal is a fish.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NO "no")
@@ -786,7 +786,7 @@
 : # A nucleus inhabits every eukaryote.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(A "a")
@@ -825,7 +825,7 @@
 : # No cell is both eukaryotic and prokaryotic.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NO "no")
@@ -874,7 +874,7 @@
 : # There are 8 gaseous or terrestrial planets.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(THERE "there")
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,require_no_correlator,require_left_predicate_exist,set_predicate_empty,has_arg2
 				(VP_R:remove_right_conjunct
@@ -923,7 +923,7 @@
 : # What is the mass of Jupiter?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
@@ -973,7 +973,7 @@
 : # Saturn is a name for a planet.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_string_or_number_in_set
@@ -1026,7 +1026,7 @@
 : # Venus is a planet in the inner part of the solar system.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1107,7 +1107,7 @@
 : # The Earth is located in the solar system.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -1162,7 +1162,7 @@
 : # Eris is orbited by which moon?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1208,7 +1208,7 @@
 : # Rigel is located in what constellation?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1256,7 +1256,7 @@
 : # The Outer Solar System is a name for the outer planets in the Solar System.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -1340,7 +1340,7 @@
 : # The population of the Earth is 7594000000.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -1392,12 +1392,12 @@
 	)
 	(PERIOD ".")
 )}
-	{?[E]:((E=^[e]:?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth"))) & (size(E)=1) & ?[X]:((X=^[x]:?[e]:(E(e) & ?[p]:(population(p) & (arg1(p)=e) & (arg2_of(x)=p)))) & (size(X)=1) & ?[x]:(X(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=7594000000)))))};
+	{?[E]:((E=^[e]:?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth"))) & (size(E)=1) & ?[e]:(E(e) & ?[X]:((X=^[x]:?[p]:(population(p) & (arg1(p)=e) & (arg2_of(x)=p))) & (size(X)=1) & ?[x]:(X(x) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=7594000000))))))};
 
 #: # How heavy is Mars?
 #{(S
 #	(S':require_lambda,mark_wide_scope		# ^[x]:?[m]:((arg1(m)=mars) & mass(m) & present(m) & (arg2(m)=x))
-#		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct		# ^[x]:?[m]:(mass(m) & present(m) & (arg1(m)=mars) & (arg2(m)=x))
+#		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct		# ^[x]:?[m]:(mass(m) & present(m) & (arg1(m)=mars) & (arg2(m)=x))
 #			(V_ADJUNCT:try_remove_nullable_subject,try_remove_subordinate,try_remove_correlator,select_right_of_lambda	# ^[x]:?[m]:(mass(m) & (arg2(m)=x))
 #				(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb	# ^[x]:?[m]:(mass(m) & (arg2(m)=x))
 #					(HOW "how")
@@ -1437,7 +1437,7 @@
 : # Mars is how heavy?
 {(S
 	(S':require_lambda,mark_wide_scope		# ^[x]:?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Mars")) & ?[m]:((arg1(m)=y) & mass(m) & present(m) & (arg2(m)=x)))
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct		# ^[x]:?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Mars")) & ?[m]:((arg1(m)=y) & mass(m) & present(m) & (arg2(m)=x)))
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct		# ^[x]:?[y]:(?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Mars")) & ?[m]:((arg1(m)=y) & mass(m) & present(m) & (arg2(m)=x)))
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1519,7 +1519,7 @@
 : # Fair Trade Day is in the month of May.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1576,7 +1576,7 @@
 : # Titan is the brightest moon orbiting Saturn.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1649,7 +1649,7 @@
 : # Titan is the brightest moon that orbits Saturn.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1687,7 +1687,7 @@
 														(S':select_right_arg1_of_without_head,add_that,add_nullable_subject
 															(THAT "that")
 															(S':try_remove_correlated,try_remove_is_adjunct,remove_that
-																(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+																(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 																	(VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
 																		(VP_R:remove_right_conjunct
 																			(VP_L:require_no_be
@@ -1729,7 +1729,7 @@
 : # What is the brightest moon orbiting Saturn?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
@@ -1850,7 +1850,7 @@
 : # Galileo observed Jupiter with a telescope.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -1906,7 +1906,7 @@
 : # Galileo observed Jupiter with four moons.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2004,7 +2004,7 @@
 : # The volume of Deimos is 999.78 cubic kilometers.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -2066,7 +2066,7 @@
 : # Earth is the inner planet orbited by the brightest moon.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2148,7 +2148,7 @@
 : # Which inner planet has the brightest moon?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_substitution,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(WHICH:require_no_wh_minus "which")
@@ -2203,7 +2203,7 @@
 : # Triton does not orbit Saturn.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2251,7 +2251,7 @@
 		(S':require_no_conjunction,try_remove_is_adjunct,try_remove_wh_minus,add_if,select_antecedent,mark_wide_scope
 			(IF "if")
 			(S':try_remove_correlated,try_remove_is_adjunct,remove_if
-				(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+				(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 					(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 						(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 							(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -2285,7 +2285,7 @@
 		)
 		(THEN "then")
 		(S':try_remove_correlated,try_remove_is_adjunct,try_remove_correlator,select_consequent
-			(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+			(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 				(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 					(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 						(PRO:try_remove_adv
@@ -2320,7 +2320,7 @@
 : # The Sun is not freezing.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -2457,7 +2457,7 @@
 : # Oumuamua is moving through the Oort Cloud.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2507,7 +2507,7 @@
 : # The Sun is not frozen.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -2566,7 +2566,7 @@
 : # Every planet that is not frozen is in the Inner Solar System.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(EACH "every")
@@ -2580,7 +2580,7 @@
 							(S':select_right_arg1_of_without_head,add_that,add_nullable_subject
 								(THAT "that")
 								(S':try_remove_correlated,try_remove_is_adjunct,remove_that
-									(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+									(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 										(VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
 											(VP_L:require_no_be
 												(BE:select_left_predicate_and_tense,try_remove_aspect "be"/"is")
@@ -2636,7 +2636,7 @@
 : # Triton is a moon and frozen.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2688,7 +2688,7 @@
 : # Triton is a moon and not gaseous.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2745,7 +2745,7 @@
 : # A cat cannot fly.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(A "a")
@@ -2788,7 +2788,7 @@
 
 : # traverses
 {(V "traverse"/"traverses")}
-	{?[x]:(traverse(x) & present(x))[index:sg]};
+	{?[x]:(traverse(x) & present(x))[index:sg,arg2]};
 
 : # populous
 {(ADJ "populous"/"populous")}
@@ -2797,7 +2797,7 @@
 : # What are the coldest planets?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
@@ -2844,7 +2844,7 @@
 : # Where is the Great Dark Spot?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
@@ -2882,7 +2882,7 @@
 : # Which moons orbit Neptune?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(WHICH:require_no_wh_minus "which")
@@ -2920,7 +2920,7 @@
 : # Mercury is the least massive planet.
 {(S
 	(S':require_no_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
@@ -2974,7 +2974,7 @@
 : # What is the planet that the heaviest moon orbits?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(PRO:try_remove_adv
@@ -3001,7 +3001,7 @@
 												(S':select_right_arg2_of_without_head,add_that,add_nullable_subject
 													(THAT "that")
 													(S':try_remove_correlated,try_remove_is_adjunct,remove_that
-														(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+														(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 															(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 																(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 																	(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
@@ -3051,7 +3051,7 @@
 : # Which inner planet has the highest mass?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_singular,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_substitution,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(WHICH:require_no_wh_minus "which")
@@ -3126,7 +3126,7 @@
 : # How many moons orbit the heaviest planet in the Inner Solar System?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
 					(NP':try_add_plural,try_remove_adv,require_no_correlator,require_predicative_universal
@@ -3202,7 +3202,7 @@
 : # There are how many planets in the Solar System?
 {(S
 	(S':require_lambda,mark_wide_scope
-		(S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(THERE "there")
 			(VP_R:try_remove_nullable_subject,try_remove_correlated,require_no_correlator,require_left_predicate_exist,set_predicate_empty,has_arg2
 				(VP_R:remove_right_conjunct
@@ -3248,6 +3248,141 @@
 	(QUESTION "?")
 )}
 	{^[x]:?[S]:((S=^[s]:?[n]:(name(n) & (arg1_of(s)=n) & (arg2(n)="Solar System"))) & (size(S)=1) & ?[s]:(S(s) & ?[P]:(subset(P,^[p]:(planet(p) & ?[l]:(locate(l) & (arg2(l)=s) & (arg1_of(p)=l)))) & (size(P)=x) & ![p]:(P(p) => ?[e]:(exist(e) & present(e) & (arg1(e)=p))))))};
+
+: # Which inner planet has the most moons?
+{(S
+	(S':require_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_substitution,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(WHICH:require_no_wh_minus "which")
+					(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+						(NOMINAL_L:identity
+							(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
+								(ADJP_L:try_remove_is_adjunct
+									(ADJ:require_no_correlator,remove_wide_scope "inner"/"inner")
+								)
+							)
+							(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set,try_remove_superlative
+								(N:require_no_correlator,select_predicate_in_set "planet"/"planet")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_correlated,try_remove_wh_minus,try_remove_measure,add_superlative,select_function_with_substitution,remove_left_conjunct,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:require_no_be
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "have"/"has")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_coordinated_be
+					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+						(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
+							(THE "the")
+							(NP':try_remove_correlated,require_predicative_universal,try_add_plural
+								(MOST "most")
+								(NOMINAL_R:try_remove_correlated,require_plural,remove_superlative,require_second_left_cardinality,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+									(NOMINAL_L:identity
+										(N:require_no_correlator,select_predicate_in_set "moon"/"moons")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(QUESTION "?")
+)}
+	{^[z]:?[X]:((X=^[x]:(?[i]:(inner(i) & (arg1_of(x)=i)) & planet(x))) & X(z) & ?[f]:((f=^[x,v]:?[M]:(subset(M,^[m]:moon(m)) & ?[s]:(cardinality(s) & (arg1(s)=M) & (arg2(s)=v)) & ![m]:(M(m) => ?[h]:((arg1(h)=x) & has(h) & present(h) & (arg2(h)=m))))) & ?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2(g)=z))))};
+
+: # What is the mass of the planet that has the most moons?
+{(S
+	(S':require_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(PRO:try_remove_adv
+						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_L:require_no_be
+					(BE:select_left_predicate_and_tense,try_remove_aspect "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,add_aux,add_be
+						(V_ADJUNCT:remove_be,require_no_head_array,require_left_predicate_same,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number
+							(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+								(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
+									(THE "the")
+									(NP':try_remove_correlated,require_predicative_existential,require_singleton,remove_second_left_set_conjunct,try_add_singular
+										(NOMINAL_R:identity
+											(NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set,try_add_has_arg2
+												(NOMINAL_L:identity
+													(N:require_no_correlator,select_predicate_in_set "mass"/"mass")
+												)
+											)
+											(OF_FOR:empty "of")
+											(NP:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,has_arg2_in_set
+												(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
+													(THE "the")
+													(NP':try_remove_correlated,require_predicative_existential,require_singleton,remove_second_left_set_conjunct,try_add_singular
+														(NOMINAL_R:identity
+															(NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,replace_predicative_universal_with_existential
+																(NOMINAL_L:identity
+																	(N:require_no_correlator,select_predicate_in_set "planet"/"planet")
+																)
+															)
+															(N_ADJUNCT:try_remove_correlated,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_with_empty_substitution
+																(S':select_right_arg1_of_without_head,add_that,add_nullable_subject
+																	(THAT "that")
+																	(S':try_remove_correlated,try_remove_is_adjunct,remove_that
+																		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+																			(VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
+																				(VP_R:remove_right_conjunct
+																					(VP_L:require_no_be
+																						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "have"/"has")
+																					)
+																				)
+																				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_coordinated_be
+																					(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+																						(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
+																							(THE "the")
+																							(NP':try_remove_correlated,require_predicative_universal,try_add_plural
+																								(MOST "most")
+																								(NOMINAL_R:try_remove_correlated,require_plural,remove_superlative,require_second_left_cardinality,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+																									(NOMINAL_L:identity
+																										(N:require_no_correlator,select_predicate_in_set "moon"/"moons")
+																									)
+																								)
+																							)
+																						)
+																					)
+																				)
+																			)
+																		)
+																	)
+																)
+															)
+														)
+													)
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(QUESTION "?")
+)}
+	{^[z]:?[X]:((X=^[x]:planet(x)) & ?[f]:((f=^[a,b]:?[M]:(subset(M,^[m]:moon(m)) & ?[c]:(cardinality(c) & (arg1(c)=M) & (arg2(c)=b)) & ![m]:(M(m) => ?[h]:(has(h) & present(h) & (arg2(h)=m) & (arg1_of(a)=h))))) & ?[P]:((P=^[p]:?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2_of(p)=g))) & (size(P)=1) & ?[p]:(P(p) & ?[V]:((V=^[v]:?[m]:(mass(m) & (arg1(m)=p) & (arg2_of(v)=m))) & (size(V)=1) & ?[v]:(V(v) & ?[y]:((arg1(y)=z) & same(y) & present(y) & (arg2(y)=v))))))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

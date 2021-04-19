@@ -609,8 +609,8 @@ S -> S':require_lambda,mark_wide_scope QUESTION
 
 # This is the root nonterminal for declarative sentences.
 S' nonterminal {} {1.0} {1.0} {} 10 1.0 {}
-S' -> S'':add_singular,require_no_conjunction,try_remove_is_adjunct
-S' -> S'':add_plural,require_no_conjunction,try_remove_is_adjunct
+S' -> S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+S' -> S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 
 # for subordinate clauses
 S' -> THAT S':try_remove_correlated,try_remove_is_adjunct,remove_that
@@ -1809,9 +1809,13 @@ NP' nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
 
-# NP' {^[n]:^[P]:(... & ?[S]:(subset(S,^[x]:f(x)) & size(S)=n & ... & ![x]:(S(s) → P(s))))}
-#  -> HOW MANY NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ... & ![x]:(S(s) → P(s))))}
+# NP' {^[n]:^[P]:(... & ?[S]:(subset(S,^[x]:f(x)) & size(S)=n & ... & ![x]:(S(x) => P(s))))}
+#  -> HOW MANY NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ... & ![x]:(S(x) => P(s))))}
 NP' -> HOW:require_no_wh_minus,select_second_left_set_conjunct_root,require_size_lambda MANY NOMINAL_R:try_remove_correlated,try_add_plural,require_wide_scope,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+
+# NP' {^[P]:(... & ?[S]:(subset(S,^[x]:f(x)) & ?[s]:(cardinality(s) & (arg1(s)=S) & TRACE) & ![x]:(S(x) => P(x))))}
+#  -> MOST NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ![x]:(S(x) => P(x))))}
+NP' -> MOST NOMINAL_R:try_remove_correlated,require_plural,remove_superlative,require_second_left_cardinality,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
 
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP' {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))} -> NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}

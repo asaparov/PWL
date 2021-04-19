@@ -16278,8 +16278,17 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 		case hol_term_type::ANY:
 		case hol_term_type::ANY_RIGHT:
 		case hol_term_type::ANY_RIGHT_ONLY:
-			/* we assume `first` is not of type `ANY` or `ANY_ARRAY` */
-			break;
+			/* if `first` is `ANY_ARRAY`, then the set difference with the excluded trees of second could yield an `ANY` or `ANY_RIGHT` */
+			old_length = dst.length;
+			intersection_not_empty = intersect_any_with_any<BuiltInPredicates, ComputeIntersection, MapSecondVariablesToFirst, AvoidEquivalentIntersection>(dst, get_term(root), second);
+			for (unsigned int i = old_length; i < dst.length; i++)
+				if (!intersect_variable_map(dst[i], get_variable_map(root))) remove(dst, i--);
+			if (!ComputeIntersection && intersection_not_empty) {
+				free_all(differences);
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				return true;
+			}
+			continue;
 		}
 		fprintf(stderr, "intersect_with_any_right ERROR: Unrecognized hol_term_type.\n");
 		free_all(differences);
