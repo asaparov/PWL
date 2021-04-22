@@ -26,6 +26,7 @@
 #include "natural_deduction_mh.h"
 #include "theory_prior.h"
 #include "theory.h"
+#include "executive.h"
 
 template<typename Stream, typename Parser>
 void run_console(
@@ -69,6 +70,7 @@ inline void print_help(unsigned int max_parse_count)
 	printf(CONSOLE_BOLD "mcmc" CONSOLE_RESET " <iterations>                               Perform MCMC for the specified number of iterations.\n");
 	printf(CONSOLE_BOLD "print_theory" CONSOLE_RESET "                                    Print the current theory.\n");
 	printf(CONSOLE_BOLD "print_proofs" CONSOLE_RESET "                                    Print the proof of each observation in the theory.\n");
+	printf(CONSOLE_BOLD "research" CONSOLE_RESET " <question without surrounding quotes>  Try to answer the given question, searching the web for more information as needed.\n");
 	printf(CONSOLE_BOLD "examples" CONSOLE_RESET "                                        Suggest some interesting examples.\n");
 }
 
@@ -172,6 +174,22 @@ void run_console(
 					printf("Unable to parse sentence \"%s\"", line.data + index);
 					parse_count = 0;
 				}
+
+			} else if (compare_strings("research", line.data, index)) {
+				while (isspace(line[index])) index++;
+				if (index == line.length) {
+					printf("ERROR: Missing input sentence.\n");
+					continue;
+				}
+
+				array<string> answers(4);
+				hash_set<unsigned int> seed_entities(2);
+				const in_memory_article_store<typename Parser::DerivationType> corpus;
+				if (answer_question<true>(answers, line.data + index, 1000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+					print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
+				}
+				for (string& str : answers)
+					free(str);
 
 			} else if (compare_strings("rerank", line.data, index)) {
 				if (parse_count == 0) {

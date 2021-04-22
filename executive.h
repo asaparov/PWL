@@ -432,8 +432,8 @@ debug_terminal_printer = &parser.get_printer();
 		unsigned int generated_derivation_count;
 		constexpr unsigned int max_generated_derivation_count = 12;
 		double log_likelihoods[max_generated_derivation_count];
-		syntax_node<typename Parser::logical_form_type>* generated_derivations =
-				(syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>) * max_generated_derivation_count);
+		typename Parser::DerivationType* generated_derivations =
+				(typename Parser::DerivationType*) alloca(sizeof(typename Parser::DerivationType) * max_generated_derivation_count);
 		if (!parser.template generate<max_generated_derivation_count>(generated_derivations, log_likelihoods, generated_derivation_count, logical_forms[0], names) || generated_derivation_count == 0) {
 			fprintf(stderr, "parse_sentence ERROR: Failed to generate derivation.\n");
 			for (unsigned int i = 0; i < parse_count; i++) {
@@ -972,7 +972,9 @@ bool search_google(
 	} else {
 		if (fprintf(query_stream, "%22&start=%u", start) <= 0) return false;
 	}
-	if (!write('\0', query_stream)) return false;
+	if (!print("&filter=0&tbs=li:1", query_stream)
+	 || !write('\0', query_stream))
+		return false;
 
 	array<char> response(4096);
 	if (!get_http_page<true>("www.google.com", query_stream.buffer, "443", timeout_ms, response, [](unsigned int status, const array_map<string, string>& headers) { return true; })) {
@@ -1541,6 +1543,7 @@ inline bool less_than(
 	return false;
 }
 
+#include <grammar/parser.h>
 #include <grammar/grammar.h>
 
 template<bool LookupUnknownWords, typename ArticleSource,
@@ -2020,11 +2023,11 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 T_map.print_axioms(stderr, *debug_terminal_printer);
 				free(T_map);
 
-				if (temp_answers.size > 1) {
+				if (temp_answers.size > 1)
 					sort(temp_answers.values, temp_answers.keys, temp_answers.size, default_sorter());
-					if (temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] >= SUFFICIENT_KNOWLEDGE_THRESHOLD)
-						return false; /* break the Google search */
-				}
+				if ((temp_answers.size > 1 && temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] >= SUFFICIENT_KNOWLEDGE_THRESHOLD && temp_answers.keys[temp_answers.size - 1] != UNKNOWN_CONCEPT_NAME)
+				 || (temp_answers.size == 1 && temp_answers.keys[0] != UNKNOWN_CONCEPT_NAME))
+					return false; /* break the Google search */
 				return true;
 			}
 			return true;

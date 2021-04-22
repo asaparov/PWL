@@ -742,6 +742,17 @@ double log_probability_ratio(
 		if (!contains)
 			new_clusters.add(extra_observation);
 	}
+bool debug_flag = false;
+if (debug_flag) {
+	print("new_clusters:\n", stderr);
+	for (hol_term* formula : new_clusters) {
+		print("  ", stderr); print(*formula, stderr); print('\n', stderr);
+	}
+	print("old_clusters:\n", stderr);
+	for (hol_term* formula : old_clusters) {
+		print("  ", stderr); print(*formula, stderr); print('\n', stderr);
+	}
+}
 	value += log_probability_ratio(prior_state.base_prior_state, old_clusters, new_clusters, prior.base_distribution, old_prior_changes, new_prior_changes);
 	free_all(old_clusters);
 	free_all(new_clusters);

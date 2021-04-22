@@ -2745,7 +2745,7 @@ struct concept
 		}
 		core::free(*axiom);
 		/* we set the initial reference_count to 2 since `theory.free_proof`
-		will free definitions when their reference_count is 1 */
+		   will free definitions when their reference_count is 1 */
 		definitions[0]->reference_count += 2;
 		return true;
 	}
@@ -2823,8 +2823,11 @@ inline Formula* preprocess_formula(Formula* src) {
 /* this is useful in `theory.add_definition` where if any sets are created in
    `set_reasoning.get_subset_axiom`, we need the sets to have a specific size */
 struct required_set_size {
-	unsigned int set_size;
-	required_set_size(unsigned int set_size) : set_size(set_size) { }
+	unsigned int min_set_size;
+	unsigned int max_set_size;
+
+	required_set_size(unsigned int min_set_size, unsigned int max_set_size) :
+			min_set_size(min_set_size), max_set_size(max_set_size) { }
 };
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, typename... Args>
@@ -2837,15 +2840,11 @@ inline bool compute_new_set_size(
 		required_set_size& required,
 		Args&&... visitor)
 {
-	if (required.set_size == UINT_MAX) {
-		if (!compute_new_set_size(set_id, sets, out, min_set_size, max_set_size, std::forward<Args>(visitor)...))
-			return false;
-		required.set_size = out;
-		return true;
-	} else {
-		return required.set_size >= min_set_size && required.set_size <= max_set_size
-			&& compute_new_set_size(set_id, sets, out, required.set_size, required.set_size, std::forward<Args>(visitor)...);
-	}
+	unsigned int new_min_set_size = max(min_set_size, required.min_set_size);
+	unsigned int new_max_set_size = min(max_set_size, required.max_set_size);
+	if (new_min_set_size > new_max_set_size)
+		return false;
+	return compute_new_set_size(set_id, sets, out, new_min_set_size, new_max_set_size, std::forward<Args>(visitor)...);
 }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, typename... Args>
@@ -2921,15 +2920,6 @@ struct set_changes {
 	~set_changes() { free_helper(); }
 
 	inline bool new_set(Formula* axiom) {
-		for (unsigned int i = 0; i < old_set_axioms.length; i++) {
-			if (old_set_axioms[i] == axiom || *old_set_axioms[i] == *axiom) {
-				core::free(*old_set_axioms[i]);
-				if (old_set_axioms[i]->reference_count == 0)
-					core::free(old_set_axioms[i]);
-				old_set_axioms.remove(i);
-				return true;
-			}
-		}
 		if (!new_set_axioms.add(axiom))
 			return false;
 		axiom->reference_count++;
@@ -2937,15 +2927,6 @@ struct set_changes {
 	}
 
 	inline bool old_set(Formula* axiom) {
-		for (unsigned int i = 0; i < new_set_axioms.length; i++) {
-			if (new_set_axioms[i] == axiom || *new_set_axioms[i] == *axiom) {
-				core::free(*new_set_axioms[i]);
-				if (new_set_axioms[i]->reference_count == 0)
-					core::free(new_set_axioms[i]);
-				new_set_axioms.remove(i);
-				return true;
-			}
-		}
 		if (!old_set_axioms.add(axiom))
 			return false;
 		axiom->reference_count++;
@@ -3612,6 +3593,51 @@ struct theory
 		return true;
 	}
 
+	static inline Term* get_name_from_scope(Formula* scope, unsigned int variable)
+	{
+		if (scope->type != FormulaType::EXISTS
+		 || scope->quantifier.operand->type != FormulaType::AND)
+			return nullptr;
+		Formula* operand = scope->quantifier.operand;
+		bool is_name = false;
+		bool has_arg1 = false;
+		Term* arg2 = nullptr;
+		for (unsigned int i = 0; i < operand->array.length; i++)
+		{
+			Formula* conjunct = operand->array.operands[i];
+			if (!is_name && conjunct->type == FormulaType::UNARY_APPLICATION
+			 && conjunct->binary.left->type == TermType::CONSTANT
+			 && conjunct->binary.left->constant == (unsigned int) built_in_predicates::NAME
+			 && conjunct->binary.right->type == TermType::VARIABLE
+			 && conjunct->binary.right->variable == scope->quantifier.variable)
+			{
+				is_name = true;
+			} else if (!has_arg1 && conjunct->type == FormulaType::EQUALS
+					&& conjunct->binary.left->type == TermType::UNARY_APPLICATION
+					&& conjunct->binary.left->binary.left->type == TermType::CONSTANT
+					&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+					&& conjunct->binary.left->binary.right->type == TermType::VARIABLE
+					&& conjunct->binary.left->binary.right->variable == scope->quantifier.variable
+					&& conjunct->binary.right->type == TermType::VARIABLE
+					&& conjunct->binary.right->variable == variable)
+			{
+				has_arg1 = true;
+			} else if (arg2 == nullptr && conjunct->type == FormulaType::EQUALS
+					&& conjunct->binary.left->type == TermType::UNARY_APPLICATION
+					&& conjunct->binary.left->binary.left->type == TermType::CONSTANT
+					&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2
+					&& conjunct->binary.left->binary.right->type == TermType::VARIABLE
+					&& conjunct->binary.left->binary.right->variable == scope->quantifier.variable)
+			{
+				arg2 = conjunct->binary.right;
+			}
+		}
+
+		if (is_name && has_arg1)
+			return arg2;
+		else return nullptr;
+	}
+
 	inline bool get_concept_names(unsigned int constant, array<Term*>& name_terms) const {
 		if (constant < new_constant_offset)
 			return true;
@@ -3632,6 +3658,36 @@ struct theory
 				continue;
 			if (!name_terms.add(function_value_axiom->formula->binary.right))
 				return false;
+		}
+
+		/* check if a name is defined by a set that contains this object */
+		hash_set<unsigned int> ancestors(16);
+		for (const auto& entry : ground_concepts[constant - new_constant_offset].types) {
+			bool contains;
+			unsigned int set_id = sets.set_ids.get(entry.key, contains);
+			if (!contains || sets.sets[set_id].arity != 1)
+				continue;
+
+			if (!sets.get_ancestors(set_id, ancestors))
+				return false;
+		}
+		for (unsigned int ancestor : ancestors) {
+			Formula* formula = sets.sets[ancestor].set_formula();
+			if (formula->type == hol_term_type::AND) {
+				for (unsigned int i = 0; i < formula->array.length; i++) {
+					Term* arg2 = get_name_from_scope(formula->array.operands[i], 1);
+					if (arg2 == nullptr || arg2->type != TermType::STRING || name_terms.contains(arg2))
+						continue;
+					if (!name_terms.add(arg2))
+						return false;
+				}
+			} else {
+				Term* arg2 = get_name_from_scope(formula, 1);
+				if (arg2 == nullptr || arg2->type != TermType::STRING || name_terms.contains(arg2))
+					continue;
+				if (!name_terms.add(arg2))
+					return false;
+			}
 		}
 		return true;
 	}
@@ -3950,6 +4006,8 @@ struct theory
 		if (new_formula == NULL) return nullptr;
 
 		array_map<unsigned int, unsigned int> variable_map(16);
+/* TODO: for debugging; delete this */
+print("new_formula: ", stderr); print(*new_formula, stderr); print('\n', stderr);
 		Formula* canonicalized = Canonicalizer::canonicalize(*new_formula, variable_map);
 		core::free(*new_formula); if (new_formula->reference_count == 0) core::free(new_formula);
 		if (canonicalized == NULL) return nullptr;
@@ -4134,14 +4192,24 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 	inline bool is_provably_a_set(unsigned int constant) const {
 		if (constant < new_constant_offset || ground_concepts[constant - new_constant_offset].types.keys == NULL)
 			return false;
+		unsigned int arity = 1;
 		const Formula* first_set_definition = ground_concepts[constant - new_constant_offset].definitions[0]->formula->binary.right->quantifier.operand;
+		while (first_set_definition->type == FormulaType::LAMBDA) {
+			first_set_definition = first_set_definition->quantifier.operand;
+			arity++;
+		}
 		if (sets.set_ids.table.contains(*first_set_definition))
 			return true;
 
-		Term* atom = Term::new_apply(Term::new_constant(constant), &Variables<1>::value);
-		if (atom == nullptr)
-			return false;
-		Variables<1>::value.reference_count++;
+		Term* atom = Term::new_constant(constant);
+		for (unsigned int i = 0; i < arity; i++) {
+			Term* temp = Formula::new_apply(atom, Formula::new_variable(i + 1));
+			if (temp == nullptr) {
+				core::free(*atom); core::free(atom);
+				return false;
+			}
+			atom = temp;
+		}
 
 		bool contains;
 		pair<array<unsigned int>, array<unsigned int>>& type_instances = atoms.get(*atom, contains);
@@ -4724,7 +4792,7 @@ private:
 				}
 				continue;
 			case change_type::DEFINITION:
-				if (!add_definition<false>(c.axiom, UINT_MAX, set_diff, std::forward<Args>(visitor)...))
+				if (!add_definition<false>(c.axiom, {0, UINT_MAX}, set_diff, std::forward<Args>(visitor)...))
 					return false;
 				continue;
 			case change_type::FUNCTION_VALUE:
@@ -11577,8 +11645,8 @@ private:
 				Formula* right = operand->binary.right;
 
 				/* check if `left` or `right` are of the form `c(x)` and that `c` can be a set */
-				unsigned int antecedent_set_size = UINT_MAX;
-				unsigned int consequent_set_size = UINT_MAX;
+				required_set_size antecedent_set_size = {0, UINT_MAX};
+				required_set_size consequent_set_size = {0, UINT_MAX};
 				if (left->type == FormulaType::UNARY_APPLICATION
 				 && left->binary.left->type == FormulaType::CONSTANT
 				 && left->binary.right->type == FormulaType::VARIABLE)
@@ -11602,8 +11670,10 @@ private:
 						}
 					}
 					unsigned int index = requested_set_sizes.index_of(left->binary.left->constant);
-					if (index < requested_set_sizes.size)
-						antecedent_set_size = requested_set_sizes.values[index];
+					if (index < requested_set_sizes.size) {
+						antecedent_set_size.min_set_size = requested_set_sizes.values[index];
+						antecedent_set_size.max_set_size = requested_set_sizes.values[index];
+					}
 				}
 				if (right->type == FormulaType::UNARY_APPLICATION
 				 && right->binary.left->type == FormulaType::CONSTANT
@@ -11628,8 +11698,10 @@ private:
 						}
 					}
 					unsigned int index = requested_set_sizes.index_of(right->binary.left->constant);
-					if (index < requested_set_sizes.size)
-						consequent_set_size = requested_set_sizes.values[index];
+					if (index < requested_set_sizes.size) {
+						consequent_set_size.min_set_size = requested_set_sizes.values[index];
+						consequent_set_size.max_set_size = requested_set_sizes.values[index];
+					}
 				}
 
 				Term const* predicate; Term const* arg1; Term const* arg2;
@@ -11660,7 +11732,7 @@ private:
 
 					unsigned int antecedent_set, consequent_set;
 					bool is_antecedent_new, is_consequent_new;
-					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies>(
+					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies, false>(
 							left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
 							antecedent_set_size, consequent_set_size, set_diff, std::forward<Args>(args)...);
 					core::free(*new_canonicalized); if (new_canonicalized->reference_count == 0) core::free(new_canonicalized);
@@ -11679,7 +11751,7 @@ private:
 					/* this is a formula of form `![x]:(t(x) => f(x))` */
 					unsigned int antecedent_set, consequent_set;
 					bool is_antecedent_new, is_consequent_new;
-					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies>(
+					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies, false>(
 							left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
 							antecedent_set_size, consequent_set_size, set_diff, std::forward<Args>(args)...);
 					core::free(*new_canonicalized); if (new_canonicalized->reference_count == 0) core::free(new_canonicalized);
@@ -12498,10 +12570,12 @@ private:
 						return NULL;
 					new_proof->reference_count++;
 
-					unsigned int requested_set_size = UINT_MAX;
+					required_set_size requested_set_size = {0, UINT_MAX};
 					unsigned int index = requested_set_sizes.index_of(left->constant);
-					if (index < requested_set_sizes.size)
-						requested_set_size = requested_set_sizes.values[index];
+					if (index < requested_set_sizes.size) {
+						requested_set_size.min_set_size = requested_set_sizes.values[index];
+						requested_set_size.max_set_size = requested_set_sizes.values[index];
+					}
 					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, requested_set_size, set_diff, std::forward<Args>(args)...);
 					if (definition != new_proof) {
 						core::free(*new_proof);
@@ -12636,24 +12710,30 @@ private:
 		return NULL;
 	}
 
-	template<bool ResolveInconsistencies, typename... Args>
+	template<bool ResolveInconsistencies, bool SameSize, typename... Args>
 	inline Proof* get_subset_axiom_with_required_set_size(
 			Formula* antecedent, Formula* consequent, unsigned int arity,
 			unsigned int& antecedent_set, unsigned int& consequent_set,
 			bool& is_antecedent_new, bool& is_consequent_new,
-			unsigned int antecedent_set_size,
-			unsigned int consequent_set_size, Args&&... visitor)
+			required_set_size antecedent_set_size,
+			required_set_size consequent_set_size, Args&&... visitor)
 	{
-		required_set_size antecedent_set_size_enforcer(antecedent_set_size);
-		if (!sets.get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, antecedent_set_size_enforcer, std::forward<Args>(visitor)...))
+		if (!sets.get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, antecedent_set_size, std::forward<Args>(visitor)...))
 			return nullptr;
 		if (is_antecedent_new && !check_new_set_membership<ResolveInconsistencies>(antecedent_set, std::forward<Args>(visitor)...)) {
 			sets.try_free_set(antecedent_set);
 			return nullptr;
 		}
 
-		required_set_size consequent_set_size_enforcer(consequent_set_size);
-		if (!sets.get_set_id(consequent, arity, consequent_set, is_consequent_new, consequent_set_size_enforcer, std::forward<Args>(visitor)...)) {
+		if (SameSize) {
+			consequent_set_size.min_set_size = sets.sets[antecedent_set].set_size;
+			consequent_set_size.max_set_size = sets.sets[antecedent_set].set_size;
+		} else {
+			consequent_set_size.min_set_size = max(consequent_set_size.min_set_size, sets.sets[antecedent_set].set_size);
+		}
+		if (consequent_set_size.min_set_size > consequent_set_size.max_set_size
+		 || !sets.get_set_id(consequent, arity, consequent_set, is_consequent_new, consequent_set_size, std::forward<Args>(visitor)...))
+		{
 			if (is_antecedent_new) {
 				check_old_set_membership(antecedent_set, std::forward<Args>(visitor)...);
 				sets.try_free_set(antecedent_set);
@@ -12851,7 +12931,7 @@ private:
 
 private:
 	template<bool ResolveInconsistencies, typename... Args>
-	Proof* add_definition(Proof* definition, unsigned int requested_set_size, Args&&... args)
+	Proof* add_definition(Proof* definition, required_set_size requested_set_size, Args&&... args)
 	{
 		Formula* constant = definition->formula->binary.left;
 		Formula* new_definition = definition->formula->binary.right;
@@ -12884,10 +12964,10 @@ private:
 		if (new_definition->type == FormulaType::LAMBDA) {
 			/* check if this constant defines any other sets, and indicate to the set reasoning module that they are the same set */
 			bool contains;
-			unsigned int set_size = requested_set_size;
 			unsigned int set_id = sets.set_ids.get(*new_set_formula, contains);
 			if (contains) {
-				set_size = sets.sets[set_id].set_size;
+				requested_set_size.min_set_size = sets.sets[set_id].set_size;
+				requested_set_size.max_set_size = sets.sets[set_id].set_size;
 			} else if (ground_concepts[constant->constant - new_constant_offset].definitions.length != 0) {
 				for (unsigned int i = 0; i < ground_concepts[constant->constant - new_constant_offset].definitions.length; i++) {
 					Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[i];
@@ -12898,11 +12978,14 @@ private:
 						other_set_formula = other_set_formula->quantifier.operand;
 					set_id = sets.set_ids.get(*other_set_formula, contains);
 					if (contains) {
-						if (set_size != UINT_MAX && set_size != sets.sets[set_id].set_size) {
+						if (sets.sets[set_id].set_size < requested_set_size.min_set_size
+						 || sets.sets[set_id].set_size > requested_set_size.max_set_size)
+						{
 							try_free_concept_id(constant->constant);
 							return nullptr;
 						}
-						set_size = sets.sets[set_id].set_size;
+						requested_set_size.min_set_size = sets.sets[set_id].set_size;
+						requested_set_size.max_set_size = sets.sets[set_id].set_size;
 						break;
 					}
 				}
@@ -12917,9 +13000,9 @@ private:
 
 					unsigned int antecedent_set, consequent_set;
 					bool is_antecedent_new, is_consequent_new;
-					Proof* first_subset_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies>(
+					Proof* first_subset_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies, true>(
 							new_set_formula, other_set_formula, arity, antecedent_set, consequent_set,
-							is_antecedent_new, is_consequent_new, set_size, set_size, std::forward<Args>(args)...);
+							is_antecedent_new, is_consequent_new, requested_set_size, requested_set_size, std::forward<Args>(args)...);
 					if (first_subset_axiom == NULL) {
 						/* undo the changes we've made so far */
 						on_subtract_changes(std::forward<Args>(args)...);
@@ -13774,20 +13857,39 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 						return false;
 				}
 
-				for (unsigned int i = 0; right->type == FormulaType::LAMBDA && i < constants.length; i++) {
+				unsigned int arity = 0;
+				Formula* set_definition = right;
+				while (set_definition->type == FormulaType::LAMBDA) {
+					set_definition = set_definition->quantifier.operand;
+					arity++;
+				}
+				for (unsigned int i = 0; arity != 0 && i < constants.length; i++) {
 					/* check that this constant could be a set */
 					if (constants[i].type == instance_type::ANY) {
 						continue;
-					} else if (constants[i].type != instance_type::CONSTANT) {
+					} else if (constants[i].type != instance_type::CONSTANT
+							|| T.is_provably_not_a_set(constants[i].constant))
+					{
 						constants.remove(i--);
-					} else if (T.ground_concepts[constants[i].constant - T.new_constant_offset].types.keys == nullptr) {
-						continue;
-					} else if (T.is_provably_not_a_set(constants[i].constant)) {
-						constants.remove(i--);
-					}
-					/* make sure `constants[i].constant` is not the arg1 of a name event */
-					else if (constants[i].constant >= T.new_constant_offset) {
-						for (Proof* proof : T.ground_concepts[constants[i].constant - T.new_constant_offset].definitions) {
+					} else if (constants[i].constant >= T.new_constant_offset) {
+						concept<ProofCalculus>& c = T.ground_concepts[constants[i].constant - T.new_constant_offset];
+						if (c.types.keys == nullptr)
+							continue;
+						Formula* other_set_formula = c.definitions[0]->formula->binary.right;
+						unsigned int prev_arity = 0;
+						while (other_set_formula->type == FormulaType::LAMBDA) {
+							other_set_formula = other_set_formula->quantifier.operand;
+							prev_arity++;
+						}
+
+						/* check that the arity matches, or can be changed */
+						if (arity != prev_arity && (c.definitions[0]->reference_count != 2 || T.sets.set_ids.table.contains(*other_set_formula))) {
+							constants.remove(i--);
+							continue;
+						}
+
+						/* make sure `constants[i].constant` is not the arg1 of a name event */
+						for (Proof* proof : c.definitions) {
 							if (proof->formula->binary.right->type == FormulaType::UNARY_APPLICATION
 							 && proof->formula->binary.right->binary.left->type == TermType::CONSTANT
 							 && proof->formula->binary.right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
@@ -13869,6 +13971,7 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 			if (right->type == FormulaType::LAMBDA) {
 				if (T.is_provably_not_a_set(left->constant))
 					return false;
+
 				/* make sure `left->constant` is not the arg1 of a name event */
 				if (left->constant >= T.new_constant_offset) {
 					for (Proof* proof : T.ground_concepts[left->constant - T.new_constant_offset].definitions) {
@@ -14204,15 +14307,17 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				}
 
 				/* if this event is the arg1 of a name event, this event cannot be a name event */
-				for (const Proof* definition : T.ground_concepts[right->constant - T.new_constant_offset].definitions) {
-					Formula* right = definition->formula->binary.right;
-					if (right->type == TermType::UNARY_APPLICATION
-					 && right->binary.left->type == TermType::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
-					 && right->binary.right->type == TermType::CONSTANT && T.is_name_event(right->binary.right->constant))
-					{
-						unsigned int index = index_of_constant(constants, (unsigned int) built_in_predicates::NAME);
-						if (index < constants.length) constants.remove(index);
-						break;
+				if (T.ground_concepts[right->constant - T.new_constant_offset].types.keys != nullptr) {
+					for (const Proof* definition : T.ground_concepts[right->constant - T.new_constant_offset].definitions) {
+						Formula* right = definition->formula->binary.right;
+						if (right->type == TermType::UNARY_APPLICATION
+						 && right->binary.left->type == TermType::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+						 && right->binary.right->type == TermType::CONSTANT && T.is_name_event(right->binary.right->constant))
+						{
+							unsigned int index = index_of_constant(constants, (unsigned int) built_in_predicates::NAME);
+							if (index < constants.length) constants.remove(index);
+							break;
+						}
 					}
 				}
 			}

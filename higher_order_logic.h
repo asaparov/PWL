@@ -4431,9 +4431,12 @@ inline bool unify_base_type(
 			return false;
 		type_variables.length++;
 
-		if (!unify_base_type(first, hol_type<BaseType>(*second.polymorphic.operand, second.polymorphic.variable, type_variable), out, new_second, type_variables)) {
+		if (!unify_base_type(first, hol_type<BaseType>(*second.polymorphic.operand, second.polymorphic.variable, type_variable), out, new_second, type_variables))
 			return false;
-		} else if (has_variable(out, type_variable)) {
+
+		while (type_variables[type_variable].kind == hol_type_kind::VARIABLE)
+			type_variable = type_variables[type_variable].variable;
+		if (has_variable(out, type_variable)) {
 			hol_type<BaseType> temp(second.polymorphic.variable, hol_type<BaseType>(out, type_variable, second.polymorphic.variable));
 			swap(temp, out);
 		}
@@ -4466,9 +4469,12 @@ inline bool unify_function(
 			return false;
 		type_variables.length++;
 
-		if (!unify_function(first, hol_type<BaseType>(*second.polymorphic.operand, second.polymorphic.variable, type_variable), out, new_second, type_variables)) {
+		if (!unify_function(first, hol_type<BaseType>(*second.polymorphic.operand, second.polymorphic.variable, type_variable), out, new_second, type_variables))
 			return false;
-		} else if (has_variable(out, type_variable)) {
+
+		while (type_variables[type_variable].kind == hol_type_kind::VARIABLE)
+			type_variable = type_variables[type_variable].variable;
+		if (has_variable(out, type_variable)) {
 			hol_type<BaseType> temp(second.polymorphic.variable, hol_type<BaseType>(out, type_variable, second.polymorphic.variable));
 			swap(temp, out);
 		}
@@ -4538,6 +4544,7 @@ inline bool unify_variable(
 {
 	unsigned int first_var;
 	unsigned int second_var;
+	unsigned int type_variable;
 	switch (second.kind) {
 	case hol_type_kind::ANY:
 		return init(out, first)
@@ -4558,15 +4565,19 @@ inline bool unify_variable(
 		free(type_variables[first]);
 		return init(type_variables[first], out);
 	case hol_type_kind::POLYMORPHIC:
+		type_variable = type_variables.length;
 		if (!type_variables.ensure_capacity(type_variables.length + 1)
 		 || !init(type_variables[type_variables.length], hol_type_kind::ANY))
 			return false;
 		type_variables.length++;
 
-		if (!unify_variable(first, hol_type<BaseType>(*second.polymorphic.operand, second.polymorphic.variable, type_variables.length - 1), out, new_second, type_variables)) {
+		if (!unify_variable(first, hol_type<BaseType>(*second.polymorphic.operand, second.polymorphic.variable, type_variable), out, new_second, type_variables))
 			return false;
-		} else if (has_variable(out, type_variables.length - 1)) {
-			hol_type<BaseType> temp(second.polymorphic.variable, hol_type<BaseType>(out, type_variables.length - 1, second.polymorphic.variable));
+
+		while (type_variables[type_variable].kind == hol_type_kind::VARIABLE)
+			type_variable = type_variables[type_variable].variable;
+		if (has_variable(out, type_variable)) {
+			hol_type<BaseType> temp(second.polymorphic.variable, hol_type<BaseType>(out, type_variable, second.polymorphic.variable));
 			swap(temp, out);
 		}
 		free(type_variables[first]);

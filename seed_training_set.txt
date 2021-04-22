@@ -1825,6 +1825,10 @@
 
 : # smallest
 {(ADJ "small"/"smallest")}
+	{?[g]:negative(area)(g)[sup]};
+
+: # smallest
+{(ADJ "small"/"smallest")}
 	{?[g]:negative(population)(g)[sup]};
 
 : # longest

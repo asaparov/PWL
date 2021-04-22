@@ -1716,24 +1716,39 @@ bool transform_proofs(const proof_transformations<typename ProofCalculus::Langua
 	return true;
 }
 
-template<typename Formula, bool Intuitionistic, typename Canonicalizer>
+template<bool FreeProposedProofs, typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool undo_proof_changes(
 		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& old_proof_changes,
 		typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& new_proof_changes,
 		nd_step<Formula>* old_proof, nd_step<Formula>* new_proof,
+		proof_transformations<Formula>& proposed_proofs,
 		const undo_remove_sets& old_sets, const undo_remove_sets& new_sets)
 {
 	typedef nd_step<Formula> Proof;
 
 	array<pair<Proof*, Proof*>> observation_changes(8);
-	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
-	if (!init(proposed_proofs)) {
+	proof_transformations<Formula>& inverse_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
+	if (!init(inverse_proofs)) {
+		if (FreeProposedProofs) free(proposed_proofs);
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
 		return false;
-	} else if (!propose_transformation(T, proposed_proofs, observation_changes, new_proof, old_proof)) {
-		free(proposed_proofs); return false;
-	} else if (!transform_proofs<natural_deduction<Formula, Intuitionistic>>(proposed_proofs)) {
-		free(proposed_proofs); return false;
+	} else if (!propose_transformation(T, inverse_proofs, observation_changes, new_proof, old_proof)) {
+		free(inverse_proofs);
+		if (FreeProposedProofs) free(proposed_proofs);
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
+		return false;
+	} else if (!transform_proofs<natural_deduction<Formula, Intuitionistic>>(inverse_proofs)) {
+		free(inverse_proofs);
+		if (FreeProposedProofs) free(proposed_proofs);
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
+		return false;
 	}
 
 	for (auto& entry : observation_changes) {
@@ -1742,13 +1757,28 @@ bool undo_proof_changes(
 		T.observations.add(entry.value);
 		entry.value->reference_count++;
 	}
-	free(proposed_proofs);
+	free(inverse_proofs);
+
+	if (FreeProposedProofs)
+		free(proposed_proofs);
 
 	set_changes<Formula> set_diff;
-	if (!T.subtract_changes(new_proof_changes, set_diff, new_sets)) return false;
+	if (!T.subtract_changes(new_proof_changes, set_diff, new_sets)) {
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
+		return false;
+	}
+	free(new_proof_changes);
+	free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 
 	/* add the changes back into T from `old_proof` */
-	return T.add_changes(old_proof_changes, set_diff, old_sets);
+	if (!T.add_changes(old_proof_changes, set_diff, old_sets)) {
+		free(old_proof_changes);
+		return false;
+	}
+	free(old_proof_changes);
+	return true;
 }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
@@ -1945,9 +1975,13 @@ bool propose_disjunction_intro(
 
 	set_changes<Formula> set_diff;
 	inverse_proof_sampler inverse_sampler;
-	typename Theory::changes old_proof_changes;
-	if (!T.get_theory_changes(*selected_step.value, old_proof_changes))
+	typename Theory::changes& old_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
+	if (!Theory::init(old_proof_changes)) {
 		return false;
+	} else if (!T.get_theory_changes(*selected_step.value, old_proof_changes)) {
+		free(old_proof_changes);
+		return false;
+	}
 	T.subtract_changes(old_proof_changes, set_diff, inverse_sampler);
 	/* some removed set size axioms may actually become extra axioms */
 	for (const typename Theory::change& change : old_proof_changes.list) {
@@ -2002,14 +2036,21 @@ T.print_axioms(stderr);
 	log_proposal_probability_ratio += inverse_sampler.log_probability;
 	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
 
-	typename Theory::changes new_proof_changes;
-	if (!T.get_theory_changes(*new_proof, new_proof_changes))
+	typename Theory::changes& new_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
+	if (!Theory::init(new_proof_changes)) {
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes); return false;
+	} else if (!T.get_theory_changes(*new_proof, new_proof_changes)) {
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
 		return false;
+	}
 
 	/* check if the proposed proof is the same as the original proof */
+	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (*selected_step.value == *new_proof) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		return true;
 	}
 
@@ -2034,14 +2075,12 @@ T.print_axioms(stderr);
 
 	/* propose `new_proof` to substitute `selected_step.value` */
 	array<pair<Proof*, Proof*>> observation_changes(8);
-	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
 	if (!init(proposed_proofs)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		proposed_proofs.transformed_proofs.keys = nullptr;
+		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		return false;
 	} else if (!propose_transformation(T, proposed_proofs, observation_changes, selected_step.value, new_proof)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		free(proposed_proofs); return false;
 	}
 
@@ -2053,19 +2092,18 @@ T.print_axioms(stderr);
 	log_proposal_probability_ratio += proof_prior_diff;
 
 	if (!transform_proofs<ProofCalculus>(proposed_proofs)) {
-		undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
-		free(proposed_proofs); return false;
+		return false;
 	}
 
 	for (auto& entry : observation_changes) {
 		T.observations.remove(entry.key);
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
 		if (!T.observations.add(entry.value)) {
-			undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+			undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 			free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
-			free(proposed_proofs); return false;
+			return false;
 		}
 		entry.value->reference_count++;
 	}
@@ -2086,14 +2124,11 @@ T.print_axioms(stderr);
 
 	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_step);
 
-	bool success = do_mh_disjunction_intro(T, selected_step, new_proof, observation_changes,
+	return do_mh_disjunction_intro(T, selected_step, new_proof, proposed_proofs, observation_changes,
 			old_proof_changes, new_proof_changes, proof_axioms, old_axioms, new_axioms, log_proposal_probability_ratio,
 			log_proposal_probability_ratio + sampler.set_size_log_probability - inverse_sampler.set_size_log_probability,
 			undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes),
 			proof_prior_diff, sample_collector);
-	free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
-	free(proposed_proofs);
-	return success;
 }
 
 struct proof_initializer {
@@ -3076,6 +3111,7 @@ inline bool do_mh_disjunction_intro(
 	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 	pair<Formula*, nd_step<Formula>*>& selected_step,
 	nd_step<Formula>* proposed_proof,
+	proof_transformations<Formula>& proposed_proofs,
 	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
 	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& old_proof_changes,
 	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& new_proof_changes,
@@ -3101,13 +3137,17 @@ inline bool do_mh_disjunction_intro(
 		proof_axioms.subtract(old_axioms);
 		if (!proof_axioms.add(new_axioms))
 			return false;
+		free(proposed_proofs);
+		free(new_proof_changes);
+		free(*proposed_proof); if (proposed_proof->reference_count == 0) free(proposed_proof);
+		free(old_proof_changes);
 		/* TODO: we could keep track of the extra axioms within `theory` */
 		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
 		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
 			return false;
 	} else {
-		return undo_proof_changes(T, old_proof_changes, new_proof_changes, selected_step.value, proposed_proof, old_sets, new_sets);
+		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, proposed_proof, proposed_proofs, old_sets, new_sets);
 	}
 	return true;
 }

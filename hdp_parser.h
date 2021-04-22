@@ -3183,6 +3183,7 @@ template<typename Formula>
 struct hdp_parser
 {
 	typedef flagged_logical_form<Formula> logical_form_type;
+	typedef rooted_syntax_node<flagged_logical_form<Formula>> DerivationType;
 	typedef sentence<rooted_syntax_node<flagged_logical_form<Formula>>> SentenceType;
 
 	morphology_en morph;
@@ -15172,14 +15173,7 @@ inline bool get_predicative_set_variables(
 			set_variable = ++max_variable;
 			element_variable = ++max_variable;
 		}
-	} else {
-#if !defined(NDEBUG)
-		if (head->type != hol_term_type::EXISTS) {
-			fprintf(stderr, "get_predicative_set_variables ERROR: Expected existential quantification of set.\n");
-			return false;
-		}
-#endif
-
+	} else if (head->type == hol_term_type::EXISTS) {
 		hol_term* operand = head->quantifier.operand;
 		set_variable = head->quantifier.variable;
 		if (operand->type == hol_term_type::ANY) {
@@ -15250,6 +15244,8 @@ inline bool get_predicative_set_variables(
 				}
 			}
 		}
+	} else {
+		return false;
 	}
 
 	return true;
@@ -16417,14 +16413,7 @@ inline hol_term* do_require_narrow_or_wide_scope(hol_term* head, hol_term* paren
 			set_variable = ++max_variable;
 			element_variable = ++max_variable;
 		}
-	} else {
-#if !defined(NDEBUG)
-		if (head->type != hol_term_type::EXISTS) {
-			fprintf(stderr, "do_require_narrow_or_wide_scope ERROR: Expected existential quantification of set.\n");
-			return (hol_term*) nullptr;
-		}
-#endif
-
+	} else if (head->type == hol_term_type::EXISTS) {
 		hol_term* operand = head->quantifier.operand;
 		set_variable = head->quantifier.variable;
 		if (operand->type == hol_term_type::ANY) {
@@ -16485,6 +16474,8 @@ inline hol_term* do_require_narrow_or_wide_scope(hol_term* head, hol_term* paren
 				head->reference_count++;
 			}
 		}
+	} else {
+		return (hol_term*) nullptr;
 	}
 
 	if (dst == nullptr) {
@@ -21395,6 +21386,12 @@ inline bool is_article(const string& str) {
 	return (str == "The" || str == "the" || str == "A" || str == "a");
 }
 
+inline bool is_determiner(const string& str) {
+	return (str == "The" || str == "the" || str == "A" || str == "a"
+		 || str == "This" || str == "this" || str == "That" || str == "that"
+		 || str == "These" || str == "these" || str == "Those" || str == "those");
+}
+
 template<bool AllowAny>
 inline bool require_capitalized(
 		hol_term* src, hol_term*& dst)
@@ -21447,7 +21444,7 @@ inline bool require_capitalized(
 				return false;
 		}
 
-		if (tokens.length == 1 && (is_question_word(tokens[0]) || is_preposition(tokens[0])))
+		if (tokens.length == 1 && (is_question_word(tokens[0]) || is_preposition(tokens[0]) || is_determiner(tokens[0])))
 			return false;
 
 		dst = src;
