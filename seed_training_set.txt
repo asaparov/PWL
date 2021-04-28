@@ -1337,7 +1337,7 @@
 )}
 	{?[Y]:((Y=^[y]:?[n]:(name(n) & (arg1_of(y)=n) & (arg2(n)="Solar System"))) & (size(Y)=1) & ?[y]:(Y(y) & ?[x]:(?[P]:((P=^[p]:(?[o]:(outer(o) & (arg1_of(p)=o)) & planet(p) & ?[l]:(locate(l) & (arg2(l)=y) & (arg1_of(p)=l)))) & ?[n]:(name(n) & (arg1(n)=P) & (arg2_of(x)=n))) & ?[s]:((arg1(s)="Outer Solar System") & same(s) & present(s) & (arg2(s)=x)))))};
 
-: # The population of the Earth is 7594000000.
+: # The population of the Earth is 7.594 billion.
 {(S
 	(S':require_no_lambda,mark_wide_scope
 		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
@@ -1379,7 +1379,7 @@
 								(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_string_or_number_in_set
 									(NOMINAL_R:identity
 										(NOMINAL_L:identity
-											(NUMBER:require_no_correlator,require_no_measure,require_predicative_existential,select_number_in_set "7594000000")
+											(NUMBER:require_no_correlator,require_no_measure,require_predicative_existential,select_number_in_set "7 . 594 billion")
 										)
 									)
 								)
@@ -3107,6 +3107,10 @@
 )}
 	{^[z]:?[X]:((X=^[x]:(?[i]:(inner(i) & (arg1_of(x)=i)) & planet(x))) & X(z) & ?[f]:((f=^[x,v]:?[m]:(?[y]:(value(y) & (arg2(y)=v) & (arg1_of(m)=y)) & mass(m) & ?[h]:((arg1(h)=x) & has(h) & present(h) & (arg2(h)=m)))) & ?[g]:(greatest(f)(g) & (arg1(g)=X) & (arg2(g)=z))))};
 
+: # greatest
+{(ADJ "great"/"greatest")}
+	{?[g]:value(g)[sup]};
+
 : # lowest
 {(ADJ "low"/"lowest")}
 	{?[g]:negative(value)(g)[sup]};
@@ -3114,6 +3118,14 @@
 : # smallest
 {(ADJ "small"/"smallest")}
 	{?[g]:negative(value)(g)[sup]};
+
+: # population density
+{(N "population density"/"population density")}
+	{population_density[index:sg,arg2]};
+
+: # population density
+{(N "population density"/"population density")}
+	{population_density[index:sg,arg2]};
 
 : # population density
 {(N "population density"/"population density")}

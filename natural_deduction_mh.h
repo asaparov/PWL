@@ -122,7 +122,7 @@ bool select_axiom(
 		array<typename Formula::Term*>& selected_types,
 		array<typename Formula::Term*>& selected_negated_types,
 		array<relation>& selected_relations, array<relation>& selected_negated_relations,
-		array<unsigned int>& intersection)
+		array<instance>& intersection)
 {
 	typedef typename Formula::Term Term;
 
@@ -139,25 +139,25 @@ bool select_axiom(
 	if (axiom_indices[selected_index].key == 0) {
 		Term& type_value = c.types.keys[axiom_indices[selected_index].value];
 		if (!selected_types.add(&type_value)) return false;
-		const array<unsigned int>& ids = T.atoms.get(type_value).key;
+		const array<instance>& ids = T.atoms.get(type_value).key;
 		if (FirstSample) intersection.append(ids.data, ids.length);
 		else set_intersect(intersection, ids);
 	} else if (axiom_indices[selected_index].key == 1) {
 		Term& type_value = c.negated_types.keys[axiom_indices[selected_index].value];
 		if (!selected_negated_types.add(&type_value)) return false;
-		const array<unsigned int>& ids = T.atoms.get(type_value).value;
+		const array<instance>& ids = T.atoms.get(type_value).value;
 		if (FirstSample) intersection.append(ids.data, ids.length);
 		else set_intersect(intersection, ids);
 	} else if (axiom_indices[selected_index].key == 2) {
 		relation_value = c.relations.keys[axiom_indices[selected_index].value];
 		if (!selected_relations.add(relation_value)) return false;
-		const array<unsigned int>& ids = T.relations.get(relation_value).key;
+		const array<instance>& ids = T.relations.get(relation_value).key;
 		if (FirstSample) intersection.append(ids.data, ids.length);
 		else set_intersect(intersection, ids);
 	} else if (axiom_indices[selected_index].key == 3) {
 		relation_value = c.negated_relations.keys[axiom_indices[selected_index].value];
 		if (!selected_negated_relations.add(relation_value)) return false;
-		const array<unsigned int>& ids = T.relations.get(relation_value).value;
+		const array<instance>& ids = T.relations.get(relation_value).value;
 		if (FirstSample) intersection.append(ids.data, ids.length);
 		else set_intersect(intersection, ids);
 	}
@@ -192,7 +192,7 @@ inline bool get_axiom(
 }
 
 template<bool Negated, typename Formula, bool Intuitionistic, typename Canonicalizer>
-inline const array<unsigned int>& get_concept_set(
+inline const array<instance>& get_concept_set(
 		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term& a)
 {
@@ -246,14 +246,14 @@ template<bool FirstSample, bool Negated,
 inline void get_satisfying_concepts_helper(
 		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
 		const typename Formula::Term* predicate, const typename Formula::Term* arg1,
-		const typename Formula::Term* arg2, array<unsigned int>& intersection)
+		const typename Formula::Term* arg2, array<instance>& intersection)
 {
 	typedef typename Formula::TermType TermType;
 
 	if (arg2 == NULL) {
 		/* this is a unary atom */
-		const pair<array<unsigned int>, array<unsigned int>>& list = T.atoms.get(*predicate);
-		const array<unsigned int>& sublist = Negated ? list.value : list.key;
+		const pair<array<instance>, array<instance>>& list = T.atoms.get(*predicate);
+		const array<instance>& sublist = Negated ? list.value : list.key;
 		if (FirstSample) intersection.append(sublist.data, sublist.length);
 		else set_intersect(intersection, sublist);
 	} else {
@@ -261,8 +261,8 @@ inline void get_satisfying_concepts_helper(
 		relation r = { predicate,
 				(arg1->type == TermType::VARIABLE ? 0 : arg1->constant),
 				(arg2->type == TermType::VARIABLE ? 0 : arg2->constant) };
-		const pair<array<unsigned int>, array<unsigned int>>& list = T.relations.get(r);
-		const array<unsigned int>& sublist = Negated ? list.value : list.key;
+		const pair<array<instance>, array<instance>>& list = T.relations.get(r);
+		const array<instance>& sublist = Negated ? list.value : list.key;
 		if (FirstSample) intersection.append(sublist.data, sublist.length);
 		else set_intersect(intersection, sublist);
 	}
@@ -271,7 +271,7 @@ inline void get_satisfying_concepts_helper(
 template<bool FirstSample, typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool get_satisfying_concepts(
 		const theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
-		const Formula* formula, array<unsigned int>& intersection)
+		const Formula* formula, array<instance>& intersection)
 {
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
@@ -638,7 +638,7 @@ bool propose_universal_intro(
 	} else {
 
 		/* compute the set of constants for which the selected axiom is true */
-		const array<unsigned int>& negated_set = get_concept_set<!Negated>(T, a);
+		const array<instance>& negated_set = get_concept_set<!Negated>(T, a);
 
 		/* find other ground axioms that are connected to this constant */
 		const concept<ProofCalculus>& c = T.ground_concepts[concept_id - T.new_constant_offset];
@@ -680,7 +680,7 @@ bool propose_universal_intro(
 		array<relation> selected_relations(8);
 		array<relation> selected_negated_relations(8);
 
-		array<unsigned int> intersection(32);
+		array<instance> intersection(32);
 		unsigned int count = sample_uniform(axiom_indices.length) + 1;
 		log_proposal_probability_ratio -= -log_cache<double>::instance().get(axiom_indices.length)
 				- lgamma(axiom_indices.length + 1) + lgamma(count + 1) + lgamma(axiom_indices.length - count + 1);
@@ -1344,7 +1344,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		unsigned int variable, array<instance>& constants,
 		proof_sampler<IsExploratory>& sampler)
 {
-	if (!filter_constants_helper(T, formula, variable, constants))
+	if (!filter_constants_helper<false>(T, formula, variable, constants))
 		return false;
 
 	if (IsExploratory) {
@@ -1540,7 +1540,7 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 		constants[constants.length++].str = str;
 	}
 
-	if (!filter_constants_helper(T, quantified, variable, constants))
+	if (!filter_constants_helper<false>(T, quantified, variable, constants))
 		return false;
 
 	unsigned int index;
@@ -2212,7 +2212,7 @@ inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		unsigned int variable, array<instance>& constants,
 		proof_initializer& initializer)
 {
-	if (!filter_constants_helper(T, formula, variable, constants))
+	if (!filter_constants_helper<false>(T, formula, variable, constants))
 		return false;
 
 	if (initializer.constant_position == initializer.expected_constants.length) {

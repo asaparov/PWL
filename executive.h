@@ -832,7 +832,7 @@ bool get_http_page(
 	static char REQUEST_TEMPLATE[] =
 			"GET %s HTTP/1.1\r\n"
 			"Host: %s\r\n"
-			"Accept: text/html,application/xhtml+xml,application/xml,text/plain\r\n"
+			"Accept: text/html,application/xhtml+xml,text/plain,application/xml;q=0.9,*/*;q=0.8\r\n"
 			"Accept-Encoding: identity\r\n"
 			"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36\r\n"
 			"Connection: keep-alive\r\n"
@@ -1388,6 +1388,8 @@ bool find_answer_in_website(const string& address,
 		case ']':
 			if (state == html_lexer_state::TOKEN) {
 				if (position + 1 < response.length && response[position] == '.' && isdigit(response[position - 1]) && isdigit(response[position + 1]))
+					if (!fake_periods.add(tokens.length + 1)) return false;
+				if (position - start == 2 && response[position] == '.' && response[position - 1] == 't' && (response[position - 2] == 'S' || response[position - 2] == 's'))
 					if (!fake_periods.add(tokens.length + 1)) return false;
 				/* emit the token from response[start:position] */
 				if (!tokens.add({html_lexer_state::TOKEN, response.data + start, position - start})
@@ -1970,97 +1972,145 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 
 		/* generate a search query */
 		unsigned int generated_derivation_count;
-		double generated_log_likelihood;
-		syntax_node<typename Parser::logical_form_type>& generated_derivation =
-				*((syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>)));
+		constexpr unsigned int max_generated_derivation_count = 2;
+		double generated_log_likelihoods[max_generated_derivation_count * 2];
+		syntax_node<typename Parser::logical_form_type>* generated_derivations =
+				(syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>) * max_generated_derivation_count * 2);
 		/* TODO: disable the production rules that govern wh-movement */
-		if (!parser.template generate<1>(&generated_derivation, &generated_log_likelihood, generated_derivation_count, logical_forms[0], names) || generated_derivation_count == 0) {
+		if (!parser.template generate<max_generated_derivation_count>(generated_derivations, generated_log_likelihoods, generated_derivation_count, logical_forms[0], names)) {
 			fprintf(stderr, "ERROR: Failed to generate search query derivation.\n");
 			free_logical_forms(logical_forms, parse_count);
 			/* TODO: re-enable the production rules that govern wh-movement */
 			return false;
 		}
+		unsigned int new_generated_derivation_count = 0;
+		syntax_node<typename Parser::logical_form_type>* new_generated_derivations = generated_derivations + generated_derivation_count;
+		double* new_generated_log_likelihoods = generated_log_likelihoods + generated_derivation_count;
+		Formula* swapped_logical_form = swap_query_args(logical_forms[0]);
+		if (swapped_logical_form != nullptr) {
+			if (!parser.template generate<max_generated_derivation_count>(new_generated_derivations, new_generated_log_likelihoods, new_generated_derivation_count, swapped_logical_form, names)) {
+				fprintf(stderr, "ERROR: Failed to generate search query derivation.\n");
+				free_logical_forms(logical_forms, parse_count);
+				free(*swapped_logical_form); free(swapped_logical_form);
+				for (unsigned int j = 0; j < generated_derivation_count; j++)
+					free(generated_derivations[j]);
+				/* TODO: re-enable the production rules that govern wh-movement */
+				return false;
+			}
+		}
 		/* TODO: re-enable the production rules that govern wh-movement */
 
-		/* compute the yield of the derivation */
-		sequence search_query = sequence(NULL, 0);
-		if (!parser.yield_search_query(generated_derivation, logical_forms[0], search_query)) {
-			free_logical_forms(logical_forms, parse_count);
-			free(generated_derivation); return false;
-		}
-		free(generated_derivation);
-
-		/* remove the punctuation at the end of the sentence; if the asterisk
-		   appears at the beginning or the end, delete it */
-		search_query.length--;
-
-		/* find the left and right portions of the query */
-		unsigned int index = index_of(parser.ASTERISK_ID, search_query.tokens, search_query.length);
-		sequence left_query(nullptr, 0), right_query(nullptr, 0);
-		if (index == 0) {
-			shift_left(search_query.tokens, --search_query.length);
-			right_query.tokens = search_query.tokens;
-			right_query.length = search_query.length;
-		} else if (index == search_query.length - 1) {
-			search_query.length--;
-			left_query.tokens = search_query.tokens;
-			left_query.length = search_query.length;
-		} else {
-			left_query.tokens = search_query.tokens;
-			left_query.length = index;
-			right_query.tokens = search_query.tokens + index + 1;
-			right_query.length = search_query.length - index - 1;
-		}
-
-		bool failure = false;
-		auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, on_new_proof_sample, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
-			if (read_sentence(articles, parser, tokens, length, T, names, visited_articles, theory_prior, proof_axioms)) {
-				theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
-				if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample)) {
-					fprintf(stderr, "ERROR: Failed to answer question.\n");
-					failure = true; return false;
+		unsigned int a = 0; unsigned int b = 0;
+		while (a < generated_derivation_count || b < new_generated_derivation_count) {
+			/* compute the yield of the derivation */
+			sequence search_query = sequence(NULL, 0);
+			if (a < generated_derivation_count && (b == new_generated_derivation_count || generated_log_likelihoods[a] >= new_generated_log_likelihoods[b])) {
+				if (!parser.yield_search_query(generated_derivations[a], logical_forms[0], search_query)) {
+					free_logical_forms(logical_forms, parse_count);
+					if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }
+					for (unsigned int j = 0; j < generated_derivation_count; j++) free(generated_derivations[j]);
+					for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
+					return false;
 				}
-T_map.print_axioms(stderr, *debug_terminal_printer);
-				free(T_map);
-
-				if (temp_answers.size > 1)
-					sort(temp_answers.values, temp_answers.keys, temp_answers.size, default_sorter());
-				if ((temp_answers.size > 1 && temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] >= SUFFICIENT_KNOWLEDGE_THRESHOLD && temp_answers.keys[temp_answers.size - 1] != UNKNOWN_CONCEPT_NAME)
-				 || (temp_answers.size == 1 && temp_answers.keys[0] != UNKNOWN_CONCEPT_NAME))
-					return false; /* break the Google search */
-				return true;
+				a++;
+			} else {
+				if (!parser.yield_search_query(new_generated_derivations[b], swapped_logical_form, search_query)) {
+					free_logical_forms(logical_forms, parse_count);
+					if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }
+					for (unsigned int j = 0; j < generated_derivation_count; j++) free(generated_derivations[j]);
+					for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
+					return false;
+				}
+				b++;
 			}
-			return true;
-		};
-		constexpr unsigned long long TIMEOUT_MS = 5000;
-		auto process_search_result = [&left_query,&right_query,&names,process_matched_sentence](const string& result) {
-			return find_answer_in_website(result, TIMEOUT_MS, left_query, right_query, names, process_matched_sentence);
-		};
 
-		memory_stream out(32);
-		string* query = (string*) malloc(sizeof(string) * search_query.length);
-		for (unsigned int i = 0; i < search_query.length; i++) {
-			if (!print(search_query[i], out, parser.get_printer())
-			 || !init(query[i], out.buffer, out.position))
-			{
+			/* remove the punctuation at the end of the sentence; if the asterisk
+			appears at the beginning or the end, delete it */
+			search_query.length--;
+
+			/* find the left and right portions of the query */
+			unsigned int index = index_of(parser.ASTERISK_ID, search_query.tokens, search_query.length);
+			sequence left_query(nullptr, 0), right_query(nullptr, 0);
+			if (index == 0) {
+				shift_left(search_query.tokens, --search_query.length);
+				right_query.tokens = search_query.tokens;
+				right_query.length = search_query.length;
+			} else if (index == search_query.length - 1) {
+				search_query.length--;
+				left_query.tokens = search_query.tokens;
+				left_query.length = search_query.length;
+			} else {
+				left_query.tokens = search_query.tokens;
+				left_query.length = index;
+				right_query.tokens = search_query.tokens + index + 1;
+				right_query.length = search_query.length - index - 1;
+			}
+
+			bool failure = false;
+			auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, on_new_proof_sample, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
+				if (read_sentence(articles, parser, tokens, length, T, names, visited_articles, theory_prior, proof_axioms)) {
+					theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
+					if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample)) {
+						fprintf(stderr, "ERROR: Failed to answer question.\n");
+						failure = true; return false;
+					}
+T_map.print_axioms(stderr, *debug_terminal_printer);
+					free(T_map);
+
+					if (temp_answers.size > 1)
+						sort(temp_answers.values, temp_answers.keys, temp_answers.size, default_sorter());
+					if ((temp_answers.size > 1 && temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] >= SUFFICIENT_KNOWLEDGE_THRESHOLD && temp_answers.keys[temp_answers.size - 1] != UNKNOWN_CONCEPT_NAME)
+					 || (temp_answers.size == 1 && temp_answers.keys[0] != UNKNOWN_CONCEPT_NAME))
+						return false; /* break the Google search */
+					return true;
+				}
+				return true;
+			};
+			constexpr unsigned long long TIMEOUT_MS = 5000;
+			auto process_search_result = [&left_query,&right_query,&names,process_matched_sentence](const string& result) {
+				return find_answer_in_website(result, TIMEOUT_MS, left_query, right_query, names, process_matched_sentence);
+			};
+
+			memory_stream out(32);
+			string* query = (string*) malloc(sizeof(string) * search_query.length);
+			for (unsigned int i = 0; i < search_query.length; i++) {
+				if (!print(search_query[i], out, parser.get_printer())
+				 || !init(query[i], out.buffer, out.position))
+				{
+					free_logical_forms(logical_forms, parse_count);
+					if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }
+					for (unsigned int j = 0; j < i; j++) free(query[j]);
+					for (unsigned int j = 0; j < generated_derivation_count; j++) free(generated_derivations[j]);
+					for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
+					free(query); free(search_query); return false;
+				}
+				out.position = 0;
+				out.shift = {0};
+			}
+
+			if (!search_google(query, search_query.length, TIMEOUT_MS, process_search_result)) {
 				free_logical_forms(logical_forms, parse_count);
-				for (unsigned int j = 0; j < i; j++) free(query[j]);
+				if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }
+				for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
+				for (unsigned int j = 0; j < generated_derivation_count; j++) free(generated_derivations[j]);
+				for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
 				free(query); free(search_query); return false;
 			}
-			out.position = 0;
-			out.shift = {0};
-		}
-
-		if (!search_google(query, search_query.length, TIMEOUT_MS, process_search_result)) {
-			free_logical_forms(logical_forms, parse_count);
 			for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
-			free(query); free(search_query); return false;
+			free(query); free(search_query);
+
+			if (failure) {
+				free_logical_forms(logical_forms, parse_count);
+				if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }
+				for (unsigned int j = 0; j < generated_derivation_count; j++) free(generated_derivations[j]);
+				for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
+				return false;
+			}
 		}
 		free_logical_forms(logical_forms, parse_count);
-		for (unsigned int j = 0; j < search_query.length; j++) free(query[j]);
-		free(query); free(search_query);
-
-		if (failure) return false;
+		if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }
+		for (unsigned int j = 0; j < generated_derivation_count; j++) free(generated_derivations[j]);
+		for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
 
 	} else {
 		free_logical_forms(logical_forms, parse_count);

@@ -1494,6 +1494,9 @@ double log_probability_atom(const hol_term* function, const hol_term* arg1,
 			constants.add_type(function, arg1->constant);
 		else constants.add_constant(arg1->constant);
 		return prior.log_unary_probability;
+	} else if (!Quantified && arg1->type == hol_term_type::NUMBER) {
+		/* TODO: implement this */
+		return prior.log_arg_number_probability - 7.0f;
 	} else {
 		return -std::numeric_limits<double>::infinity();
 	}

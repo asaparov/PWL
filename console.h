@@ -64,13 +64,14 @@ inline void run_console(Stream& input, const char* prompt,
 inline void print_help(unsigned int max_parse_count)
 {
 	printf(CONSOLE_BOLD "Available commands:\n" CONSOLE_RESET);
-	printf(CONSOLE_BOLD "read" CONSOLE_RESET " <sentence without surrounding quotes>      Find up to %u logical forms that maximize the likelihood.\n", max_parse_count);
+	printf(CONSOLE_BOLD "read" CONSOLE_RESET " [sentence without surrounding quotes]      Find up to %u logical forms that maximize the likelihood.\n", max_parse_count);
 	printf(CONSOLE_BOLD "rerank" CONSOLE_RESET "                                          For each parsed logical form, compute its prior, and re-rank them according to their posterior.\n");
 	printf(CONSOLE_BOLD "add" CONSOLE_RESET " [logical form 0-based index]                Add the selected logical form as an observation to the theory. (default is the first logical form)\n");
-	printf(CONSOLE_BOLD "mcmc" CONSOLE_RESET " <iterations>                               Perform MCMC for the specified number of iterations.\n");
+	printf(CONSOLE_BOLD "mcmc" CONSOLE_RESET " [iterations]                               Perform MCMC for the specified number of iterations.\n");
 	printf(CONSOLE_BOLD "print_theory" CONSOLE_RESET "                                    Print the current theory.\n");
 	printf(CONSOLE_BOLD "print_proofs" CONSOLE_RESET "                                    Print the proof of each observation in the theory.\n");
-	printf(CONSOLE_BOLD "research" CONSOLE_RESET " <question without surrounding quotes>  Try to answer the given question, searching the web for more information as needed.\n");
+	printf(CONSOLE_BOLD "research" CONSOLE_RESET " [question without surrounding quotes]  Try to answer the given question, searching the web for more information as needed.\n");
+	printf(CONSOLE_BOLD "generate" CONSOLE_RESET " [logical form 0-based index]           Generate sentences from the selected logical form. (default is the first logical form)\n");
 	printf(CONSOLE_BOLD "examples" CONSOLE_RESET "                                        Suggest some interesting examples.\n");
 }
 
@@ -270,7 +271,7 @@ void run_console(
 					new_proof = nullptr;
 				}
 				if (new_proof == nullptr) {
-					print("read_sentence ERROR: Unable to add logical form to theory.\n", stdout);
+					print("ERROR: Unable to add logical form to theory.\n", stdout);
 					print("  Logical form: ", stdout); print(*logical_forms[logical_form_index], stdout, parser.get_printer()); print("\n", stdout);
 					continue;
 				}
@@ -315,6 +316,56 @@ void run_console(
 				printf("Maximum a posteriori theory:\n");
 				T_MAP.print_axioms(stderr, parser.get_printer());
 				free(T_MAP); proof_axioms_MAP.~PriorStateType();
+
+			} else if (compare_strings("generate", line.data, index)) {
+				if (parse_count == 0) {
+					printf("ERROR: There are no logical forms from which to generate. Use 'read' to parse a sentence into logical forms.\n");
+					continue;
+				}
+
+				unsigned int logical_form_index = 0;
+				while (isspace(line[index])) index++;
+				if (index < line.length) {
+					char* end_ptr;
+					logical_form_index = strtoul(line.data + index, &end_ptr, 0);
+					if (*end_ptr != '\0') {
+						printf("ERROR: Invalid logical form index.\n");
+						continue;
+					}
+				}
+				if (logical_form_index >= parse_count) {
+					printf("ERROR: Logical form index is out of bounds.\n");
+					continue;
+				}
+
+				unsigned int generated_derivation_count;
+				constexpr unsigned int max_generated_derivation_count = 4;
+				double log_likelihoods[max_generated_derivation_count];
+				syntax_node<typename Parser::logical_form_type>* generated_derivations =
+						(syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>) * max_generated_derivation_count);
+				if (!parser.template generate<max_generated_derivation_count>(generated_derivations, log_likelihoods, generated_derivation_count, logical_forms[logical_form_index], names) || generated_derivation_count == 0) {
+					printf("ERROR: Failed to generate derivation.\n");
+					continue;
+				}
+
+				const string** nonterminal_name_map = invert(parser.G.nonterminal_names);
+				string_map_scribe nonterminal_printer = { nonterminal_name_map, parser.G.nonterminal_names.table.size + 1 };
+				printf("Generated %u derivations:\n", generated_derivation_count);
+				for (unsigned int i = 0; i < generated_derivation_count; i++) {
+					/* compute the yield of the derivation */
+					sequence new_sentence = sequence(NULL, 0);
+					if (!parser.yield(generated_derivations[i], logical_forms[0], new_sentence))
+						break;
+					print('"', stdout); print(new_sentence, stdout, parser.get_printer());
+					print("\" with log likelihood ", stdout); print(log_likelihoods[i], stdout);
+					print(" and derivation tree:\n", stdout);
+					print(generated_derivations[i], stdout, nonterminal_printer, parser.get_printer());
+					print('\n', stdout);
+					free(new_sentence);
+				}
+				free(nonterminal_name_map);
+				for (unsigned int i = 0; i < generated_derivation_count; i++)
+					free(generated_derivations[i]);
 
 			} else if (compare_strings("help", line.data, index)) {
 				print_help(max_parse_count);

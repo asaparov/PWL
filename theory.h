@@ -95,6 +95,23 @@ inline bool operator == (const instance& first, const instance& second) {
 	exit(EXIT_FAILURE);
 }
 
+inline bool operator < (const instance& first, const instance& second) {
+	if (first.type < second.type) return true;
+	else if (first.type > second.type) return false;
+	switch (first.type) {
+	case instance_type::ANY: return false;
+	case instance_type::CONSTANT: return first.constant < second.constant;
+	case instance_type::NUMBER: return first.number < second.number;
+	case instance_type::STRING: return *first.str < *second.str;
+	}
+	fprintf(stderr, "operator < ERROR: Unrecognized `instance_type`.\n");
+	exit(EXIT_FAILURE);
+}
+
+inline bool operator >= (const instance& first, const instance& second) {
+	return !(first < second);
+}
+
 inline instance instance_any() {
 	instance i;
 	i.type = instance_type::ANY;
@@ -138,6 +155,42 @@ inline instance instance_string(string* str) {
 	i.matching_types = 0;
 	i.mismatching_types = 0;
 	return i;
+}
+
+inline unsigned int index_of_any(const array<instance>& constants) {
+	for (unsigned int i = 0; i < constants.length; i++) {
+		if (constants[i].type == instance_type::ANY)
+			return i;
+	}
+	return constants.length;
+}
+
+inline unsigned int index_of_constant(const array<instance>& constants, unsigned int constant) {
+	for (unsigned int i = 0; i < constants.length; i++) {
+		if (constants[i].type == instance_type::CONSTANT && constants[i].constant == constant)
+			return i;
+	}
+	return constants.length;
+}
+
+inline unsigned int index_of_number(const array<instance>& constants, hol_number number) {
+	for (unsigned int i = 0; i < constants.length; i++) {
+		if (constants[i].type == instance_type::NUMBER && constants[i].number == number)
+			return i;
+	}
+	return constants.length;
+}
+
+inline unsigned int index_of_string(const array<instance>& constants, string* str) {
+	for (unsigned int i = 0; i < constants.length; i++) {
+		if (constants[i].type == instance_type::STRING && (constants[i].str == str || *constants[i].str == *str))
+			return i;
+	}
+	return constants.length;
+}
+
+inline bool contains_any(const array<instance>& constants) {
+	return index_of_any(constants) < constants.length;
 }
 
 
@@ -3041,7 +3094,7 @@ struct theory
 	   `~[z_i/0]t`. Note that this map is exhaustive, and there are no
 	   other constants `u` such that the axiom `[u/0]t` or `~[u/0]t`
 	   are in the theory. */
-	hash_map<Term, pair<array<unsigned int>, array<unsigned int>>> atoms;
+	hash_map<Term, pair<array<instance>, array<instance>>> atoms;
 
 	/* A map from `R` to two lists of constants `{y_1, ..., y_n}` and
 	   `{z_1, ..., z_m}` such that for any `y_i`, there is an axiom in the
@@ -3049,11 +3102,14 @@ struct theory
 	   `~[z_i/0]R`. Note that this map is exhaustive, and there are no
 	   other constants `u` such that the axiom `[u/0]R` or `~[u/0]R`
 	   are in the theory. */
-	hash_map<relation, pair<array<unsigned int>, array<unsigned int>>> relations;
+	hash_map<relation, pair<array<instance>, array<instance>>> relations;
 
 	concept<ProofCalculus>* ground_concepts;
 	unsigned int ground_concept_capacity;
 	unsigned int ground_axiom_count;
+
+	array_map<Term, Proof*> constant_types;
+	array_map<Term, Proof*> constant_negated_types;
 
 	hash_set<Proof*> observations;
 	set_reasoning<built_in_predicates, ProofCalculus, Canonicalizer> sets;
@@ -3075,7 +3131,8 @@ struct theory
 
 	theory(unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), atoms(64), relations(64),
-			ground_concept_capacity(64), ground_axiom_count(0), observations(64),
+			ground_concept_capacity(64), ground_axiom_count(0),
+			constant_types(8), constant_negated_types(8), observations(64),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
 			implication_intro_nodes(16), existential_intro_nodes(16),
 			implication_axioms(16), built_in_sets(4)
@@ -3288,6 +3345,18 @@ struct theory
 		}
 		core::free(ground_concepts);
 
+		for (auto entry : constant_types) {
+			core::free(entry.key);
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		} for (auto entry : constant_negated_types) {
+			core::free(entry.key);
+			core::free(*entry.value);
+			if (entry.value->reference_count == 0)
+				core::free(entry.value);
+		}
+
 		core::free(*NAME_ATOM);
 		if (NAME_ATOM->reference_count == 0)
 			core::free(NAME_ATOM);
@@ -3304,6 +3373,8 @@ struct theory
 		T.free_helper();
 		core::free(T.atoms);
 		core::free(T.relations);
+		core::free(T.constant_types);
+		core::free(T.constant_negated_types);
 		core::free(T.observations);
 		core::free(T.sets);
 		core::free(T.disjunction_intro_nodes);
@@ -3409,6 +3480,15 @@ struct theory
 			if (!print("Concept ", out) || !print(i + new_constant_offset, out, std::forward<Printer>(printer)...) || !print(":\n", out)
 			 || !ground_concepts[i].print_axioms(out, "  ", std::forward<Printer>(printer)...)) return false;
 		}
+		if (constant_types.size > 0 || constant_negated_types.size > 0) {
+			if (!print("Other axioms:\n", out)) return false;
+			for (auto entry : constant_types) {
+				if (!print("  ", out) || !print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+			} for (auto entry : constant_negated_types) {
+				if (!print("  ", out) || !print(*entry.value->formula, out, std::forward<Printer>(printer)...) || !print('\n', out)) return false;
+			}
+		}
+
 		if (implication_axioms.length > 0) {
 			print("Implication axioms:\n", out);
 			for (const auto entry : implication_axioms) {
@@ -3838,7 +3918,39 @@ struct theory
 			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
+		} else if (!array_map_init(dst.constant_types, src.constant_types.capacity)) {
+			core::free(dst.implication_intro_nodes);
+			core::free(dst.negated_conjunction_nodes);
+			core::free(dst.disjunction_intro_nodes);
+			core::free(dst.existential_intro_nodes);
+			core::free(dst.implication_axioms);
+			core::free(dst.built_in_sets);
+			core::free(dst.sets); core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
+			return false;
+		} else if (!array_map_init(dst.constant_negated_types, src.constant_negated_types.capacity)) {
+			core::free(dst.implication_intro_nodes);
+			core::free(dst.negated_conjunction_nodes);
+			core::free(dst.disjunction_intro_nodes);
+			core::free(dst.existential_intro_nodes);
+			core::free(dst.implication_axioms);
+			core::free(dst.built_in_sets);
+			core::free(dst.constant_types);
+			core::free(dst.sets); core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
+			core::free(*dst.function_axiom); if (dst.function_axiom->reference_count == 0) core::free(dst.function_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
+			return false;
 		}
+
 
 		for (const auto& entry : src.atoms) {
 			unsigned int bucket = dst.atoms.table.index_to_insert(entry.key);
@@ -3853,9 +3965,9 @@ struct theory
 				core::free(dst); return false;
 			}
 			dst.atoms.table.size++;
-			for (unsigned int id : entry.value.key)
+			for (const instance& id : entry.value.key)
 				dst.atoms.values[bucket].key[dst.atoms.values[bucket].key.length++] = id;
-			for (unsigned int id : entry.value.value)
+			for (const instance& id : entry.value.value)
 				dst.atoms.values[bucket].value[dst.atoms.values[bucket].value.length++] = id;
 		} for (const auto& entry : src.relations) {
 			unsigned int bucket = dst.relations.table.index_to_insert(entry.key);
@@ -3867,9 +3979,9 @@ struct theory
 			}
 			dst.relations.table.keys[bucket] = entry.key;
 			dst.relations.table.size++;
-			for (unsigned int id : entry.value.key)
+			for (const instance& id : entry.value.key)
 				dst.relations.values[bucket].key[dst.relations.values[bucket].key.length++] = id;
-			for (unsigned int id : entry.value.value)
+			for (const instance& id : entry.value.value)
 				dst.relations.values[bucket].value[dst.relations.values[bucket].value.length++] = id;
 		} for (Proof* observation : src.observations) {
 			Proof* new_observation;
@@ -3884,6 +3996,22 @@ struct theory
 				core::free(dst);
 				return false;
 			}
+		} for (unsigned int i = 0; i < src.constant_types.size; i++) {
+			if (!::clone(src.constant_types.keys[i], dst.constant_types.keys[dst.constant_types.size], formula_map)) {
+				core::free(dst); return false;
+			} else if (!Proof::clone(src.constant_types.values[i], dst.constant_types.values[dst.constant_types.size], proof_map, formula_map)) {
+				core::free(dst.constant_types.keys[dst.constant_types.size]);
+				core::free(dst); return false;
+			}
+			dst.constant_types.size++;
+		} for (unsigned int i = 0; i < src.constant_negated_types.size; i++) {
+			if (!::clone(src.constant_negated_types.keys[i], dst.constant_negated_types.keys[dst.constant_negated_types.size], formula_map)) {
+				core::free(dst); return false;
+			} else if (!Proof::clone(src.constant_negated_types.values[i], dst.constant_negated_types.values[dst.constant_negated_types.size], proof_map, formula_map)) {
+				core::free(dst.constant_negated_types.keys[dst.constant_negated_types.size]);
+				core::free(dst); return false;
+			}
+			dst.constant_negated_types.size++;
 		} for (auto& entry : src.disjunction_intro_nodes) {
 			unsigned int index = proof_map.index_of(entry.value);
 #if !defined(NDEBUG)
@@ -4108,6 +4236,21 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			if (ground_concepts[i].types.keys == NULL) continue;
 			success &= ground_concepts[i].check_axioms();
 		}
+		for (auto entry : constant_types) {
+			if (entry.value->reference_count <= 1) {
+				print("concept.check_axioms WARNING: Found axiom '", stderr);
+				print(*entry.value->formula, stderr);
+				print("' with reference count less than 2.\n", stderr);
+				success = false;
+			}
+		} for (auto entry : constant_negated_types) {
+			if (entry.value->reference_count <= 1) {
+				print("concept.check_axioms WARNING: Found axiom '", stderr);
+				print(*entry.value->formula, stderr);
+				print("' with reference count less than 2.\n", stderr);
+				success = false;
+			}
+		}
 		return success;
 	}
 
@@ -4212,7 +4355,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		}
 
 		bool contains;
-		pair<array<unsigned int>, array<unsigned int>>& type_instances = atoms.get(*atom, contains);
+		pair<array<instance>, array<instance>>& type_instances = atoms.get(*atom, contains);
 		core::free(*atom); core::free(atom);
 		if (contains && type_instances.key.length != 0)
 			return true;
@@ -4257,35 +4400,40 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 	inline bool add_unary_atom(Term& atom, Proof* axiom, Args&&... visitor)
 	{
 #if !defined(NDEBUG)
-		if (atom.binary.right->type != TermType::CONSTANT)
-			fprintf(stderr, "add_unary_atom WARNING: The operand of this application is not constant.\n");
+		if (atom.binary.right->type != TermType::CONSTANT && atom.binary.right->type != TermType::NUMBER)
+			fprintf(stderr, "add_unary_atom WARNING: The operand of this application is not a constant or number.\n");
 #endif
-		unsigned int arg = atom.binary.right->constant;
 
 		/* check to make sure the args are type-correct */
-		if (atom.binary.left->type == TermType::CONSTANT && atom.binary.left->constant == (unsigned int) built_in_predicates::NAME) {
-			/* arg1 must be a non-name, non-set constant and arg2 must be a string */
-			Term* arg1 = get_arg(arg, (unsigned int) built_in_predicates::ARG1);
-			if (arg1 != nullptr) {
-				if (arg1->type != TermType::CONSTANT || is_name_event(arg1->constant) || is_provably_a_set(arg1->constant))
+		if (atom.binary.right->type == TermType::CONSTANT) {
+			unsigned int arg = atom.binary.right->constant;
+			if (atom.binary.left->type == TermType::CONSTANT && atom.binary.left->constant == (unsigned int) built_in_predicates::NAME) {
+				/* arg1 must be a non-name, non-set constant and arg2 must be a string */
+				Term* arg1 = get_arg(arg, (unsigned int) built_in_predicates::ARG1);
+				if (arg1 != nullptr) {
+					if (arg1->type != TermType::CONSTANT || is_name_event(arg1->constant) || is_provably_a_set(arg1->constant))
+						return false;
+				}
+				Term* arg2 = get_arg(arg, (unsigned int) built_in_predicates::ARG2);
+				if (arg2 != nullptr && arg2->type != TermType::STRING)
 					return false;
-			}
-			Term* arg2 = get_arg(arg, (unsigned int) built_in_predicates::ARG2);
-			if (arg2 != nullptr && arg2->type != TermType::STRING)
-				return false;
-			/* this event also cannot be the arg1 of a name event */
-			for (const Proof* definition : ground_concepts[arg - new_constant_offset].definitions) {
-				Formula* right = definition->formula->binary.right;
-				if (right->type == TermType::UNARY_APPLICATION
-				 && right->binary.left->type == TermType::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
-				 && right->binary.right->type == TermType::CONSTANT && is_name_event(right->binary.right->constant))
+				/* this event also cannot be the arg1 of a name event */
+				for (const Proof* definition : ground_concepts[arg - new_constant_offset].definitions) {
+					Formula* right = definition->formula->binary.right;
+					if (right->type == TermType::UNARY_APPLICATION
+					&& right->binary.left->type == TermType::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+					&& right->binary.right->type == TermType::CONSTANT && is_name_event(right->binary.right->constant))
+						return false;
+				}
+			} else {
+				/* arg1 can be anything and arg2 must be a non-string */
+				bool contains;
+				Proof* proof = ground_concepts[arg - new_constant_offset].function_values.get((unsigned int) built_in_predicates::ARG2, contains);
+				if (contains && proof->formula->binary.right->type == TermType::STRING)
 					return false;
 			}
 		} else {
-			/* arg1 can be anything and arg2 must be a non-string */
-			bool contains;
-			Proof* proof = ground_concepts[arg - new_constant_offset].function_values.get((unsigned int) built_in_predicates::ARG2, contains);
-			if (contains && proof->formula->binary.right->type == TermType::STRING)
+			if (atom.binary.left->type == TermType::CONSTANT && atom.binary.left->constant == (unsigned int) built_in_predicates::NAME)
 				return false;
 		}
 
@@ -4296,8 +4444,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		Variables<1>::value.reference_count++;
 
 #if !defined(NDEBUG)
-		if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
-			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the concept %u.\n", arg);
+		if (atom.binary.right->type == TermType::CONSTANT && (atom.binary.right->constant < new_constant_offset || ground_concepts[atom.binary.right->constant - new_constant_offset].types.keys == NULL))
+			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the concept %u.\n", atom.binary.right->constant);
 #endif
 		bool contains; unsigned int bucket;
 		if (!atoms.check_size()) {
@@ -4305,7 +4453,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			return false;
 		}
 
-		pair<array<unsigned int>, array<unsigned int>>& instance_pair = atoms.get(*lifted_atom, contains, bucket);
+		pair<array<instance>, array<instance>>& instance_pair = atoms.get(*lifted_atom, contains, bucket);
 		if (!contains) {
 			if (!array_init(instance_pair.key, 8)) {
 				core::free(*lifted_atom); core::free(lifted_atom);
@@ -4319,8 +4467,10 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			atoms.table.size++;
 		}
 
-		array<unsigned int>& instances = (Negated ? instance_pair.value : instance_pair.key);
-		array_map<Term, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
+		array<instance>& instances = (Negated ? instance_pair.value : instance_pair.key);
+		array_map<Term, Proof*>& ground_types = (atom.binary.right->type == TermType::CONSTANT
+				? (Negated ? ground_concepts[atom.binary.right->constant - new_constant_offset].negated_types : ground_concepts[atom.binary.right->constant - new_constant_offset].types)
+				: (Negated ? constant_negated_types : constant_types));
 		if (!instances.ensure_capacity(instances.length + 1)
 		 || !ground_types.ensure_capacity(ground_types.size + 1))
 		{
@@ -4328,11 +4478,14 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			return false;
 		}
 
-		add_sorted<false>(instances, arg);
-		ground_types.keys[ground_types.size] = *lifted_atom;
+		if (atom.binary.right->type == TermType::CONSTANT)
+			add_sorted<false>(instances, instance_constant(atom.binary.right->constant));
+		else add_sorted<false>(instances, instance_number(atom.binary.right->number));
+		ground_types.keys[ground_types.size] = (atom.binary.right->type == TermType::CONSTANT ? *lifted_atom : atom);
 		ground_types.values[ground_types.size++] = axiom;
 		axiom->reference_count++;
-		ground_axiom_count++;
+		if (atom.binary.right->type == TermType::CONSTANT)
+			ground_axiom_count++;
 		core::free(*lifted_atom); core::free(lifted_atom);
 
 		if (!check_set_membership_after_addition<ResolveInconsistencies>(&atom, std::forward<Args>(visitor)...)) {
@@ -4354,7 +4507,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 
 		bool contains; unsigned int bucket;
 		if (!relations.check_size(relations.table.size + 4)) return false;
-		pair<array<unsigned int>, array<unsigned int>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2}, contains, bucket);
+		pair<array<instance>, array<instance>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2}, contains, bucket);
 		if (!contains) {
 			if (!array_init(predicate_instance_pair.key, 8)) {
 				return false;
@@ -4365,7 +4518,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			relations.table.size++;
 		}
 
-		pair<array<unsigned int>, array<unsigned int>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2}, contains, bucket);
+		pair<array<instance>, array<instance>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2}, contains, bucket);
 		if (!contains) {
 			if (!array_init(arg1_instance_pair.key, 8)) {
 				return false;
@@ -4376,7 +4529,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			relations.table.size++;
 		}
 
-		pair<array<unsigned int>, array<unsigned int>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0}, contains, bucket);
+		pair<array<instance>, array<instance>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0}, contains, bucket);
 		if (!contains) {
 			if (!array_init(arg2_instance_pair.key, 8)) {
 				return false;
@@ -4387,9 +4540,9 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			relations.table.size++;
 		}
 
-		array<unsigned int>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
-		array<unsigned int>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
-		array<unsigned int>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
+		array<instance>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
+		array<instance>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
+		array<instance>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
 		array_map<relation, Proof*>& ground_arg1 = (Negated ? ground_concepts[rel.arg1 - new_constant_offset].negated_relations : ground_concepts[rel.arg1 - new_constant_offset].relations);
 		array_map<relation, Proof*>& ground_arg2 = (Negated ? ground_concepts[rel.arg2 - new_constant_offset].negated_relations : ground_concepts[rel.arg2 - new_constant_offset].relations);
 		if (!predicate_instances.ensure_capacity(predicate_instances.length + 1)
@@ -4399,7 +4552,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3)) return false;
 
 		if (rel.arg1 == rel.arg2) {
-			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
+			pair<array<instance>, array<instance>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
 			if (!contains) {
 				if (!array_init(both_arg_instance_pair.key, 8)) {
 					return false;
@@ -4411,16 +4564,16 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				relations.table.size++;
 			}
 
-			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
+			array<instance>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
 			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1))
 				return false;
-			both_arg_instances[both_arg_instances.length++] = rel.arg1;
+			both_arg_instances[both_arg_instances.length++] = instance_constant(rel.arg1);
 			insertion_sort(both_arg_instances);
 		}
 
-		add_sorted<false>(predicate_instances, rel.predicate);
-		add_sorted<false>(arg1_instances, rel.arg1);
-		add_sorted<false>(arg2_instances, rel.arg2);
+		add_sorted<false>(predicate_instances, instance_constant(rel.predicate));
+		add_sorted<false>(arg1_instances, instance_constant(rel.arg1));
+		add_sorted<false>(arg2_instances, instance_constant(rel.arg2));
 		ground_arg1.keys[ground_arg1.size] = {rel.predicate, 0, rel.arg2};
 		ground_arg1.values[ground_arg1.size++] = axiom;
 		ground_arg2.keys[ground_arg2.size] = {rel.predicate, rel.arg1, 0};
@@ -4450,8 +4603,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 	inline bool remove_unary_atom(Term& atom, Args&&... visitor)
 	{
 #if !defined(NDEBUG)
-		if (atom.binary.right->type != TermType::CONSTANT)
-			fprintf(stderr, "remove_unary_atom WARNING: The operand of this application is not constant.\n");
+		if (atom.binary.right->type != TermType::CONSTANT && atom.binary.right->type != TermType::NUMBER)
+			fprintf(stderr, "remove_unary_atom WARNING: The operand of this application is not a constant or number.\n");
 #endif
 		unsigned int arg = atom.binary.right->constant;
 
@@ -4465,14 +4618,16 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		if (!atoms.table.contains(*lifted_atom)) {
 			print("theory.remove_unary_atom WARNING: `atoms` does not contain the key ", stderr);
 			print(*lifted_atom, stderr); print(".\n", stderr);
-		} if (arg < new_constant_offset || ground_concepts[arg - new_constant_offset].types.keys == NULL)
-			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", arg);
+		} if (atom.binary.right->type == TermType::CONSTANT && (atom.binary.right->constant < new_constant_offset || ground_concepts[atom.binary.right->constant - new_constant_offset].types.keys == NULL))
+			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", atom.binary.right->constant);
 #endif
 
-		array<unsigned int>& instances = (Negated ? atoms.get(*lifted_atom).value : atoms.get(*lifted_atom).key);
-		array_map<Term, Proof*>& ground_types = (Negated ? ground_concepts[arg - new_constant_offset].negated_types : ground_concepts[arg - new_constant_offset].types);
+		array<instance>& instances = (Negated ? atoms.get(*lifted_atom).value : atoms.get(*lifted_atom).key);
+		array_map<Term, Proof*>& ground_types = (atom.binary.right->type == TermType::CONSTANT
+				? (Negated ? ground_concepts[atom.binary.right->constant - new_constant_offset].negated_types : ground_concepts[atom.binary.right->constant - new_constant_offset].types)
+				: (Negated ? constant_negated_types : constant_types));
 
-		unsigned int index = instances.index_of(arg);
+		unsigned int index = (atom.binary.right->type == TermType::CONSTANT ? index_of_constant(instances, atom.binary.right->constant) : index_of_number(instances, atom.binary.right->number));
 #if !defined(NDEBUG)
 		if (index == instances.length)
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `instances` does not contain %u.\n", arg);
@@ -4480,7 +4635,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		shift_left(instances.data + index, instances.length - index - 1);
 		instances.length--;
 
-		index = ground_types.index_of(*lifted_atom);
+		index = (atom.binary.right->type == TermType::CONSTANT ? ground_types.index_of(*lifted_atom) : ground_types.index_of(atom));
 #if !defined(NDEBUG)
 		if (index == ground_types.size) {
 			print("theory.remove_unary_atom WARNING: `ground_types` does not contain ", stderr);
@@ -4491,7 +4646,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		core::free(*axiom); if (axiom->reference_count == 0) core::free(axiom);
 		core::free(ground_types.keys[index]);
 		ground_types.remove_at(index);
-		ground_axiom_count--;
+		if (atom.binary.right->type == TermType::CONSTANT)
+			ground_axiom_count--;
 		core::free(*lifted_atom); core::free(lifted_atom);
 		return check_set_membership_after_subtraction(&atom, 0, std::forward<Args>(visitor)...);
 	}
@@ -4510,21 +4666,21 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			fprintf(stderr, "theory.remove_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
 #endif
 
-		pair<array<unsigned int>, array<unsigned int>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2});
-		pair<array<unsigned int>, array<unsigned int>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2});
-		pair<array<unsigned int>, array<unsigned int>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0});
+		pair<array<instance>, array<instance>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2});
+		pair<array<instance>, array<instance>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2});
+		pair<array<instance>, array<instance>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0});
 
-		array<unsigned int>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
-		array<unsigned int>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
-		array<unsigned int>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
+		array<instance>& predicate_instances = (Negated ? predicate_instance_pair.value : predicate_instance_pair.key);
+		array<instance>& arg1_instances = (Negated ? arg1_instance_pair.value : arg1_instance_pair.key);
+		array<instance>& arg2_instances = (Negated ? arg2_instance_pair.value : arg2_instance_pair.key);
 		array_map<relation, Proof*>& ground_arg1 = (Negated ? ground_concepts[rel.arg1 - new_constant_offset].negated_relations : ground_concepts[rel.arg1 - new_constant_offset].relations);
 		array_map<relation, Proof*>& ground_arg2 = (Negated ? ground_concepts[rel.arg2 - new_constant_offset].negated_relations : ground_concepts[rel.arg2 - new_constant_offset].relations);
 
 		unsigned int index;
 		if (rel.arg1 == rel.arg2) {
-			pair<array<unsigned int>, array<unsigned int>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0});
-			array<unsigned int>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
-			index = both_arg_instances.index_of(rel.arg1);
+			pair<array<instance>, array<instance>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0});
+			array<instance>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
+			index = index_of_constant(both_arg_instances, rel.arg1);
 #if !defined(NDEBUG)
 			if (index == both_arg_instances.length)
 				fprintf(stderr, "theory.remove_binary_atom WARNING: `both_arg_instances` does not contain %u.\n", rel.arg1);
@@ -4533,7 +4689,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			both_arg_instances.length--;
 		}
 
-		index = predicate_instances.index_of(rel.predicate);
+		index = index_of_constant(predicate_instances, rel.predicate);
 #if !defined(NDEBUG)
 		if (index == predicate_instances.length)
 			fprintf(stderr, "theory.remove_binary_atom WARNING: `predicate_instances` does not contain %u.\n", rel.predicate);
@@ -4541,7 +4697,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		shift_left(predicate_instances.data + index, predicate_instances.length - index - 1);
 		predicate_instances.length--;
 
-		index = arg1_instances.index_of(rel.arg1);
+		index = index_of_constant(arg1_instances, rel.arg1);
 #if !defined(NDEBUG)
 		if (index == arg1_instances.length)
 			fprintf(stderr, "theory.remove_binary_atom WARNING: `arg1_instances` does not contain %u.\n", rel.arg1);
@@ -4549,7 +4705,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		shift_left(arg1_instances.data + index, arg1_instances.length - index - 1);
 		arg1_instances.length--;
 
-		index = arg2_instances.index_of(rel.arg2);
+		index = index_of_constant(arg2_instances, rel.arg2);
 #if !defined(NDEBUG)
 		if (index == arg2_instances.length)
 			fprintf(stderr, "theory.remove_binary_atom WARNING: `arg2_instances` does not contain %u.\n", rel.arg2);
@@ -7781,6 +7937,7 @@ private:
 			}
 
 			if (formula->binary.right->type != TermType::CONSTANT
+			 && formula->binary.right->type != TermType::NUMBER
 			 && formula->binary.right->type != TermType::VARIABLE)
 			{
 				for (auto& element : new_possible_values) core::free(element);
@@ -7793,7 +7950,7 @@ private:
 				if (!unify_atom(formula->binary.left, atom.key.binary.left, quantifiers, unifications))
 					continue;
 				for (unsigned int i = 0; i < possible_values.length; i++) {
-					const array<unsigned int>& constants = (Contradiction ? atom.value.value : atom.value.key);
+					const array<instance>& constants = (Contradiction ? atom.value.value : atom.value.key);
 					array<variable_assignment> temp(possible_values.length + constants.length);
 					const variable_assignment& values = possible_values[i];
 					variable_assignment new_values(values);
@@ -7811,7 +7968,7 @@ private:
 					}
 
 					if (formula->binary.right->type == TermType::VARIABLE) {
-						for (unsigned int constant : constants) {
+						for (const instance& constant : constants) {
 							variable_assignment& current_new_values = temp[temp.length];
 							if (!::init(current_new_values, new_values)) {
 								for (auto& element : new_possible_values) core::free(element);
@@ -7820,7 +7977,11 @@ private:
 									if (assignment.matching_axiom == formula) assignment.matching_axiom = nullptr;
 								return false;
 							}
-							Term* term = Term::new_constant(constant);
+							Term* term = nullptr;
+							if (constant.type == instance_type::CONSTANT)
+								term = Term::new_constant(constant.constant);
+							else if (constant.type == instance_type::NUMBER)
+								term = Term::new_number(constant.number);
 							if (term == nullptr) {
 								for (auto& element : new_possible_values) core::free(element);
 								for (auto& element : temp) core::free(element);
@@ -7838,7 +7999,8 @@ private:
 						}
 						if (temp.length > 0)
 							insertion_sort(temp, default_sorter());
-					} else if (constants.contains(formula->binary.right->constant)) {
+					} else if ((formula->binary.right->type == TermType::CONSTANT && index_of_constant(constants, formula->binary.right->constant) < constants.length)
+							|| (formula->binary.right->type == TermType::NUMBER && index_of_number(constants, formula->binary.right->number) < constants.length)) {
 						if (!::init(temp[0], new_values)) {
 							for (auto& element : new_possible_values) core::free(element);
 							for (variable_assignment& assignment : possible_values)
@@ -8174,7 +8336,7 @@ private:
 				if (rel.key.arg1 != 0 && arg1 != 0 && rel.key.arg1 != arg1) continue;
 				if (rel.key.arg2 != 0 && arg2 != 0 && rel.key.arg2 != arg2) continue;
 
-				const array<unsigned int>& constants = (Contradiction ? rel.value.value : rel.value.key);
+				const array<instance>& constants = (Contradiction ? rel.value.value : rel.value.key);
 				for (unsigned int i = 0; i < possible_values.length; i++) {
 					if (!temp.ensure_capacity(temp.length + constants.length + 1)) {
 						for (auto& element : new_possible_values) core::free(element);
@@ -8203,7 +8365,7 @@ private:
 
 					if (rel.key.predicate == 0) {
 						if (predicate == 0) {
-							for (unsigned int constant : constants) {
+							for (const instance& constant : constants) {
 								variable_assignment& new_values = temp[temp.length];
 								if (!::init(new_values, values)) {
 									for (auto& element : new_possible_values) core::free(element);
@@ -8212,7 +8374,7 @@ private:
 										if (assignment.matching_axiom == formula) assignment.matching_axiom = nullptr;
 									return false;
 								}
-								Term* term = Term::new_constant(constant);
+								Term* term = Term::new_constant(constant.constant);
 								if (term == nullptr) {
 									for (auto& element : new_possible_values) core::free(element);
 									for (auto& element : temp) core::free(element);
@@ -8230,7 +8392,7 @@ private:
 							}
 						} else {
 							variable_assignment& new_values = temp[temp.length];
-							if (constants.contains(predicate)) {
+							if (index_of_constant(constants, predicate) < constants.length) {
 								if (!::init(new_values, values)) {
 									for (auto& element : new_possible_values) core::free(element);
 									for (auto& element : temp) core::free(element);
@@ -8243,7 +8405,7 @@ private:
 						}
 					} else if (rel.key.arg1 == 0) {
 						if (arg1 == 0) {
-							for (unsigned int constant : constants) {
+							for (const instance& constant : constants) {
 								variable_assignment& new_values = temp[temp.length];
 								if (!::init(new_values, values)) {
 									for (auto& element : new_possible_values) core::free(element);
@@ -8252,7 +8414,7 @@ private:
 										if (assignment.matching_axiom == formula) assignment.matching_axiom = nullptr;
 									return false;
 								}
-								Term* term = Term::new_constant(constant);
+								Term* term = Term::new_constant(constant.constant);
 								if (term == nullptr) {
 									for (auto& element : new_possible_values) core::free(element);
 									for (auto& element : temp) core::free(element);
@@ -8270,7 +8432,7 @@ private:
 							}
 						} else {
 							variable_assignment& new_values = temp[temp.length];
-							if (constants.contains(arg1)) {
+							if (index_of_constant(constants, arg1) < constants.length) {
 								if (!::init(new_values, values)) {
 									for (auto& element : new_possible_values) core::free(element);
 									for (auto& element : temp) core::free(element);
@@ -8283,7 +8445,7 @@ private:
 						}
 					} else {
 						if (arg2 == 0) {
-							for (unsigned int constant : constants) {
+							for (const instance& constant : constants) {
 								variable_assignment& new_values = temp[temp.length];
 								if (!::init(new_values, values)) {
 									for (auto& element : temp) core::free(element);
@@ -8291,7 +8453,7 @@ private:
 										if (assignment.matching_axiom == formula) assignment.matching_axiom = nullptr;
 									return false;
 								}
-								Term* term = Term::new_constant(constant);
+								Term* term = Term::new_constant(constant.constant);
 								if (term == nullptr) {
 									for (auto& element : new_possible_values) core::free(element);
 									for (auto& element : temp) core::free(element);
@@ -8309,7 +8471,7 @@ private:
 							}
 						} else {
 							variable_assignment& new_values = temp[temp.length];
-							if (constants.contains(arg2)) {
+							if (index_of_constant(constants, arg2) < constants.length) {
 								if (!::init(new_values, values)) {
 									for (auto& element : new_possible_values) core::free(element);
 									for (auto& element : temp) core::free(element);
@@ -13281,7 +13443,7 @@ private:
 		constants[constants.length].matching_types = 0;
 		constants[constants.length].mismatching_types = 0;
 		constants[constants.length++].type = instance_type::ANY;
-		if (!constants.ensure_capacity(constants.length + numbers.length + strings.length))
+		if (!constants.ensure_capacity(constants.length + numbers.length + strings.length + constant_types.size + constant_negated_types.size))
 			return nullptr;
 		for (hol_number number : numbers) {
 			constants[constants.length].type = instance_type::NUMBER;
@@ -13293,6 +13455,30 @@ private:
 			constants[constants.length].matching_types = 0;
 			constants[constants.length].mismatching_types = 0;
 			constants[constants.length++].str = str;
+		} for (const auto& entry : constant_types) {
+			if (entry.key.binary.right->type == TermType::NUMBER) {
+				constants[constants.length].type = instance_type::NUMBER;
+				constants[constants.length].matching_types = 0;
+				constants[constants.length].mismatching_types = 0;
+				constants[constants.length++].number = entry.key.binary.right->number;
+			} else if (entry.key.binary.right->type == TermType::STRING) {
+				constants[constants.length].type = instance_type::STRING;
+				constants[constants.length].matching_types = 0;
+				constants[constants.length].mismatching_types = 0;
+				constants[constants.length++].str = &entry.key.binary.right->str;
+			}
+		} for (const auto& entry : constant_negated_types) {
+			if (entry.key.binary.right->type == TermType::NUMBER) {
+				constants[constants.length].type = instance_type::NUMBER;
+				constants[constants.length].matching_types = 0;
+				constants[constants.length].mismatching_types = 0;
+				constants[constants.length++].number = entry.key.binary.right->number;
+			} else if (entry.key.binary.right->type == TermType::STRING) {
+				constants[constants.length].type = instance_type::STRING;
+				constants[constants.length].matching_types = 0;
+				constants[constants.length].mismatching_types = 0;
+				constants[constants.length++].str = &entry.key.binary.right->str;
+			}
 		}
 		shuffle(constants);
 
@@ -13386,12 +13572,12 @@ private:
 			unsigned int& new_constant,
 			Args&&... args)
 	{
-		if (atom->type == TermType::UNARY_APPLICATION && atom->binary.right->type == TermType::CONSTANT)
+		if (atom->type == TermType::UNARY_APPLICATION && (atom->binary.right->type == TermType::CONSTANT || atom->binary.right->type == TermType::NUMBER))
 		{
 			/* this is a unary formula */
 			Term* arg1 = atom->binary.right;
 			if (atom->binary.left->type != TermType::CONSTANT || atom->binary.left->constant != (unsigned int) built_in_predicates::UNKNOWN) {
-				if (arg1->constant == (unsigned int) built_in_predicates::UNKNOWN) {
+				if (arg1->type == TermType::CONSTANT && arg1->constant == (unsigned int) built_in_predicates::UNKNOWN) {
 					/* make sure that `predicate` could be a set, and that `arg` could be not a set */
 					if (!Negated && ((atom->binary.left->type == TermType::CONSTANT && is_provably_not_a_set(atom->binary.left->constant)) || is_provably_a_set(arg1->constant)))
 						return NULL;
@@ -13429,7 +13615,7 @@ private:
 						return NULL;
 
 					/* make sure that `predicate` could be a set, and that `arg` could be not a set */
-					if (!Negated && ((atom->binary.left->type == TermType::CONSTANT && is_provably_not_a_set(atom->binary.left->constant)) || is_provably_a_set(arg1->constant)))
+					if (!Negated && ((atom->binary.left->type == TermType::CONSTANT && is_provably_not_a_set(atom->binary.left->constant)) || (arg1->type == TermType::CONSTANT && is_provably_a_set(arg1->constant))))
 						return NULL;
 
 					/* first check if there is already an extensional edge that proves this formula (for this particular instantiation) */
@@ -13495,23 +13681,35 @@ private:
 					}
 
 					/* there is no extensional edge that proves this atomic formula,
-					  so check if the axiom already exists, and if not, create a new axiom */
-					Term* lifted_atom = Term::new_apply(atom->binary.left, &Variables<1>::value);
-					if (lifted_atom == nullptr) return nullptr;
-					atom->binary.left->reference_count++;
-					Variables<1>::value.reference_count++;
+					   so check if the axiom already exists, and if not, create a new axiom */
+					if (arg1->type == TermType::CONSTANT) {
+						Term* lifted_atom = Term::new_apply(atom->binary.left, &Variables<1>::value);
+						if (lifted_atom == nullptr) return nullptr;
+						atom->binary.left->reference_count++;
+						Variables<1>::value.reference_count++;
 
-					bool contains;
-					concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
-					Proof* axiom = (Negated ?
-							c.negated_types.get(*lifted_atom, contains) :
-							c.types.get(*lifted_atom, contains));
-					if (contains) {
-						axiom->reference_count++;
+						bool contains;
+						concept<ProofCalculus>& c = ground_concepts[arg1->constant - new_constant_offset];
+						Proof* axiom = (Negated ?
+								c.negated_types.get(*lifted_atom, contains) :
+								c.types.get(*lifted_atom, contains));
+						if (contains) {
+							axiom->reference_count++;
+							core::free(*lifted_atom); core::free(lifted_atom);
+							return axiom;
+						}
 						core::free(*lifted_atom); core::free(lifted_atom);
-						return axiom;
+					} else {
+						bool contains;
+						Proof* axiom = (Negated ?
+								constant_negated_types.get(*atom, contains) :
+								constant_types.get(*atom, contains));
+						if (contains) {
+							axiom->reference_count++;
+							return axiom;
+						}
 					}
-					core::free(*lifted_atom); core::free(lifted_atom);
+
 					Formula* formula = Negated ? Formula::new_not(atom) : atom;
 					if (formula == NULL) return NULL;
 					atom->reference_count++;
@@ -13746,56 +13944,7 @@ private:
 template<typename Formula>
 constexpr bool filter_operands(const Formula* formula, const array<unsigned int>& constants) { return true; }
 
-inline unsigned int index_of_any(const array<instance>& constants) {
-	for (unsigned int i = 0; i < constants.length; i++) {
-		if (constants[i].type == instance_type::ANY)
-			return i;
-	}
-	return constants.length;
-}
-
-inline unsigned int index_of_constant(const array<instance>& constants, unsigned int constant) {
-	for (unsigned int i = 0; i < constants.length; i++) {
-		if (constants[i].type == instance_type::CONSTANT && constants[i].constant == constant)
-			return i;
-	}
-	return constants.length;
-}
-
-inline unsigned int index_of_number(const array<instance>& constants, hol_number number) {
-	for (unsigned int i = 0; i < constants.length; i++) {
-		if (constants[i].type == instance_type::NUMBER && constants[i].number == number)
-			return i;
-	}
-	return constants.length;
-}
-
-inline unsigned int index_of_string(const array<instance>& constants, string* str) {
-	for (unsigned int i = 0; i < constants.length; i++) {
-		if (constants[i].type == instance_type::STRING && (constants[i].str == str || *constants[i].str == *str))
-			return i;
-	}
-	return constants.length;
-}
-
-inline bool contains_any(const array<instance>& constants) {
-	return index_of_any(constants) < constants.length;
-}
-
-template<typename ProofCalculus, typename Canonicalizer>
-inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
-		const typename ProofCalculus::Language* formula,
-		unsigned int variable, array<instance>& constants)
-{
-	unsigned int i = 0;
-	for (; i < constants.length; i++)
-		if (constants[i].type == instance_type::ANY) break;
-	if (i < constants.length)
-		swap(constants[i], constants[0]);
-	return filter_constants_helper(T, formula, variable, constants);
-}
-
-template<typename ProofCalculus, typename Canonicalizer>
+template<bool Hypothetical, typename ProofCalculus, typename Canonicalizer>
 bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants)
@@ -13814,6 +13963,8 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 		} else if ((left->type == TermType::VARIABLE && left->variable == variable)
 				|| (right->type == TermType::VARIABLE && right->variable == variable))
 		{
+			if (Hypothetical)
+				return constants.length != 0;
 			if (right->type == TermType::VARIABLE && right->variable == variable)
 				swap(left, right);
 			if (right->type == TermType::CONSTANT) {
@@ -13821,21 +13972,21 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				unsigned int index = index_of_constant(constants, constant_id);
 				if (index == constants.length && (!contains_any(constants) || T.ground_concepts[constant_id - T.new_constant_offset].types.keys != nullptr))
 					return false;
-				move(constants[index], constants[0]);
+				constants[0] = instance_constant(constant_id);
 				constants.length = 1;
 			} else if (right->type == TermType::NUMBER) {
 				hol_number number = right->number;
 				unsigned int index = index_of_number(constants, number);
 				if (index == constants.length && !contains_any(constants))
 					return false;
-				move(constants[index], constants[0]);
+				constants[0] = instance_number(number);
 				constants.length = 1;
 			} else if (right->type == TermType::STRING) {
 				string* str = &right->str;
 				unsigned int index = index_of_string(constants, str);
 				if (index == constants.length && !contains_any(constants))
 					return false;
-				move(constants[index], constants[0]);
+				constants[0] = instance_string(str);
 				constants.length = 1;
 			} else if (right->type == TermType::VARIABLE) {
 				/* no-op */
@@ -13962,6 +14113,8 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 		} else if (left->type == TermType::CONSTANT || right->type == TermType::CONSTANT
 				|| left->type == TermType::VARIABLE || right->type == TermType::VARIABLE)
 		{
+			if (Hypothetical)
+				return constants.length != 0;
 			if ((left->type != TermType::CONSTANT || left->constant == (unsigned int) built_in_predicates::UNKNOWN) && left->type != TermType::VARIABLE)
 				swap(left, right);
 			if (left->type == TermType::VARIABLE)
@@ -14091,6 +14244,8 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				&& ((left->binary.left->type == TermType::CONSTANT && left->binary.right->type == TermType::VARIABLE && left->binary.right->variable == variable)
 				 || (left->binary.right->type == TermType::CONSTANT && left->binary.left->type == TermType::VARIABLE && left->binary.left->variable == variable)))
 		{
+			if (Hypothetical)
+				return constants.length != 0;
 			for (unsigned int i = 0; i < constants.length; i++) {
 				if (constants[i].type == instance_type::ANY) {
 					continue;
@@ -14211,7 +14366,7 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 					constants.remove(index);
 
 				/* count the number of matching and mismatching types */
-				if (right->constant >= T.new_constant_offset) {
+				if (!Hypothetical && right->constant >= T.new_constant_offset) {
 					const concept<ProofCalculus>& c = T.ground_concepts[right->constant - T.new_constant_offset];
 					for (unsigned int i = 0; i < constants.length; i++) {
 						if (constants[i].type != instance_type::CONSTANT) continue;
@@ -14232,7 +14387,7 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				}
 
 				/* if this is a subset statement, increment `matching_types` if the set does indeed provably contain the element */
-				for (unsigned int i = 0; i < constants.length; i++) {
+				for (unsigned int i = 0; !Hypothetical && i < constants.length; i++) {
 					if (constants[i].type != instance_type::CONSTANT || constants[i].constant < T.new_constant_offset)
 						continue;
 					const concept<ProofCalculus>& c = T.ground_concepts[constants[i].constant - T.new_constant_offset];
@@ -14262,6 +14417,8 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 				} else if (constants[i].type != instance_type::CONSTANT || T.is_provably_not_a_set(constants[i].constant)) {
 					constants.remove(i);
 					i--;
+				} else if (Hypothetical) {
+					continue;
 				}
 				/* make sure `constants[i].constant` is not the arg1 of a name event */
 				else if (!negated && constants[i].constant >= T.new_constant_offset) {
@@ -14280,7 +14437,7 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 			}
 
 			/* check to make sure the args are type-correct */
-			if (!negated && right->type == TermType::CONSTANT) {
+			if (!Hypothetical && !negated && right->type == TermType::CONSTANT) {
 				/* if arg1 is a `name` constant, `left` cannot be `name` */
 				Term* arg1 = T.get_arg(right->constant, (unsigned int) built_in_predicates::ARG1);
 				if (arg1 != nullptr && arg1->type == TermType::CONSTANT && T.is_name_event(arg1->constant)) {
@@ -14329,16 +14486,16 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 					constants.remove(index);
 			}
 			/* make sure y could not be a set in `x(y)` */
-			for (unsigned int i = 0; i < constants.length; i++) {
+			for (unsigned int i = 0; !Hypothetical && i < constants.length; i++) {
 				if (constants[i].type == instance_type::ANY) {
 					continue;
-				} else if (constants[i].type != instance_type::CONSTANT || T.is_provably_a_set(constants[i].constant)) {
+				} else if (T.is_provably_a_set(constants[i].constant)) {
 					constants.remove(i);
 					i--;
 				}
 			}
 
-			if (!is_ambiguous(*left)) {
+			if (!Hypothetical && !is_ambiguous(*left)) {
 				/* count the number of matching and mismatching types */
 				for (unsigned int i = 0; i < constants.length; i++) {
 					if (constants[i].type != instance_type::CONSTANT || constants[i].constant < T.new_constant_offset) continue;
@@ -14401,11 +14558,12 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 
 			for (unsigned int i = 0; i < constants.length; i++) {
 				if (constants[i].type == instance_type::ANY) continue;
-				if (constants[i].type != instance_type::CONSTANT) {
+				if (constants[i].type != instance_type::CONSTANT && constants[i].type != instance_type::NUMBER) {
 					constants.remove(i--);
 					continue;
 				}
-				if (negated) continue;
+				if (Hypothetical || negated || constants[i].type != instance_type::CONSTANT)
+					continue;
 
 				/* check to make sure the args are type-correct */
 				unsigned int arg = constants[i].constant;
@@ -14452,11 +14610,30 @@ bool filter_constants_helper(const theory<ProofCalculus, Canonicalizer>& T,
 		}
 	} else if (formula->type == FormulaType::AND) {
 		for (unsigned int i = 0; i < formula->array.length; i++)
-			if (!filter_constants_helper(T, formula->array.operands[i], variable, constants)) return false;
+			if (!filter_constants_helper<Hypothetical>(T, formula->array.operands[i], variable, constants)) return false;
+	} else if (formula->type == FormulaType::OR) {
+		for (unsigned int i = 0; i < formula->array.length; i++)
+			if (!filter_constants_helper<true>(T, formula->array.operands[i], variable, constants)) return false;
 	} else if (formula->type == FormulaType::EXISTS || formula->type == FormulaType::FOR_ALL) {
-		return filter_constants_helper(T, formula->quantifier.operand, variable, constants);
+		return filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, variable, constants);
+	} else if (formula->type == FormulaType::IF_THEN) {
+		return filter_constants_helper<true>(T, formula->binary.left, variable, constants)
+			&& filter_constants_helper<true>(T, formula->binary.right, variable, constants);
 	}
 	return (constants.length > 0);
+}
+
+template<typename ProofCalculus, typename Canonicalizer>
+inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+		const typename ProofCalculus::Language* formula,
+		unsigned int variable, array<instance>& constants)
+{
+	unsigned int i = 0;
+	for (; i < constants.length; i++)
+		if (constants[i].type == instance_type::ANY) break;
+	if (i < constants.length)
+		swap(constants[i], constants[0]);
+	return filter_constants_helper<false>(T, formula, variable, constants);
 }
 
 template<bool Contradiction, typename ProofCalculus, typename Canonicalizer>

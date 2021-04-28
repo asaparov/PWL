@@ -37,6 +37,7 @@ bool contains_axiom(
 	typedef typename ProofCalculus::Language Formula;
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
+	typedef typename Formula::TermType TermType;
 
 	if (formula == NULL) {
 		fprintf(stderr, "contains_axiom WARNING: `formula` is null.\n");
@@ -55,16 +56,18 @@ bool contains_axiom(
 			Term* atom = Term::new_apply(Term::new_constant(predicate), &Term::template variables<0>::value);
 			if (atom == nullptr) return false;
 			Term::template variables<0>::value.reference_count++;
-			const pair<array<unsigned int>, array<unsigned int>>& types = T.atoms.get(*atom, contains);
+			const pair<array<instance>, array<instance>>& types = T.atoms.get(*atom, contains);
 			free(*atom); free(atom);
 			if (!contains) return false;
-			return types.key.contains(arg1->constant);
+			if (arg1->type == TermType::CONSTANT)
+				return index_of_constant(types.key, arg1->constant) < types.key.length;
+			else return index_of_number(types.key, arg1->number) < types.key.length;
 		} else {
 			/* `formula` is an atom of form `f(a,b)` */
 			relation rel = { 0, arg1->constant, arg2->constant };
-			const pair<array<unsigned int>, array<unsigned int>>& relations = T.relations.get(rel, contains);
+			const pair<array<instance>, array<instance>>& relations = T.relations.get(rel, contains);
 			if (!contains) return false;
-			return relations.key.contains(predicate);
+			return index_of_constant(relations.key, predicate) < relations.key.length;
 		}
 	} else if (formula->type == FormulaType::NOT && is_atomic(*formula->unary.operand)) {
 		if (arg2 == NULL) {
@@ -72,16 +75,18 @@ bool contains_axiom(
 			Term* atom = Term::new_apply(Term::new_constant(predicate), &Term::template variables<0>::value);
 			if (atom == nullptr) return false;
 			Term::template variables<0>::value.reference_count++;
-			const pair<array<unsigned int>, array<unsigned int>>& types = T.atoms.get(*atom, contains);
+			const pair<array<instance>, array<instance>>& types = T.atoms.get(*atom, contains);
 			free(*atom); free(atom);
 			if (!contains) return false;
-			return types.value.contains(arg1->constant);
+			if (arg1->type == TermType::CONSTANT)
+				return index_of_constant(types.value, arg1->constant) < types.value.length;
+			else return index_of_number(types.value, arg1->number) < types.value.length;
 		} else {
 			/* `formula` is an atom of form `~f(a,b)` */
 			relation rel = { 0, arg1->constant, arg2->constant };
-			const pair<array<unsigned int>, array<unsigned int>>& relations = T.relations.get(rel, contains);
+			const pair<array<instance>, array<instance>>& relations = T.relations.get(rel, contains);
 			if (!contains) return false;
-			return relations.value.contains(predicate);
+			return index_of_constant(relations.value, predicate) < relations.value.length;
 		}
 	} else {
 		return false;

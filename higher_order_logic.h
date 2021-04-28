@@ -11503,7 +11503,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	for (LogicalFormSet& diff : differences) {
 		if (first->type == hol_term_type::VARIABLE && get_term(diff)->type == hol_term_type::VARIABLE_PREIMAGE)
 			continue;
-		if (get_term(diff)->type != first->type)
+		if (get_term(diff)->type != first->type && !(first->type == hol_term_type::ANY_CONSTANT && get_term(diff)->type == hol_term_type::CONSTANT))
 			fprintf(stderr, "subtract_any: The root of the difference changed.\n");
 	}
 #endif
@@ -11901,7 +11901,7 @@ bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* s
 	for (LogicalFormSet& diff : differences) {
 		if (first->type == hol_term_type::VARIABLE && get_term(diff)->type == hol_term_type::VARIABLE_PREIMAGE)
 			continue;
-		if (get_term(diff)->type != first->type)
+		if (get_term(diff)->type != first->type && !(first->type == hol_term_type::ANY_CONSTANT && get_term(diff)->type == hol_term_type::CONSTANT))
 			fprintf(stderr, "subtract_any_right: The root of the difference changed.\n");
 	}
 #endif
@@ -12447,6 +12447,8 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 								intersect<BuiltInPredicates>(temp, new_term, first->any_array.right.operands[0]);
 							swap(temp, new_terms);
 							free_all(temp);
+							if (new_terms.length == 0)
+								return false;
 						}
 					}
 
@@ -12460,6 +12462,8 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 								intersect<BuiltInPredicates>(temp, new_term, first->any_array.any.operands[0]);
 							swap(temp, new_terms);
 							free_all(temp);
+							if (new_terms.length == 0)
+								return false;
 						}
 					}
 
@@ -15103,6 +15107,15 @@ inline bool intersect_with_any_right(array<LogicalFormSet>& dst, hol_term* first
 				return false;
 			}
 			for (LogicalFormSet& new_term : temp) {
+				if (second == get_term(new_term)) {
+					/* avoid infinite recursion from the call to `intersect` in the next iteration of the outer loop */
+					free_all(temp); free_all(intersection);
+					free_all(new_differences); free_all(differences);
+					if (ComputeIntersection)
+						return add<true, false>(dst, second);
+					return true;
+				}
+
 				for (pair<hol_term*, array<node_alignment>>& term : intersection) {
 					if (!emplace<false>(new_differences, get_term(new_term), get_variable_map(prev), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
 						free_all(temp); free_all(intersection);
