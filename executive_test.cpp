@@ -341,9 +341,7 @@ set_seed(1356941742);
 		}
 	}
 
-run_console(stdin, "\nEnter command: ", parser, names);
-
-debug_flag = true;
+//run_console(stdin, "\nEnter command: ", parser, names);
 
 //run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 /*for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
@@ -413,8 +411,9 @@ return EXIT_SUCCESS;*/
 		return EXIT_FAILURE;
 	}
 
-	/* read the articles */
-	theory<natural_deduction<hol_term, true>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
+	/* construct the theory */
+	typedef theory<natural_deduction<hol_term, false>, polymorphic_canonicalizer<true, false, built_in_predicates>> Theory;
+	Theory T(1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
@@ -432,7 +431,8 @@ return EXIT_SUCCESS;*/
 	auto term_indices_prior = make_levy_process(poisson_distribution(4.0), poisson_distribution(1.5));
 	auto proof_prior = make_canonicalized_proof_prior(axiom_prior, conjunction_introduction_prior, conjunction_elimination_prior,
 			universal_introduction_prior, universal_elimination_prior, term_indices_prior, poisson_distribution(20.0), 0.00001);
-	decltype(proof_prior)::PriorState proof_axioms;
+	typedef decltype(proof_prior)::PriorState PriorStateType;
+	PriorStateType proof_axioms;
 	if (!parser.invert_name_map(names)) {
 		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
@@ -444,6 +444,48 @@ for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
 return EXIT_SUCCESS;*/
+
+/* read the GeoBase sentences */
+in = fopen("geobase_simple.txt", "rb");
+if (in == nullptr) {
+	fprintf(stderr, "ERROR: Unable to open file for reading.\n");
+	for (auto entry : names) free(entry.key);
+	return EXIT_FAILURE;
+}
+array<char> line(1024);
+while (true) {
+	line.clear();
+	int read = read_line(line, in);
+	if (read == 0) {
+		break;
+	} else if (read > 0) {
+		if (!line.ensure_capacity(line.length + 1))
+			break;
+		line[line.length++] = '\0';
+		if (!read_sentence(corpus, parser, line.data, T, names, seed_entities, proof_prior, proof_axioms)) {
+			fprintf(stderr, "ERROR: Unable to read sentence '%s'.\n", line.data);
+			for (auto entry : names) free(entry.key);
+			return EXIT_FAILURE;
+		}
+
+		auto collector = make_log_probability_collector(T, proof_prior);
+		for (unsigned int j = 0; j < 4; j++) {
+			for (unsigned int t = 0; t < 100; t++) {
+				fprintf(stderr, "j = %u, t = %u\n", j, t);
+				bool print_debug = false;
+				if (print_debug) T.template print_axioms<true>(stdout, *debug_terminal_printer);
+				if (print_debug) { T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
+				do_mh_step(T, proof_prior, proof_axioms, collector);
+			}
+
+			if (j + 1 < 4) {
+				for (unsigned int t = 0; t < 20; t++)
+					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
+			}
+		}
+		T.print_axioms(stdout, *debug_terminal_printer); fflush(stdout);
+	}
+}
 
 /* run GeoQuery experiments */
 run_geoquery_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "geoquery.jsonl", "geoquery_results.txt");
@@ -458,6 +500,7 @@ return EXIT_SUCCESS;
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/
 
+	/* read the articles */
 	/*read_article(names.get("Des Moines"), corpus, parser, T, names, seed_entities, proof_prior);
 for (auto entry : names) free(entry.key);
 return EXIT_SUCCESS;*/

@@ -2106,6 +2106,10 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 				for (unsigned int j = 0; j < new_generated_derivation_count; j++) free(new_generated_derivations[j]);
 				return false;
 			}
+
+			if ((temp_answers.size > 1 && temp_answers.values[temp_answers.size - 1] - temp_answers.values[temp_answers.size - 2] >= SUFFICIENT_KNOWLEDGE_THRESHOLD && temp_answers.keys[temp_answers.size - 1] != UNKNOWN_CONCEPT_NAME)
+			 || (temp_answers.size == 1 && temp_answers.keys[0] != UNKNOWN_CONCEPT_NAME))
+				break;
 		}
 		free_logical_forms(logical_forms, parse_count);
 		if (swapped_logical_form != nullptr) { free(*swapped_logical_form); free(swapped_logical_form); }

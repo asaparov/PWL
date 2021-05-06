@@ -926,7 +926,7 @@
 		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(PRO:try_remove_adv
+					(PRO:try_remove_adv,require_no_correlator
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
 				)
@@ -1732,7 +1732,7 @@
 		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(PRO:try_remove_adv
+					(PRO:try_remove_adv,require_no_correlator
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
 				)
@@ -2292,7 +2292,7 @@
 			(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 				(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 					(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-						(PRO:try_remove_adv
+						(PRO:try_remove_adv,require_no_correlator
 							(IT:require_ref_in_set "it")
 						)
 					)
@@ -2778,6 +2778,38 @@
 )}
 	{?[c]:(cat(c) & ~?[f]:((arg1(f)=c) & capable_of(fly)(f) & present(f)))};
 
+: # A bird can fly.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(A "a")
+					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_no_constant_in_set
+						(NOMINAL_R:identity
+							(NOMINAL_L:identity
+								(N:require_no_correlator,select_predicate_in_set "cat"/"cat")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_L:require_no_be
+					(MD:try_remove_correlator,try_remove_not
+						(CAN:require_no_not,remove_capable_of,require_present "can")
+					)
+					(VP_L:try_remove_correlated,add_infinitive,require_no_req_subject,try_remove_req_aux,require_no_subjunctive,remove_higher_order_predicate
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "fly"/"fly")
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[c]:(cat(c) & ?[f]:((arg1(f)=c) & capable_of(fly)(f) & present(f)))};
+
 : # names
 {(V "name"/"names")}
 	{?[x]:(denominate(x) & present(x))[index:sg,arg2]};
@@ -2804,7 +2836,7 @@
 		(S'':try_add_plural,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(PRO:try_remove_adv
+					(PRO:try_remove_adv,require_no_correlator
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
 				)
@@ -2851,7 +2883,7 @@
 		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(PRO:try_remove_adv
+					(PRO:try_remove_adv,require_no_correlator
 						(WHERE:require_no_wh_minus,require_locate_of_lambda "where")
 					)
 				)
@@ -2981,7 +3013,7 @@
 		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(PRO:try_remove_adv
+					(PRO:try_remove_adv,require_no_correlator
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
 				)
@@ -3320,7 +3352,7 @@
 		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
 			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
 				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
-					(PRO:try_remove_adv
+					(PRO:try_remove_adv,require_no_correlator
 						(WHAT:require_no_wh_minus,require_predicate_of_lambda "what")
 					)
 				)

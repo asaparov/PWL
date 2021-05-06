@@ -1465,7 +1465,7 @@ NP -> Q:try_add_plural,try_remove_adv,require_no_correlator,require_predicative_
 
 # pronouns
 # NP {A} -> PRO {A}
-NP -> PRO:try_remove_adv
+NP -> PRO:try_remove_adv,require_no_correlator
 
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~![x]:(X(x) => P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ![x]:(X(x) => P(x))))}
 # NP {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ~?[x]:(X(x) & P(x))))} -> NO NOMINAL_R {^[P]:(... & ?[X]:(F(X=^[x]:f(x)) & ?[x]:(X(x) & P(x))))}

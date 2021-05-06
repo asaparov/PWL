@@ -1765,6 +1765,35 @@ inline bool get_free_variables(const hol_term& src, array<unsigned int>& variabl
 	return visit(src, visitor);
 }
 
+struct free_variable_detector {
+	array<unsigned int> bound_variables;
+
+	free_variable_detector() : bound_variables(8) { }
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, free_variable_detector& visitor) {
+	if (Type == hol_term_type::VARIABLE || Type == hol_term_type::VARIABLE_PREIMAGE) {
+		if (!visitor.bound_variables.contains(term.variable))
+			return false;
+	} else if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA) {
+		return visitor.bound_variables.add(term.quantifier.variable);
+	}
+	return true;
+}
+
+template<hol_term_type Type>
+inline bool end_visit(const hol_term& term, free_variable_detector& visitor) {
+	if (Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::LAMBDA)
+		visitor.bound_variables.remove(visitor.bound_variables.index_of(term.quantifier.variable));
+	return true;
+}
+
+inline bool has_free_variables(const hol_term& src) {
+	free_variable_detector visitor;
+	return !visit(src, visitor);
+}
+
 struct bound_variable_collector {
 	array<unsigned int>& bound_variables;
 };

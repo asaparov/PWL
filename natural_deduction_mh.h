@@ -1494,7 +1494,7 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
-	array<instance> constants(T.ground_concept_capacity + 1);
+	array<instance> constants(T.ground_concept_capacity + T.constant_types.size + T.constant_negated_types.size + 1);
 	array<hol_number> numbers(64); array<string*> strings(64);
 	for (unsigned int i = 0; i < T.ground_concept_capacity; i++) {
 		if (T.ground_concepts[i].types.keys != NULL) {
@@ -1526,7 +1526,7 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 	constants[constants.length].matching_types = 0;
 	constants[constants.length].mismatching_types = 0;
 	constants[constants.length++].type = instance_type::ANY;
-	if (!constants.ensure_capacity(constants.length + numbers.length + strings.length))
+	if (!constants.ensure_capacity(constants.length + numbers.length + strings.length + T.constant_types.size + T.constant_negated_types.size))
 		return false;
 	for (hol_number number : numbers) {
 		constants[constants.length].type = instance_type::NUMBER;
@@ -1538,6 +1538,30 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 		constants[constants.length].matching_types = 0;
 		constants[constants.length].mismatching_types = 0;
 		constants[constants.length++].str = str;
+	} for (const auto& entry : T.constant_types) {
+		if (entry.key.binary.right->type == TermType::NUMBER) {
+			constants[constants.length].type = instance_type::NUMBER;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
+			constants[constants.length++].number = entry.key.binary.right->number;
+		} else if (entry.key.binary.right->type == TermType::STRING) {
+			constants[constants.length].type = instance_type::STRING;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
+			constants[constants.length++].str = &entry.key.binary.right->str;
+		}
+	} for (const auto& entry : T.constant_negated_types) {
+		if (entry.key.binary.right->type == TermType::NUMBER) {
+			constants[constants.length].type = instance_type::NUMBER;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
+			constants[constants.length++].number = entry.key.binary.right->number;
+		} else if (entry.key.binary.right->type == TermType::STRING) {
+			constants[constants.length].type = instance_type::STRING;
+			constants[constants.length].matching_types = 0;
+			constants[constants.length].mismatching_types = 0;
+			constants[constants.length++].str = &entry.key.binary.right->str;
+		}
 	}
 
 	if (!filter_constants_helper<false>(T, quantified, variable, constants))
@@ -1554,6 +1578,15 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 		{
 			break;
 		}
+	}
+
+	if (index == constants.length) {
+		/* NOTE: this could happen if an existential quantifier is instantiated
+		   as an integer, which was previously the size of a set, but a
+		   subsequent MH transition has changed the size of that set, and so
+		   the original integer is not a member of `constants` */
+		for (index = 0; index < constants.length; index++)
+			if (constants[index].type == instance_type::ANY) break;
 	}
 
 	double sum;
@@ -3256,10 +3289,10 @@ bool are_mergeable(
 			return false;
 		if (second->constant == first->constant)
 			return true;
-		Term* first_arg1 = T.get_arg(first->constant, (unsigned int) built_in_predicates::ARG1);
-		Term* first_arg2 = T.get_arg(first->constant, (unsigned int) built_in_predicates::ARG2);
-		Term* second_arg1 = T.get_arg(second->constant, (unsigned int) built_in_predicates::ARG1);
-		Term* second_arg2 = T.get_arg(second->constant, (unsigned int) built_in_predicates::ARG2);
+		Term* first_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(first->constant);
+		Term* first_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(first->constant);
+		Term* second_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(second->constant);
+		Term* second_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(second->constant);
 
 		if (first_arg1 != nullptr && second_arg1 != nullptr) {
 			if (first_arg1->type == TermType::CONSTANT) {
@@ -3311,33 +3344,36 @@ bool get_mergeable_events(
 	for (unsigned int i = 0; i < T.ground_concept_capacity; i++) {
 		if (T.ground_concepts[i].types.keys == nullptr) continue;
 
-		Term* first_arg1 = T.get_arg(i + T.new_constant_offset, (unsigned int) built_in_predicates::ARG1);
-		Term* first_arg2 = T.get_arg(i + T.new_constant_offset, (unsigned int) built_in_predicates::ARG2);
+		Term* first_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(i + T.new_constant_offset);
+		Term* first_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(i + T.new_constant_offset);
 
-		for (unsigned int j = i + 1; j < T.ground_concept_capacity; j++) {
-			if (T.ground_concepts[j].types.keys == nullptr) continue;
+		array<unsigned int> other_concepts(8);
+		for (const auto& first_type : T.ground_concepts[i].types) {
+			const array<instance>& constants = T.atoms.get(first_type.key).key;
+			for (const instance& constant : constants) {
+				if (constant.type != instance_type::CONSTANT || constant.constant < T.new_constant_offset || constant.constant == i + T.new_constant_offset)
+					continue;
 
-			/* make sure concepts `i` and `j` share at least one type */
-			bool found_common_type = false;
-			for (const auto& first_type : T.ground_concepts[i].types) {
-				for (const auto& second_type : T.ground_concepts[j].types) {
-					if (first_type.key == second_type.key) {
-						found_common_type = true;
-						break;
-					}
-				}
-				if (found_common_type) break;
+				/* only consider pairs of concepts that share at least one type */
+				if (!other_concepts.add(constant.constant))
+					return false;
 			}
-			if (!found_common_type) continue;
+		}
 
-			Term* second_arg1 = T.get_arg(j + T.new_constant_offset, (unsigned int) built_in_predicates::ARG1);
-			Term* second_arg2 = T.get_arg(j + T.new_constant_offset, (unsigned int) built_in_predicates::ARG2);
+		if (other_concepts.length > 1) {
+			sort(other_concepts);
+			unique(other_concepts);
+		}
+
+		for (unsigned int j : other_concepts) {
+			Term* second_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(j);
+			Term* second_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(j);
 
 			relation first, second;
 			first.predicate = T.new_constant_offset + i;
 			first.arg1 = ((first_arg1 != nullptr && first_arg1->type == TermType::CONSTANT) ? first_arg1->constant : 0);
 			first.arg2 = ((first_arg2 != nullptr && first_arg2->type == TermType::CONSTANT) ? first_arg2->constant : 0);
-			second.predicate = T.new_constant_offset + j;
+			second.predicate = j;
 			second.arg1 = ((second_arg1 != nullptr && second_arg1->type == TermType::CONSTANT) ? second_arg1->constant : 0);
 			second.arg2 = ((second_arg2 != nullptr && second_arg2->type == TermType::CONSTANT) ? second_arg2->constant : 0);
 
@@ -3372,8 +3408,8 @@ bool get_splittable_events(
 	for (unsigned int i = 0; i < T.ground_concept_capacity; i++) {
 		if (T.ground_concepts[i].types.keys == nullptr) continue;
 
-		Term* arg1 = T.get_arg(i + T.new_constant_offset, (unsigned int) built_in_predicates::ARG1);
-		Term* arg2 = T.get_arg(i + T.new_constant_offset, (unsigned int) built_in_predicates::ARG2);
+		Term* arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(i + T.new_constant_offset);
+		Term* arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(i + T.new_constant_offset);
 
 		relation fragment;
 		fragment.predicate = T.new_constant_offset + i;
