@@ -1327,7 +1327,7 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 {
 	double* probabilities = (double*) malloc(sizeof(double) * constants.length);
 	if (probabilities == nullptr) {
-		fprintf(stderr, "filter_constants ERROR: Out of memory.\n");
+		fprintf(stderr, "compute_constant_probabilities ERROR: Out of memory.\n");
 		return nullptr;
 	}
 	sum = 0.0;
@@ -1339,12 +1339,16 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 }
 
 template<typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
-inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
 		proof_sampler<IsExploratory>& sampler)
 {
-	if (!filter_constants_helper<false>(T, formula, variable, constants))
+	if (!get_possible_constants(T, constants))
+		return false;
+
+	array<pair<unsigned int, bool>> new_name_events(8);
+	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events))
 		return false;
 
 	if (IsExploratory) {
@@ -1405,7 +1409,7 @@ template<typename Formula, bool IsExploratory>
 constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler<IsExploratory>& sampler) { return true; }
 
 template<typename Formula, bool IsExploratory>
-inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_sampler<IsExploratory>& sampler) {
+inline void finished_constants(const Formula* formula, proof_sampler<IsExploratory>& sampler) {
 	/*bool contains; unsigned int bucket;
 	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
 	sampler.all_descendants_inconsistent = (inconsistent_constants.size == original_constant_count);
@@ -1441,11 +1445,14 @@ template<typename Formula>
 constexpr bool filter_operands(const Formula* formula, array<unsigned int>& indices, inverse_proof_sampler& sampler) { return true; }
 
 template<typename ProofCalculus, typename Canonicalizer>
-constexpr bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
 		inverse_proof_sampler& sampler)
 {
+	if (!get_possible_constants(T, constants))
+		return false;
+	shuffle(constants);
 	return true;
 }
 
@@ -1491,80 +1498,14 @@ inline bool on_undo_filter_operands(Formula* formula, inverse_proof_sampler& sam
 template<typename Theory, typename Formula>
 inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typename Formula::Term* term, unsigned int variable, inverse_proof_sampler& sampler)
 {
-	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
 	array<instance> constants(T.ground_concept_capacity + T.constant_types.size + T.constant_negated_types.size + 1);
-	array<hol_number> numbers(64); array<string*> strings(64);
-	for (unsigned int i = 0; i < T.ground_concept_capacity; i++) {
-		if (T.ground_concepts[i].types.keys != NULL) {
-			constants[constants.length].type = instance_type::CONSTANT;
-			constants[constants.length].matching_types = 0;
-			constants[constants.length].mismatching_types = 0;
-			constants[constants.length++].constant = T.new_constant_offset + i;
-
-			for (const auto& entry : T.ground_concepts[i].function_values) {
-				Term* constant = entry.value->formula->binary.right;
-				if (constant->type == TermType::NUMBER) {
-					if (!numbers.contains(constant->number) && !numbers.add(constant->number)) return false;
-				} else if (constant->type == TermType::STRING) {
-					bool contains = false;
-					for (const string* str : strings)
-						if (str == &constant->str || *str == constant->str) { contains = true; break; }
-					if (!contains && !strings.add(&constant->str)) return false;
-				}
-			}
-		}
-	} for (unsigned int i = 1; i < T.sets.set_count + 1; i++) {
-		if (T.sets.sets[i].size_axioms.data == nullptr) continue;
-		hol_number number;
-		number.integer = T.sets.sets[i].set_size;
-		number.decimal = 0;
-		if (!numbers.contains(number) && !numbers.add(number))
-			return false;
-	}
-	constants[constants.length].matching_types = 0;
-	constants[constants.length].mismatching_types = 0;
-	constants[constants.length++].type = instance_type::ANY;
-	if (!constants.ensure_capacity(constants.length + numbers.length + strings.length + T.constant_types.size + T.constant_negated_types.size))
+	if (!get_possible_constants(T, constants))
 		return false;
-	for (hol_number number : numbers) {
-		constants[constants.length].type = instance_type::NUMBER;
-		constants[constants.length].matching_types = 0;
-		constants[constants.length].mismatching_types = 0;
-		constants[constants.length++].number = number;
-	} for (string* str : strings) {
-		constants[constants.length].type = instance_type::STRING;
-		constants[constants.length].matching_types = 0;
-		constants[constants.length].mismatching_types = 0;
-		constants[constants.length++].str = str;
-	} for (const auto& entry : T.constant_types) {
-		if (entry.key.binary.right->type == TermType::NUMBER) {
-			constants[constants.length].type = instance_type::NUMBER;
-			constants[constants.length].matching_types = 0;
-			constants[constants.length].mismatching_types = 0;
-			constants[constants.length++].number = entry.key.binary.right->number;
-		} else if (entry.key.binary.right->type == TermType::STRING) {
-			constants[constants.length].type = instance_type::STRING;
-			constants[constants.length].matching_types = 0;
-			constants[constants.length].mismatching_types = 0;
-			constants[constants.length++].str = &entry.key.binary.right->str;
-		}
-	} for (const auto& entry : T.constant_negated_types) {
-		if (entry.key.binary.right->type == TermType::NUMBER) {
-			constants[constants.length].type = instance_type::NUMBER;
-			constants[constants.length].matching_types = 0;
-			constants[constants.length].mismatching_types = 0;
-			constants[constants.length++].number = entry.key.binary.right->number;
-		} else if (entry.key.binary.right->type == TermType::STRING) {
-			constants[constants.length].type = instance_type::STRING;
-			constants[constants.length].matching_types = 0;
-			constants[constants.length].mismatching_types = 0;
-			constants[constants.length++].str = &entry.key.binary.right->str;
-		}
-	}
 
-	if (!filter_constants_helper<false>(T, quantified, variable, constants))
+	array<pair<unsigned int, bool>> new_name_events(8);
+	if (!filter_constants_helper<false>(T, quantified, variable, constants, new_name_events))
 		return false;
 
 	unsigned int index;
@@ -1606,7 +1547,7 @@ template<typename Formula>
 constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, inverse_proof_sampler& sampler) { return true; }
 
 template<typename Formula>
-inline void finished_constants(const Formula* formula, unsigned int original_constant_count, inverse_proof_sampler& sampler) { }
+inline void finished_constants(const Formula* formula, inverse_proof_sampler& sampler) { }
 
 struct undo_remove_sets {
 	array<unsigned int>& removed_set_sizes;
@@ -2240,27 +2181,25 @@ inline bool filter_operands(const Formula* formula, array<unsigned int>& indices
 }
 
 template<typename ProofCalculus, typename Canonicalizer>
-inline bool filter_constants(const theory<ProofCalculus, Canonicalizer>& T,
+inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
 		proof_initializer& initializer)
 {
-	if (!filter_constants_helper<false>(T, formula, variable, constants))
-		return false;
-
+#if !defined(NDEBUG)
 	if (initializer.constant_position == initializer.expected_constants.length) {
-		fprintf(stderr, "filter_constants ERROR: `proof_initializer` has no further `expected_constants`.\n");
+		fprintf(stderr, "get_constants ERROR: `proof_initializer` has no further `expected_constants`.\n");
 		exit(EXIT_FAILURE);
 	}
-	instance expected_constant = initializer.expected_constants[initializer.constant_position];
-	if (expected_constant.type == instance_type::CONSTANT && T.ground_concepts[expected_constant.constant - T.new_constant_offset].types.keys == nullptr)
-		expected_constant = instance_any();
-	if (!constants.contains(expected_constant)) {
-		constants.length = 0;
-		return false;
-	}
-	constants[0] = expected_constant;
+#endif
+
+	constants[0] = initializer.expected_constants[initializer.constant_position];
 	constants.length = 1;
+
+	array<pair<unsigned int, bool>> new_name_events(8);
+	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events))
+		return false;
+
 	initializer.constant_position++;
 	return true;
 }
@@ -2284,7 +2223,7 @@ inline bool inconsistent_constant(const Formula* formula, const instance& consta
 }
 
 template<typename Formula>
-inline void finished_constants(const Formula* formula, unsigned int original_constant_count, proof_initializer& initializer) { }
+inline void finished_constants(const Formula* formula, proof_initializer& initializer) { }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline bool compute_new_set_size(
@@ -3277,7 +3216,11 @@ bool are_mergeable(
 		const typename Formula::Term* first,
 		const typename Formula::Term* second,
 		const relation& first_fragment,
-		const relation& second_fragment)
+		const relation& second_fragment,
+		const array<typename Formula::Term*>& first_name_terms,
+		const array<typename Formula::Term*>& second_name_terms,
+		const typename Formula::Term* first_arg1,
+		const typename Formula::Term* first_arg2)
 {
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
@@ -3289,10 +3232,29 @@ bool are_mergeable(
 			return false;
 		if (second->constant == first->constant)
 			return true;
-		Term* first_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(first->constant);
-		Term* first_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(first->constant);
 		Term* second_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(second->constant);
 		Term* second_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(second->constant);
+
+		if ((first_arg1 != nullptr && *first_arg1 == *second)
+		 || (first_arg2 != nullptr && *first_arg2 == *second)
+		 || (second_arg1 != nullptr && *second_arg1 == *first)
+		 || (second_arg2 != nullptr && *second_arg2 == *first))
+		{
+			/* prevent cases where an event is an argument of itself */
+			return false;
+		}
+
+		/* do not consider merging concepts if it will create a concept with more names */
+		unsigned int a = 0, b = 0;
+		while (a < first_name_terms.length && b < second_name_terms.length) {
+			if (*first_name_terms[a] == *second_name_terms[b]) {
+				a++; b++;
+			} else {
+				break;
+			}
+		}
+		if (a < first_name_terms.length || b < second_name_terms.length)
+			return false;
 
 		if (first_arg1 != nullptr && second_arg1 != nullptr) {
 			if (first_arg1->type == TermType::CONSTANT) {
@@ -3347,6 +3309,20 @@ bool get_mergeable_events(
 		Term* first_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(i + T.new_constant_offset);
 		Term* first_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(i + T.new_constant_offset);
 
+		array<Term*> first_name_terms(4);
+		array<Term*> first_arg1_name_terms(4);
+		array<Term*> first_arg2_name_terms(4);
+		if (!T.get_concept_names(i + T.new_constant_offset, first_name_terms)
+		 || (first_arg1 != nullptr && first_arg1->type == TermType::CONSTANT && !T.get_concept_names(first_arg1->constant, first_arg1_name_terms))
+		 || (first_arg2 != nullptr && first_arg2->type == TermType::CONSTANT && !T.get_concept_names(first_arg2->constant, first_arg2_name_terms)))
+			return false;
+		if (first_name_terms.length > 1)
+			sort(first_name_terms, pointer_sorter());
+		if (first_arg1_name_terms.length > 1)
+			sort(first_arg1_name_terms, pointer_sorter());
+		if (first_arg2_name_terms.length > 1)
+			sort(first_arg2_name_terms, pointer_sorter());
+
 		array<unsigned int> other_concepts(8);
 		for (const auto& first_type : T.ground_concepts[i].types) {
 			const array<instance>& constants = T.atoms.get(first_type.key).key;
@@ -3365,9 +3341,54 @@ bool get_mergeable_events(
 			unique(other_concepts);
 		}
 
+		Term* arg1_of_first_arg1;
+		Term* arg2_of_first_arg1;
+		Term* arg1_of_first_arg2;
+		Term* arg2_of_first_arg2;
+		if (first_arg1 != nullptr && first_arg1->type == TermType::CONSTANT) {
+			arg1_of_first_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(first_arg1->constant);
+			arg2_of_first_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(first_arg1->constant);
+		} else {
+			arg1_of_first_arg1 = nullptr;
+			arg2_of_first_arg1 = nullptr;
+		} if (first_arg2 != nullptr && first_arg2->type == TermType::CONSTANT) {
+			arg1_of_first_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(first_arg2->constant);
+			arg2_of_first_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(first_arg2->constant);
+		} else {
+			arg1_of_first_arg2 = nullptr;
+			arg2_of_first_arg2 = nullptr;
+		}
+
 		for (unsigned int j : other_concepts) {
+			/* do not consider other concepts `j` if it results in a new concept with more names */
+			array<Term*> second_name_terms(4);
+			if (!T.get_concept_names(j, second_name_terms))
+				return false;
+			if (second_name_terms.length > 1)
+				sort(second_name_terms, pointer_sorter());
+			unsigned int a = 0, b = 0;
+			while (a < first_name_terms.length && b < second_name_terms.length) {
+				if (*first_name_terms[a] == *second_name_terms[b]) {
+					a++; b++;
+				} else {
+					break;
+				}
+			}
+			if (a < first_name_terms.length || b < second_name_terms.length)
+				continue;
+
 			Term* second_arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(j);
 			Term* second_arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(j);
+
+			array<Term*> second_arg1_name_terms(4);
+			array<Term*> second_arg2_name_terms(4);
+			if ((second_arg1 != nullptr && second_arg1->type == TermType::CONSTANT && !T.get_concept_names(second_arg1->constant, second_arg1_name_terms))
+			 || (second_arg2 != nullptr && second_arg2->type == TermType::CONSTANT && !T.get_concept_names(second_arg2->constant, second_arg2_name_terms)))
+				return false;
+			if (second_arg1_name_terms.length > 1)
+				sort(second_arg1_name_terms, pointer_sorter());
+			if (second_arg2_name_terms.length > 1)
+				sort(second_arg2_name_terms, pointer_sorter());
 
 			relation first, second;
 			first.predicate = T.new_constant_offset + i;
@@ -3381,8 +3402,8 @@ bool get_mergeable_events(
 			if ((first.arg1 == 0 && first.arg2 == 0)
 			 || first.arg1 == first.predicate || first.arg2 == first.predicate
 			 || (first.arg1 == first.arg2 && first.arg1 != 0)
-			 || !are_mergeable(T, first_arg1, second_arg1, first, second)
-			 || !are_mergeable(T, first_arg2, second_arg2, first, second))
+			 || !are_mergeable(T, first_arg1, second_arg1, first, second, first_arg1_name_terms, second_arg1_name_terms, arg1_of_first_arg1, arg2_of_first_arg1)
+			 || !are_mergeable(T, first_arg2, second_arg2, first, second, first_arg2_name_terms, second_arg2_name_terms, arg1_of_first_arg2, arg2_of_first_arg2))
 				continue;
 
 			if (first.arg1 == 0 && second.arg1 != 0)

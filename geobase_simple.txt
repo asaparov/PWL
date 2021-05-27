@@ -1,0 +1,100 @@
+Alabama is one of the 50 states.
+Alaska is a state.
+Arizona is a state.
+Arkansas is a state.
+California is a state.
+Colorado is a state.
+Connecticut is a state.
+Delaware is a state.
+Florida is a state.
+Georgia is a state.
+Hawaii is a state.
+Idaho is a state.
+Illinois is a state.
+Indiana is a state.
+Iowa is a state.
+Kansas is a state.
+Kentucky is a state.
+Louisiana is a state.
+Maine is a state.
+Maryland is a state.
+Massachusetts is a state.
+Michigan is a state.
+Minnesota is a state.
+Mississippi is a state.
+Missouri is a state.
+Montana is a state.
+Nebraska is a state.
+Nevada is a state.
+New Hampshire is a state.
+New Jersey is a state.
+New Mexico is a state.
+New York is a state.
+North Carolina is a state.
+North Dakota is a state.
+Ohio is a state.
+Oklahoma is a state.
+Oregon is a state.
+Pennsylvania is a state.
+Rhode Island is a state.
+South Carolina is a state.
+South Dakota is a state.
+Tennessee is a state.
+Texas is a state.
+Utah is a state.
+Vermont is a state.
+Virginia is a state.
+Washington is a state.
+West Virginia is a state.
+Wisconsin is a state.
+Wyoming is a state.
+The area of Alabama is 51700 square miles.
+The area of Alaska is 591000 square miles.
+The area of Arizona is 114000 square miles.
+The area of Arkansas is 53200 square miles.
+The area of California is 158000 square miles.
+The area of Colorado is 104000 square miles.
+The area of Connecticut is 5020 square miles.
+The area of Delaware is 2044 square miles.
+The area of Florida is 68664 square miles.
+The area of Georgia is 58900 square miles.
+The area of Hawaii is 6471 square miles.
+The area of Idaho is 83000 square miles.
+The area of Illinois is 56300 square miles.
+The area of Indiana is 36200 square miles.
+The area of Iowa is 56300 square miles.
+The area of Kansas is 82300 square miles.
+The area of Kentucky is 82300 square miles.
+The area of Louisiana is 47700 square miles.
+The area of Maine is 33265 square miles.
+The area of Maryland is 10460 square miles.
+The area of Massachusetts is 8284 square miles.
+The area of Michigan is 58500 square miles.
+The area of Minnesota is 84400 square miles.
+The area of Mississippi is 47700 square miles.
+The area of Missouri is 69700 square miles.
+The area of Montana is 147000 square miles.
+The area of Nebraska is 77300 square miles.
+The area of Nevada is 110500 square miles.
+The area of New Hampshire is 9279 square miles.
+The area of New Jersey is 7787 square miles.
+The area of New Mexico is 121600 square miles.
+The area of New York is 49100 square miles.
+The area of North Carolina is 52670 square miles.
+The area of North Dakota is 70700 square miles.
+The area of Ohio is 41300 square miles.
+The area of Oklahoma is 69950 square miles.
+The area of Oregon is 97073 square miles.
+The area of Pennsylvania is 45308 square miles.
+The area of Rhode Island is 1212 square miles.
+The area of South Carolina is 31113 square miles.
+The area of South Dakota is 77116 square miles.
+The area of Tennessee is 42140 square miles.
+The area of Texas is 266807 square miles.
+The area of Utah is 84900 square miles.
+The area of Vermont is 9614 square miles.
+The area of Virginia is 40760 square miles.
+The area of Washington is 68139 square miles.
+The area of West Virginia is 24200 square miles.
+The area of Wisconsin is 56153 square miles.
+The area of Wyoming is 97809 square miles.

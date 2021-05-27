@@ -11,7 +11,8 @@
 
 using namespace core;
 
-enum class nd_step_type : uint_fast16_t
+typedef uint_fast16_t nd_step_type_specifier;
+enum class nd_step_type : nd_step_type_specifier
 {
 	AXIOM = 0,
 	PARAMETER,
@@ -562,6 +563,259 @@ struct nd_step
 			core::swap(first_data[i], second_data[i]);
 	}
 };
+
+template<typename Formula>
+bool get_proof_map(const nd_step<Formula>* proof,
+		hash_map<const nd_step<Formula>*, unsigned int>& pointer_map,
+		hash_map<const Formula*, unsigned int>& formula_map)
+{
+	if (!pointer_map.check_size())
+		return false;
+	bool contains; unsigned int index;
+	pointer_map.get(proof, contains, index);
+	if (contains) return true;
+	pointer_map.table.keys[index] = proof;
+	pointer_map.values[index] = pointer_map.table.size;
+	pointer_map.table.size++;
+
+	switch (proof->type) {
+	case nd_step_type::PARAMETER:
+	case nd_step_type::ARRAY_PARAMETER:
+		return true;
+	case nd_step_type::TERM_PARAMETER:
+		return get_formula_map(proof->term, formula_map);
+	case nd_step_type::AXIOM:
+	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
+	case nd_step_type::FORMULA_PARAMETER:
+		return get_formula_map(proof->formula, formula_map);
+	case nd_step_type::CONJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_ELIMINATION:
+		for (const nd_step<Formula>* operand : proof->operand_array)
+			if (!get_proof_map(operand, pointer_map, formula_map)) return false;
+		return true;
+	case nd_step_type::BETA_EQUIVALENCE:
+	case nd_step_type::CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+	case nd_step_type::IMPLICATION_INTRODUCTION:
+	case nd_step_type::IMPLICATION_ELIMINATION:
+	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+	case nd_step_type::PROOF_BY_CONTRADICTION:
+	case nd_step_type::NEGATION_ELIMINATION:
+	case nd_step_type::FALSITY_ELIMINATION:
+	case nd_step_type::UNIVERSAL_INTRODUCTION:
+	case nd_step_type::UNIVERSAL_ELIMINATION:
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
+	case nd_step_type::EQUALITY_ELIMINATION:
+		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++) {
+			if (proof->operands[i] == nullptr) break;
+			if (!get_proof_map(proof->operands[i], pointer_map, formula_map))
+				return false;
+		}
+		return true;
+	case nd_step_type::COUNT:
+		break;
+	}
+	fprintf(stderr, "get_proof_map ERROR: Unrecognized nd_step_type.\n");
+	return false;
+}
+
+template<typename Formula>
+inline bool init_proof_array(nd_step<Formula>**& proofs, size_t length)
+{
+	proofs = (nd_step<Formula>**) malloc(max(1, sizeof(nd_step<Formula>*) * length));
+	if (proofs == nullptr) {
+		fprintf(stderr, "init_proof_array ERROR: Insufficient memory for `proofs` array.\n");
+		return false;
+	}
+
+	for (size_t i = 0; i < length; i++) {
+		if (!new_nd_step(proofs[i], nd_step_type::PARAMETER)) {
+			fprintf(stderr, "init_proof_array ERROR: Insufficient memory for `proofs` array.\n");
+			for (size_t j = 0; j < i; j++) free(proofs[j]);
+			free(proofs); return false;
+		}
+		proofs[i]->reference_count = 1;
+	}
+	return true;
+}
+
+/* NOTE: this function assumes that every element in `proofs` has the fields
+   `reference_count` and `children` already initialized, and that every element
+   in `formulas` has the field `reference_count` initialized */
+template<typename Formula, typename Stream>
+bool read(nd_step<Formula>& proof, Stream& in,
+		nd_step<Formula>** proofs, Formula** formulas)
+{
+	nd_step_type_specifier type;
+	if (!read(type, in))
+		return false;
+	proof.type = (nd_step_type) type;
+
+	unsigned int index;
+	switch (proof.type) {
+	case nd_step_type::PARAMETER:
+		return read(proof.parameter, in);
+	case nd_step_type::ARRAY_PARAMETER:
+		if (!read(proof.parameters, in)) {
+			/* this is to make sure that when this proof is freed, no field other than `children` is freed */
+			proof.type = nd_step_type::PARAMETER; return false;
+		}
+		return true;
+	case nd_step_type::TERM_PARAMETER:
+		if (!read(index, in)) {
+			/* this is to make sure that when this proof is freed, no field other than `children` is freed */
+			proof.type = nd_step_type::PARAMETER; return false;
+		}
+		proof.term = formulas[index];
+		formulas[index]->reference_count++;
+		return true;
+	case nd_step_type::AXIOM:
+	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
+	case nd_step_type::FORMULA_PARAMETER:
+		if (!read(index, in)) {
+			/* this is to make sure that when this proof is freed, no field other than `children` is freed */
+			proof.type = nd_step_type::PARAMETER; return false;
+		}
+		proof.formula = formulas[index];
+		formulas[index]->reference_count++;
+		return true;
+	case nd_step_type::CONJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_ELIMINATION:
+		if (!read(proof.operand_array.length, in)) {
+			/* this is to make sure that when this proof is freed, no field other than `children` is freed */
+			proof.type = nd_step_type::PARAMETER; return false;
+		}
+		proof.operand_array.data = (nd_step<Formula>**) malloc(max(1, sizeof(nd_step<Formula>*) * proof.operand_array.length));
+		if (proof.operand_array.data == nullptr) {
+			fprintf(stderr, "read ERROR: Insufficient memory for `nd_step.operand_array.data`.\n");
+			/* this is to make sure that when this proof is freed, no field other than `children` is freed */
+			proof.type = nd_step_type::PARAMETER; return false;
+		}
+		for (size_t i = 0; i < proof.operand_array.length; i++) {
+			unsigned int index;
+			if (!read(index, in)
+			 || !proofs[index]->children.add(&proof))
+			{
+				proof.operand_array.length = i;
+				return false;
+			}
+			proof.operand_array[i] = proofs[index];
+			proofs[index]->reference_count++;
+		}
+		return true;
+	case nd_step_type::BETA_EQUIVALENCE:
+	case nd_step_type::CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+	case nd_step_type::IMPLICATION_INTRODUCTION:
+	case nd_step_type::IMPLICATION_ELIMINATION:
+	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+	case nd_step_type::PROOF_BY_CONTRADICTION:
+	case nd_step_type::NEGATION_ELIMINATION:
+	case nd_step_type::FALSITY_ELIMINATION:
+	case nd_step_type::UNIVERSAL_INTRODUCTION:
+	case nd_step_type::UNIVERSAL_ELIMINATION:
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
+	case nd_step_type::EQUALITY_ELIMINATION:
+		if (!read(index, in)) {
+			/* this is to make sure that when this proof is freed, no field other than `children` is freed */
+			proof.type = nd_step_type::PARAMETER; return false;
+		}
+		for (unsigned int i = 0; i < ND_OPERAND_COUNT; i++)
+			proof.operands[i] = nullptr;
+		for (unsigned int i = 0; i < index; i++) {
+			unsigned int ind;
+			if (!read(ind, in)
+			 || !proofs[ind]->children.add(&proof))
+			{
+				return false;
+			}
+			proof.operands[i] = proofs[ind];
+			proofs[ind]->reference_count++;
+		}
+		return true;
+	case nd_step_type::COUNT:
+		break;
+	}
+	fprintf(stderr, "read ERROR: Unrecognized nd_step_type.\n");
+	return false;
+}
+
+template<typename Formula, typename Stream>
+bool write(const nd_step<Formula>& proof, Stream& out,
+		const hash_map<const nd_step<Formula>*, unsigned int>& pointer_map,
+		const hash_map<const Formula*, unsigned int>& formula_map)
+{
+	if (!write((nd_step_type_specifier) proof.type, out))
+		return false;
+
+	unsigned int operand_count;
+	switch (proof.type) {
+	case nd_step_type::PARAMETER:
+		return write(proof.parameter, out);
+	case nd_step_type::ARRAY_PARAMETER:
+		return write(proof.parameters, out);
+	case nd_step_type::TERM_PARAMETER:
+		return write(formula_map.get(proof.term), out);
+	case nd_step_type::AXIOM:
+	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
+	case nd_step_type::FORMULA_PARAMETER:
+		return write(formula_map.get(proof.formula), out);
+	case nd_step_type::CONJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_ELIMINATION:
+		if (!write(proof.operand_array.length, out))
+			return false;
+		for (size_t i = 0; i < proof.operand_array.length; i++)
+			if (!write(pointer_map.get(proof.operand_array[i]), out)) return false;
+		return true;
+	case nd_step_type::BETA_EQUIVALENCE:
+	case nd_step_type::CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+	case nd_step_type::IMPLICATION_INTRODUCTION:
+	case nd_step_type::IMPLICATION_ELIMINATION:
+	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+	case nd_step_type::PROOF_BY_CONTRADICTION:
+	case nd_step_type::NEGATION_ELIMINATION:
+	case nd_step_type::FALSITY_ELIMINATION:
+	case nd_step_type::UNIVERSAL_INTRODUCTION:
+	case nd_step_type::UNIVERSAL_ELIMINATION:
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
+	case nd_step_type::EQUALITY_ELIMINATION:
+		operand_count = 0;
+		while (operand_count < ND_OPERAND_COUNT && proof.operands[operand_count] != nullptr) operand_count++;
+		if (!write(operand_count, out)) return false;
+		for (unsigned int i = 0; i < operand_count; i++)
+			if (!write(pointer_map.get(proof.operands[i]), out)) return false;
+		return true;
+	case nd_step_type::COUNT:
+		break;
+	}
+	fprintf(stderr, "write ERROR: Unrecognized nd_step_type.\n");
+	return false;
+}
 
 template<typename Formula>
 inline int_fast8_t compare(const nd_step<Formula>& first, const nd_step<Formula>& second)
@@ -2312,29 +2566,10 @@ struct canonicalized_proof_prior
 		prior_state(const prior_state& src, const hash_map<const Formula*, Formula*>& formula_map) :
 			proof_axioms(src.proof_axioms.counts.table.capacity),
 			universal_eliminations(src.universal_eliminations.counts.table.capacity),
-			axiom_prior_state(src.axiom_prior_state)
+			axiom_prior_state(src.axiom_prior_state, formula_map)
 		{
-			for (const auto& entry : src.proof_axioms.counts) {
-#if !defined(NDEBUG)
-				bool contains;
-				Formula* formula = formula_map.get(entry.key, contains);
-				if (!contains)
-					fprintf(stderr, "canonicalized_proof_prior.prior_state WARNING: Formula doesn't exist in `formula_map`.\n");
-				proof_axioms.counts.put(formula, entry.value);
-#else
-				proof_axioms.counts.put(formula_map.get(entry.key), entry.value);
-#endif
-			}
-			proof_axioms.sum = src.proof_axioms.sum;
-
-			for (const auto& entry : src.universal_eliminations.counts) {
-				unsigned int index = universal_eliminations.counts.table.index_to_insert(entry.key);
-				if (!clone(entry.key, universal_eliminations.counts.table.keys[index], formula_map))
-					exit(EXIT_FAILURE);
-				universal_eliminations.counts.values[index] = entry.value;
-				universal_eliminations.counts.table.size++;
-			}
-			universal_eliminations.sum = src.universal_eliminations.sum;
+			if (!init_helper(src, formula_map))
+				exit(EXIT_FAILURE);
 		}
 
 		inline bool add(const prior_state_changes& changes)
@@ -2554,6 +2789,157 @@ struct canonicalized_proof_prior
 				}
 			}
 			return success;
+		}
+
+		static inline bool get_formula_map(const prior_state& state,
+				hash_map<const Formula*, unsigned int>& formula_map)
+		{
+			for (const auto& entry : state.proof_axioms.counts) {
+				if (!::get_formula_map(entry.key, formula_map))
+					return false;
+			} for (const auto& entry : state.universal_eliminations.counts) {
+				if (!::get_formula_map(entry.key, formula_map))
+					return false;
+			}
+			return AxiomPrior::PriorState::get_formula_map(state.axiom_prior_state, formula_map);
+		}
+
+		template<typename Stream>
+		static bool read(prior_state& state,
+				Stream& in, Formula** formulas)
+		{
+			typedef typename Formula::Term Term;
+
+			decltype(state.proof_axioms.counts.table.size) proof_axiom_count;
+			if (!core::read(proof_axiom_count, in)
+			 || !init(state.proof_axioms, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (proof_axiom_count == 0 ? 1 : proof_axiom_count)) + 1)))
+			{
+				return false;
+			}
+			unsigned int index;
+			for (unsigned int i = 0; i < proof_axiom_count; i++) {
+				if (!core::read(index, in)) {
+					core::free(state.proof_axioms);
+					return false;
+				}
+				Formula* formula = formulas[index];
+				unsigned int bucket = state.proof_axioms.counts.table.index_to_insert(formula);
+				if (!core::read(state.proof_axioms.counts.values[bucket], in)) {
+					core::free(state.proof_axioms);
+					return false;
+				}
+				state.proof_axioms.counts.table.keys[bucket] = formula;
+				state.proof_axioms.counts.table.size++;
+				state.proof_axioms.sum += state.proof_axioms.counts.values[bucket];
+			}
+
+			decltype(state.universal_eliminations.counts.table.size) universal_elimination_count;
+			if (!core::read(universal_elimination_count, in)
+			 || !init(state.universal_eliminations, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (universal_elimination_count == 0 ? 1 : universal_elimination_count)) + 1)))
+			{
+				core::free(state.proof_axioms);
+				return false;
+			}
+			Term& term = *((Term*) alloca(sizeof(Term)));
+			for (unsigned int i = 0; i < universal_elimination_count; i++) {
+				if (!::read(term, in, formulas)) {
+					core::free(state.proof_axioms);
+					core::free(state.universal_eliminations);
+					return false;
+				}
+				term.reference_count = 1;
+				unsigned int bucket = state.universal_eliminations.counts.table.index_to_insert(term);
+				if (!core::read(state.universal_eliminations.counts.values[bucket], in)) {
+					core::free(state.proof_axioms);
+					core::free(state.universal_eliminations);
+					return false;
+				}
+				core::move(term, state.universal_eliminations.counts.table.keys[bucket]);
+				state.universal_eliminations.counts.table.size++;
+				state.universal_eliminations.sum += state.universal_eliminations.counts.values[bucket];
+			}
+
+			if (!AxiomPrior::PriorState::read(state.axiom_prior_state, in, formulas)) {
+				core::free(state.proof_axioms);
+				core::free(state.universal_eliminations);
+				return false;
+			}
+			return true;
+		}
+
+		template<typename Stream>
+		static bool write(const prior_state& state, Stream& out,
+				const hash_map<const Formula*, unsigned int>& formula_map)
+		{
+			if (!core::write(state.proof_axioms.counts.table.size, out))
+				return false;
+			for (const auto& entry : state.proof_axioms.counts) {
+				if (!core::write(formula_map.get(entry.key), out)
+				 || !core::write(entry.value, out))
+					return false;
+			}
+
+			if (!core::write(state.universal_eliminations.counts.table.size, out))
+				return false;
+			for (const auto& entry : state.universal_eliminations.counts) {
+				if (!::write(entry.key, out, formula_map)
+				 || !core::write(entry.value, out))
+					return false;
+			}
+
+			return AxiomPrior::PriorState::write(state.axiom_prior_state, out, formula_map);
+		}
+
+		static bool clone(const prior_state& src, prior_state& dst, const hash_map<const Formula*, Formula*>& formula_map)
+		{
+			if (!init(dst.proof_axioms, src.proof_axioms.counts.table.capacity)) {
+				return false;
+			} else if (!init(dst.universal_eliminations, src.universal_eliminations.counts.table.capacity)) {
+				core::free(dst.proof_axioms);
+				return false;
+			} else if (!AxiomPrior::PriorState::clone(src.axiom_prior_state, dst.axiom_prior_state, formula_map)) {
+				core::free(dst.proof_axioms);
+				core::free(dst.universal_eliminations);
+				return false;
+			} else if (!dst.init_helper(src, formula_map)) {
+				core::free(dst.proof_axioms);
+				core::free(dst.universal_eliminations);
+				core::free(dst.axiom_prior_state);
+				return false;
+			}
+			return true;
+		}
+
+		static inline void free(prior_state& state) {
+			core::free(state.proof_axioms);
+			core::free(state.universal_eliminations);
+			core::free(state.axiom_prior_state);
+		}
+
+		inline bool init_helper(const prior_state& src, const hash_map<const Formula*, Formula*>& formula_map)
+		{
+			for (const auto& entry : src.proof_axioms.counts) {
+#if !defined(NDEBUG)
+				bool contains;
+				Formula* formula = formula_map.get(entry.key, contains);
+				if (!contains)
+					fprintf(stderr, "canonicalized_proof_prior.prior_state.init_helper WARNING: Formula doesn't exist in `formula_map`.\n");
+				proof_axioms.counts.put(formula, entry.value);
+#else
+				proof_axioms.counts.put(formula_map.get(entry.key), entry.value);
+#endif
+			}
+			proof_axioms.sum = src.proof_axioms.sum;
+
+			for (const auto& entry : src.universal_eliminations.counts) {
+				unsigned int index = universal_eliminations.counts.table.index_to_insert(entry.key);
+				if (!::clone(entry.key, universal_eliminations.counts.table.keys[index], formula_map))
+					return false;
+				universal_eliminations.counts.values[index] = entry.value;
+				universal_eliminations.counts.table.size++;
+			}
+			universal_eliminations.sum = src.universal_eliminations.sum;
+			return true;
 		}
 	};
 

@@ -25,7 +25,8 @@ bool operator == (const hol_term&, const hol_term&);
 bool operator != (const hol_term&, const hol_term&);
 bool operator < (const hol_term&, const hol_term&);
 
-enum class hol_term_type : uint_fast8_t {
+typedef uint_fast8_t hol_term_type_specifier;
+enum class hol_term_type : hol_term_type_specifier {
 	VARIABLE = 1,
 	CONSTANT,
 	PARAMETER,
@@ -191,10 +192,10 @@ struct hol_any_constant {
 	static inline void free(hol_any_constant& term);
 };
 
-enum class hol_quantifier_type {
-	FOR_ALL = (int) hol_term_type::FOR_ALL,
-	EXISTS = (int) hol_term_type::EXISTS,
-	LAMBDA = (int) hol_term_type::LAMBDA,
+enum class hol_quantifier_type : hol_term_type_specifier {
+	FOR_ALL = (hol_term_type_specifier) hol_term_type::FOR_ALL,
+	EXISTS = (hol_term_type_specifier) hol_term_type::EXISTS,
+	LAMBDA = (hol_term_type_specifier) hol_term_type::LAMBDA,
 
 	FOR_ALL_OR_EXISTS,
 	FOR_ALL_OR_LAMBDA,
@@ -227,6 +228,18 @@ inline bool print(const hol_number& number, Stream& out) {
 	if (number.decimal == 0)
 		return print(number.integer, out);
 	else return print(number.integer, out) && print('.', out) && print(number.decimal, out);
+}
+
+template<typename Stream>
+inline bool read(hol_number& number, Stream& in) {
+	return read(number.integer, in)
+		&& read(number.decimal, in);
+}
+
+template<typename Stream>
+inline bool write(const hol_number& number, Stream& out) {
+	return write(number.integer, out)
+		&& write(number.decimal, out);
 }
 
 struct hol_term
@@ -1085,6 +1098,386 @@ inline void hol_any_quantifier::free(hol_any_quantifier& term) {
 	core::free(*term.operand);
 	if (term.operand->reference_count == 0)
 		core::free(term.operand);
+}
+
+/* forward declaration */
+
+bool get_formula_map(const hol_term* term,
+		hash_map<const hol_term*, unsigned int>& term_map);
+
+inline bool get_formula_map(const hol_term& term,
+		hash_map<const hol_term*, unsigned int>& term_map)
+{
+	switch (term.type) {
+	case hol_term_type::NOT:
+		return get_formula_map(term.unary.operand, term_map);
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+	case hol_term_type::UNARY_APPLICATION:
+		return get_formula_map(term.binary.left, term_map)
+			&& get_formula_map(term.binary.right, term_map);
+	case hol_term_type::BINARY_APPLICATION:
+		return get_formula_map(term.ternary.first, term_map)
+			&& get_formula_map(term.ternary.second, term_map)
+			&& get_formula_map(term.ternary.third, term_map);
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IFF:
+		for (unsigned int i = 0; i < term.array.length; i++)
+			if (!get_formula_map(term.array.operands[i], term_map)) return false;
+		return true;
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		return get_formula_map(term.quantifier.operand, term_map);
+	case hol_term_type::ANY:
+	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
+		if (term.any.included != nullptr && !get_formula_map(term.any.included, term_map))
+			return false;
+		for (unsigned int i = 0; i < term.any.excluded_tree_count; i++)
+			if (!get_formula_map(term.any.excluded_trees[i], term_map)) return false;
+		return true;
+	case hol_term_type::ANY_ARRAY:
+		if (!get_formula_map(term.any_array.all, term_map))
+			return false;
+		for (unsigned int i = 0; i < term.any_array.left.length; i++)
+			if (!get_formula_map(term.any_array.left.operands[i], term_map)) return false;
+		for (unsigned int i = 0; i < term.any_array.right.length; i++)
+			if (!get_formula_map(term.any_array.right.operands[i], term_map)) return false;
+		for (unsigned int i = 0; i < term.any_array.any.length; i++)
+			if (!get_formula_map(term.any_array.any.operands[i], term_map)) return false;
+		return true;
+	case hol_term_type::ANY_QUANTIFIER:
+		return get_formula_map(term.any_quantifier.operand, term_map);
+	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
+	case hol_term_type::CONSTANT:
+	case hol_term_type::PARAMETER:
+	case hol_term_type::NUMBER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
+		return true;
+	}
+	fprintf(stderr, "get_formula_map ERROR: Unrecognized hol_term_type.\n");
+	return false;
+}
+
+bool get_formula_map(const hol_term* term,
+		hash_map<const hol_term*, unsigned int>& term_map)
+{
+	if (!term_map.check_size())
+		return false;
+	bool contains; unsigned int index;
+	term_map.get(term, contains, index);
+	if (contains) return true;
+	term_map.table.keys[index] = term;
+	term_map.values[index] = term_map.table.size;
+	term_map.table.size++;
+
+	return get_formula_map(*term, term_map);
+}
+
+/* NOTE: this function assumes that every element in `terms` has the field
+   `reference_count` already initialized */
+template<typename Stream>
+inline bool read(hol_array_term& array_term, Stream& in, hol_term** terms)
+{
+	if (!read(array_term.length, in))
+		return false;
+	if (array_term.length == 0) {
+		array_term.operands = nullptr;
+		return true;
+	}
+
+	array_term.operands = (hol_term**) malloc(sizeof(hol_term*) * array_term.length);
+	if (array_term.operands == nullptr) {
+		fprintf(stderr, "read ERROR: Insufficient memory for `hol_array_term.operands`.\n");
+		return false;
+	}
+	for (unsigned int i = 0; i < array_term.length; i++) {
+		unsigned int index;
+		if (!read(index, in)) {
+			for (unsigned int j = 0; j < i; j++)
+				free(*array_term.operands[i]);
+			free(array_term.operands);
+			return false;
+		}
+		array_term.operands[i] = terms[index];
+		array_term.operands[i]->reference_count++;
+	}
+	return true;
+}
+
+/* NOTE: this function assumes that every element in `terms` has the field
+   `reference_count` already initialized */
+template<typename Stream>
+bool read(hol_term& term, Stream& in, hol_term** terms)
+{
+	hol_term_type_specifier type;
+	if (!read(type, in))
+		return false;
+	term.type = (hol_term_type) type;
+
+	unsigned int index;
+	switch (term.type) {
+	case hol_term_type::NOT:
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.unary.operand = terms[index];
+		term.unary.operand->reference_count++;
+		return true;
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+	case hol_term_type::UNARY_APPLICATION:
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.binary.left = terms[index];
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.binary.right = terms[index];
+		term.binary.left->reference_count++;
+		term.binary.right->reference_count++;
+		return true;
+	case hol_term_type::BINARY_APPLICATION:
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.ternary.first = terms[index];
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.ternary.second = terms[index];
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.ternary.third = terms[index];
+		term.ternary.first->reference_count++;
+		term.ternary.second->reference_count++;
+		term.ternary.third->reference_count++;
+		return true;
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IFF:
+		if (!read(term.array, in, terms)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		return true;
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		if (!read(term.quantifier.variable, in)
+		 || !read(type, in)
+		 || !read(index, in))
+		{
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.quantifier.variable_type = (hol_term_type) type;
+		term.quantifier.operand = terms[index];
+		term.quantifier.operand->reference_count++;
+		return true;
+	case hol_term_type::ANY:
+	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		if (index == UINT_MAX) {
+			term.any.included = nullptr;
+		} else {
+			term.any.included = terms[index];
+			term.any.included->reference_count++;
+		}
+
+		term.any.excluded_trees = nullptr;
+		if (!read(term.any.excluded_tree_count, in)) {
+			term.any.excluded_tree_count = 0;
+			return false;
+		}
+		if (term.any.excluded_tree_count == 0)
+			return true;
+		term.any.excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * term.any.excluded_tree_count);
+		if (term.any.excluded_trees == nullptr) {
+			fprintf(stderr, "read ERROR: Insufficient memory for `hol_term.any.excluded_trees`.\n");
+			return false;
+		}
+		for (unsigned int i = 0; i < term.any.excluded_tree_count; i++) {
+			if (!read(index, in)) {
+				term.any.excluded_tree_count = i;
+				return false;
+			}
+			term.any.excluded_trees[i] = terms[index];
+			term.any.excluded_trees[i]->reference_count++;
+		}
+		return true;
+	case hol_term_type::ANY_ARRAY:
+		if (!read(index, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.any_array.all = terms[index];
+		term.any_array.all->reference_count++;
+
+		if (!read(term.any_array.left, in, terms)) {
+			term.any_array.left.operands = nullptr;
+			term.any_array.right.operands = nullptr;
+			term.any_array.any.operands = nullptr;
+			return false;
+		} else if (!read(term.any_array.right, in, terms)) {
+			term.any_array.right.operands = nullptr;
+			term.any_array.any.operands = nullptr;
+			return false;
+		} else if (!read(term.any_array.any, in, terms)) {
+			term.any_array.any.operands = nullptr;
+			return false;
+		}
+		return true;
+	case hol_term_type::ANY_QUANTIFIER:
+		if (!read(type, in)
+		 || !read(index, in))
+		{
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.any_quantifier.quantifier = (hol_quantifier_type) type;
+		term.any_quantifier.operand = terms[index];
+		term.any_quantifier.operand->reference_count++;
+		return true;
+	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+		if (!read(term.any_constant.length, in)) {
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		term.any_constant.constants = (unsigned int*) malloc(max(1, sizeof(unsigned int) * term.any_constant.length));
+		if (term.any_constant.constants == nullptr) {
+			fprintf(stderr, "read ERROR: Insufficient memory for `hol_term.any_constant.constants`.\n");
+			/* this is to make sure that when this term is freed, no other field is freed */
+			term.type = hol_term_type::CONSTANT; return false;
+		}
+		return read(term.any_constant.constants, in, term.any_constant.length);
+	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
+		return read(term.variable, in);
+	case hol_term_type::CONSTANT:
+		return read(term.constant, in);
+	case hol_term_type::PARAMETER:
+		return read(term.parameter, in);
+	case hol_term_type::NUMBER:
+		return read(term.number, in);
+	case hol_term_type::STRING:
+		return read(term.str, in);
+	case hol_term_type::UINT_LIST:
+		return read(term.uint_list, in);
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+		return true;
+	}
+	fprintf(stderr, "read ERROR: Unrecognized hol_term_type.\n");
+	return false;
+}
+
+template<typename Stream>
+inline bool write(const hol_array_term& array_term, Stream& out,
+		const hash_map<const hol_term*, unsigned int>& term_map)
+{
+	if (!write(array_term.length, out))
+		return false;
+	for (unsigned int i = 0; i < array_term.length; i++)
+		if (!write(term_map.get(array_term.operands[i]), out)) return false;
+	return true;
+}
+
+template<typename Stream>
+bool write(const hol_term& term, Stream& out,
+		const hash_map<const hol_term*, unsigned int>& term_map)
+{
+	if (!write((hol_term_type_specifier) term.type, out))
+		return false;
+
+	switch (term.type) {
+	case hol_term_type::NOT:
+		return write(term_map.get(term.unary.operand), out);
+	case hol_term_type::IF_THEN:
+	case hol_term_type::EQUALS:
+	case hol_term_type::UNARY_APPLICATION:
+		return write(term_map.get(term.binary.left), out)
+			&& write(term_map.get(term.binary.right), out);
+	case hol_term_type::BINARY_APPLICATION:
+		return write(term_map.get(term.ternary.first), out)
+			&& write(term_map.get(term.ternary.second), out)
+			&& write(term_map.get(term.ternary.third), out);
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IFF:
+		return write(term.array, out, term_map);
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		return write(term.quantifier.variable, out)
+			&& write((hol_term_type_specifier) term.quantifier.variable_type, out)
+			&& write(term_map.get(term.quantifier.operand), out);
+	case hol_term_type::ANY:
+	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_RIGHT_ONLY:
+		if (term.any.included == nullptr) {
+			if (!write(UINT_MAX, out)) return false;
+		} else {
+			if (!write(term_map.get(term.any.included), out)) return false;
+		}
+
+		if (!write(term.any.excluded_tree_count, out))
+			return false;
+		for (unsigned int i = 0; i < term.any.excluded_tree_count; i++)
+			if (!write(term_map.get(term.any.excluded_trees[i]), out)) return false;
+		return true;
+	case hol_term_type::ANY_ARRAY:
+		return write(term_map.get(term.any_array.all), out)
+			&& write(term.any_array.left, out, term_map)
+			&& write(term.any_array.right, out, term_map)
+			&& write(term.any_array.any, out, term_map);
+	case hol_term_type::ANY_QUANTIFIER:
+		return write((hol_term_type_specifier) term.any_quantifier.quantifier, out)
+			&& write(term_map.get(term.any_quantifier.operand), out);
+	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+		return write(term.any_constant.length, out)
+			&& write(term.any_constant.constants, out, term.any_constant.length);
+	case hol_term_type::VARIABLE:
+	case hol_term_type::VARIABLE_PREIMAGE:
+		return write(term.variable, out);
+	case hol_term_type::CONSTANT:
+		return write(term.constant, out);
+	case hol_term_type::PARAMETER:
+		return write(term.parameter, out);
+	case hol_term_type::NUMBER:
+		return write(term.number, out);
+	case hol_term_type::STRING:
+		return write(term.str, out);
+	case hol_term_type::UINT_LIST:
+		return write(term.uint_list, out);
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+		return true;
+	}
+	fprintf(stderr, "write ERROR: Unrecognized hol_term_type.\n");
+	return false;
 }
 
 inline bool is_atomic(
@@ -8190,6 +8583,66 @@ bool is_conjunction_subset(
 	return true;
 }
 
+bool is_conjunction_strictly_partial_subset(
+		const hol_term* const* first, unsigned int first_length,
+		const hol_term* const* second, unsigned int second_length)
+{
+	unsigned int i = 0, j = 0;
+	bool strictly_partial = false;
+	bool has_intersection = false;
+	while (i < first_length && j < second_length)
+	{
+		if (first[i] == second[j] || *first[i] == *second[j]) {
+			i++; j++;
+			has_intersection = true;
+			if (strictly_partial)
+				return true;
+		} else if (*first[i] < *second[j]) {
+			i++;
+		} else {
+			if (!strictly_partial) {
+				bool found_subset = false;
+				for (unsigned int k = 0; k < first_length; k++) {
+					if (is_subset(first[k], second[j])) {
+						found_subset = true;
+						has_intersection = true;
+						if (strictly_partial)
+							return true;
+						break;
+					}
+				}
+				if (!found_subset) {
+					strictly_partial = true;
+					if (has_intersection)
+						return true;
+				}
+			}
+			j++;
+		}
+	}
+
+	while (!strictly_partial && j < second_length) {
+		bool found_subset = false;
+		for (unsigned int k = 0; k < first_length; k++) {
+			if (is_subset(first[k], second[j])) {
+				found_subset = true;
+				has_intersection = true;
+				if (strictly_partial)
+					return true;
+				break;
+			}
+		}
+		if (!found_subset) {
+			strictly_partial = true;
+			if (has_intersection)
+				return true;
+		}
+		j++;
+	}
+
+	return false;
+}
+
 bool is_disjunction_subset(
 		const hol_term* const* first, unsigned int first_length,
 		const hol_term* const* second, unsigned int second_length)
@@ -8327,6 +8780,29 @@ bool is_subset(const hol_term* first, const hol_term* second)
 	}
 	fprintf(stderr, "is_subset ERROR: Unrecognized hol_term_type.\n");
 	exit(EXIT_FAILURE);
+}
+
+bool is_strictly_partial_subset(const hol_term* first, const hol_term* second)
+{
+	if (first->type == hol_term_type::TRUE) {
+		return false;
+	} else if (second->type == hol_term_type::TRUE) {
+		return true;
+	} else if (first->type == hol_term_type::FALSE) {
+		return false;
+	} else if (second->type == hol_term_type::FALSE) {
+		return false;
+	} else if (first->type == hol_term_type::AND) {
+		if (second->type == hol_term_type::AND) {
+			return is_conjunction_strictly_partial_subset(first->array.operands, first->array.length, second->array.operands, second->array.length);
+		} else {
+			return is_conjunction_strictly_partial_subset(first->array.operands, first->array.length, &second, 1);
+		}
+	} else if (second->type == hol_term_type::AND) {
+		return is_conjunction_strictly_partial_subset(&first, 1, second->array.operands, second->array.length);
+	} else {
+		return false;
+	}
 }
 
 inline hol_term* intersect(hol_term* first, hol_term* second)

@@ -445,50 +445,86 @@ for (auto entry : names) free(entry.key);
 if (seed_training_set.length > 0)
 return EXIT_SUCCESS;*/
 
+Theory& T_copy = *((Theory*) alloca(sizeof(Theory)));
+PriorStateType& proof_axioms_copy = *((PriorStateType*) alloca(sizeof(PriorStateType)));
+hash_map<const hol_term*, hol_term*> formula_map(128);
+Theory::clone(T, T_copy, formula_map);
+PriorStateType::clone(proof_axioms, proof_axioms_copy, formula_map);
+
 /* read the GeoBase sentences */
-in = fopen("geobase_simple.txt", "rb");
+/*in = fopen("geobase_simple.txt", "rb");
 if (in == nullptr) {
 	fprintf(stderr, "ERROR: Unable to open file for reading.\n");
 	for (auto entry : names) free(entry.key);
 	return EXIT_FAILURE;
 }
 array<char> line(1024);
-while (true) {
+for (unsigned int counter = 0; ; counter++) {
 	line.clear();
-	int read = read_line(line, in);
-	if (read == 0) {
+	int num_read = read_line(line, in);
+	if (num_read == 0) {
 		break;
-	} else if (read > 0) {
+	} else if (num_read > 0) {
 		if (!line.ensure_capacity(line.length + 1))
 			break;
 		line[line.length++] = '\0';
-		if (!read_sentence(corpus, parser, line.data, T, names, seed_entities, proof_prior, proof_axioms)) {
+		if (!read_sentence(corpus, parser, line.data, T_copy, names, seed_entities, proof_prior, proof_axioms_copy)) {
 			fprintf(stderr, "ERROR: Unable to read sentence '%s'.\n", line.data);
 			for (auto entry : names) free(entry.key);
 			return EXIT_FAILURE;
 		}
 
-		auto collector = make_log_probability_collector(T, proof_prior);
+		Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
+		PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
+		formula_map.clear();
+		Theory::clone(T_copy, T_MAP, formula_map);
+		PriorStateType::clone(proof_axioms_copy, proof_axioms_MAP, formula_map);
+		auto collector = make_log_probability_collector(T_copy, proof_prior);
+		double max_log_probability = collector.current_log_probability;
 		for (unsigned int j = 0; j < 4; j++) {
 			for (unsigned int t = 0; t < 100; t++) {
 				fprintf(stderr, "j = %u, t = %u\n", j, t);
 				bool print_debug = false;
-				if (print_debug) T.template print_axioms<true>(stdout, *debug_terminal_printer);
-				if (print_debug) { T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
-				do_mh_step(T, proof_prior, proof_axioms, collector);
+				if (print_debug) T_copy.template print_axioms<true>(stdout, *debug_terminal_printer);
+				if (print_debug) { T_copy.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
+				do_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
+
+				if (collector.current_log_probability > max_log_probability) {
+					free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
+					Theory::clone(T_copy, T_MAP, formula_map);
+					PriorStateType::clone(proof_axioms_copy, proof_axioms_MAP, formula_map);
+					max_log_probability = collector.current_log_probability;
+				}
 			}
 
 			if (j + 1 < 4) {
 				for (unsigned int t = 0; t < 20; t++)
-					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
+					do_exploratory_mh_step(T_copy, proof_prior, proof_axioms_copy, collector);
 			}
 		}
-		T.print_axioms(stdout, *debug_terminal_printer); fflush(stdout);
+		free(T_copy); free(proof_axioms_copy); formula_map.clear();
+		Theory::clone(T_MAP, T_copy, formula_map);
+		PriorStateType::clone(proof_axioms_MAP, proof_axioms_copy, formula_map);
+		T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
+		free(T_MAP); free(proof_axioms_MAP);
 	}
+
+	FILE* theory_stream = (FILE*) fopen("geoquery.theory", "wb");
+	write_random_state(theory_stream);
+	write(T_copy, theory_stream, proof_axioms_copy);
+	fclose(theory_stream);
 }
+fclose(in);*/
+
+free(T_copy); free(proof_axioms_copy);
+FILE* theory_stream = (FILE*) fopen("geoquery.theory", "rb");
+read_random_state(theory_stream);
+read(T_copy, theory_stream, proof_axioms_copy);
+fclose(theory_stream);
 
 /* run GeoQuery experiments */
-run_geoquery_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "geoquery.jsonl", "geoquery_results.txt");
+run_geoquery_experiments_single_threaded(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, "geoquery-rephrased.jsonl", "geoquery_results.txt");
+free(T_copy); free(proof_axioms_copy);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
 if (seed_training_set.length > 0)
@@ -590,8 +626,8 @@ initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 
 typedef decltype(T) TheoryType;
 TheoryType& T_map = *((TheoryType*) alloca(sizeof(TheoryType)));
-hash_map<const hol_term*, hol_term*> formula_map(128);
-TheoryType::clone(T, T_map, formula_map);
+hash_map<const hol_term*, hol_term*> term_map(128);
+TheoryType::clone(T, T_map, term_map);
 auto collector = make_log_probability_collector(T, proof_prior);
 double max_log_probability = collector.current_log_probability;
 for (unsigned int t = 0; t < 200 /*20000*/; t++) {
@@ -600,8 +636,8 @@ for (unsigned int t = 0; t < 200 /*20000*/; t++) {
 	if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 	do_mh_step(T, proof_prior, proof_axioms, collector);
 	if (collector.current_log_probability > max_log_probability) {
-		free(T_map); formula_map.clear();
-		TheoryType::clone(T, T_map, formula_map);
+		free(T_map); term_map.clear();
+		TheoryType::clone(T, T_map, term_map);
 		max_log_probability = collector.current_log_probability;
 	}
 }

@@ -71,6 +71,25 @@ inline bool init(intensional_set_vertex& vertex) {
 	return true;
 }
 
+template<typename Stream>
+bool read(intensional_set_vertex& vertex, Stream& in)
+{
+	if (!read(vertex.parents, in)) {
+		return false;
+	} else if (!read(vertex.children, in)) {
+		free(vertex.parents);
+		return false;
+	}
+	return true;
+}
+
+template<typename Stream>
+bool write(const intensional_set_vertex& vertex, Stream& out)
+{
+	return write(vertex.parents, out)
+		&& write(vertex.children, out);
+}
+
 template<typename ProofCalculus>
 struct extensional_set_vertex
 {
@@ -162,6 +181,117 @@ inline bool init(extensional_set_vertex<ProofCalculus>& vertex) {
 	} else if (!array_map_init(vertex.children, 4)) {
 		core::free(vertex.parents);
 		return false;
+	}
+	return true;
+}
+
+template<typename ProofCalculus>
+inline bool get_proof_map(
+		const extensional_set_vertex<ProofCalculus>& vertex,
+		hash_map<const typename ProofCalculus::Proof*, unsigned int>& proof_map,
+		hash_map<const typename ProofCalculus::Language*, unsigned int>& formula_map)
+{
+	typedef typename ProofCalculus::Proof Proof;
+
+	for (const auto& entry : vertex.parents) {
+		for (const Proof* proof : entry.value) {
+			if (!get_proof_map(proof, proof_map, formula_map))
+				return false;
+		}
+	} for (const auto& entry : vertex.children) {
+		for (const Proof* proof : entry.value) {
+			if (!get_proof_map(proof, proof_map, formula_map))
+				return false;
+		}
+	}
+	return true;
+}
+
+template<typename ProofCalculus, typename Stream>
+bool read(
+		extensional_set_vertex<ProofCalculus>& vertex,
+		Stream& in,
+		typename ProofCalculus::Proof** proofs)
+{
+	decltype(vertex.parents.size) parent_count;
+	decltype(vertex.children.size) child_count;
+
+	if (!read(parent_count, in)
+	 || !read(child_count, in))
+		return false;
+
+	if (!array_map_init(vertex.parents, ((size_t) 1) << (core::log2(parent_count == 0 ? 1 : parent_count) + 1))) {
+		return false;
+	} else if (!array_map_init(vertex.children, ((size_t) 1) << (core::log2(child_count == 0 ? 1 : child_count) + 1))) {
+		free(vertex.parents);
+		return false;
+	}
+
+	for (unsigned int i = 0; i < parent_count; i++) {
+		size_t length;
+		if (!read(vertex.parents.keys[i], in)
+		 || !read(length, in)
+		 || !array_init(vertex.parents.values[i], ((size_t) 1) << (core::log2(length == 0 ? 1 : length) + 1)))
+		{
+			free(vertex);
+			return false;
+		}
+		vertex.parents.size++;
+		for (size_t j = 0; j < length; j++) {
+			unsigned int index;
+			if (!read(index, in)) {
+				free(vertex);
+				return false;
+			}
+			vertex.parents.values[i][j] = proofs[index];
+			vertex.parents.values[i].length++;
+		}
+	} for (unsigned int i = 0; i < child_count; i++) {
+		size_t length;
+		if (!read(vertex.children.keys[i], in)
+		 || !read(length, in)
+		 || !array_init(vertex.children.values[i], ((size_t) 1) << (core::log2(length == 0 ? 1 : length) + 1)))
+		{
+			free(vertex);
+			return false;
+		}
+		vertex.children.size++;
+		for (size_t j = 0; j < length; j++) {
+			unsigned int index;
+			if (!read(index, in)) {
+				free(vertex);
+				return false;
+			}
+			vertex.children.values[i][j] = proofs[index];
+			proofs[index]->reference_count++;
+			vertex.children.values[i].length++;
+		}
+	}
+	return true;
+}
+
+template<typename ProofCalculus, typename Stream>
+bool write(
+		const extensional_set_vertex<ProofCalculus>& vertex, Stream& out,
+		const hash_map<const typename ProofCalculus::Proof*, unsigned int>& proof_map)
+{
+	typedef typename ProofCalculus::Proof Proof;
+
+	if (!write(vertex.parents.size, out)
+	 || !write(vertex.children.size, out))
+		return false;
+	for (const auto& entry : vertex.parents) {
+		if (!write(entry.key, out)
+		 || !write(entry.value.length, out))
+			return false;
+		for (const Proof* proof : entry.value)
+			if (!write(proof_map.get(proof), out)) return false;
+	} for (const auto& entry : vertex.children) {
+		if (!write(entry.key, out)
+		 || !write(entry.value.length, out))
+			return false;
+		for (const Proof* proof : entry.value)
+			if (!write(proof_map.get(proof), out)) return false;
 	}
 	return true;
 }
@@ -526,7 +656,8 @@ bool get_descendants(
 	return true;
 }
 
-enum class tuple_element_type {
+typedef uint_fast8_t tuple_element_type_specifier;
+enum class tuple_element_type : tuple_element_type_specifier {
 	CONSTANT,
 	NUMBER,
 	STRING
@@ -653,6 +784,42 @@ inline bool print(const tuple_element& element, Stream& out, Printer&&... consta
 		return print('"', out) && print(element.str, out) && print('"', out);
 	}
 	fprintf(stderr, "print ERROR: Unrecognized `tuple_element_type`.\n");
+	return false;
+}
+
+template<typename Stream>
+bool read(tuple_element& tup, Stream& in)
+{
+	tuple_element_type_specifier type;
+	if (!read(type, in))
+		return false;
+	tup.type = (tuple_element_type) type;
+	switch (tup.type) {
+	case tuple_element_type::CONSTANT:
+		return read(tup.constant, in);
+	case tuple_element_type::NUMBER:
+		return read(tup.number, in);
+	case tuple_element_type::STRING:
+		return read(tup.str, in);
+	}
+	fprintf(stderr, "read ERROR: Unrecognized `tuple_element_type`.\n");
+	return false;
+}
+
+template<typename Stream>
+bool write(const tuple_element& tup, Stream& out)
+{
+	if (!write((tuple_element_type_specifier) tup.type, out))
+		return false;
+	switch (tup.type) {
+	case tuple_element_type::CONSTANT:
+		return write(tup.constant, out);
+	case tuple_element_type::NUMBER:
+		return write(tup.number, out);
+	case tuple_element_type::STRING:
+		return write(tup.str, out);
+	}
+	fprintf(stderr, "write ERROR: Unrecognized `tuple_element_type`.\n");
 	return false;
 }
 
@@ -797,6 +964,36 @@ bool print(const tuple& tup, Stream& out, Printer&&... printer) {
 	return print(')', out);
 }
 
+template<typename Stream>
+bool read(tuple& tup, Stream& in)
+{
+	if (!read(tup.length, in))
+		return false;
+	tup.elements = (tuple_element*) malloc(sizeof(tuple_element) * tup.length);
+	if (tup.elements == nullptr) {
+		fprintf(stderr, "read ERROR: Insufficient memory for `tuple.elements`.\n");
+		return false;
+	}
+	for (unsigned int i = 0; i < tup.length; i++) {
+		if (!read(tup.elements[i], in)) {
+			for (unsigned int j = 0; j < i; j++)
+				free(tup.elements[j]);
+			free(tup.elements);
+			return false;
+		}
+	}
+	return true;
+}
+
+template<typename Stream>
+bool write(const tuple& tup, Stream& out) {
+	if (!write(tup.length, out))
+		return false;
+	for (unsigned int i = 0; i < tup.length; i++)
+		if (!write(tup.elements[i], out)) return false;
+	return true;
+}
+
 template<typename BuiltInConstants, typename ProofCalculus>
 struct set_info
 {
@@ -810,6 +1007,9 @@ struct set_info
 	hash_set<unsigned int> descendants;
 	array<tuple_element> elements; /* NOTE: this does not contain the elements of the descendants of this set */
 	array<tuple> provable_elements;
+
+	/* optimization: this is a list of pairs of sets that would become disjoint, if this set is empty */
+	array<pair<unsigned int, unsigned int>> newly_disjoint_cache;
 
 	inline unsigned int element_count() const {
 		return elements.length / arity;
@@ -872,6 +1072,12 @@ struct set_info
 			core::free(dst.descendants);
 			core::free(dst.elements);
 			return false;
+		} else if (!array_init(dst.newly_disjoint_cache, src.newly_disjoint_cache.capacity)) {
+			core::free(dst.provable_elements);
+			core::free(dst.size_axioms);
+			core::free(dst.descendants);
+			core::free(dst.elements);
+			return false;
 		}
 		for (Proof* axiom : src.size_axioms) {
 			if (!Proof::clone(axiom, dst.size_axioms[dst.size_axioms.length], proof_map, formula_map)) {
@@ -893,11 +1099,13 @@ struct set_info
 				return false;
 			}
 			dst.provable_elements.length++;
-		}
+		} for (const pair<unsigned int, unsigned int>& p : src.newly_disjoint_cache)
+			dst.newly_disjoint_cache[dst.newly_disjoint_cache.length++] = p;
 		return true;
 	}
 
 	static inline void free(set_info<BuiltInConstants, ProofCalculus>& info) {
+		core::free(info.newly_disjoint_cache);
 		core::free(info.descendants);
 		for (unsigned int j = 0; j < info.elements.length; j++)
 			core::free(info.elements[j]);
@@ -1054,8 +1262,134 @@ inline bool init(
 	} else if (!array_init(info.provable_elements, 8)) {
 		free(*initial_size_axiom); free(initial_size_axiom); free(info.size_axioms);
 		free(info.descendants); free(info.elements); return false;
+	} else if (!array_init(info.newly_disjoint_cache, 8)) {
+		free(*initial_size_axiom); free(initial_size_axiom); free(info.size_axioms);
+		free(info.descendants); free(info.elements); free(info.provable_elements); return false;
 	}
 	on_new_size_axiom(initial_size_axiom, std::forward<Args>(visitor)...);
+	return true;
+}
+
+template<typename BuiltInConstants, typename ProofCalculus>
+inline bool get_proof_map(
+		const set_info<BuiltInConstants, ProofCalculus>& info,
+		hash_map<const typename ProofCalculus::Proof*, unsigned int>& proof_map,
+		hash_map<const typename ProofCalculus::Language*, unsigned int>& formula_map)
+{
+	typedef typename ProofCalculus::Proof Proof;
+
+	for (const Proof* proof : info.size_axioms)
+		if (!get_proof_map(proof, proof_map, formula_map)) return false;
+	return true;
+}
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Stream>
+bool read(
+		set_info<BuiltInConstants, ProofCalculus>& info,
+		Stream& in,
+		typename ProofCalculus::Proof** proofs)
+{
+	decltype(info.size_axioms.length) size_axiom_count;
+	decltype(info.descendants.size) descendant_count;
+	decltype(info.elements.length) element_count;
+	decltype(info.provable_elements.length) provable_element_count;
+	decltype(info.newly_disjoint_cache.length) newly_disjoint_cache_size;
+
+	if (!read(info.arity, in)
+	 || !read(info.set_size, in)
+	 || !read(size_axiom_count, in)
+	 || !read(descendant_count, in)
+	 || !read(element_count, in)
+	 || !read(provable_element_count, in)
+	 || !read(newly_disjoint_cache_size, in))
+		return false;
+
+	if (!array_init(info.size_axioms, ((size_t) 1) << (core::log2(size_axiom_count == 0 ? 1 : size_axiom_count) + 1))) {
+		return false;
+	} else if (!hash_set_init(info.descendants, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (descendant_count == 0 ? 1 : descendant_count)) + 1))) {
+		free(info.size_axioms);
+		return false;
+	} else if (!array_init(info.elements, ((size_t) 1) << (core::log2(element_count == 0 ? 1 : element_count) + 1))) {
+		free(info.size_axioms); free(info.descendants);
+		return false;
+	} else if (!array_init(info.provable_elements, ((size_t) 1) << (core::log2(provable_element_count == 0 ? 1 : provable_element_count) + 1))) {
+		free(info.size_axioms); free(info.descendants);
+		free(info.elements); return false;
+	} else if (!array_init(info.newly_disjoint_cache, ((size_t) 1) << (core::log2(newly_disjoint_cache_size == 0 ? 1 : newly_disjoint_cache_size) + 1))) {
+		free(info.size_axioms); free(info.descendants);
+		free(info.elements); free(info.provable_elements);
+		return false;
+	}
+
+	unsigned int index;
+	for (unsigned int i = 0; i < size_axiom_count; i++) {
+		if (!read(index, in)) {
+			free(info);
+			return false;
+		}
+		info.size_axioms[i] = proofs[index];
+		info.size_axioms[i]->reference_count++;
+		info.size_axioms.length++;
+	} for (unsigned int i = 0; i < descendant_count; i++) {
+		if (!read(index, in)) {
+			free(info);
+			return false;
+		}
+		unsigned int bucket = info.descendants.index_to_insert(index);
+		info.descendants.keys[bucket] = index;
+		info.descendants.size++;
+	} for (unsigned int i = 0; i < element_count; i++) {
+		if (!read(info.elements[i], in)) {
+			free(info);
+			return false;
+		}
+		info.elements.length++;
+	} for (unsigned int i = 0; i < provable_element_count; i++) {
+		if (!read(info.provable_elements[i], in)) {
+			free(info);
+			return false;
+		}
+		info.provable_elements.length++;
+	} for (unsigned int i = 0; i < newly_disjoint_cache_size; i++) {
+		if (!read(info.newly_disjoint_cache[i].key, in)
+		 || !read(info.newly_disjoint_cache[i].value, in))
+		{
+			free(info);
+			return false;
+		}
+		info.newly_disjoint_cache.length++;
+	}
+	return true;
+}
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Stream>
+bool write(
+		const set_info<BuiltInConstants, ProofCalculus>& info, Stream& out,
+		const hash_map<const typename ProofCalculus::Proof*, unsigned int>& proof_map)
+{
+	typedef typename ProofCalculus::Proof Proof;
+
+	if (!write(info.arity, out)
+	 || !write(info.set_size, out)
+	 || !write(info.size_axioms.length, out)
+	 || !write(info.descendants.size, out)
+	 || !write(info.elements.length, out)
+	 || !write(info.provable_elements.length, out)
+	 || !write(info.newly_disjoint_cache.length, out))
+		return false;
+	for (const Proof* proof : info.size_axioms)
+		if (!write(proof_map.get(proof), out)) return false;
+	for (unsigned int descendant : info.descendants)
+		if (!write(descendant, out)) return false;
+	for (const tuple_element& element : info.elements)
+		if (!write(element, out)) return false;
+	for (const tuple& element : info.provable_elements)
+		if (!write(element, out)) return false;
+	for (const pair<unsigned int, unsigned int>& entry : info.newly_disjoint_cache) {
+		if (!write(entry.key, out)
+		 || !write(entry.value, out))
+			return false;
+	}
 	return true;
 }
 
@@ -1081,6 +1415,16 @@ constexpr bool on_new_size_axiom(Proof* new_size_axiom) {
 template<typename Proof>
 inline void on_old_size_axiom(Proof* old_size_axiom) {
 	return;
+}
+
+struct pair_sorter { };
+
+template<typename K, typename V>
+inline bool less_than(const pair<K, V>& first, const pair<K, V>& second, const pair_sorter& sorter) {
+	if (first.key < second.key) return true;
+	else if (first.key > second.key) return false;
+	else if (first.value < second.value) return true;
+	else return false;
 }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
@@ -1591,6 +1935,65 @@ struct set_reasoning
 			}
 		}
 
+		/* precompute entries for `newly_disjoint_cache` */
+		array<unsigned int> strictly_partial_subsets(8);
+		array<unsigned int> strictly_partial_supersets(8);
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (i == set_id || sets[i].size_axioms.data == nullptr) continue;
+			if (is_strictly_partial_subset(sets[i].set_formula(), set_formula)) {
+				if (!strictly_partial_subsets.add(i)) {
+					free_set_id(set_id); return false;
+				}
+			} if (is_strictly_partial_subset(set_formula, sets[i].set_formula())) {
+				if (!strictly_partial_supersets.add(i)) {
+					free_set_id(set_id); return false;
+				}
+			}
+		}
+		for (unsigned int i = 0; i < strictly_partial_subsets.length; i++) {
+			unsigned int first = strictly_partial_subsets[i];
+			for (unsigned int j = i + 1; j < strictly_partial_subsets.length; j++) {
+				unsigned int second = strictly_partial_subsets[j];
+				if (are_newly_disjoint(sets[first].set_formula(), sets[second].set_formula(), set_id)) {
+					if (!sets[set_id].newly_disjoint_cache.add(make_pair(first, second))) {
+						free_set_id(set_id); return false;
+					}
+				}
+			}
+		}
+		/* ensure that the `newly_disjoint_cache` of the parents of the new
+		   node don't contain any entries that are also in the
+		   `newly_disjoint_cache` of this node */
+		for (unsigned int parent : intensional_graph.vertices[set_id].parents) {
+			for (unsigned int i = 0; i < sets[parent].newly_disjoint_cache.length; i++) {
+				if (sets[set_id].newly_disjoint_cache.contains(sets[parent].newly_disjoint_cache[i]))
+					sets[parent].newly_disjoint_cache.remove(i--);
+			}
+		} for (const auto& entry : extensional_graph.vertices[set_id].parents) {
+			for (unsigned int i = 0; i < sets[entry.key].newly_disjoint_cache.length; i++) {
+				if (sets[set_id].newly_disjoint_cache.contains(sets[entry.key].newly_disjoint_cache[i]))
+					sets[entry.key].newly_disjoint_cache.remove(i--);
+			}
+		}
+		for (unsigned int partial_superset : strictly_partial_supersets) {
+			strictly_partial_subsets.clear();
+			for (unsigned int i = 1; i < set_count + 1; i++) {
+				if (i == partial_superset || i == set_id || sets[i].size_axioms.data == nullptr) continue;
+				if (is_strictly_partial_subset(sets[i].set_formula(), sets[partial_superset].set_formula())) {
+					if (!strictly_partial_subsets.add(i)) {
+						free_set_id(set_id); return false;
+					}
+				}
+			}
+			for (unsigned int first : strictly_partial_subsets) {
+				if (are_newly_disjoint(sets[first].set_formula(), set_formula, partial_superset)) {
+					if (!sets[partial_superset].newly_disjoint_cache.add(first < set_id ? make_pair(first, set_id) : make_pair(set_id, first))) {
+						free_set_id(set_id); return false;
+					}
+				}
+			}
+		}
+
 		/* compute the upper bound and lower bound on the size of this new set */
 		unsigned int min_set_size, max_set_size, initial_set_size;
 		if (!set_size_bounds(set_id, min_set_size, max_set_size)
@@ -1632,6 +2035,25 @@ struct set_reasoning
 		 || extensional_graph.vertices[set_id].children.size > 0)
 			fprintf(stderr, "set_reasoning.free_set WARNING: This set has extensional edges.\n");
 #endif
+
+		for (unsigned int parent : intensional_graph.vertices[set_id].parents) {
+			for (const pair<unsigned int, unsigned int>& newly_disjoint_pair : sets[set_id].newly_disjoint_cache) {
+				if (are_newly_disjoint(sets[newly_disjoint_pair.key].set_formula(), sets[newly_disjoint_pair.value].set_formula(), parent))
+					sets[parent].newly_disjoint_cache.add(newly_disjoint_pair);
+			}
+		} for (const auto& entry : extensional_graph.vertices[set_id].parents) {
+			for (const pair<unsigned int, unsigned int>& newly_disjoint_pair : sets[set_id].newly_disjoint_cache) {
+				if (are_newly_disjoint(sets[newly_disjoint_pair.key].set_formula(), sets[newly_disjoint_pair.value].set_formula(), entry.key))
+					sets[entry.key].newly_disjoint_cache.add(newly_disjoint_pair);
+			}
+		}
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (i == set_id || sets[i].size_axioms.data == nullptr) continue;
+			for (unsigned int j = 0; j < sets[i].newly_disjoint_cache.length; j++) {
+				if (sets[i].newly_disjoint_cache[j].key == set_id || sets[i].newly_disjoint_cache[j].value == set_id)
+					sets[i].newly_disjoint_cache.remove(j--);
+			}
+		}
 
 		recompute_provable_elements<true>(set_id);
 
@@ -1819,8 +2241,21 @@ struct set_reasoning
 	};
 
 	bool uncontract_component(unsigned int contracted_set,
-			const hash_set<unsigned int>& connected_component)
+			const hash_set<unsigned int>& connected_component,
+			const array<pair<unsigned int, pair<unsigned int, unsigned int>>>& old_disjoint_cache_items)
 	{
+		/* restore the original `newly_disjoint_cache` */
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axioms.data == nullptr) continue;
+			for (unsigned int j = 0; j < sets[i].newly_disjoint_cache.length; j++) {
+				const pair<unsigned int, unsigned int>& entry = sets[i].newly_disjoint_cache[j];
+				if (entry.key == contracted_set || entry.value == contracted_set)
+					sets[i].newly_disjoint_cache.remove(j--);
+			}
+		}
+		for (const pair<unsigned int, pair<unsigned int, unsigned int>>& old_entry : old_disjoint_cache_items)
+			sets[old_entry.key].newly_disjoint_cache[sets[old_entry.key].newly_disjoint_cache.length++] = old_entry.value;
+
 		hash_set<unsigned int> visited(16);
 		array<unsigned int> stack(8);
 		stack[stack.length++] = contracted_set;
@@ -1896,8 +2331,8 @@ struct set_reasoning
 
 	bool contract_component(
 			unsigned int set, unsigned int& contracted_set,
-			const hash_set<unsigned int>& connected_component,
-			bool& is_fixed)
+			const hash_set<unsigned int>& connected_component, bool& is_fixed,
+			array<pair<unsigned int, pair<unsigned int, unsigned int>>>& old_disjoint_cache_items)
 	{
 		is_fixed = false;
 
@@ -1945,7 +2380,7 @@ struct set_reasoning
 					children.remove_at(index);
 					children.values[children.size++] = contracted_set;
 					if (!parents.ensure_capacity(parents.size + 1)) {
-						uncontract_component(contracted_set, connected_component);
+						uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 						return false;
 					}
 					parents.keys[parents.size++] = entry.key;
@@ -1958,7 +2393,7 @@ struct set_reasoning
 						intensional_graph.vertices[parent].children.add(contracted_set);
 					if (!intensional_graph.vertices[contracted_set].parents.contains(parent)
 					 && !intensional_graph.vertices[contracted_set].parents.add(parent)) {
-						uncontract_component(contracted_set, connected_component);
+						uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 						return false;
 					}
 				}
@@ -1971,7 +2406,7 @@ struct set_reasoning
 					parents.remove_at(index);
 					parents.keys[parents.size++] = contracted_set;
 					if (!children.ensure_capacity(children.size + 1)) {
-						uncontract_component(contracted_set, connected_component);
+						uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 						return false;
 					}
 					children.keys[children.size++] = entry.key;
@@ -1984,7 +2419,7 @@ struct set_reasoning
 						intensional_graph.vertices[child].parents.add(contracted_set);
 					if (!intensional_graph.vertices[contracted_set].children.contains(child)
 					 && !intensional_graph.vertices[contracted_set].children.add(child)) {
-						uncontract_component(contracted_set, connected_component);
+						uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 						return false;
 					}
 				}
@@ -2003,13 +2438,13 @@ struct set_reasoning
 			for (unsigned int parent : intensional_graph.vertices[ancestor].parents) {
 				if (visited.contains(parent)) continue;
 				if (!visited.add(parent) || !stack.add(parent)) {
-					uncontract_component(contracted_set, connected_component);
+					uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 					return false;
 				}
 			} for (const auto& entry : extensional_graph.vertices[ancestor].parents) {
 				if (visited.contains(entry.key)) continue;
 				if (!visited.add(entry.key) || !stack.add(entry.key)) {
-					uncontract_component(contracted_set, connected_component);
+					uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 					return false;
 				}
 			}
@@ -2018,16 +2453,44 @@ struct set_reasoning
 		/* add the elements of the sets in the component to the new set */
 		for (unsigned int set : connected_component) {
 			if (!sets[contracted_set].elements.ensure_capacity(sets[contracted_set].elements.length + sets[set].elements.length)) {
-				uncontract_component(contracted_set, connected_component);
+				uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 				return false;
 			}
 			for (const tuple_element& src_element : sets[set].elements) {
 				tuple_element& new_element = sets[contracted_set].elements[sets[contracted_set].elements.length];
 				if (!init(new_element, src_element)) {
-					uncontract_component(contracted_set, connected_component);
+					uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 					return false;
 				}
 				sets[contracted_set].elements.length++;
+			}
+		}
+
+		/* compute `newly_disjoint_cache` for the new set */
+		for (unsigned int set : connected_component) {
+			if (!sets[contracted_set].newly_disjoint_cache.append(sets[set].newly_disjoint_cache.data, sets[set].newly_disjoint_cache.length)) {
+				uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
+				return false;
+			}
+		}
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axioms.data == nullptr) continue;
+			if (!old_disjoint_cache_items.ensure_capacity(old_disjoint_cache_items.length + sets[i].newly_disjoint_cache.length)) {
+				uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
+				return false;
+			}
+			for (unsigned int j = 0; j < sets[i].newly_disjoint_cache.length; j++) {
+				const pair<unsigned int, unsigned int>& entry = sets[i].newly_disjoint_cache[j];
+				if (connected_component.contains(entry.key)) {
+					old_disjoint_cache_items[old_disjoint_cache_items.length++] = make_pair(i, entry);
+					sets[i].newly_disjoint_cache.remove(j--);
+					if (!connected_component.contains(entry.value))
+						sets[i].newly_disjoint_cache[sets[i].newly_disjoint_cache.length++] = make_pair(contracted_set, entry.value);
+				} else if (connected_component.contains(entry.value)) {
+					old_disjoint_cache_items[old_disjoint_cache_items.length++] = make_pair(i, entry);
+					sets[i].newly_disjoint_cache.remove(j--);
+					sets[i].newly_disjoint_cache[sets[i].newly_disjoint_cache.length++] = make_pair(entry.key, contracted_set);
+				}
 			}
 		}
 		return true;
@@ -2040,13 +2503,14 @@ struct set_reasoning
 		/* first check if `set` is part of a strongly-connected component */
 		bool is_fixed;
 		hash_set<unsigned int> connected_component(16);
+		array<pair<unsigned int, pair<unsigned int, unsigned int>>> old_disjoint_cache_items(32);
 		if (!get_strongly_connected_component(set, connected_component)) {
 			return false;
 		} else if (connected_component.size > 1) {
 			/* perform "surgery" on the graph by creating a new "virtual"
 			   vertex that represents the strongly-connected component with all
 			   of its internal edges contracted */
-			if (!contract_component(set, set, connected_component, is_fixed))
+			if (!contract_component(set, set, connected_component, is_fixed, old_disjoint_cache_items))
 				return false;
 		} else {
 			is_fixed = !is_unfixed(set);
@@ -2054,7 +2518,7 @@ struct set_reasoning
 
 		if (!stack.ensure_capacity(stack.length + 1)) {
 			if (connected_component.size > 1)
-				uncontract_component(set, connected_component);
+				uncontract_component(set, connected_component, old_disjoint_cache_items);
 			return false;
 		} if (stack.contains(set)) {
 			/* we have previously requested to change the size of `set` */
@@ -2067,7 +2531,7 @@ struct set_reasoning
 			upper_bound = sets[set].set_size;
 		} else if (!get_size_upper_bound(set, upper_bound, clique, clique_count, ancestor_of_clique)) {
 			if (connected_component.size > 1)
-				uncontract_component(set, connected_component);
+				uncontract_component(set, connected_component, old_disjoint_cache_items);
 			return false;
 		}
 		if (requested_size <= upper_bound) {
@@ -2077,7 +2541,7 @@ struct set_reasoning
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
 					sets[member].change_size(requested_size);
-				return uncontract_component(set, connected_component);
+				return uncontract_component(set, connected_component, old_disjoint_cache_items);
 			} else {
 				sets[set].change_size(requested_size);
 				return true;
@@ -2088,7 +2552,7 @@ struct set_reasoning
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
 					sets[member].change_size(upper_bound);
-				return uncontract_component(set, connected_component);
+				return uncontract_component(set, connected_component, old_disjoint_cache_items);
 			} else {
 				sets[set].change_size(upper_bound);
 				return true;
@@ -2099,14 +2563,14 @@ struct set_reasoning
 			bool child_graph_changed = false;
 			if (!increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed)) {
 				if (connected_component.size > 1)
-					uncontract_component(set, connected_component);
+					uncontract_component(set, connected_component, old_disjoint_cache_items);
 				core::free(clique); return false;
 			} else if (child_graph_changed) {
 				/* the graph has been changed */
 				core::free(clique); stack.length--;
 				graph_changed = true;
 				if (connected_component.size > 1)
-					return uncontract_component(set, connected_component);
+					return uncontract_component(set, connected_component, old_disjoint_cache_items);
 				else return true;
 			}
 
@@ -2117,14 +2581,14 @@ struct set_reasoning
 				else requested_child_size = 0;
 				if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
 					if (connected_component.size > 1)
-						uncontract_component(set, connected_component);
+						uncontract_component(set, connected_component, old_disjoint_cache_items);
 					core::free(clique); return false;
 				} else if (child_graph_changed) {
 					/* the graph has been changed */
 					core::free(clique); stack.length--;
 					graph_changed = true;
 					if (connected_component.size > 1)
-						uncontract_component(set, connected_component);
+						uncontract_component(set, connected_component, old_disjoint_cache_items);
 					else return true;
 				}
 			}
@@ -2134,7 +2598,7 @@ struct set_reasoning
 		core::free(clique); stack.length--;
 		graph_changed = false;
 		if (connected_component.size > 1)
-			return uncontract_component(set, connected_component);
+			return uncontract_component(set, connected_component, old_disjoint_cache_items);
 		else return true;
 	}
 
@@ -2145,13 +2609,14 @@ struct set_reasoning
 		/* first check if `set` is part of a strongly-connected component */
 		bool is_fixed;
 		hash_set<unsigned int> connected_component(16);
+		array<pair<unsigned int, pair<unsigned int, unsigned int>>> old_disjoint_cache_items(32);
 		if (!get_strongly_connected_component(set, connected_component)) {
 			return false;
 		} else if (connected_component.size > 1) {
 			/* perform "surgery" on the graph by creating a new "virtual"
 			   vertex that represents the strongly-connected component with all
 			   of its internal edges contracted */
-			if (!contract_component(set, set, connected_component, is_fixed))
+			if (!contract_component(set, set, connected_component, is_fixed, old_disjoint_cache_items))
 				return false;
 		} else {
 			is_fixed = !is_unfixed(set);
@@ -2159,7 +2624,7 @@ struct set_reasoning
 
 		if (!stack.ensure_capacity(stack.length + 1)) {
 			if (connected_component.size > 1)
-				uncontract_component(set, connected_component);
+				uncontract_component(set, connected_component, old_disjoint_cache_items);
 			return false;
 		} if (stack.contains(set)) {
 			/* we have previously requested to change the size of `set` */
@@ -2172,7 +2637,7 @@ struct set_reasoning
 			lower_bound = sets[set].set_size;
 		} else if (!get_size_lower_bound(set, lower_bound, clique, clique_count, ancestor_of_clique)) {
 			if (connected_component.size > 1)
-				uncontract_component(set, connected_component);
+				uncontract_component(set, connected_component, old_disjoint_cache_items);
 			return false;
 		}
 		if (requested_size >= lower_bound) {
@@ -2182,7 +2647,7 @@ struct set_reasoning
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
 					sets[member].change_size(requested_size);
-				return uncontract_component(set, connected_component);
+				return uncontract_component(set, connected_component, old_disjoint_cache_items);
 			} else {
 				sets[set].change_size(requested_size);
 				return true;
@@ -2193,7 +2658,7 @@ struct set_reasoning
 			if (connected_component.size > 1) {
 				for (unsigned int member : connected_component)
 					sets[member].change_size(lower_bound);
-				return uncontract_component(set, connected_component);
+				return uncontract_component(set, connected_component, old_disjoint_cache_items);
 			} else {
 				sets[set].change_size(lower_bound);
 				return true;
@@ -2211,14 +2676,14 @@ struct set_reasoning
 					else requested_child_size = 0;
 					if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
 						if (connected_component.size > 1)
-							uncontract_component(set, connected_component);
+							uncontract_component(set, connected_component, old_disjoint_cache_items);
 						core::free(clique); return false;
 					} else if (child_graph_changed) {
 						/* the graph has been changed */
 						core::free(clique); stack.length--;
 						graph_changed = true;
 						if (connected_component.size > 1)
-							return uncontract_component(set, connected_component);
+							return uncontract_component(set, connected_component, old_disjoint_cache_items);
 						else return true;
 					}
 				}
@@ -2229,14 +2694,14 @@ struct set_reasoning
 					requested_ancestor_size += sets[clique[i]].set_size;
 				if (!increase_set_size(ancestor_of_clique, requested_ancestor_size, stack, child_graph_changed)) {
 					if (connected_component.size > 1)
-						uncontract_component(set, connected_component);
+						uncontract_component(set, connected_component, old_disjoint_cache_items);
 					core::free(clique); return false;
 				} else if (child_graph_changed) {
 					/* the graph has been changed */
 					core::free(clique); stack.length--;
 					graph_changed = true;
 					if (connected_component.size > 1)
-						return uncontract_component(set, connected_component);
+						return uncontract_component(set, connected_component, old_disjoint_cache_items);
 					else return true;
 				}
 
@@ -2247,14 +2712,14 @@ struct set_reasoning
 					else requested_child_size = 0;
 					if (!decrease_set_size(clique[i], requested_child_size, stack, child_graph_changed)) {
 						if (connected_component.size > 1)
-							uncontract_component(set, connected_component);
+							uncontract_component(set, connected_component, old_disjoint_cache_items);
 						core::free(clique); return false;
 					} else if (child_graph_changed) {
 						/* the graph has been changed */
 						core::free(clique); stack.length--;
 						graph_changed = true;
 						if (connected_component.size > 1)
-							return uncontract_component(set, connected_component);
+							return uncontract_component(set, connected_component, old_disjoint_cache_items);
 						else return true;
 					}
 				}
@@ -2265,7 +2730,7 @@ struct set_reasoning
 		core::free(clique); stack.length--;
 		graph_changed = false;
 		if (connected_component.size > 1)
-			return uncontract_component(set, connected_component);
+			return uncontract_component(set, connected_component, old_disjoint_cache_items);
 		else return true;
 	}
 
@@ -2317,6 +2782,58 @@ struct set_reasoning
 		if (!update_descendants(antecedent_set, consequent_set)) {
 			remove_subset_relation<true>(antecedent_set, consequent_set, antecedent, consequent);
 			return false;
+		}
+
+		/* update the provable elements of `consequent_set` and all its ancestors */
+		array<unsigned int> ancestors_stack(8);
+		hash_set<unsigned int> visited(16);
+		ancestors_stack[ancestors_stack.length++] = consequent_set;
+		visited.add(consequent_set);
+		visited.add(antecedent_set);
+		while (ancestors_stack.length > 0) {
+			unsigned int current = ancestors_stack.pop();
+			array<tuple> new_provable_elements(max(1, sets[antecedent_set].provable_elements.length + sets[current].provable_elements.length));
+			set_union(new_provable_elements.data, new_provable_elements.length,
+					sets[antecedent_set].provable_elements.data, sets[antecedent_set].provable_elements.length,
+					sets[current].provable_elements.data, sets[current].provable_elements.length);
+			swap(new_provable_elements, sets[current].provable_elements);
+			for (tuple& tup : new_provable_elements) core::free(tup);
+
+			for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if (visited.contains(entry.key)) continue;
+				if (!ancestors_stack.add(entry.key) || !visited.add(entry.key)) {
+					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
+					if (is_freeable(consequent_set)) {
+						for (Proof* size_axiom : sets[consequent_set].size_axioms)
+							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
+						on_free_set(consequent_set, *this);
+						free_set(consequent_set);
+					} if (is_freeable(antecedent_set)) {
+						for (Proof* size_axiom : sets[antecedent_set].size_axioms)
+							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
+						on_free_set(antecedent_set, *this);
+						free_set(antecedent_set);
+					}
+					return false;
+				}
+			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!ancestors_stack.add(parent) || !visited.add(parent)) {
+					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
+					if (is_freeable(consequent_set)) {
+						for (Proof* size_axiom : sets[consequent_set].size_axioms)
+							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
+						on_free_set(consequent_set, *this);
+						free_set(consequent_set);
+					} if (is_freeable(antecedent_set)) {
+						for (Proof* size_axiom : sets[antecedent_set].size_axioms)
+							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
+						on_free_set(antecedent_set, *this);
+						free_set(antecedent_set);
+					}
+					return false;
+				}
+			}
 		}
 		return true;
 	}
@@ -2880,32 +3397,25 @@ struct set_reasoning
 			unsigned int old_size = sets[set_id].set_size;
 			sets[set_id].set_size = 0;
 			bool can_be_zero = true;
-			for (unsigned int i = 1; can_be_zero && i < set_count + 1; i++) {
-				if (sets[i].size_axioms.data == nullptr) continue;
-				for (unsigned int j = i + 1; j < set_count + 1; j++) {
-					if (sets[j].size_axioms.data == nullptr) continue;
-					if (sets[i].arity != sets[j].arity) continue;
-					if (are_newly_disjoint(sets[i].set_formula(), sets[j].set_formula(), set_id)) {
-						/* check if any ancestor of `i` and `j` has a set size smaller than its lower bound */
-						if (!find_largest_disjoint_clique_with_edge(*this, i, j, clique, clique_count, ancestor_of_clique, INT_MIN, 0)) {
-							sets[set_id].set_size = old_size;
-							return false;
-						}
-						if (clique != NULL) {
-							unsigned int clique_size = 0;
-							for (unsigned int i = 0; i < clique_count; i++)
-								clique_size += sets[clique[i]].set_size;
-							if (clique_size > sets[ancestor_of_clique].set_size) {
-								lower_bound = 1;
-								can_be_zero = false;
-								break;
-							} else {
-								core::free(clique);
-								clique = NULL;
-								clique_count = 0;
-								ancestor_of_clique = 0;
-							}
-						}
+			for (const pair<unsigned int, unsigned int>& newly_disjoint_pair : sets[set_id].newly_disjoint_cache) {
+				/* check if any ancestor of `i` and `j` has a set size smaller than its lower bound */
+				if (!find_largest_disjoint_clique_with_edge(*this, newly_disjoint_pair.key, newly_disjoint_pair.value, clique, clique_count, ancestor_of_clique, INT_MIN, 0)) {
+					sets[set_id].set_size = old_size;
+					return false;
+				}
+				if (clique != NULL) {
+					unsigned int clique_size = 0;
+					for (unsigned int i = 0; i < clique_count; i++)
+						clique_size += sets[clique[i]].set_size;
+					if (clique_size > sets[ancestor_of_clique].set_size) {
+						lower_bound = 1;
+						can_be_zero = false;
+						break;
+					} else {
+						core::free(clique);
+						clique = NULL;
+						clique_count = 0;
+						ancestor_of_clique = 0;
 					}
 				}
 			}
@@ -3194,6 +3704,187 @@ struct set_reasoning
 		}
 	}
 };
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+inline bool get_proof_map(
+		const set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		hash_map<const typename ProofCalculus::Proof*, unsigned int>& proof_map,
+		hash_map<const typename ProofCalculus::Language*, unsigned int>& formula_map)
+{
+	for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+		if (sets.sets[i].size_axioms.data == nullptr) continue;
+		if (!get_proof_map(sets.sets[i], proof_map, formula_map)
+		 || !get_proof_map(sets.extensional_graph.vertices[i], proof_map, formula_map))
+			return false;
+	}
+
+	for (const auto& entry : sets.set_ids)
+		if (!get_formula_map(entry.key, formula_map)) return false;
+	return true;
+}
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, typename Stream>
+bool read(
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		Stream& in,
+		typename ProofCalculus::Proof** proofs,
+		typename ProofCalculus::Language** formulas)
+{
+	typedef typename ProofCalculus::Language Formula;
+
+	unsigned int initialized_set_count;
+	if (!read(initialized_set_count, in))
+		return false;
+	sets.capacity = ((size_t) 1) << (core::log2(initialized_set_count == 0 ? 1 : initialized_set_count) + 1);
+	sets.intensional_graph.vertices = (intensional_set_vertex*) malloc(sizeof(intensional_set_vertex) * sets.capacity);
+	if (sets.intensional_graph.vertices == nullptr) {
+		fprintf(stderr, "read ERROR: Insufficient memory for `set_reasoning.intensional_set_graph.vertices`.\n");
+		return false;
+	}
+	sets.extensional_graph.vertices = (extensional_set_vertex<ProofCalculus>*) malloc(sizeof(extensional_set_vertex<ProofCalculus>) * sets.capacity);
+	if (sets.extensional_graph.vertices == nullptr) {
+		fprintf(stderr, "read ERROR: Insufficient memory for `set_reasoning.extensional_graph.vertices`.\n");
+		free(sets.intensional_graph.vertices); return false;
+	}
+	sets.sets = (set_info<BuiltInConstants, ProofCalculus>*) malloc(sizeof(set_info<BuiltInConstants, ProofCalculus>) * sets.capacity);
+	if (sets.sets == nullptr) {
+		fprintf(stderr, "read ERROR: Insufficient memory for `set_reasoning.extensional_graph.vertices`.\n");
+		free(sets.intensional_graph.vertices); free(sets.extensional_graph.vertices);
+		return false;
+	}
+	for (unsigned int i = 1; i < sets.capacity; i++)
+		sets.sets[i].size_axioms.data = nullptr;
+	sets.set_count = 0;
+
+	for (unsigned int i = 0; i < initialized_set_count; i++) {
+		unsigned int index;
+		if (!read(index, in)
+		 || !read(sets.sets[index], in, proofs))
+		{
+			for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+				free(sets.intensional_graph.vertices[j]);
+				free(sets.extensional_graph.vertices[j]);
+				free(sets.sets[j]);
+			}
+			free(sets.intensional_graph.vertices);
+			free(sets.extensional_graph.vertices);
+			free(sets.sets); return false;
+		} else if (!read(sets.intensional_graph.vertices[index], in)) {
+			free(sets.sets[index]);
+			for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+				free(sets.intensional_graph.vertices[j]);
+				free(sets.extensional_graph.vertices[j]);
+				free(sets.sets[j]);
+			}
+			free(sets.intensional_graph.vertices);
+			free(sets.extensional_graph.vertices);
+			free(sets.sets); return false;
+		} else if (!read(sets.extensional_graph.vertices[index], in, proofs)) {
+			free(sets.intensional_graph.vertices[index]);
+			free(sets.sets[index]);
+			for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+				free(sets.intensional_graph.vertices[j]);
+				free(sets.extensional_graph.vertices[j]);
+				free(sets.sets[j]);
+			}
+			free(sets.intensional_graph.vertices);
+			free(sets.extensional_graph.vertices);
+			free(sets.sets); return false;
+		}
+		sets.set_count = index;
+	}
+
+	decltype(sets.set_ids.table.size) set_id_count;
+	if (!read(set_id_count, in)
+	 || !hash_map_init(sets.set_ids, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (set_id_count == 0 ? 1 : set_id_count)) + 1)))
+	{
+		for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+			free(sets.intensional_graph.vertices[j]);
+			free(sets.extensional_graph.vertices[j]);
+			free(sets.sets[j]);
+		}
+		free(sets.intensional_graph.vertices);
+		free(sets.extensional_graph.vertices);
+		free(sets.sets); return false;
+	}
+	Formula& formula = *((Formula*) alloca(sizeof(Formula)));
+	for (unsigned int i = 0; i < set_id_count; i++) {
+		if (!read(formula, in, formulas)) {
+			for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+				free(sets.intensional_graph.vertices[j]);
+				free(sets.extensional_graph.vertices[j]);
+				free(sets.sets[j]);
+			} for (auto entry : sets.set_ids)
+				free(entry.key);
+			free(sets.intensional_graph.vertices);
+			free(sets.extensional_graph.vertices);
+			free(sets.sets); free(sets.set_ids);
+			return false;
+		}
+		formula.reference_count = 1;
+		unsigned int bucket = sets.set_ids.table.index_to_insert(formula);
+		if (!read(sets.set_ids.values[bucket], in)) {
+			free(formula);
+			for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+				free(sets.intensional_graph.vertices[j]);
+				free(sets.extensional_graph.vertices[j]);
+				free(sets.sets[j]);
+			} for (auto entry : sets.set_ids)
+				free(entry.key);
+			free(sets.intensional_graph.vertices);
+			free(sets.extensional_graph.vertices);
+			free(sets.sets); free(sets.set_ids);
+			return false;
+		}
+		move(formula, sets.set_ids.table.keys[bucket]);
+		sets.set_ids.table.size++;
+	}
+
+	if (!read(sets.symbols_in_formulas, in)) {
+		for (unsigned int j = 1; j < sets.set_count + 1; j++) {
+			free(sets.intensional_graph.vertices[j]);
+			free(sets.extensional_graph.vertices[j]);
+			free(sets.sets[j]);
+		} for (auto entry : sets.set_ids)
+			free(entry.key);
+		free(sets.intensional_graph.vertices);
+		free(sets.extensional_graph.vertices);
+		free(sets.sets); free(sets.set_ids);
+		return false;
+	}
+	return true;
+}
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, typename Stream>
+bool write(
+		const set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets, Stream& out,
+		const hash_map<const typename ProofCalculus::Proof*, unsigned int>& proof_map,
+		const hash_map<const typename ProofCalculus::Language*, unsigned int>& formula_map)
+{
+	unsigned int initialized_set_count = 0;
+	for (unsigned int i = 1; i < sets.set_count + 1; i++)
+		if (sets.sets[i].size_axioms.data != nullptr) initialized_set_count++;
+	if (!write(initialized_set_count, out))
+		return false;
+	for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+		if (sets.sets[i].size_axioms.data == nullptr) continue;
+		if (!write(i, out)
+		 || !write(sets.sets[i], out, proof_map)
+		 || !write(sets.intensional_graph.vertices[i], out)
+		 || !write(sets.extensional_graph.vertices[i], out, proof_map))
+			return false;
+	}
+
+	if (!write(sets.set_ids.table.size, out))
+		return false;
+	for (const auto& entry : sets.set_ids) {
+		if (!write(entry.key, out, formula_map)
+		 || !write(entry.value, out))
+			return false;
+	}
+
+	return write(sets.symbols_in_formulas, out);
+}
 
 struct clique_search_state {
 	unsigned int* clique;

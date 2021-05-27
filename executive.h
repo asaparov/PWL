@@ -1545,18 +1545,36 @@ inline bool less_than(
 	return false;
 }
 
-#include <grammar/parser.h>
-#include <grammar/grammar.h>
+inline bool get_most_probable_answers(
+		const array_map<string, double>& input_answers,
+		array<string>& answers)
+{
+	/* keep only the answers with highest probability */
+	if (input_answers.size == 0)
+		return true;
+	for (unsigned int i = input_answers.size; i > 0; i--) {
+		if (!answers.ensure_capacity(answers.length + 1)
+		 || !init(answers[answers.length], input_answers.keys[i - 1]))
+		{
+			for (string& str : answers) free(str);
+			return false;
+		}
+		answers.length++;
+		if (i > 1 && input_answers.values[i - 2] < input_answers.values[i - 1])
+			break;
+	}
+	return true;
+}
 
-template<bool LookupUnknownWords, typename ArticleSource,
-	typename ProofCalculus, typename Canonicalizer,
+constexpr const char* UNKNOWN_CONCEPT_NAME = "<unknown concept>";
+
+template<typename ProofCalculus, typename Canonicalizer,
 	typename TheoryPrior, typename Parser, typename... Args>
-inline bool answer_question(array<string>& answers,
-		const char* input_question, unsigned int num_samples,
-		const ArticleSource& articles, Parser& parser,
+inline bool answer_question(
+		array_map<string, double>& answers,
+		typename ProofCalculus::Language* logical_form,
+		unsigned int num_samples, Parser& parser,
 		theory<ProofCalculus, Canonicalizer>& T,
-		hash_map<string, unsigned int>& names,
-		hash_set<unsigned int>& visited_articles,
 		TheoryPrior& theory_prior,
 		typename TheoryPrior::PriorState& proof_axioms,
 		Args&&... add_formula_args)
@@ -1565,103 +1583,27 @@ inline bool answer_question(array<string>& answers,
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
-	typename Parser::SentenceType sentence;
-	if (!tokenize(input_question, sentence, names))
-		return false;
-
-	unsigned int parse_count;
-	constexpr unsigned int max_parse_count = 2;
-	Formula* logical_forms[max_parse_count];
-	double log_parse_probabilities[max_parse_count];
-	while (true) {
-		if (!parser.invert_name_map(names)) {
-			fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
-			free(sentence); return false;
-		}
-
-		/* attempt to parse the sentence */
-		array<array<sentence_token>> unrecognized(4);
-		print("Reading question '", stdout); print(sentence, stdout, parser.get_printer()); print("'\n", stdout);
-		if (!parser.template parse<max_parse_count>(sentence, logical_forms, log_parse_probabilities, parse_count, nullptr, unrecognized, names)) {
-			fprintf(stderr, "ERROR: Unable to parse question.\n");
-			free(sentence); return false;
-		}
-
-		if (LookupUnknownWords)
-		{
-			/* concatenate the unrecognized tokens */
-			array<unsigned int> unrecognized_concatenated(max((size_t) 1, unrecognized.length));
-			for (unsigned int i = 0; i < unrecognized.length; i++) {
-				string concatenated(16);
-				if (!concatenate(unrecognized[i].data, unrecognized[i].length, concatenated, parser.reverse_string_map())) {
-					for (array<sentence_token>& tokens : unrecognized) free(tokens);
-					free_logical_forms(logical_forms, parse_count);
-					free(sentence); return false;
-				}
-				bool contains;
-				unsigned int concatenated_id = names.get(concatenated, contains);
-				if (contains)
-					unrecognized_concatenated[unrecognized_concatenated.length++] = concatenated_id;
-			}
-			for (array<sentence_token>& tokens : unrecognized) free(tokens);
-
-			/* get unrecognized named entities */
-			array<string> named_entities(16);
-			if (parse_count > 0 && !get_named_entities(*logical_forms[0], named_entities)) {
-				free_logical_forms(logical_forms, parse_count);
-				free(sentence); return false;
-			}
-			for (const string& named_entity : named_entities) {
-				bool contains;
-				unsigned int named_entity_id = names.get(named_entity, contains);
-				if (contains && !visited_articles.contains(named_entity_id)
-				&& !unrecognized_concatenated.add(named_entity_id))
-				{
-					for (string& entity : named_entities) free(entity);
-					free_logical_forms(logical_forms, parse_count);
-					free(sentence); return false;
-				}
-			}
-			for (string& entity : named_entities) free(entity);
-
-			if (unrecognized_concatenated.length == 0)
-				break;
-			free_logical_forms(logical_forms, parse_count);
-
-			/* find an article in order to learn about the unrecognized word */
-			unsigned int next_article = unrecognized_concatenated[0];
-			read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...);
-		} else {
-			for (array<sentence_token>& tokens : unrecognized) free(tokens);
-			break;
-		}
-	}
-	free(sentence);
-
-	constexpr const char* UNKNOWN_CONCEPT_NAME = "<unknown concept>";
-
-	array_map<string, double> temp_answers(8);
-	auto on_new_proof_sample = [&T, &temp_answers, &parser, UNKNOWN_CONCEPT_NAME](const Term* term, double log_probability)
+	auto on_new_proof_sample = [&T, &answers, &parser](const Term* term, double log_probability)
 	{
 		/* get the name of the term */
 		if (term->type == TermType::STRING) {
-			if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+			if (!answers.ensure_capacity(answers.size + 1))
 				return;
-			unsigned int index = temp_answers.index_of(term->str);
-			if (index < temp_answers.size) {
-				temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+			unsigned int index = answers.index_of(term->str);
+			if (index < answers.size) {
+				answers.values[index] = logsumexp(answers.values[index], log_probability);
 			} else {
-				if (!init(temp_answers.keys[index], term->str))
+				if (!init(answers.keys[index], term->str))
 					return;
-				temp_answers.values[index] = log_probability;
-				temp_answers.size++;
+				answers.values[index] = log_probability;
+				answers.size++;
 			}
 		} else if (term->type == TermType::NUMBER) {
 			int length;
 			if (term->number.decimal == 0)
 				length = snprintf(NULL, 0, "%" PRId64, term->number.integer);
 			else length = snprintf(NULL, 0, "%" PRId64 ".%" PRIu64, term->number.integer, term->number.decimal);
-			if (!temp_answers.ensure_capacity(temp_answers.size + 1) || length < 0)
+			if (!answers.ensure_capacity(answers.size + 1) || length < 0)
 				return;
 
 			string new_name(length + 1);
@@ -1670,14 +1612,14 @@ inline bool answer_question(array<string>& answers,
 			else snprintf(new_name.data, length + 1, "%" PRId64 ".%" PRIu64, term->number.integer, term->number.decimal);
 			new_name.length = length;
 
-			unsigned int index = temp_answers.index_of(new_name);
-			if (index < temp_answers.size) {
-				temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+			unsigned int index = answers.index_of(new_name);
+			if (index < answers.size) {
+				answers.values[index] = logsumexp(answers.values[index], log_probability);
 			} else {
-				if (!init(temp_answers.keys[index], new_name))
+				if (!init(answers.keys[index], new_name))
 					return;
-				temp_answers.values[index] = log_probability;
-				temp_answers.size++;
+				answers.values[index] = log_probability;
+				answers.size++;
 			}
 		} else if (term->type == TermType::CONSTANT) {
 			/* check if the constant is named */
@@ -1686,16 +1628,16 @@ inline bool answer_question(array<string>& answers,
 				const string_map_scribe& printer = parser.get_printer();
 				if (printer.length > term->constant) {
 					named_constant_or_set = true;
-					if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+					if (!answers.ensure_capacity(answers.size + 1))
 						return;
-					unsigned int index = temp_answers.index_of(*printer.map[term->constant]);
-					if (index < temp_answers.size) {
-						temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+					unsigned int index = answers.index_of(*printer.map[term->constant]);
+					if (index < answers.size) {
+						answers.values[index] = logsumexp(answers.values[index], log_probability);
 					} else {
-						if (!init(temp_answers.keys[index], *printer.map[term->constant]))
+						if (!init(answers.keys[index], *printer.map[term->constant]))
 							return;
-						temp_answers.values[index] = log_probability;
-						temp_answers.size++;
+						answers.values[index] = log_probability;
+						answers.size++;
 					}
 				} else {
 					named_constant_or_set = false;
@@ -1709,16 +1651,16 @@ inline bool answer_question(array<string>& answers,
 print(term->constant, stderr); print(": \"", stderr);
 print(name_term->str, stderr);
 print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);
-					if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+					if (!answers.ensure_capacity(answers.size + 1))
 						return;
-					unsigned int index = temp_answers.index_of(name_term->str);
-					if (index < temp_answers.size) {
-						temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+					unsigned int index = answers.index_of(name_term->str);
+					if (index < answers.size) {
+						answers.values[index] = logsumexp(answers.values[index], log_probability);
 					} else {
-						if (!init(temp_answers.keys[index], name_term->str))
+						if (!init(answers.keys[index], name_term->str))
 							return;
-						temp_answers.values[index] = log_probability;
-						temp_answers.size++;
+						answers.values[index] = log_probability;
+						answers.size++;
 					}
 				}
 			}
@@ -1907,16 +1849,16 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 					}
 				}
 
-				if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+				if (!answers.ensure_capacity(answers.size + 1))
 					return;
-				unsigned int index = temp_answers.index_of(new_name);
-				if (index < temp_answers.size) {
+				unsigned int index = answers.index_of(new_name);
+				if (index < answers.size) {
 					free(new_name);
-					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+					answers.values[index] = logsumexp(answers.values[index], log_probability);
 				} else {
-					move(new_name, temp_answers.keys[index]);
-					temp_answers.values[index] = log_probability;
-					temp_answers.size++;
+					move(new_name, answers.keys[index]);
+					answers.values[index] = log_probability;
+					answers.size++;
 				}
 			}
 
@@ -1924,23 +1866,23 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 print(term->constant, stderr); print(": <unnamed>, log probability: ", stderr);
 print(log_probability, stderr); print('\n', stderr);
 T.print_axioms(stderr); print('\n', stderr);
-				if (!temp_answers.ensure_capacity(temp_answers.size + 1))
+				if (!answers.ensure_capacity(answers.size + 1))
 					return;
-				unsigned int index = temp_answers.index_of(UNKNOWN_CONCEPT_NAME);
-				if (index < temp_answers.size) {
-					temp_answers.values[index] = logsumexp(temp_answers.values[index], log_probability);
+				unsigned int index = answers.index_of(UNKNOWN_CONCEPT_NAME);
+				if (index < answers.size) {
+					answers.values[index] = logsumexp(answers.values[index], log_probability);
 				} else {
-					if (!init(temp_answers.keys[index], UNKNOWN_CONCEPT_NAME))
+					if (!init(answers.keys[index], UNKNOWN_CONCEPT_NAME))
 						return;
-					temp_answers.values[index] = log_probability;
-					temp_answers.size++;
+					answers.values[index] = log_probability;
+					answers.size++;
 				}
 			}
 		} else {
 			fprintf(stderr, "ERROR: Unable to convert semantic answer into text.\n");
 		}
 print("Totals so far:\n", stderr);
-for (const auto& entry : temp_answers) {
+for (const auto& entry : answers) {
 print('"', stderr); print(entry.key, stderr); print("\": ", stderr);
 print(entry.value, stderr); print('\n', stderr);
 }
@@ -1950,14 +1892,135 @@ print(entry.value, stderr); print('\n', stderr);
 extern const thread_local string_map_scribe* debug_terminal_printer;
 debug_terminal_printer = &parser.get_printer();
 	theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
-	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
+	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_form, num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
 		fprintf(stderr, "ERROR: Failed to answer question.\n");
-		free_logical_forms(logical_forms, parse_count);
-		for (auto entry : temp_answers) free(entry.key);
+		for (auto entry : answers) free(entry.key);
 		return false;
 	}
 T_map.print_axioms(stderr, *debug_terminal_printer);
 	free(T_map);
+
+	return true;
+}
+
+template<typename ProofCalculus, typename Canonicalizer,
+	typename TheoryPrior, typename Parser, typename... Args>
+inline bool answer_question(array<string>& answers,
+		typename ProofCalculus::Language* logical_form,
+		unsigned int num_samples, Parser& parser,
+		theory<ProofCalculus, Canonicalizer>& T,
+		TheoryPrior& theory_prior,
+		typename TheoryPrior::PriorState& proof_axioms,
+		Args&&... add_formula_args)
+{
+	array_map<string, double> temp_answers(8);
+	if (!answer_question(temp_answers, logical_form, num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
+		return false;
+
+	if (!get_most_probable_answers(temp_answers, answers)) {
+		for (auto pair : temp_answers) free(pair.key);
+		return false;
+	}
+	for (auto pair : temp_answers) free(pair.key);
+	return true;
+}
+
+#include <grammar/parser.h>
+#include <grammar/grammar.h>
+
+template<bool LookupUnknownWords, typename ArticleSource,
+	typename ProofCalculus, typename Canonicalizer,
+	typename TheoryPrior, typename Parser, typename... Args>
+inline bool answer_question(array<string>& answers,
+		const char* input_question, unsigned int num_samples,
+		const ArticleSource& articles, Parser& parser,
+		theory<ProofCalculus, Canonicalizer>& T,
+		hash_map<string, unsigned int>& names,
+		hash_set<unsigned int>& visited_articles,
+		TheoryPrior& theory_prior,
+		typename TheoryPrior::PriorState& proof_axioms,
+		Args&&... add_formula_args)
+{
+	typedef typename ProofCalculus::Language Formula;
+
+	typename Parser::SentenceType sentence;
+	if (!tokenize(input_question, sentence, names))
+		return false;
+
+	unsigned int parse_count;
+	constexpr unsigned int max_parse_count = 2;
+	Formula* logical_forms[max_parse_count];
+	double log_parse_probabilities[max_parse_count];
+	while (true) {
+		if (!parser.invert_name_map(names)) {
+			fprintf(stderr, "ERROR: `invert_name_map` failed.\n");
+			free(sentence); return false;
+		}
+
+		/* attempt to parse the sentence */
+		array<array<sentence_token>> unrecognized(4);
+		print("Reading question '", stdout); print(sentence, stdout, parser.get_printer()); print("'\n", stdout);
+		if (!parser.template parse<max_parse_count>(sentence, logical_forms, log_parse_probabilities, parse_count, nullptr, unrecognized, names)) {
+			fprintf(stderr, "ERROR: Unable to parse question.\n");
+			free(sentence); return false;
+		}
+
+		if (LookupUnknownWords)
+		{
+			/* concatenate the unrecognized tokens */
+			array<unsigned int> unrecognized_concatenated(max((size_t) 1, unrecognized.length));
+			for (unsigned int i = 0; i < unrecognized.length; i++) {
+				string concatenated(16);
+				if (!concatenate(unrecognized[i].data, unrecognized[i].length, concatenated, parser.reverse_string_map())) {
+					for (array<sentence_token>& tokens : unrecognized) free(tokens);
+					free_logical_forms(logical_forms, parse_count);
+					free(sentence); return false;
+				}
+				bool contains;
+				unsigned int concatenated_id = names.get(concatenated, contains);
+				if (contains)
+					unrecognized_concatenated[unrecognized_concatenated.length++] = concatenated_id;
+			}
+			for (array<sentence_token>& tokens : unrecognized) free(tokens);
+
+			/* get unrecognized named entities */
+			array<string> named_entities(16);
+			if (parse_count > 0 && !get_named_entities(*logical_forms[0], named_entities)) {
+				free_logical_forms(logical_forms, parse_count);
+				free(sentence); return false;
+			}
+			for (const string& named_entity : named_entities) {
+				bool contains;
+				unsigned int named_entity_id = names.get(named_entity, contains);
+				if (contains && !visited_articles.contains(named_entity_id)
+				&& !unrecognized_concatenated.add(named_entity_id))
+				{
+					for (string& entity : named_entities) free(entity);
+					free_logical_forms(logical_forms, parse_count);
+					free(sentence); return false;
+				}
+			}
+			for (string& entity : named_entities) free(entity);
+
+			if (unrecognized_concatenated.length == 0)
+				break;
+			free_logical_forms(logical_forms, parse_count);
+
+			/* find an article in order to learn about the unrecognized word */
+			unsigned int next_article = unrecognized_concatenated[0];
+			read_article(next_article, articles, parser, T, names, visited_articles, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...);
+		} else {
+			for (array<sentence_token>& tokens : unrecognized) free(tokens);
+			break;
+		}
+	}
+	free(sentence);
+
+	array_map<string, double> temp_answers(8);
+	if (!answer_question(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...)) {
+		free_logical_forms(logical_forms, parse_count);
+		return false;
+	}
 
 	/* check if we are confident enough in the most probable answer to stop looking for more information */
 	if (temp_answers.size > 1)
@@ -2047,15 +2110,12 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 			}
 
 			bool failure = false;
-			auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, on_new_proof_sample, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
+			auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
 				if (read_sentence(articles, parser, tokens, length, T, names, visited_articles, theory_prior, proof_axioms)) {
-					theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
-					if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_forms[0], num_samples, T_map, on_new_proof_sample)) {
-						fprintf(stderr, "ERROR: Failed to answer question.\n");
-						failure = true; return false;
-					}
-T_map.print_axioms(stderr, *debug_terminal_printer);
-					free(T_map);
+					if (!answer_question(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms)) {
+						failure = true;
+						return false;
+					};
 
 					if (temp_answers.size > 1)
 						sort(temp_answers.values, temp_answers.keys, temp_answers.size, default_sorter());
@@ -2120,20 +2180,9 @@ T_map.print_axioms(stderr, *debug_terminal_printer);
 		free_logical_forms(logical_forms, parse_count);
 	}
 
-	/* keep only the answers with highest probability */
-	if (temp_answers.size == 0)
-		return true;
-	for (unsigned int i = temp_answers.size; i > 0; i--) {
-		if (!answers.ensure_capacity(answers.length + 1)
-		 || !init(answers[answers.length], temp_answers.keys[i - 1]))
-		{
-			for (auto pair : temp_answers) free(pair.key);
-			for (string& str : answers) free(str);
-			return false;
-		}
-		answers.length++;
-		if (i > 1 && temp_answers.values[i - 2] < temp_answers.values[i - 1])
-			break;
+	if (!get_most_probable_answers(temp_answers, answers)) {
+		for (auto pair : temp_answers) free(pair.key);
+		return false;
 	}
 	for (auto pair : temp_answers) free(pair.key);
 	return true;

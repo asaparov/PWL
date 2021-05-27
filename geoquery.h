@@ -162,32 +162,25 @@ void do_geoquery_experiments(bool& status,
 			/* for reproducibility, reset the PRNG state */
 			core::engine = context_queue[job.context_id].prng_engine;
 
-			/* first clone the theory from the appropriate work item */
-			Theory& T_copy = *((Theory*) alloca(sizeof(Theory)));
-			hash_map<const hol_term*, hol_term*> formula_map(128);
-			if (!Theory::clone(job.T, T_copy, formula_map)) {
-				status = false;
-				num_threads_running--;
-				work_queue_cv.notify_all();
-				free(job);
-				for (auto entry : names) free(entry.key);
-				free(parser); return;
-			}
-			PriorStateType proof_axioms_copy(job.proof_axioms, formula_map);
-
 			unsigned int parse_count;
 			constexpr unsigned int max_parse_count = 2;
 			hol_term* logical_forms[max_parse_count];
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
-				/* TODO: add question answering logic here */
+				/* try to answer the question */
+				array<string> answers(4);
+				if (!answer_question(answers, logical_forms[0], 10000, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
+					answers[0] = "<failed to answer question>";
+					answers.length = 1;
+				}
 
 				results_lock.lock();
 				results.ensure_capacity(results.length + 1);
 				results[results.length].context_id = job.context_id;
 				results[results.length].question_id = job.question_id;
-				if (!init(results[results.length].answer, "")) {
+				if (!init(results[results.length].answer, answers[0])) {
+					for (string& str : answers) free(str);
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
 					num_threads_running--;
@@ -196,6 +189,7 @@ void do_geoquery_experiments(bool& status,
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
 				} else if (!init(results[results.length].label, job.label)) {
+					for (string& str : answers) free(str);
 					free(results[results.length].answer);
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
@@ -207,6 +201,7 @@ void do_geoquery_experiments(bool& status,
 				}
 				results.length++;
 				results_lock.unlock();
+				for (string& str : answers) free(str);
 
 				total++;
 				free_logical_forms(logical_forms, parse_count);
@@ -227,7 +222,6 @@ void do_geoquery_experiments(bool& status,
 
 				total++;
 			}
-			free(T_copy);
 			free(job);
 
 		} else {

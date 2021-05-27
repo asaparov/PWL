@@ -197,6 +197,48 @@ inline bool init(default_hash_multiset<T>& multiset, const default_hash_multiset
 }
 
 template<typename T>
+inline bool clone(const default_hash_multiset<T>& src, default_hash_multiset<T>& dst) {
+	return init(dst, src);
+}
+
+template<typename T, typename Stream>
+bool read(default_hash_multiset<T>& state, Stream& in) {
+	decltype(state.a.counts.table.size) histogram_size;
+	if (!read(histogram_size, in)
+	 || !init(state.a, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (histogram_size == 0 ? 1 : histogram_size)) + 1)))
+		return false;
+	T& key = *((T*) alloca(sizeof(T)));
+	for (unsigned int i = 0; i < histogram_size; i++) {
+		if (!read(key, in)) {
+			free(state.a);
+			return false;
+		}
+		unsigned int bucket = state.a.counts.table.index_to_insert(key);
+		if (!read(state.a.counts.values[bucket], in)) {
+			free(key);
+			free(state.a);
+			return false;
+		}
+		move(key, state.a.counts.table.keys[bucket]);
+		state.a.counts.table.size++;
+		state.a.sum += state.a.counts.values[bucket];
+	}
+	return true;
+}
+
+template<typename T, typename Stream>
+bool write(const default_hash_multiset<T>& state, Stream& out) {
+	if (!write(state.a.counts.table.size, out))
+		return false;
+	for (const auto& entry : state.a.counts) {
+		if (!write(entry.key, out)
+		 || !write(entry.value, out))
+			return false;
+	}
+	return true;
+}
+
+template<typename T>
 inline void free_all(default_hash_multiset<T>& a) { }
 
 template<typename T>
@@ -257,6 +299,13 @@ struct empty_prior_state {
 
 constexpr bool init(const empty_prior_state& new_state) { return true; }
 constexpr unsigned int size(const empty_prior_state& new_state) { return 0; }
+constexpr bool clone(const empty_prior_state& src, const empty_prior_state& dst) { return true; }
+
+template<typename Stream, typename... Reader>
+constexpr bool read(const empty_prior_state& state, Stream& in, Reader&&... reader) { return true; }
+
+template<typename Stream, typename... Writer>
+constexpr bool write(const empty_prior_state& state, Stream& out, Writer&&... writer) { return true; }
 
 template<typename T>
 struct iid_uniform_distribution
@@ -578,7 +627,9 @@ struct dirichlet_process
 		typename BaseDistribution::PriorState base_prior_state;
 
 		prior_state() { }
-		prior_state(const prior_state& src) : base_prior_state(src.base_prior_state) { }
+
+		template<typename... Args>
+		prior_state(const prior_state& src, Args&&... args) : base_prior_state(src.base_prior_state, std::forward<Args>(args)...) { }
 
 		inline bool add(const typename BaseDistribution::PriorStateChanges& changes) {
 			return base_prior_state.add(changes);
@@ -600,6 +651,36 @@ struct dirichlet_process
 				const dirichlet_process<BaseDistribution>& prior)
 		{
 			base_prior_state.subtract(observation, prior.base_distribution);
+		}
+
+		template<typename... Args>
+		static inline bool get_formula_map(const prior_state& state, Args&&... args) {
+			return BaseDistribution::PriorState::get_formula_map(state.base_prior_state, std::forward<Args>(args)...);
+		}
+
+		template<typename Stream, typename... Reader>
+		static inline bool read(prior_state& state,
+				Stream& in, Reader&&... reader)
+		{
+			return BaseDistribution::PriorState::read(state.base_prior_state, in, std::forward<Reader>(reader)...);
+		}
+
+		template<typename Stream, typename... Writer>
+		static inline bool write(
+				const prior_state& state,
+				Stream& out, Writer&&... writer)
+		{
+			return BaseDistribution::PriorState::write(state.base_prior_state, out, std::forward<Writer>(writer)...);
+		}
+
+		template<typename... Cloner>
+		static inline bool clone(const prior_state& src, prior_state& dst, Cloner&&... cloner)
+		{
+			return BaseDistribution::PriorState::clone(src.base_prior_state, dst.base_prior_state, std::forward<Cloner>(cloner)...);
+		}
+
+		static inline void free(prior_state& state) {
+			core::free(state.base_prior_state);
 		}
 	};
 
@@ -810,24 +891,11 @@ struct simple_constant_distribution
 		prior_state() : types(16), root_types(16) { }
 
 		prior_state(const prior_state& src) : constants(src.constants), predicates(src.predicates), types(src.types.table.capacity), root_types(src.root_types.counts.table.capacity) {
-			for (const auto& entry : src.types) {
-				bool contains; unsigned int bucket;
-				types.get(entry.key, contains, bucket);
-				if (!init(types.values[bucket], entry.value.counts.table.capacity))
-					exit(EXIT_FAILURE);
-				types.values[bucket].counts.put_all(entry.value.counts);
-				types.values[bucket].sum = entry.value.sum;
-				types.table.keys[bucket] = entry.key;
-				types.table.size++;
-			}
-			root_types.counts.put_all(src.root_types.counts);
-			root_types.sum = src.root_types.sum;
+			if (!init_helper(src))
+				exit(EXIT_FAILURE);
 		}
 
-		~prior_state() {
-			for (auto entry : types)
-				free(entry.value);
-		}
+		~prior_state() { free_helper(); }
 
 		inline bool add(const prior_state_changes& changes) {
 			if (!constants.add(changes.constants)) {
@@ -934,7 +1002,7 @@ struct simple_constant_distribution
 				}
 				value.sum -= items.sum;
 				if (value.sum == 0) {
-					free(value);
+					core::free(value);
 					types.remove_at(index);
 				}
 			}
@@ -944,6 +1012,201 @@ struct simple_constant_distribution
 				const simple_constant_distribution<ConstantDistribution, PredicateDistribution, TypeDistribution>& prior)
 		{
 			subtract(changes);
+		}
+
+		static inline bool get_formula_map(const prior_state& state,
+				hash_map<const hol_term*, unsigned int>& formula_map)
+		{
+			for (const auto& entry : state.types) {
+				for (const auto& inner_entry : entry.value.counts) {
+					if (!::get_formula_map(inner_entry.key, formula_map))
+						return false;
+				}
+			} for (const auto& entry : state.root_types.counts) {
+				if (!::get_formula_map(entry.key, formula_map))
+					return false;
+			}
+			return true;
+		}
+
+		template<typename Stream>
+		static inline bool read(prior_state& state,
+				Stream& in, hol_term** terms)
+		{
+			if (!::read(state.constants, in)) {
+				return false;
+			} else if (!::read(state.predicates, in)) {
+				core::free(state.constants);
+				return false;
+			}
+
+			decltype(state.types.table.size) type_count;
+			if (!core::read(type_count, in)
+			 || !hash_map_init(state.types, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (type_count == 0 ? 1 : type_count)) + 1)))
+			{
+				core::free(state.constants);
+				core::free(state.predicates);
+				return false;
+			}
+			hol_term& term = *((hol_term*) alloca(sizeof(hol_term)));
+			for (unsigned int i = 0; i < type_count; i++) {
+				unsigned int key;
+				unsigned int type_histogram_size;
+				if (!core::read(key, in)
+				 || !core::read(type_histogram_size, in))
+				{
+					state.free_helper();
+					core::free(state.constants);
+					core::free(state.predicates);
+					core::free(state.types);
+					return false;
+				}
+				unsigned int bucket = state.types.table.index_to_insert(key);
+				hash_multiset<hol_term>& type_histogram = state.types.values[bucket];
+				if (!init(type_histogram, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (type_histogram_size == 0 ? 1 : type_histogram_size)) + 1))) {
+					state.free_helper();
+					core::free(state.constants);
+					core::free(state.predicates);
+					core::free(state.types);
+					return false;
+				}
+				state.types.table.keys[bucket] = key;
+				state.types.table.size++;
+				for (unsigned int j = 0; j < type_histogram_size; j++) {
+					if (!::read(term, in, terms)) {
+						state.free_helper();
+						core::free(state.constants);
+						core::free(state.predicates);
+						core::free(state.types);
+						return false;
+					}
+					term.reference_count = 1;
+					bucket = type_histogram.counts.table.index_to_insert(term);
+					if (!core::read(type_histogram.counts.values[bucket], in)) {
+						core::free(term);
+						state.free_helper();
+						core::free(state.constants);
+						core::free(state.predicates);
+						core::free(state.types);
+						return false;
+					}
+					move(term, type_histogram.counts.table.keys[bucket]);
+					type_histogram.counts.table.size++;
+					type_histogram.sum += type_histogram.counts.values[bucket];
+				}
+			}
+
+			decltype(state.root_types.counts.table.size) root_type_count;
+			if (!core::read(root_type_count, in)
+			 || !init(state.root_types, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (root_type_count == 0 ? 1 : root_type_count)) + 1)))
+			{
+				state.free_helper();
+				core::free(state.constants);
+				core::free(state.predicates);
+				core::free(state.types);
+				return false;
+			}
+			for (unsigned int i = 0; i < root_type_count; i++) {
+				if (!::read(term, in, terms)) {
+					core::free(state);
+					return false;
+				}
+				term.reference_count = 1;
+				unsigned int bucket = state.root_types.counts.table.index_to_insert(term);
+				if (!core::read(state.root_types.counts.values[bucket], in)) {
+					core::free(term);
+					core::free(state);
+					return false;
+				}
+				move(term, state.root_types.counts.table.keys[bucket]);
+				state.root_types.counts.table.size++;
+				state.root_types.sum += state.root_types.counts.values[bucket];
+			}
+
+			return true;
+		}
+
+		template<typename Stream>
+		static inline bool write(const prior_state& state, Stream& out,
+				const hash_map<const hol_term*, unsigned int>& formula_map)
+		{
+			if (!::write(state.constants, out)
+			 || !::write(state.predicates, out)
+			 || !core::write(state.types.table.size, out))
+				return false;
+			for (const auto& entry : state.types) {
+				if (!core::write(entry.key, out)
+				 || !core::write((unsigned int) entry.value.counts.table.size, out))
+					return false;
+				for (const auto& inner_entry : entry.value.counts) {
+					if (!::write(inner_entry.key, out, formula_map)
+					 || !core::write(inner_entry.value, out))
+						return false;
+				}
+			}
+
+			if (!core::write(state.root_types.counts.table.size, out))
+				return false;
+			for (const auto& entry : state.root_types.counts) {
+				if (!::write(entry.key, out, formula_map)
+				 || !core::write(entry.value, out))
+					return false;
+			}
+			return true;
+		}
+
+		static bool clone(const prior_state& src, prior_state& dst) {
+			if (!::clone(src.constants, dst.constants)) {
+				return false;
+			} else if (!::clone(src.predicates, dst.predicates)) {
+				core::free(dst.constants);
+				return false;
+			} else if (!hash_map_init(dst.types, src.types.table.capacity)) {
+				core::free(dst.constants);
+				core::free(dst.predicates);
+				return false;
+			} else if (!init(dst.root_types, src.root_types.counts.table.capacity)) {
+				core::free(dst.constants);
+				core::free(dst.predicates);
+				core::free(dst.types);
+				return false;
+			} else if (!dst.init_helper(src)) {
+				core::free(dst.constants);
+				core::free(dst.predicates);
+				core::free(dst.types);
+				core::free(dst.root_types);
+				return false;
+			}
+			return true;
+		}
+
+		static inline void free(prior_state& state) {
+			state.free_helper();
+			core::free(state.constants);
+			core::free(state.predicates);
+			core::free(state.types);
+			core::free(state.root_types);
+		}
+
+		inline bool init_helper(const prior_state& src) {
+			for (const auto& entry : src.types) {
+				bool contains; unsigned int bucket;
+				types.get(entry.key, contains, bucket);
+				if (!init(types.values[bucket], entry.value.counts.table.capacity))
+					return false;
+				types.values[bucket].counts.put_all(entry.value.counts);
+				types.values[bucket].sum = entry.value.sum;
+				types.table.keys[bucket] = entry.key;
+				types.table.size++;
+			}
+			root_types.counts.put_all(src.root_types.counts);
+			root_types.sum = src.root_types.sum;
+			return true;
+		}
+
+		inline void free_helper() {
+			for (auto entry : types)
+				core::free(entry.value);
 		}
 	};
 
@@ -1075,7 +1338,7 @@ struct simple_hol_term_distribution
 	struct prior_state_changes {
 		typename ConstantDistribution::PriorStateChanges constants;
 		array_map<unsigned int, unsigned int> arg1_map;
-		array_map<unsigned int, string*> arg2_string_map;
+		array_map<unsigned int, hol_term*> arg2_string_map;
 		array_map<unsigned int, array<hol_term>> definitions;
 
 		prior_state_changes() : arg1_map(4), arg2_string_map(4), definitions(4) { }
@@ -1121,56 +1384,43 @@ struct simple_hol_term_distribution
 	struct prior_state {
 		typename ConstantDistribution::PriorState constant_prior_state;
 		array_map<unsigned int, unsigned int> arg1_map;
-		array_map<unsigned int, string*> arg2_string_map;
+		array_map<unsigned int, hol_term*> arg2_string_map;
 		array_map<unsigned int, array<hol_term>> definitions;
 
 		prior_state() : arg1_map(16), arg2_string_map(16), definitions(16) { }
 
-		prior_state(const prior_state& src) : constant_prior_state(src.constant_prior_state), arg1_map(src.arg1_map.capacity), arg2_string_map(src.arg2_string_map.capacity), definitions(src.definitions.capacity) {
-			for (unsigned int i = 0; i < src.arg1_map.size; i++) {
-				arg1_map.keys[i] = src.arg1_map.keys[i];
-				arg1_map.values[i] = src.arg1_map.values[i];
-				arg1_map.size++;
-			} for (unsigned int i = 0; i < src.arg2_string_map.size; i++) {
-				arg2_string_map.keys[i] = src.arg2_string_map.keys[i];
-				arg2_string_map.values[i] = src.arg2_string_map.values[i];
-				arg2_string_map.size++;
-			} for (unsigned int i = 0; i < src.definitions.size; i++) {
-				if (!array_init(definitions.values[i], src.definitions.values[i].capacity)) {
-					for (unsigned int j = 0; j < i; j++) core::free(definitions.values[j]);
-					throw std::bad_alloc();
-				}
-				definitions.keys[i] = src.definitions.keys[i];
-				for (unsigned int j = 0; j < src.definitions.values[i].length; j++)
-					definitions.values[i][j] = src.definitions.values[i][j];
-				definitions.values[i].length = src.definitions.values[i].length;
-				definitions.size++;
-			}
+		prior_state(const prior_state& src, const hash_map<const hol_term*, hol_term*>& formula_map) :
+			constant_prior_state(src.constant_prior_state), arg1_map(src.arg1_map.capacity), arg2_string_map(src.arg2_string_map.capacity), definitions(src.definitions.capacity)
+		{
+			if (!init_helper(src, formula_map))
+				throw std::bad_alloc();
 		}
 
-		~prior_state() {
-			for (auto entry : definitions) {
-				for (hol_term& term : entry.value)
-					core::free(term);
-				core::free(entry.value);
-			}
-		}
+		~prior_state() { free_helper(); }
 
 		inline bool add(const prior_state_changes& changes) {
 			for (const auto& entry : changes.arg1_map) {
+				if (!arg1_map.ensure_capacity(arg1_map.size + 2))
+					return false;
+				unsigned int index = arg1_map.index_of(entry.key);
 #if !defined(NDEBUG)
-				if (arg1_map.contains(entry.key))
+				if (index < arg1_map.size)
 					fprintf(stderr, "simple_hol_term_distribution.prior_state.add ERROR: `arg1_map` already contains the key %u.\n", entry.key);
 #endif
-				if (!arg1_map.put(entry.key, entry.value))
-					return false;
+				arg1_map.keys[index] = entry.key;
+				arg1_map.values[index] = entry.value;
+				arg1_map.size++;
 			} for (const auto& entry : changes.arg2_string_map) {
+				if (!arg2_string_map.ensure_capacity(arg2_string_map.size + 2))
+					return false;
+				unsigned int index = arg2_string_map.index_of(entry.key);
 #if !defined(NDEBUG)
-				if (arg2_string_map.contains(entry.key))
+				if (index < arg2_string_map.size)
 					fprintf(stderr, "simple_hol_term_distribution.prior_state.add ERROR: `arg2_string_map` already contains the key %u.\n", entry.key);
 #endif
-				if (!arg2_string_map.put(entry.key, entry.value))
-					return false;
+				arg2_string_map.keys[index] = entry.key;
+				arg2_string_map.values[index] = entry.value;
+				arg2_string_map.size++;
 			} for (const auto& entry : changes.definitions) {
 				if (!definitions.ensure_capacity(definitions.size + 1))
 					return false;
@@ -1253,6 +1503,204 @@ struct simple_hol_term_distribution
 			prior_state_changes changes;
 			log_probability_helper(observation, prior, changes);
 			return subtract(changes);
+		}
+
+		static inline bool get_formula_map(const prior_state& state,
+				hash_map<const hol_term*, unsigned int>& formula_map)
+		{
+			for (const auto& entry : state.arg2_string_map) {
+				if (!::get_formula_map(entry.value, formula_map))
+					return false;
+			} for (const auto& entry : state.definitions) {
+				for (const hol_term& definition : entry.value) {
+					if (!::get_formula_map(definition, formula_map))
+						return false;
+				}
+			}
+			return ConstantDistribution::PriorState::get_formula_map(state.constant_prior_state, formula_map);
+		}
+
+		template<typename Stream>
+		static inline bool read(prior_state& state,
+				Stream& in, hol_term** terms)
+		{
+			decltype(state.arg1_map.size) arg1_map_size;
+			if (!core::read(arg1_map_size, in)
+			 || !array_map_init(state.arg1_map, ((size_t) 1) << (core::log2(arg1_map_size == 0 ? 1 : arg1_map_size) + 1)))
+				return false;
+			for (unsigned int i = 0; i < arg1_map_size; i++) {
+				if (!core::read(state.arg1_map.keys[i], in)
+				 || !core::read(state.arg1_map.values[i], in))
+				{
+					core::free(state.arg1_map);
+					return false;
+				}
+				state.arg1_map.size++;
+			}
+
+			decltype(state.arg2_string_map.size) arg2_string_map_size;
+			if (!core::read(arg2_string_map_size, in)
+			 || !array_map_init(state.arg2_string_map, ((size_t) 1) << (core::log2(arg2_string_map_size == 0 ? 1 : arg2_string_map_size) + 1)))
+			{
+				core::free(state.arg1_map);
+				return false;
+			}
+			for (unsigned int i = 0; i < arg2_string_map_size; i++) {
+				unsigned int index;
+				if (!core::read(state.arg2_string_map.keys[i], in)
+				 || !core::read(index, in))
+				{
+					core::free(state.arg1_map);
+					core::free(state.arg2_string_map);
+					return false;
+				}
+				state.arg2_string_map.values[i] = terms[index];
+				state.arg2_string_map.size++;
+			}
+
+			decltype(state.definitions.size) definition_count;
+			if (!core::read(definition_count, in)
+			 || !array_map_init(state.definitions, ((size_t) 1) << (core::log2(definition_count == 0 ? 1 : definition_count) + 1)))
+			{
+				core::free(state.arg1_map);
+				core::free(state.arg2_string_map);
+				return false;
+			}
+			for (unsigned int i = 0; i < definition_count; i++) {
+				size_t definition_array_length;
+				if (!core::read(state.definitions.keys[i], in)
+				 || !core::read(definition_array_length, in)
+				 || !array_init(state.definitions.values[i], ((size_t) 1) << (core::log2(definition_array_length == 0 ? 1 : definition_array_length) + 1)))
+				{
+					state.free_helper();
+					core::free(state.arg1_map);
+					core::free(state.arg2_string_map);
+					core::free(state.definitions);
+					return false;
+				}
+				state.definitions.size++;
+				for (size_t j = 0; j < definition_array_length; j++) {
+					if (!::read(state.definitions.values[i][j], in, terms)) {
+						state.free_helper();
+						core::free(state.arg1_map);
+						core::free(state.arg2_string_map);
+						core::free(state.definitions);
+						return false;
+					}
+					state.definitions.values[i][j].reference_count = 1;
+					state.definitions.values[i].length++;
+				}
+			}
+
+			if (!ConstantDistribution::PriorState::read(state.constant_prior_state, in, terms)) {
+				state.free_helper();
+				core::free(state.arg1_map);
+				core::free(state.arg2_string_map);
+				core::free(state.definitions);
+				return false;
+			}
+			return true;
+		}
+
+		template<typename Stream>
+		static inline bool write(const prior_state& state, Stream& out,
+				const hash_map<const hol_term*, unsigned int>& formula_map)
+		{
+			if (!core::write(state.arg1_map.size, out))
+				return false;
+			for (const auto& entry : state.arg1_map) {
+				if (!core::write(entry.key, out)
+				 || !core::write(entry.value, out))
+					return false;
+			}
+
+			if (!core::write(state.arg2_string_map.size, out))
+				return false;
+			for (const auto& entry : state.arg2_string_map) {
+				if (!core::write(entry.key, out)
+				 || !core::write(formula_map.get(entry.value), out))
+					return false;
+			}
+
+			if (!core::write(state.definitions.size, out))
+				return false;
+			for (const auto& entry : state.definitions) {
+				if (!core::write(entry.key, out)
+				 || !core::write((size_t) entry.value.length, out))
+					return false;
+				for (const hol_term& term : entry.value)
+					if (!::write(term, out, formula_map)) return false;
+			}
+
+			return ConstantDistribution::PriorState::write(state.constant_prior_state, out, formula_map);
+		}
+
+		static bool clone(const prior_state& src, prior_state& dst,
+				const hash_map<const hol_term*, hol_term*>& formula_map)
+		{
+			if (!ConstantDistribution::PriorState::clone(src.constant_prior_state, dst.constant_prior_state)) {
+				return false;
+			} else if (!array_map_init(dst.arg1_map, src.arg1_map.capacity)) {
+				core::free(dst.constant_prior_state);
+				return false;
+			} else if (!array_map_init(dst.arg2_string_map, src.arg2_string_map.capacity)) {
+				core::free(dst.constant_prior_state);
+				core::free(dst.arg1_map);
+				return false;
+			} else if (!array_map_init(dst.definitions, src.definitions.capacity)) {
+				core::free(dst.constant_prior_state);
+				core::free(dst.arg1_map);
+				core::free(dst.arg2_string_map);
+				return false;
+			} else if (!dst.init_helper(src, formula_map)) {
+				core::free(dst.constant_prior_state);
+				core::free(dst.arg1_map);
+				core::free(dst.arg2_string_map);
+				core::free(dst.definitions);
+				return false;
+			}
+			return true;
+		}
+
+		static inline void free(prior_state& state) {
+			state.free_helper();
+			core::free(state.constant_prior_state);
+			core::free(state.arg1_map);
+			core::free(state.arg2_string_map);
+			core::free(state.definitions);
+		}
+
+		inline bool init_helper(const prior_state& src,
+				const hash_map<const hol_term*, hol_term*>& formula_map)
+		{
+			for (unsigned int i = 0; i < src.arg1_map.size; i++) {
+				arg1_map.keys[i] = src.arg1_map.keys[i];
+				arg1_map.values[i] = src.arg1_map.values[i];
+				arg1_map.size++;
+			} for (unsigned int i = 0; i < src.arg2_string_map.size; i++) {
+				arg2_string_map.keys[i] = src.arg2_string_map.keys[i];
+				arg2_string_map.values[i] = formula_map.get(src.arg2_string_map.values[i]);
+				arg2_string_map.size++;
+			} for (unsigned int i = 0; i < src.definitions.size; i++) {
+				if (!array_init(definitions.values[i], src.definitions.values[i].capacity)) {
+					for (unsigned int j = 0; j < i; j++) core::free(definitions.values[j]);
+					return false;
+				}
+				definitions.keys[i] = src.definitions.keys[i];
+				for (unsigned int j = 0; j < src.definitions.values[i].length; j++)
+					definitions.values[i][j] = src.definitions.values[i][j];
+				definitions.values[i].length = src.definitions.values[i].length;
+				definitions.size++;
+			}
+			return true;
+		}
+
+		inline void free_helper() {
+			for (auto entry : definitions) {
+				for (hol_term& term : entry.value)
+					core::free(term);
+				core::free(entry.value);
+			}
 		}
 	};
 
@@ -1669,7 +2117,7 @@ double log_probability_helper(const hol_term* term,
 			} else if (right->type == hol_term_type::STRING) {
 				value += prior.log_arg_string_probability;
 				if (left->binary.right->type == hol_term_type::CONSTANT)
-					changes.arg2_string_map.put(left->binary.right->constant, &right->str);
+					changes.arg2_string_map.put(left->binary.right->constant, right);
 			}
 			return value;
 		} else if (term->binary.left->type == hol_term_type::CONSTANT || term->binary.right->type == hol_term_type::CONSTANT) {
@@ -1759,8 +2207,6 @@ double log_probability(const Collection<hol_term*>& clusters,
 #endif
 	double value = 0.0;
 	typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes changes;
-	array_map<unsigned int, unsigned int> arg1_map(8);
-	array_map<unsigned int, string*> arg2_string_map(8);
 	for (hol_term* formula : clusters) {
 		double current_value = log_probability_helper(formula, prior, changes);
 #if defined(DEBUG_LOG_PROBABILITY)
@@ -1775,7 +2221,7 @@ double log_probability(const Collection<hol_term*>& clusters,
 #endif
 
 	/* get the name events */
-	array_map<unsigned int, array<const string*>> name_map(max(1, changes.arg2_string_map.size));
+	array_map<unsigned int, array<const hol_term*>> name_map(max(1, changes.arg2_string_map.size));
 	for (const auto& entry : changes.arg2_string_map) {
 		bool contains;
 		unsigned int named_entity = changes.arg1_map.get(entry.key, contains);
@@ -1855,7 +2301,7 @@ double log_probability_ratio(
 		value -= log_probability_helper(formula, prior, old_prior_changes);
 
 	/* get the name events */
-	array_map<unsigned int, array<const string*>> old_name_map(max(1, old_prior_changes.arg2_string_map.size));
+	array_map<unsigned int, array<const hol_term*>> old_name_map(max(1, old_prior_changes.arg2_string_map.size));
 	for (const auto& entry : old_prior_changes.arg2_string_map) {
 		bool contains;
 		unsigned int named_entity = prior_state.arg1_map.get(entry.key, contains);
@@ -1877,7 +2323,7 @@ double log_probability_ratio(
 		bool contains;
 		if (old_prior_changes.arg2_string_map.contains(entry.key))
 			continue;
-		const string* name = prior_state.arg2_string_map.get(entry.key, contains);
+		const hol_term* name = prior_state.arg2_string_map.get(entry.key, contains);
 		if (!contains) continue;
 
 		unsigned int named_entity = entry.value;
@@ -1895,7 +2341,7 @@ double log_probability_ratio(
 		}
 	}
 
-	array_map<unsigned int, array<const string*>> new_name_map(max(1, new_prior_changes.arg2_string_map.size));
+	array_map<unsigned int, array<const hol_term*>> new_name_map(max(1, new_prior_changes.arg2_string_map.size));
 	for (const auto& entry : new_prior_changes.arg2_string_map) {
 		bool contains;
 		unsigned int named_entity = new_prior_changes.arg1_map.get(entry.key, contains);
@@ -1924,7 +2370,7 @@ double log_probability_ratio(
 		bool contains;
 		if (old_prior_changes.arg2_string_map.contains(entry.key))
 			continue;
-		const string* name = prior_state.arg2_string_map.get(entry.key, contains);
+		const hol_term* name = prior_state.arg2_string_map.get(entry.key, contains);
 		if (!contains) continue;
 
 		unsigned int named_entity = entry.value;
@@ -1948,7 +2394,7 @@ double log_probability_ratio(
 	if (new_name_map.size > 1) insertion_sort(new_name_map.keys, new_name_map.values, new_name_map.size, default_sorter());
 
 	/* get the full set of name events before the changes (TODO: we can actually keep `name_map` in `prior_state`) */
-	array_map<unsigned int, array<const string*>> name_map(max(1, prior_state.arg2_string_map.size));
+	array_map<unsigned int, array<const hol_term*>> name_map(max(1, prior_state.arg2_string_map.size));
 	for (const auto& entry : prior_state.arg2_string_map) {
 		bool contains;
 		unsigned int named_entity = prior_state.arg1_map.get(entry.key, contains);
@@ -1977,32 +2423,32 @@ double log_probability_ratio(
 	unsigned int i = 0, j = 0;
 	while (i < old_name_map.size && j < new_name_map.size) {
 		if (old_name_map.keys[i] == new_name_map.keys[j]) {
-			array<const string*>& names = name_map.get(old_name_map.keys[i], contains);
+			array<const hol_term*>& names = name_map.get(old_name_map.keys[i], contains);
 			unsigned int old_count = (contains ? names.length : 0);
 			name_prior += log_probability(old_count + ((ssize_t) new_name_map.values[j].length - old_name_map.values[i].length), prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			i++; j++;
 		} else if (old_name_map.keys[i] < new_name_map.keys[j]) {
-			array<const string*>& names = name_map.get(old_name_map.keys[i], contains);
+			array<const hol_term*>& names = name_map.get(old_name_map.keys[i], contains);
 			unsigned int old_count = (contains ? names.length : 0);
 			name_prior += log_probability(old_count - ((ssize_t) old_name_map.values[i].length), prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			i++;
 		} else {
-			array<const string*>& names = name_map.get(new_name_map.keys[j], contains);
+			array<const hol_term*>& names = name_map.get(new_name_map.keys[j], contains);
 			unsigned int old_count = (contains ? names.length : 0);
 			name_prior += log_probability(old_count + new_name_map.values[j].length, prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			j++;
 		}
 	} while (i < old_name_map.size) {
-		array<const string*>& names = name_map.get(old_name_map.keys[i], contains);
+		array<const hol_term*>& names = name_map.get(old_name_map.keys[i], contains);
 		unsigned int old_count = (contains ? names.length : 0);
 		name_prior += log_probability(old_count - ((ssize_t) old_name_map.values[i].length), prior.name_count_distribution)
 					- log_probability(old_count, prior.name_count_distribution);
 		i++;
 	} while (j < new_name_map.size) {
-		array<const string*>& names = name_map.get(new_name_map.keys[j], contains);
+		array<const hol_term*>& names = name_map.get(new_name_map.keys[j], contains);
 		unsigned int old_count = (contains ? names.length : 0);
 		name_prior += log_probability(old_count + new_name_map.values[j].length, prior.name_count_distribution)
 					- log_probability(old_count, prior.name_count_distribution);
