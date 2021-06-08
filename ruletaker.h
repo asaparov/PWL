@@ -698,7 +698,7 @@ void do_ruletaker_experiments(bool& status,
 		if (question_queue_start < question_queue_length) {
 			ruletaker_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
-/*if (job.question_id < 23 - 1)
+/*if (job.question_id != 5 - 1)
 {
 total++;
 free(job);
@@ -810,7 +810,7 @@ fflush(stdout);
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 140 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+if (job.context_id != 6 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -861,6 +861,20 @@ continue;
 							bool print_debug = false;
 							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
 							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
+/*if (i == 436) {
+fprintf(stderr, "DEBUG: i = %u, j = %u, t = %u\n", i, j, t);
+job.proof_axioms.check_proof_axioms(job.T);
+job.proof_axioms.check_universal_eliminations(job.T, collector);
+job.T.check_concept_axioms();
+job.T.check_disjunction_introductions();
+job.T.are_elements_provable();
+job.T.sets.check_freeable_sets();
+job.T.sets.are_descendants_valid();
+job.T.sets.are_set_sizes_valid();
+job.T.sets.check_set_ids();
+job.T.template print_axioms<true>(stderr, *debug_terminal_printer);
+job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+}*/
 							do_mh_step(job.T, proof_prior, job.proof_axioms, collector);
 							if (collector.current_log_probability > max_log_probability) {
 								free(T_MAP); proof_axioms_MAP.~PriorStateType(); formula_map.clear();

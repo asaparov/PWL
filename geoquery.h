@@ -228,6 +228,12 @@ void do_geoquery_experiments(bool& status,
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
+if (job.context_id != 10 - 1) {
+total += job.questions.length;
+num_threads_reading_context--;
+free(job);
+continue;
+}
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = prng_engine;

@@ -98,3 +98,532 @@ The area of Washington is 68139 square miles.
 The area of West Virginia is 24200 square miles.
 The area of Wisconsin is 56153 square miles.
 The area of Wyoming is 97809 square miles.
+The Mississippi River is one of the 46 rivers in the United States.
+The Missouri River is a river in the United States.
+The Colorado River is a river in the United States.
+The Ohio River is a river in the United States.
+The Red River is a river in the United States.
+The Arkansas River is a river in the United States.
+The Canadian River is a river in the United States.
+The Connecticut River is a river in the United States.
+The Delaware River is a river in the United States.
+The Little Missouri River is a river in the United States.
+The Snake River is a river in the United States.
+The Chattahoochee River is a river in the United States.
+The Cimarron River is a river in the United States.
+The Green River is a river in the United States.
+The North Platte River is a river in the United States.
+The Potomac River is a river in the United States.
+The Republican River is a river in the United States.
+The Rio Grande is a river in the United States.
+The San Juan River is a river in the United States.
+The Tennessee River is a river in the United States.
+The Wabash River is a river in the United States.
+The Yellowstone River is a river in the United States.
+The Allegheny River is a river in the United States.
+The Bighorn River is a river in the United States.
+The Cheyenne River is a river in the United States.
+The Clark Fork River is a river in the United States.
+The Columbia River is a river in the United States.
+The Cumberland River is a river in the United States.
+The Dakota River is a river in the United States.
+The Gila River is a river in the United States.
+The Hudson River is a river in the United States.
+The Neosho River is a river in the United States.
+The Niobrara River is a river in the United States.
+The Ouachita River is a river in the United States.
+The Pearl River is a river in the United States.
+The Pecos River is a river in the United States.
+The Powder River is a river in the United States.
+The Roanoke River is a river in the United States.
+The Rock River is a river in the United States.
+The Smoky Hill River is a river in the United States.
+The South Platte River is a river in the United States.
+The St. Francis River is a river in the United States.
+The Tombigbee River is a river in the United States.
+The Washita River is a river in the United States.
+The Wateree-Catawba River is a river in the United States.
+The White River is a river in the United States.
+The length of the Mississippi River is 3778 miles.
+The length of the Missouri River is 3968 miles.
+The length of the Colorado River is 2333 miles.
+The length of the Ohio River is 1569 miles.
+The length of the Red River is 1638 miles.
+The length of the Arkansas River is 2333 miles.
+The length of the Canadian River is 1458 miles.
+The length of the Connecticut River is 655 miles.
+The length of the Delaware River is 451 miles.
+The length of the Little Missouri River is 901 miles.
+The length of the Snake River is 1670 miles.
+The length of the Chattahoochee River is 702 miles.
+The length of the Cimarron River is 965 miles.
+The length of the Green River is 1175 miles.
+The length of the North Platte River is 1094 miles.
+The length of the Potomac River is 462 miles.
+The length of the Republican River is 679 miles.
+The length of the Rio Grande is 3033 miles.
+The length of the San Juan River is 579 miles.
+The length of the Tennessee River is 1049 miles.
+The length of the Wabash River is 764 miles.
+The length of the Yellowstone River is 1080 miles.
+The length of the Allegheny River is 523 miles.
+The length of the Bighorn River is 541 miles.
+The length of the Cheyenne River is 848 miles.
+The length of the Clark Fork River is 483 miles.
+The length of the Columbia River is 1953 miles.
+The length of the Cumberland River is 1105 miles.
+The length of the Dakota River is 1142 miles.
+The length of the Gila River is 805 miles.
+The length of the Hudson River is 492 miles.
+The length of the Neosho River is 740 miles.
+The length of the Niobrara River is 693 miles.
+The length of the Ouachita River is 973 miles.
+The length of the Pearl River is 788 miles.
+The length of the Pecos River is 805 miles.
+The length of the Powder River is 603 miles.
+The length of the Roanoke River is 660 miles.
+The length of the Rock River is 459 miles.
+The length of the Smoky Hill River is 869 miles.
+The length of the South Platte River is 682 miles.
+The length of the St. Francis River is 684 miles.
+The length of the Tombigbee River is 658 miles.
+The length of the Washita River is 805 miles.
+The length of the Wateree-Catawba River is 636 miles.
+The length of the White River is 1110 miles.
+The USA is the United States.
+The population of the city of Birmingham, Alabama is 284413.
+The population of the city of Mobile, Alabama is 200452.
+The population of the city of Montgomery, Alabama is 177857.
+The population of the city of Huntsville, Alabama is 142513.
+The population of the city of Tuscaloosa, Alabama is 75143.
+The population of the city of Anchorage, Alaska is 174431.
+The population of the city of Phoenix, Arizona is 789704.
+The population of the city of Tucson, Arizona is 330537.
+The population of the city of Mesa, Arizona is 152453.
+The population of the city of Tempe, Arizona is 106919.
+The population of the city of Glendale, Arizona is 96988.
+The population of the city of Scottsdale, Arizona is 88622.
+The population of the city of Little Rock, Arkansas is 158915.
+The population of the city of Fort Smith, Arkansas is 71384.
+The population of the city of North Little Rock, Arkansas is 64388.
+The population of the city of Los Angeles, California is 2966850.
+The population of the city of San Diego, California is 875538.
+The population of the city of San Francisco, California is 678974.
+The population of the city of San Jose, California is 629442.
+The population of the city of Long Beach, California is 361334.
+The population of the city of Oakland, California is 339337.
+The population of the city of Sacramento, California is 275741.
+The population of the city of Anaheim, California is 219311.
+The population of the city of Fresno, California is 218202.
+The population of the city of Santa Ana, California is 203713.
+The population of the city of Riverside, California is 170876.
+The population of the city of Huntington Beach, California is 170505.
+The population of the city of Stockton, California is 149779.
+The population of the city of Glendale, California is 139060.
+The population of the city of Fremont, California is 131945.
+The population of the city of Torrance, California is 131497.
+The population of the city of Garden Grove, California is 123351.
+The population of the city of San Bernardino, California is 118794.
+The population of the city of Pasadena, California is 118072.
+The population of the city of East Los Angeles, California is 110017.
+The population of the city of Oxnard, California is 108195.
+The population of the city of Modesto, California is 106963.
+The population of the city of Sunnyvale, California is 106618.
+The population of the city of Bakersfield, California is 105611.
+The population of the city of Concord, California is 103763.
+The population of the city of Berkeley, California is 103328.
+The population of the city of Fullerton, California is 102246.
+The population of the city of Inglewood, California is 94162.
+The population of the city of Hayward, California is 93585.
+The population of the city of Pomona, California is 92742.
+The population of the city of Orange, California is 91450.
+The population of the city of Ontario, California is 88820.
+The population of the city of Santa Monica, California is 88314.
+The population of the city of Santa Clara, California is 87700.
+The population of the city of Citrus Heights, California is 85911.
+The population of the city of Norwalk, California is 84901.
+The population of the city of Burbank, California is 84625.
+The population of the city of Chula Vista, California is 83927.
+The population of the city of Santa Rosa, California is 83205.
+The population of the city of Downey, California is 82602.
+The population of the city of Costa Mesa, California is 82291.
+The population of the city of Compton, California is 81230.
+The population of the city of Carson, California is 81221.
+The population of the city of Salinas, California is 80479.
+The population of the city of West Covina, California is 80292.
+The population of the city of Vallejo, California is 80188.
+The population of the city of El Monte, California is 79494.
+The population of the city of Daly City, California is 78519.
+The population of the city of Thousand Oaks, California is 77797.
+The population of the city of San Mateo, California is 77640.
+The population of the city of Simi Valley, California is 77500.
+The population of the city of Oceanside, California is 76698.
+The population of the city of Richmond, California is 74676.
+The population of the city of Lakewood, California is 74654.
+The population of the city of Santa Barbara, California is 74542.
+The population of the city of El Cajon, California is 73892.
+The population of the city of Ventura, California is 73774.
+The population of the city of Westminster, California is 71133.
+The population of the city of Whittier, California is 68558.
+The population of the city of South Gate, California is 66784.
+The population of the city of Alhambra, California is 64767.
+The population of the city of Buena Park, California is 64165.
+The population of the city of San Leandro, California is 63952.
+The population of the city of Alameda, California is 63852.
+The population of the city of Newport Beach, California is 63475.
+The population of the city of Escondido, California is 62480.
+The population of the city of Irvine, California is 62134.
+The population of the city of Mountain View, California is 58655.
+The population of the city of Fairfield, California is 58099.
+The population of the city of Redondo Beach, California is 57102.
+The population of the city of Scotts Valley, California is 6037.
+The population of the city of Denver, Colorado is 492365.
+The population of the city of Colorado Springs, Colorado is 215150.
+The population of the city of Aurora, Colorado is 158588.
+The population of the city of Lakewood, Colorado is 113808.
+The population of the city of Pueblo, Colorado is 101686.
+The population of the city of Arvada, Colorado is 84576.
+The population of the city of Boulder, Colorado is 76685.
+The population of the city of Fort Collins, Colorado is 64632.
+The population of the city of Bridgeport, Connecticut is 142546.
+The population of the city of Hartford, Connecticut is 136392.
+The population of the city of New Haven, Connecticut is 126089.
+The population of the city of Waterbury, Connecticut is 103266.
+The population of the city of Stamford, Connecticut is 102466.
+The population of the city of Norwalk, Connecticut is 77767.
+The population of the city of New Britain, Connecticut is 73840.
+The population of the city of West Hartford, Connecticut is 61301.
+The population of the city of Danbury, Connecticut is 60470.
+The population of the city of Greenwich, Connecticut is 59578.
+The population of the city of Bristol, Connecticut is 57370.
+The population of the city of Meriden, Connecticut is 57118.
+The population of the city of Wilmington, Delaware is 70195.
+The population of the city of Washington, District Of Columbia is 638333.
+The population of the city of Jacksonville, Florida is 540920.
+The population of the city of Miami, Florida is 346865.
+The population of the city of Tampa, Florida is 271523.
+The population of the city of St. Petersburg, Florida is 238647.
+The population of the city of Fort Lauderdale, Florida is 153256.
+The population of the city of Orlando, Florida is 128394.
+The population of the city of Hollywood, Florida is 117188.
+The population of the city of Miami Beach, Florida is 96298.
+The population of the city of Clearwater, Florida is 85450.
+The population of the city of Tallahassee, Florida is 81548.
+The population of the city of Gainesville, Florida is 81371.
+The population of the city of Kendall, Florida is 73758.
+The population of the city of West Palm Beach, Florida is 62530.
+The population of the city of Largo, Florida is 58977.
+The population of the city of Pensacola, Florida is 57619.
+The population of the city of Atlanta, Georgia is 425022.
+The population of the city of Columbus, Georgia is 169441.
+The population of the city of Savannah, Georgia is 141654.
+The population of the city of Macon, Georgia is 116860.
+The population of the city of Albany, Georgia is 74425.
+The population of the city of Honolulu, Hawaii is 762874.
+The population of the city of Ewa, Hawaii is 190037.
+The population of the city of Koolaupoko, Hawaii is 109373.
+The population of the city of Boise, Idaho is 102249.
+The population of the city of Chicago, Illinois is 3005172.
+The population of the city of Rockford, Illinois is 139712.
+The population of the city of Peoria, Illinois is 124160.
+The population of the city of Springfield, Illinois is 100054.
+The population of the city of Decatur, Illinois is 93939.
+The population of the city of Aurora, Illinois is 81293.
+The population of the city of Joliet, Illinois is 77956.
+The population of the city of Evanston, Illinois is 73706.
+The population of the city of Waukegan, Illinois is 67653.
+The population of the city of Arlington Heights, Illinois is 66116.
+The population of the city of Elgin, Illinois is 63668.
+The population of the city of Cicero, Illinois is 61232.
+The population of the city of Oak Lawn, Illinois is 60590.
+The population of the city of Skokie, Illinois is 60278.
+The population of the city of Champaign, Illinois is 58267.
+The population of the city of Indianapolis, Indiana is 700807.
+The population of the city of Fort Wayne, Indiana is 172196.
+The population of the city of Gary, Indiana is 151968.
+The population of the city of Evansville, Indiana is 130496.
+The population of the city of South Bend, Indiana is 109727.
+The population of the city of Hammond, Indiana is 93714.
+The population of the city of Muncie, Indiana is 77216.
+The population of the city of Anderson, Indiana is 64695.
+The population of the city of Terre Haute, Indiana is 61125.
+The population of the city of Des Moines, Iowa is 191003.
+The population of the city of Cedar Rapids, Iowa is 110243.
+The population of the city of Davenport, Iowa is 103254.
+The population of the city of Sioux City, Iowa is 82003.
+The population of the city of Waterloo, Iowa is 75985.
+The population of the city of Dubuque, Iowa is 62321.
+The population of the city of Wichita, Kansas is 279212.
+The population of the city of Kansas City, Kansas is 161148.
+The population of the city of Topeka, Kansas is 118690.
+The population of the city of Overland Park, Kansas is 81784.
+The population of the city of Louisville, Kentucky is 298451.
+The population of the city of Lexington, Kentucky is 204165.
+The population of the city of New Orleans, Louisiana is 557515.
+The population of the city of Baton Rouge, Louisiana is 219419.
+The population of the city of Shreveport, Louisiana is 205820.
+The population of the city of Metairie, Louisiana is 164160.
+The population of the city of Lafayette, Louisiana is 80584.
+The population of the city of Lake Charles, Louisiana is 75051.
+The population of the city of Kenner, Louisiana is 66382.
+The population of the city of Monroe, Louisiana is 57597.
+The population of the city of Portland, Maine is 61572.
+The population of the city of Baltimore, Maryland is 786775.
+The population of the city of Silver Spring, Maryland is 72893.
+The population of the city of Dundalk, Maryland is 71293.
+The population of the city of Bethesda, Maryland is 63022.
+The population of the city of Boston, Massachusetts is 562994.
+The population of the city of Worcester, Massachusetts is 161799.
+The population of the city of Springfield, Massachusetts is 152319.
+The population of the city of New Bedford, Massachusetts is 98478.
+The population of the city of Cambridge, Massachusetts is 95322.
+The population of the city of Brockton, Massachusetts is 95172.
+The population of the city of Fall River, Massachusetts is 92574.
+The population of the city of Lowell, Massachusetts is 92418.
+The population of the city of Quincy, Massachusetts is 84743.
+The population of the city of Newton, Massachusetts is 83622.
+The population of the city of Lynn, Massachusetts is 78471.
+The population of the city of Somerville, Massachusetts is 77372.
+The population of the city of Framingham, Massachusetts is 65113.
+The population of the city of Lawrence, Massachusetts is 63175.
+The population of the city of Waltham, Massachusetts is 58200.
+The population of the city of Medford, Massachusetts is 58076.
+The population of the city of Detroit, Michigan is 1203339.
+The population of the city of Grand Rapids, Michigan is 181843.
+The population of the city of Warren, Michigan is 161134.
+The population of the city of Flint, Michigan is 159611.
+The population of the city of Lansing, Michigan is 130414.
+The population of the city of Sterling Heights, Michigan is 108999.
+The population of the city of Ann Arbor, Michigan is 107969.
+The population of the city of Livonia, Michigan is 104814.
+The population of the city of Dearborn, Michigan is 90660.
+The population of the city of Westland, Michigan is 84603.
+The population of the city of Kalamazoo, Michigan is 79722.
+The population of the city of Taylor, Michigan is 77568.
+The population of the city of Saginaw, Michigan is 77508.
+The population of the city of Pontiac, Michigan is 76715.
+The population of the city of St. Clair Shores, Michigan is 76210.
+The population of the city of Southfield, Michigan is 75568.
+The population of the city of Clinton, Michigan is 72400.
+The population of the city of Royal Oak, Michigan is 70893.
+The population of the city of Dearborn Heights, Michigan is 67706.
+The population of the city of Troy, Michigan is 67102.
+The population of the city of Waterford, Michigan is 64250.
+The population of the city of Wyoming, Michigan is 59616.
+The population of the city of Redford, Michigan is 58441.
+The population of the city of Farmington Hills, Michigan is 58056.
+The population of the city of Minneapolis, Minnesota is 370951.
+The population of the city of St. Paul, Minnesota is 270230.
+The population of the city of Duluth, Minnesota is 92811.
+The population of the city of Bloomington, Minnesota is 81831.
+The population of the city of Rochester, Minnesota is 57906.
+The population of the city of Jackson, Mississippi is 202895.
+The population of the city of St. Louis, Missouri is 453085.
+The population of the city of Kansas City, Missouri is 448159.
+The population of the city of Springfield, Missouri is 133116.
+The population of the city of Independence, Missouri is 111797.
+The population of the city of St. Joseph, Missouri is 76691.
+The population of the city of Columbia, Missouri is 62061.
+The population of the city of Billings, Montana is 66842.
+The population of the city of Great Falls, Montana is 56725.
+The population of the city of Omaha, Nebraska is 314255.
+The population of the city of Lincoln, Nebraska is 171932.
+The population of the city of Las Vegas, Nevada is 164674.
+The population of the city of Reno, Nevada is 100756.
+The population of the city of Manchester, New Hampshire is 90936.
+The population of the city of Nashua, New Hampshire is 67865.
+The population of the city of Newark, New Jersey is 329248.
+The population of the city of Jersey City, New Jersey is 223532.
+The population of the city of Paterson, New Jersey is 137970.
+The population of the city of Elizabeth, New Jersey is 106201.
+The population of the city of Trenton, New Jersey is 92124.
+The population of the city of Woodbridge, New Jersey is 90074.
+The population of the city of Camden, New Jersey is 84910.
+The population of the city of East Orange, New Jersey is 77878.
+The population of the city of Clifton, New Jersey is 74388.
+The population of the city of Edison, New Jersey is 70193.
+The population of the city of Cherry Hill, New Jersey is 68785.
+The population of the city of Bayonne, New Jersey is 65047.
+The population of the city of Middletown, New Jersey is 61615.
+The population of the city of Irvington, New Jersey is 61493.
+The population of the city of Albuquerque, New Mexico is 331767.
+The population of the city of New York, New York is 7071639.
+The population of the city of Buffalo, New York is 357870.
+The population of the city of Rochester, New York is 241741.
+The population of the city of Yonkers, New York is 195351.
+The population of the city of Syracuse, New York is 170105.
+The population of the city of Albany, New York is 101727.
+The population of the city of Cheektowaga, New York is 92145.
+The population of the city of Utica, New York is 75632.
+The population of the city of Niagara Falls, New York is 71384.
+The population of the city of New Rochelle, New York is 70794.
+The population of the city of Schenectady, New York is 67972.
+The population of the city of Mount Vernon, New York is 66713.
+The population of the city of Irondequoit, New York is 57648.
+The population of the city of Levittown, New York is 57045.
+The population of the city of Charlotte, North Carolina is 314447.
+The population of the city of Greensboro, North Carolina is 155642.
+The population of the city of Raleigh, North Carolina is 149771.
+The population of the city of Winston-Salem, North Carolina is 131885.
+The population of the city of Durham, North Carolina is 100538.
+The population of the city of High Point, North Carolina is 64107.
+The population of the city of Fayetteville, North Carolina is 59507.
+The population of the city of Fargo, North Dakota is 61308.
+The population of the city of Cleveland, Ohio is 573822.
+The population of the city of Columbus, Ohio is 564871.
+The population of the city of Cincinnati, Ohio is 385457.
+The population of the city of Toledo, Ohio is 354635.
+The population of the city of Akron, Ohio is 237177.
+The population of the city of Dayton, Ohio is 203371.
+The population of the city of Youngstown, Ohio is 115436.
+The population of the city of Canton, Ohio is 93077.
+The population of the city of Parma, Ohio is 92548.
+The population of the city of Lorain, Ohio is 75416.
+The population of the city of Springfield, Ohio is 72563.
+The population of the city of Hamilton, Ohio is 63189.
+The population of the city of Lakewood, Ohio is 61963.
+The population of the city of Kettering, Ohio is 61186.
+The population of the city of Euclid, Ohio is 59999.
+The population of the city of Elyria, Ohio is 57504.
+The population of the city of Oklahoma City, Oklahoma is 403213.
+The population of the city of Tulsa, Oklahoma is 360919.
+The population of the city of Lawton, Oklahoma is 80054.
+The population of the city of Norman, Oklahoma is 68020.
+The population of the city of Portland, Oregon is 366383.
+The population of the city of Eugene, Oregon is 105664.
+The population of the city of Salem, Oregon is 89233.
+The population of the city of Philadelphia, Pennsylvania is 1688210.
+The population of the city of Pittsburgh, Pennsylvania is 423938.
+The population of the city of Erie, Pennsylvania is 119123.
+The population of the city of Allentown, Pennsylvania is 103758.
+The population of the city of Scranton, Pennsylvania is 88117.
+The population of the city of Upper Darby, Pennsylvania is 84054.
+The population of the city of Reading, Pennsylvania is 78686.
+The population of the city of Bethlehem, Pennsylvania is 70419.
+The population of the city of Lower Merion, Pennsylvania is 59651.
+The population of the city of Abingdon, Pennsylvania is 59084.
+The population of the city of Bristol Township, Pennsylvania is 58733.
+The population of the city of Penn Hills, Pennsylvania is 57632.
+The population of the city of Altoona, Pennsylvania is 57078.
+The population of the city of Providence, Rhode Island is 156804.
+The population of the city of Warwick, Rhode Island is 87123.
+The population of the city of Cranston, Rhode Island is 71992.
+The population of the city of Pawtucket, Rhode Island is 71204.
+The population of the city of Columbia, South Carolina is 101229.
+The population of the city of Charleston, South Carolina is 69855.
+The population of the city of North Charleston, South Carolina is 62504.
+The population of the city of Greenville, South Carolina is 58242.
+The population of the city of Sioux Falls, South Dakota is 81343.
+The population of the city of Memphis, Tennessee is 646356.
+The population of the city of Nashville, Tennessee is 455651.
+The population of the city of Knoxville, Tennessee is 175030.
+The population of the city of Chattanooga, Tennessee is 169728.
+The population of the city of Houston, Texas is 1595138.
+The population of the city of Dallas, Texas is 904078.
+The population of the city of San Antonio, Texas is 785880.
+The population of the city of El Paso, Texas is 425259.
+The population of the city of Fort Worth, Texas is 385164.
+The population of the city of Austin, Texas is 345496.
+The population of the city of Corpus Christi, Texas is 231999.
+The population of the city of Lubbock, Texas is 173979.
+The population of the city of Arlington, Texas is 160123.
+The population of the city of Amarillo, Texas is 149230.
+The population of the city of Garland, Texas is 138857.
+The population of the city of Beaumont, Texas is 118102.
+The population of the city of Pasadena, Texas is 112560.
+The population of the city of Irving, Texas is 109943.
+The population of the city of Waco, Texas is 101261.
+The population of the city of Abilene, Texas is 98315.
+The population of the city of Wichita Falls, Texas is 94201.
+The population of the city of Laredo, Texas is 91449.
+The population of the city of Odessa, Texas is 90027.
+The population of the city of Brownsville, Texas is 84997.
+The population of the city of San Angelo, Texas is 73240.
+The population of the city of Richardson, Texas is 72496.
+The population of the city of Plano, Texas is 72331.
+The population of the city of Grand Prairie, Texas is 71462.
+The population of the city of Midland, Texas is 70525.
+The population of the city of Tyler, Texas is 70508.
+The population of the city of Mesquite, Texas is 67053.
+The population of the city of Mcallen, Texas is 67042.
+The population of the city of Longview, Texas is 62762.
+The population of the city of Port Arthur, Texas is 61195.
+The population of the city of Salt Lake City, Utah is 163034.
+The population of the city of Provo, Utah is 74111.
+The population of the city of West Valley, Utah is 72299.
+The population of the city of Ogden, Utah is 64407.
+The population of the city of Norfolk, Virginia is 266979.
+The population of the city of Virginia Beach, Virginia is 262199.
+The population of the city of Richmond, Virginia is 219214.
+The population of the city of Arlington, Virginia is 152599.
+The population of the city of Newport News, Virginia is 144903.
+The population of the city of Hampton, Virginia is 122617.
+The population of the city of Chesapeake, Virginia is 114226.
+The population of the city of Portsmouth, Virginia is 104577.
+The population of the city of Alexandria, Virginia is 103217.
+The population of the city of Roanoke, Virginia is 100427.
+The population of the city of Lynchburg, Virginia is 66743.
+The population of the city of Seattle, Washington is 493846.
+The population of the city of Spokane, Washington is 171300.
+The population of the city of Tacoma, Washington is 158501.
+The population of the city of Bellevue, Washington is 73903.
+The population of the city of Charleston, West Virginia is 63968.
+The population of the city of Huntington, West Virginia is 63684.
+The population of the city of Milwaukee, Wisconsin is 636212.
+The population of the city of Madison, Wisconsin is 170616.
+The population of the city of Green Bay, Wisconsin is 87899.
+The population of the city of Racine, Wisconsin is 85725.
+The population of the city of Kenosha, Wisconsin is 77685.
+The population of the city of West Allis, Wisconsin is 63982.
+The population of the city of Appleton, Wisconsin is 58913.
+The population of the city of Casper, Wyoming is 51016.
+The population of Alabama is 3894000.
+The population of Alaska is 401800.
+The population of Arizona is 2718000.
+The population of Arkansas is 2286000.
+The population of California is 23670000.
+The population of Colorado is 2889000.
+The population of Connecticut is 3107000.
+The population of Delaware is 594000.
+The population of Florida is 9746000.
+The population of Georgia is 5463000.
+The population of Hawaii is 964000.
+The population of Idaho is 944000.
+The population of Illinois is 11400000.
+The population of Indiana is 5490000.
+The population of Iowa is 2913000.
+The population of Kansas is 2364000.
+The population of Kentucky is 2364000.
+The population of Louisiana is 4206000.
+The population of Maine is 1125000.
+The population of Maryland is 4217000.
+The population of Massachusetts is 5737000.
+The population of Michigan is 9262000.
+The population of Minnesota is 4076000.
+The population of Mississippi is 2520000.
+The population of Missouri is 4916000.
+The population of Montana is 786700.
+The population of Nebraska is 1569000.
+The population of Nevada is 800500.
+The population of New Hampshire is 920600.
+The population of New Jersey is 7365000.
+The population of New Mexico is 1303000.
+The population of New York is 17558000.
+The population of North Carolina is 5882000.
+The population of North Dakota is 652700.
+The population of Ohio is 10800000.
+The population of Oklahoma is 3025000.
+The population of Oregon is 2633000.
+The population of Pennsylvania is 11863000.
+The population of Rhode Island is 947200.
+The population of South Carolina is 3121800.
+The population of South Dakota is 690767.
+The population of Tennessee is 4591000.
+The population of Texas is 14229000.
+The population of Utah is 1461000.
+The population of Vermont is 511500.
+The population of Virginia is 5346800.
+The population of Washington is 4113200.
+The population of West Virginia is 1950000.
+The population of Wisconsin is 4700000.
+The population of Wyoming is 469557.

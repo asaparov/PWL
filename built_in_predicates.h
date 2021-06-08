@@ -34,6 +34,7 @@ enum class built_in_predicates : unsigned int {
 	GREATER,
 	GREATEST,
 	GREATER_THAN_OR_EQUAL,
+	LEAST,
 	NUMBER,
 	LOCATE,
 	NEGATIVE,
@@ -217,6 +218,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("greater", (unsigned int) built_in_predicates::GREATER)
 		&& names.put("greatest", (unsigned int) built_in_predicates::GREATEST)
 		&& names.put("≥", (unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL)
+		&& names.put("least", (unsigned int) built_in_predicates::LEAST)
 		&& names.put("=", (unsigned int) built_in_predicates::EQUALS)
 		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET)
 		&& names.put("name", (unsigned int) built_in_predicates::NAME)

@@ -1332,7 +1332,7 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 	}
 	sum = 0.0;
 	for (unsigned int i = 0; i < constants.length; i++) {
-		probabilities[i] = exp(constants[i].matching_types * 1.0 - constants[i].mismatching_types * 2.0);
+		probabilities[i] = exp(constants[i].matching_types * 4.0 - constants[i].mismatching_types * 4.0);
 		sum += probabilities[i];
 	}
 	return probabilities;
@@ -1348,13 +1348,15 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		return false;
 
 	array<pair<unsigned int, bool>> new_name_events(8);
-	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events))
+	array<const typename ProofCalculus::Language*> arg1_of(4);
+	array<const typename ProofCalculus::Language*> arg2_of(4);
+	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events, arg1_of, arg2_of))
 		return false;
 
 	if (IsExploratory) {
 		unsigned int index = index_of_any(constants);
 		if (index < constants.length)
-			constants[index].matching_types += 6;
+			constants[index].matching_types += 1;
 	}
 
 	double sum;
@@ -1505,7 +1507,9 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 		return false;
 
 	array<pair<unsigned int, bool>> new_name_events(8);
-	if (!filter_constants_helper<false>(T, quantified, variable, constants, new_name_events))
+	array<const Formula*> arg1_of(4);
+	array<const Formula*> arg2_of(4);
+	if (!filter_constants_helper<false>(T, quantified, variable, constants, new_name_events, arg1_of, arg2_of))
 		return false;
 
 	unsigned int index;
@@ -1932,7 +1936,7 @@ template<typename Formula, bool Intuitionistic,
 	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_disjunction_intro(
 	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
-	pair<Formula*, nd_step<Formula>*> selected_step,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_step,
 	double& log_proposal_probability_ratio,
 	ProofPrior& proof_prior,
 	typename ProofPrior::PriorState& proof_axioms,
@@ -1942,17 +1946,20 @@ bool propose_disjunction_intro(
 	typedef nd_step<Formula> Proof;
 	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef theory<ProofCalculus, Canonicalizer> Theory;
+	typedef typename Theory::proof_node ProofNode;
 
 	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
-	if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(selected_step.value))
+	if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(selected_step.proof))
 		return true;
+
+	ProofNode selected_proof_step(selected_step);
 
 	set_changes<Formula> set_diff;
 	inverse_proof_sampler inverse_sampler;
 	typename Theory::changes& old_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
 	if (!Theory::init(old_proof_changes)) {
 		return false;
-	} else if (!T.get_theory_changes(*selected_step.value, old_proof_changes)) {
+	} else if (!T.get_theory_changes(*selected_proof_step.proof, old_proof_changes)) {
 		free(old_proof_changes);
 		return false;
 	}
@@ -1978,7 +1985,7 @@ bool propose_disjunction_intro(
 unsigned int debug = 0;
 bool debug_flag = false;
 if (debug_flag) {
-print(*selected_step.key, stderr); print('\n', stderr);
+print(*selected_proof_step.formula, stderr); print('\n', stderr);
 }
 	while (true) {
 		/* sample a new proof, only selecting one path at every branch,
@@ -1996,7 +2003,9 @@ T.print_axioms(stderr);
 debug++;
 		new_set_diff.clear();
 		array_map<unsigned int, unsigned int> requested_set_sizes(4);
-		new_proof = T.template make_proof<false, true, false>(selected_step.key, requested_set_sizes, new_set_diff, new_constant, sampler);
+		unsigned int old_set_definition_count = selected_proof_step.set_definitions.size;
+		new_proof = T.template make_proof<false, true, false>(selected_proof_step.formula, selected_proof_step.set_definitions, requested_set_sizes, new_set_diff, new_constant, sampler);
+		selected_proof_step.set_definitions.size = old_set_definition_count;
 		if (new_proof != NULL)
 			break;
 	}
@@ -2023,8 +2032,8 @@ T.print_axioms(stderr);
 
 	/* check if the proposed proof is the same as the original proof */
 	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
-	if (*selected_step.value == *new_proof) {
-		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+	if (*selected_proof_step.proof == *new_proof) {
+		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		return true;
 	}
 
@@ -2047,14 +2056,14 @@ T.print_axioms(stderr);
 	for (Formula* new_axiom : new_set_diff.new_set_axioms)
 		set_diff.new_set(new_axiom);
 
-	/* propose `new_proof` to substitute `selected_step.value` */
+	/* propose `new_proof` to substitute `selected_proof_step.proof` */
 	array<pair<Proof*, Proof*>> observation_changes(8);
 	if (!init(proposed_proofs)) {
 		proposed_proofs.transformed_proofs.keys = nullptr;
-		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		return false;
-	} else if (!propose_transformation(T, proposed_proofs, observation_changes, selected_step.value, new_proof)) {
-		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+	} else if (!propose_transformation(T, proposed_proofs, observation_changes, selected_proof_step.proof, new_proof)) {
+		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
 		free(proposed_proofs); return false;
 	}
 
@@ -2066,8 +2075,8 @@ T.print_axioms(stderr);
 	log_proposal_probability_ratio += proof_prior_diff;
 
 	if (!transform_proofs<ProofCalculus>(proposed_proofs)) {
-		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-		free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
+		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+		free(*selected_proof_step.proof); if (selected_proof_step.proof->reference_count == 0) free(selected_proof_step.proof);
 		return false;
 	}
 
@@ -2075,8 +2084,8 @@ T.print_axioms(stderr);
 		T.observations.remove(entry.key);
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
 		if (!T.observations.add(entry.value)) {
-			undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-			free(*selected_step.value); if (selected_step.value->reference_count == 0) free(selected_step.value);
+			undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+			free(*selected_proof_step.proof); if (selected_proof_step.proof->reference_count == 0) free(selected_proof_step.proof);
 			return false;
 		}
 		entry.value->reference_count++;
@@ -2096,9 +2105,9 @@ T.print_axioms(stderr);
 	array<relation> splittable_events(8);
 	get_splittable_events(T, splittable_events);
 
-	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_step);
+	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_proof_step);
 
-	return do_mh_disjunction_intro(T, selected_step, new_proof, proposed_proofs, observation_changes,
+	return do_mh_disjunction_intro(T, selected_proof_step, new_proof, proposed_proofs, observation_changes,
 			old_proof_changes, new_proof_changes, proof_axioms, old_axioms, new_axioms, log_proposal_probability_ratio,
 			log_proposal_probability_ratio + sampler.set_size_log_probability - inverse_sampler.set_size_log_probability,
 			undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes),
@@ -2186,18 +2195,20 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		unsigned int variable, array<instance>& constants,
 		proof_initializer& initializer)
 {
-#if !defined(NDEBUG)
-	if (initializer.constant_position == initializer.expected_constants.length) {
-		fprintf(stderr, "get_constants ERROR: `proof_initializer` has no further `expected_constants`.\n");
-		exit(EXIT_FAILURE);
-	}
-#endif
+	if (initializer.constant_position == initializer.expected_constants.length)
+		/* this is currently possible when the new proof has more existential
+		   introductions than the old proof, for example if the proof of the
+		   expression `a(b)` chose a different set definition of `a` than in
+		   the old proof */
+		return false;
 
 	constants[0] = initializer.expected_constants[initializer.constant_position];
 	constants.length = 1;
 
 	array<pair<unsigned int, bool>> new_name_events(8);
-	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events))
+	array<const typename ProofCalculus::Language*> arg1_of(4);
+	array<const typename ProofCalculus::Language*> arg2_of(4);
+	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events, arg1_of, arg2_of))
 		return false;
 
 	initializer.constant_position++;
@@ -2387,20 +2398,21 @@ inline bool do_split_merge(
 	typedef typename Formula::TermType TermType;
 	typedef theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer> Theory;
 	typedef typename Theory::changes TheoryChanges;
+	typedef typename Theory::proof_node ProofNode;
 	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
 	typedef typename ProofCalculus::Proof Proof;
 
-	array<pair<Formula*, Proof*>> old_proofs(8);
+	array<ProofNode> old_proofs(8);
 	for (unsigned int i = 0; i < T.existential_intro_nodes.length; i++) {
-		pair<Formula*, Proof*>& entry = T.existential_intro_nodes[i];
-		Term* term = entry.value->operands[2]->term;
+		ProofNode& entry = T.existential_intro_nodes[i];
+		Term* term = entry.proof->operands[2]->term;
 		if (term->type != TermType::CONSTANT) continue;
 		if (term->constant != src_event.predicate && term->constant != src_event.arg1 && term->constant != src_event.arg2)
 			continue;
 
 		bool is_root = true;
-		array<Proof*> stack(max(8, entry.value->children.length));
-		for (Proof* child : entry.value->children)
+		array<Proof*> stack(max(8, entry.proof->children.length));
+		for (Proof* child : entry.proof->children)
 			stack[stack.length++] = child;
 		while (stack.length != 0) {
 			Proof* current = stack.pop();
@@ -2412,41 +2424,56 @@ inline bool do_split_merge(
 				}
 			}
 
-			for (Proof* child : current->children)
-				if (!stack.add(child)) return false;
+			for (Proof* child : current->children) {
+				if (!stack.add(child)) {
+					for (ProofNode& node : old_proofs) node.~ProofNode();
+					return false;
+				}
+			}
 		}
 
-		if (is_root && !old_proofs.add(entry))
+		if (!is_root) continue;
+		if (!old_proofs.ensure_capacity(old_proofs.length + 1)) {
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return false;
+		}
+		new (&old_proofs[old_proofs.length]) ProofNode(entry);
+		old_proofs.length++;
 	}
 
 	/* check to make sure these proofs wouldn't remove any subset edges, since we cannot make the inverse proposal */
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
-		if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(old_proofs[i].value))
+		if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(old_proofs[i].proof)) {
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return true;
+		}
 	}
 
 	TheoryChanges* old_proof_changes = (TheoryChanges*) malloc(sizeof(TheoryChanges) * old_proofs.length);
 	if (old_proof_changes == nullptr) {
 		fprintf(stderr, "do_split_merge ERROR: Out of memory.\n");
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		return false;
 	}
 
 	TheoryChanges* new_proof_changes = (TheoryChanges*) malloc(sizeof(TheoryChanges) * old_proofs.length);
 	if (new_proof_changes == nullptr) {
 		fprintf(stderr, "do_split_merge ERROR: Out of memory.\n");
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		free(old_proof_changes); return false;
 	}
 
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
 		if (!Theory::init(old_proof_changes[i])) {
 			for (unsigned int j = 0; j < i; j++) free(old_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes); return false;
 		}
 	} for (unsigned int i = 0; i < old_proofs.length; i++) {
 		if (!Theory::init(new_proof_changes[i])) {
 			for (unsigned int j = 0; j < i; j++) free(new_proof_changes[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes); return false;
 		}
 	}
@@ -2456,6 +2483,7 @@ inline bool do_split_merge(
 		fprintf(stderr, "do_split_merge ERROR: Out of memory.\n");
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		free(old_proof_changes); free(new_proof_changes); return false;
 	}
 
@@ -2464,6 +2492,7 @@ inline bool do_split_merge(
 			for (unsigned int j = 0; j < i; j++) free(initializers[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes); free(initializers); return false;
 		}
 	}
@@ -2474,6 +2503,7 @@ inline bool do_split_merge(
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		free(old_proof_changes); free(new_proof_changes); free(initializers); return false;
 	}
 
@@ -2481,7 +2511,7 @@ inline bool do_split_merge(
 	inverse_set_size_log_probability set_size_log_probability;
 	array_map<const Proof*, unsigned int> reference_counts(32);
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
-		if (!get_proof_initializer(old_proofs[i].value, initializers[i])
+		if (!get_proof_initializer(old_proofs[i].proof, initializers[i])
 		 || !reference_counts.ensure_capacity(reference_counts.size + 1))
 		{
 			set_changes<Formula> dummy;
@@ -2492,6 +2522,7 @@ inline bool do_split_merge(
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 			for (unsigned int j = i; j < old_proofs.length; j++) free(old_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return false;
 		}
@@ -2500,15 +2531,17 @@ inline bool do_split_merge(
 			map_constants(inst);
 
 		array<const Proof*> discharged_axioms(16);
-		unsigned int index = reference_counts.index_of(old_proofs[i].value);
+		unsigned int index = reference_counts.index_of(old_proofs[i].proof);
 		if (index == reference_counts.size) {
-			reference_counts.keys[index] = old_proofs[i].value;
-			reference_counts.values[index] = old_proofs[i].value->reference_count;
+			reference_counts.keys[index] = old_proofs[i].proof;
+			reference_counts.values[index] = old_proofs[i].proof->reference_count;
 			reference_counts.size++;
 		}
 		reference_counts.values[index]--;
-		if (!T.get_theory_changes(*old_proofs[i].value, discharged_axioms, reference_counts, old_proof_changes[i]))
+		if (!T.get_theory_changes(*old_proofs[i].proof, discharged_axioms, reference_counts, old_proof_changes[i])) {
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return false;
+		}
 		T.subtract_changes(old_proof_changes[i], set_diff, set_size_log_probability);
 		/* some removed set size axioms may actually become extra axioms */
 		for (const typename Theory::change& change : old_proof_changes[i].list) {
@@ -2537,6 +2570,7 @@ inline bool do_split_merge(
 		}
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		free(old_proof_changes); free(new_proof_changes);
 		free(initializers); free(new_proofs); return false;
 	}
@@ -2545,7 +2579,9 @@ inline bool do_split_merge(
 		unsigned int new_constant = 0;
 		set_changes<Formula> new_set_diff;
 		array_map<unsigned int, unsigned int> requested_set_sizes(4);
-		new_proofs[i] = T.template make_proof<false, true, false>(old_proofs[i].key, requested_set_sizes, new_set_diff, new_constant, initializers[i]);
+		unsigned int old_set_definition_count = old_proofs[i].set_definitions.size;
+		new_proofs[i] = T.template make_proof<false, true, false>(old_proofs[i].formula, old_proofs[i].set_definitions, requested_set_sizes, new_set_diff, new_constant, initializers[i]);
+		old_proofs[i].set_definitions.size = old_set_definition_count;
 		if (new_proofs[i] == nullptr) {
 			free(proposed_proofs);
 			set_changes<Formula> dummy;
@@ -2559,6 +2595,7 @@ inline bool do_split_merge(
 			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 			for (unsigned int j = i; j < old_proofs.length; j++) free(new_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return true;
 		}
@@ -2579,6 +2616,7 @@ inline bool do_split_merge(
 			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 			for (unsigned int j = i; j < old_proofs.length; j++) free(new_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return true;
 		}
@@ -2597,8 +2635,8 @@ inline bool do_split_merge(
 			}
 		}
 
-		/* propose `new_proofs[i]` to substitute `old_proofs[i].value` */
-		if (!propose_transformation(T, proposed_proofs, observation_changes, old_proofs[i].value, new_proofs[i])) {
+		/* propose `new_proofs[i]` to substitute `old_proofs[i].proof` */
+		if (!propose_transformation(T, proposed_proofs, observation_changes, old_proofs[i].proof, new_proofs[i])) {
 			free(proposed_proofs);
 			set_changes<Formula> dummy;
 			for (unsigned int j = i + 1; j > 0; j--) {
@@ -2611,6 +2649,7 @@ inline bool do_split_merge(
 			}
 			for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 			for (unsigned int j = i + 1; j < old_proofs.length; j++) free(new_proof_changes[j]);
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			free(old_proof_changes); free(new_proof_changes);
 			free(initializers); free(new_proofs); return true;
 		}
@@ -2640,6 +2679,7 @@ inline bool do_split_merge(
 			free(old_proof_changes[j]);
 		}
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		free(old_proof_changes); free(new_proof_changes);
 		free(initializers); free(new_proofs); return false;
 	}
@@ -2650,7 +2690,7 @@ inline bool do_split_merge(
 		if (!init(inverse_proofs))
 			return false;
 		for (unsigned int i = 0; i < old_proofs.length; i++) {
-			if (!propose_transformation(T, inverse_proofs, observation_changes, new_proofs[i], old_proofs[i].value)) {
+			if (!propose_transformation(T, inverse_proofs, observation_changes, new_proofs[i], old_proofs[i].proof)) {
 				free(inverse_proofs);
 				return false;
 			}
@@ -2679,6 +2719,7 @@ inline bool do_split_merge(
 			free(old_proof_changes[j - 1]);
 		}
 		for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
+		for (ProofNode& node : old_proofs) node.~ProofNode();
 		free(old_proof_changes); free(new_proof_changes);
 		free(initializers); free(new_proofs);
 		return true;
@@ -2696,7 +2737,10 @@ inline bool do_split_merge(
 
 	/* count all unfixed sets */
 	array<unsigned int> unfixed_sets(8);
-	if (!T.sets.get_unfixed_sets(unfixed_sets, T.observations)) return false;
+	if (!T.sets.get_unfixed_sets(unfixed_sets, T.observations)) {
+		for (ProofNode& node : old_proofs) node.~ProofNode();
+		return false;
+	}
 
 	/* count all eliminable extensional edges */
 	array<extensional_edge<Formula>> eliminable_extensional_edges(8);
@@ -2719,13 +2763,17 @@ inline bool do_split_merge(
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
 		/* we accepted the new proofs */
 		proof_axioms.subtract(old_axioms);
-		if (!proof_axioms.add(new_axioms))
+		if (!proof_axioms.add(new_axioms)) {
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return false;
+		}
 		/* TODO: we could keep track of the extra axioms within `theory` */
 		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
+		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes)) {
+			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return false;
+		}
 	} else {
 		return undo_proof_changes();
 	}
@@ -2737,6 +2785,7 @@ inline bool do_split_merge(
 	for (unsigned int j = 0; j < old_proofs.length; j++) free(initializers[j]);
 	for (unsigned int j = 0; j < old_proofs.length; j++) free(new_proof_changes[j]);
 	for (unsigned int j = 0; j < old_proofs.length; j++) free(old_proof_changes[j]);
+	for (ProofNode& node : old_proofs) node.~ProofNode();
 	free(old_proof_changes); free(new_proof_changes);
 	free(initializers); free(new_proofs);
 	return true;
@@ -2774,8 +2823,8 @@ bool propose_merge_events(
 			num_bernoulli_samples++;
 		if (events.key.arg2 != 0)
 			num_bernoulli_samples++;
-		for (const pair<Formula*, nd_step<Formula>*>& entry : T.existential_intro_nodes) {
-			Term* term = entry.value->operands[2]->term;
+		for (const auto& node : T.existential_intro_nodes) {
+			Term* term = node.proof->operands[2]->term;
 			if (term->type != TermType::CONSTANT) continue;
 			if (term->constant == events.key.predicate)
 				num_bernoulli_samples++;
@@ -3081,7 +3130,7 @@ template<typename Formula, bool Intuitionistic,
 	typename PriorStateChanges, typename TheorySampleCollector>
 inline bool do_mh_disjunction_intro(
 	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
-	pair<Formula*, nd_step<Formula>*>& selected_step,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_step,
 	nd_step<Formula>* proposed_proof,
 	proof_transformations<Formula>& proposed_proofs,
 	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
@@ -3100,7 +3149,7 @@ inline bool do_mh_disjunction_intro(
 #if !defined(NDEBUG)
 	if (isnan(log_proposal_probability_ratio))
 		fprintf(stderr, "do_mh_disjunction_intro WARNING: The computed log probability ratio is NaN.\n");
-	if (*selected_step.value == *proposed_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
+	if (*selected_step.proof == *proposed_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
 		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
 #endif
 
@@ -3119,7 +3168,7 @@ inline bool do_mh_disjunction_intro(
 		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
 			return false;
 	} else {
-		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.value, proposed_proof, proposed_proofs, old_sets, new_sets);
+		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.proof, proposed_proof, proposed_proofs, old_sets, new_sets);
 	}
 	return true;
 }
@@ -3451,8 +3500,8 @@ bool get_splittable_events(
 		unsigned int predicate_instantiation_count = 0;
 		unsigned int arg1_instantiation_count = 0;
 		unsigned int arg2_instantiation_count = 0;
-		for (const pair<Formula*, nd_step<Formula>*>& entry : T.existential_intro_nodes) {
-			Term* term = entry.value->operands[2]->term;
+		for (const auto& node : T.existential_intro_nodes) {
+			Term* term = node.proof->operands[2]->term;
 			if (term->type != TermType::CONSTANT) continue;
 			if (term->constant == fragment.predicate)
 				predicate_instantiation_count++;
@@ -3547,7 +3596,7 @@ inline double log_probability(
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
 		array<relation>& splittable_events,
-		const pair<Formula*, nd_step<Formula>*>& selected_disjunction_intro)
+		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
 {
 	unsigned int axiom_count = T.ground_axiom_count
 			+ eliminable_extensional_edges.length + unfixed_sets.length
@@ -3645,7 +3694,7 @@ inline double log_probability(
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
 		array<relation>& splittable_events,
-		const pair<Formula*, nd_step<Formula>*>& selected_disjunction_intro)
+		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
 {
 	return 1.0e100;
 }
@@ -3713,7 +3762,7 @@ inline unsigned int sample(
 
 	unsigned int query_index;
 	for (query_index = 0; query_index < T.existential_intro_nodes.length; query_index++)
-		if (T.existential_intro_nodes[query_index].value == proposal_distribution.query_proof) break;
+		if (T.existential_intro_nodes[query_index].proof == proposal_distribution.query_proof) break;
 
 	if (sample_uniform<double>() < proposal_distribution.sample_query_probability) {
 		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability;
@@ -3745,9 +3794,9 @@ inline double log_probability(
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
 		array<relation>& splittable_events,
-		const pair<Formula*, nd_step<Formula>*>& selected_disjunction_intro)
+		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
 {
-	if (selected_disjunction_intro.value == proposal_distribution.query_proof) {
+	if (selected_disjunction_intro.proof == proposal_distribution.query_proof) {
 		return logsumexp(proposal_distribution.log_sample_query_probability,
 				log_probability(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_disjunction_intro));
 	} else {
@@ -3930,10 +3979,27 @@ inline bool do_mh_step(
 		ProofPrior& proof_prior,
 		typename ProofPrior::PriorState& proof_axioms,
 		TheorySampleCollector& sample_collector,
-		nd_step<Formula>* query_proof)
+		nd_step<Formula>* query_proof,
+		double query_proposal_probability = 0.01)
 {
 	static thread_local uniform_proposal default_proposal(2.0, 0.001);
-	query_proposal<Formula, uniform_proposal> proposal_distribution(0.01, query_proof, default_proposal);
+	query_proposal<Formula, uniform_proposal> proposal_distribution(query_proposal_probability, query_proof, default_proposal);
+	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, proposal_distribution);
+}
+
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector>
+inline bool do_exploratory_mh_step(
+		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+		ProofPrior& proof_prior,
+		typename ProofPrior::PriorState& proof_axioms,
+		TheorySampleCollector& sample_collector,
+		nd_step<Formula>* query_proof,
+		double query_proposal_probability = 0.01)
+{
+	static thread_local exploration_proposal default_proposal;
+	query_proposal<Formula, exploration_proposal> proposal_distribution(query_proposal_probability, query_proof, default_proposal);
 	return do_mh_step(T, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 }
 

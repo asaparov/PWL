@@ -1345,9 +1345,25 @@ bool check_proof(proof_state<Formula>& out,
 		if (operand_count != 2 || proof.operands[0]->type != nd_step_type::FORMULA_PARAMETER || second_operand->type != nd_step_type::FORMULA_PARAMETER)
 			return false;
 		formula = beta_reduce(proof.operands[0]->formula);
-		if (formula == NULL) return false;
+		if (formula != nullptr) {
+			Formula* relabeled = relabel_variables(formula);
+			free(*formula); if (formula->reference_count == 0) free(formula);
+			if (relabeled == nullptr)
+				return false;
+			formula = relabeled;
+		} else {
+			return false;
+		}
 		out.formula = beta_reduce(second_operand->formula);
-		if (out.formula == NULL) {
+		if (out.formula != nullptr) {
+			Formula* relabeled = relabel_variables(out.formula);
+			free(*out.formula); if (out.formula->reference_count == 0) free(out.formula);
+			if (relabeled == nullptr) {
+				free(*formula); if (formula->reference_count == 0) free(formula);
+				return false;
+			}
+			out.formula = relabeled;
+		} else {
 			free(*formula); if (formula->reference_count == 0) free(formula);
 			return false;
 		}

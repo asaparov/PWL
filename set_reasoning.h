@@ -1728,6 +1728,16 @@ struct set_reasoning
 		return capacity;
 	}
 
+	bool is_freeable(unsigned int set_id) const {
+		if (set_id <= 1) return false;
+		for (Proof* size_axiom : sets[set_id].size_axioms) {
+			if (size_axiom->reference_count != 1)
+				return false;
+		}
+		return extensional_graph.vertices[set_id].children.size == 0
+			&& extensional_graph.vertices[set_id].parents.size == 0;
+	}
+
 	template<typename... Args>
 	bool is_freeable(unsigned int set_id, array<Proof*>& freeable_axioms, Args&&... visitor) const {
 		if (set_id <= 1) return false;
@@ -1739,15 +1749,9 @@ struct set_reasoning
 			&& extensional_graph.vertices[set_id].parents.size == 0;
 	}
 
-	template<typename... Args>
-	bool is_freeable(unsigned int set_id, Args&&... visitor) const {
-		if (set_id <= 1) return false;
-		for (Proof* size_axiom : sets[set_id].size_axioms) {
-			if (size_axiom->reference_count != 1)
-				return false;
-		}
-		return extensional_graph.vertices[set_id].children.size == 0
-			&& extensional_graph.vertices[set_id].parents.size == 0;
+	template<typename Arg, typename... Args>
+	inline bool is_freeable(unsigned int set_id, const Arg& arg, Args&&... visitor) const {
+		return is_freeable(set_id, std::forward<Args>(visitor)...);
 	}
 
 	template<typename... Args>
@@ -2210,6 +2214,57 @@ struct set_reasoning
 				if (!sets[child].descendants.contains(set) || component.contains(child)) continue;
 				if (!component.add(child) || !stack.add(child)) return false;
 			}
+		}
+		return true;
+	}
+
+	inline bool get_strongly_connected_component(
+			unsigned int set, hash_set<unsigned int>& component,
+			const pair<unsigned int, unsigned int>& ignore_edge)
+	{
+		array<unsigned int> stack(8);
+		array<unsigned int> dfs(8);
+		stack[stack.length++] = set;
+		dfs[dfs.length++] = set;
+		while (stack.length > 0) {
+			unsigned int current = stack.pop();
+
+			for (const auto& entry : extensional_graph.vertices[current].parents) {
+				if ((current == ignore_edge.key && entry.key == ignore_edge.value) || dfs.contains(entry.key)) continue;
+				if (!dfs.add(entry.key) || !stack.add(entry.key)) return false;
+			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
+				if (dfs.contains(parent)) continue;
+				if (!dfs.add(parent) || !stack.add(parent)) return false;
+			}
+		}
+
+		array_map<unsigned int, unsigned int> roots(dfs.length);
+		for (unsigned int i = 0; i < dfs.length; i++) {
+			roots.keys[i] = dfs[i];
+			roots.values[i] = 0;
+		}
+		roots.size = dfs.length;
+		for (unsigned int current : dfs) {
+			stack[stack.length++] = current;
+			while (stack.length > 0) {
+				unsigned int inner = stack.pop();
+				unsigned int& root = roots.get(inner);
+				if (root != 0) continue;
+				root = current;
+
+				for (const auto& entry : extensional_graph.vertices[current].children) {
+					if (entry.key == ignore_edge.key && inner == ignore_edge.value) continue;
+					if (!stack.add(entry.key)) return false;
+				} for (unsigned int child : intensional_graph.vertices[current].children) {
+					if (!stack.add(child)) return false;
+				}
+			}
+		}
+
+		unsigned int root = roots.get(set);
+		for (unsigned int i = 0; i < roots.size; i++) {
+			if (roots.values[i] == root)
+				component.add(roots.keys[i]);
 		}
 		return true;
 	}
@@ -3396,7 +3451,6 @@ struct set_reasoning
 			/* determine which pairs of sets are "newly disjoint" if this `set_id` becomes empty */
 			unsigned int old_size = sets[set_id].set_size;
 			sets[set_id].set_size = 0;
-			bool can_be_zero = true;
 			for (const pair<unsigned int, unsigned int>& newly_disjoint_pair : sets[set_id].newly_disjoint_cache) {
 				/* check if any ancestor of `i` and `j` has a set size smaller than its lower bound */
 				if (!find_largest_disjoint_clique_with_edge(*this, newly_disjoint_pair.key, newly_disjoint_pair.value, clique, clique_count, ancestor_of_clique, INT_MIN, 0)) {
@@ -3409,7 +3463,6 @@ struct set_reasoning
 						clique_size += sets[clique[i]].set_size;
 					if (clique_size > sets[ancestor_of_clique].set_size) {
 						lower_bound = 1;
-						can_be_zero = false;
 						break;
 					} else {
 						core::free(clique);
