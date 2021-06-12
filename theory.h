@@ -18366,7 +18366,7 @@ bool print_debug = false;
 extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
-		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof);
+		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 0.1);
 		if (collector.internal_collector.current_log_probability > max_log_probability) {
 			free(T_MAP); formula_map.clear();
 			if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_MAP, formula_map)) {

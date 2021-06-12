@@ -627,3 +627,139 @@ The population of Washington is 4113200.
 The population of West Virginia is 1950000.
 The population of Wisconsin is 4700000.
 The population of Wyoming is 469557.
+The Mississippi River flows through Minnesota.
+The Mississippi River flows through Wisconsin.
+The Mississippi River flows through Iowa.
+The Mississippi River flows through Illinois.
+The Mississippi River flows through Missouri.
+The Mississippi River flows through Kentucky.
+The Mississippi River flows through Tennessee.
+The Mississippi River flows through Arkansas.
+The Mississippi River flows through Mississippi.
+The Mississippi River flows through Louisiana.
+The Missouri River flows through Montana.
+The Missouri River flows through North Dakota.
+The Missouri River flows through South Dakota.
+The Missouri River flows through Iowa.
+The Missouri River flows through Nebraska.
+The Missouri River flows through Missouri.
+The Colorado River flows through Colorado.
+The Colorado River flows through Utah.
+The Colorado River flows through Arizona.
+The Colorado River flows through Nevada.
+The Colorado River flows through California.
+The Ohio River flows through Pennsylvania.
+The Ohio River flows through West Virginia.
+The Ohio River flows through Kentucky.
+The Ohio River flows through Indiana.
+The Ohio River flows through Illinois.
+The Ohio River flows through Ohio.
+The Red River flows through New Mexico.
+The Red River flows through Texas.
+The Red River flows through Oklahoma.
+The Red River flows through Arkansas.
+The Red River flows through Louisiana.
+The Arkansas River flows through Colorado.
+The Arkansas River flows through Kansas.
+The Arkansas River flows through Oklahoma.
+The Arkansas River flows through Arkansas.
+The Canadian River flows through Colorado.
+The Canadian River flows through New Mexico.
+The Canadian River flows through Texas.
+The Canadian River flows through Oklahoma.
+The Connecticut River flows through New Hampshire.
+The Connecticut River flows through Vermont.
+The Connecticut River flows through Massachusetts.
+The Connecticut River flows through Connecticut.
+The Delaware River flows through New York.
+The Delaware River flows through Pennsylvania.
+The Delaware River flows through New Jersey.
+The Delaware River flows through Delaware.
+The Little Missouri River flows through Wyoming.
+The Little Missouri River flows through Montana.
+The Little Missouri River flows through South Dakota.
+The Little Missouri River flows through North Dakota.
+The Snake River flows through Wyoming.
+The Snake River flows through Idaho.
+The Snake River flows through Oregon.
+The Snake River flows through Washington.
+The Chattahoochee River flows through Georgia.
+The Chattahoochee River flows through Florida.
+The Cimarron River flows through New Mexico.
+The Cimarron River flows through Kansas.
+The Cimarron River flows through Oklahoma.
+The Green River flows through Wyoming.
+The Green River flows through Utah.
+The Green River flows through Colorado.
+The North Platte River flows through Colorado.
+The North Platte River flows through Wyoming.
+The North Platte River flows through Nebraska.
+The Potomac River flows through West Virginia.
+The Potomac River flows through Maryland.
+The Potomac River flows through Virginia.
+The Republican River flows through Colorado.
+The Republican River flows through Nebraska.
+The Republican River flows through Kansas.
+The Rio Grande flows through Colorado.
+The Rio Grande flows through New Mexico.
+The Rio Grande flows through Texas.
+The San Juan River flows through Colorado.
+The San Juan River flows through New Mexico.
+The San Juan River flows through Utah.
+The Tennessee River flows through Tennessee.
+The Tennessee River flows through Alabama.
+The Tennessee River flows through Kentucky.
+The Wabash River flows through Ohio.
+The Wabash River flows through Indiana.
+The Wabash River flows through Illinois.
+The Yellowstone River flows through Wyoming.
+The Yellowstone River flows through Montana.
+The Yellowstone River flows through North Dakota.
+The Allegheny River flows through Pennsylvania.
+The Allegheny River flows through New York.
+The Bighorn River flows through Wyoming.
+The Bighorn River flows through Montana.
+The Cheyenne River flows through Wyoming.
+The Cheyenne River flows through North Dakota.
+The Clark Fork River flows through Montana.
+The Clark Fork River flows through Idaho.
+The Columbia River flows through Washington.
+The Columbia River flows through Oregon.
+The Cumberland River flows through Kentucky.
+The Cumberland River flows through Tennessee.
+The Dakota River flows through North Dakota.
+The Dakota River flows through South Dakota.
+The Gila River flows through New Mexico.
+The Gila River flows through Arizona.
+The Hudson River flows through New York.
+The Hudson River flows through New Jersey.
+The Neosho River flows through Kansas.
+The Neosho River flows through Oklahoma.
+The Niobrara River flows through Wyoming.
+The Niobrara River flows through Nebraska.
+The Ouachita River flows through Arkansas.
+The Ouachita River flows through Louisiana.
+The Pearl River flows through Michigan.
+The Pearl River flows through Louisiana.
+The Pecos River flows through New Mexico.
+The Pecos River flows through Texas.
+The Powder River flows through Wyoming.
+The Powder River flows through Montana.
+The Roanoke River flows through Virginia.
+The Roanoke River flows through North Carolina.
+The Rock River flows through Wisconsin.
+The Rock River flows through Illinois.
+The Smoky Hill River flows through Colorado.
+The Smoky Hill River flows through Kansas.
+The South Platte River flows through Colorado.
+The South Platte River flows through Nebraska.
+The St. Francis River flows through Missouri.
+The St. Francis River flows through Arkansas.
+The Tombigbee River flows through Mississippi.
+The Tombigbee River flows through Alabama.
+The Washita River flows through Texas.
+The Washita River flows through Oklahoma.
+The Wateree-Catawba River flows through North Carolina.
+The Wateree-Catawba River flows through South Carolina.
+The White River flows through Arkansas.
+The White River flows through Missouri.

@@ -2238,7 +2238,7 @@ struct set_reasoning
 			}
 		}
 
-		array_map<unsigned int, unsigned int> roots(dfs.length);
+		array_map<unsigned int, unsigned int> roots(2 * dfs.length);
 		for (unsigned int i = 0; i < dfs.length; i++) {
 			roots.keys[i] = dfs[i];
 			roots.values[i] = 0;
@@ -2248,8 +2248,9 @@ struct set_reasoning
 			stack[stack.length++] = current;
 			while (stack.length > 0) {
 				unsigned int inner = stack.pop();
-				unsigned int& root = roots.get(inner);
-				if (root != 0) continue;
+				bool contains;
+				unsigned int& root = roots.get(inner, contains);
+				if (!contains || root != 0) continue;
 				root = current;
 
 				for (const auto& entry : extensional_graph.vertices[current].children) {

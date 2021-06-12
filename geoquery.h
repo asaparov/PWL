@@ -107,6 +107,7 @@ void do_geoquery_experiments(bool& status,
 		ProofPrior& proof_prior,
 		const hash_map<string, unsigned int>& names_src,
 		hash_set<unsigned int>& seed_entities,
+		const array<string>& geobase,
 		std::mutex& results_lock,
 		array<geoquery_question_result>& results,
 		array<pair<unsigned int, string>>& unparseable_questions,
@@ -168,12 +169,19 @@ void do_geoquery_experiments(bool& status,
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
+				/* if the question asks for a single entity, change it to ask for the set of all correct answers */
+				unsigned int max_variable = 0;
+				max_bound_variable(*logical_forms[0], max_variable);
+				hol_term* question = hol_term::new_lambda(max_variable + 1, hol_term::new_equals(hol_term::new_variable(max_variable + 1), logical_forms[0]));
+				logical_forms[0]->reference_count++;
+
 				/* try to answer the question */
 				array<string> answers(4);
-				if (!answer_question(answers, logical_forms[0], 10000, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
+				if (!answer_question(answers, question, 10000, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
 					answers[0] = "<failed to answer question>";
 					answers.length = 1;
 				}
+				free(*question); free(question);
 
 				results_lock.lock();
 				results.ensure_capacity(results.length + 1);
@@ -228,7 +236,7 @@ void do_geoquery_experiments(bool& status,
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 10 - 1) {
+if (job.context_id != 11 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -238,70 +246,135 @@ continue;
 			/* for reproducibility, reset the PRNG state */
 			core::engine = prng_engine;
 
-			/* read the context sentences */
+			/* parse the list of line numbers */
 			unsigned int i = 0;
 			unsigned int start = 0;
-			for (; job.context[i] != '\0'; i++) {
-				if (job.context[i] == '.') {
-					const char old_next = job.context[i + 1];
-					job.context[i + 1] = '\0';
-					if (!read_sentence(corpus, parser, job.context + start, job.T, names, seed_entities, proof_prior, job.proof_axioms, 10, UINT_MAX)) {
-						std::unique_lock<std::mutex> lock(results_lock);
-						if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
-						 || !init(unparseable_context[unparseable_context.length].value, job.context + start))
-						{
-							job.context[i + 1] = old_next;
-							status = false;
-							num_threads_running--;
-							num_threads_reading_context--;
-							work_queue_cv.notify_all();
-							free(job);
-							for (auto entry : names) free(entry.key);
-							free(parser); return;
+			unsigned int first_line = UINT_MAX;
+			array<pair<unsigned int, unsigned int>> line_numbers(8);
+			bool error = false;
+			for (; !error; i++) {
+				char old_char;
+				switch (job.context[i]) {
+				case '-':
+					/* parse the first line */
+					if (first_line != UINT_MAX) {
+						fprintf(stderr, "WARNING: Found a line number range with more than one hyphen.\n");
+					} else {
+						job.context[i] = '\0';
+						if (!parse_uint(string(job.context + start, i - start), first_line)) {
+							fprintf(stderr, "ERROR: Failed to parse line number.\n");
+							job.context[i] = '-'; error = true; break;
 						}
-						unparseable_context[unparseable_context.length++].key = job.context_id;
-						job.context[i + 1] = old_next;
+						job.context[i] = '-';
+						start = i + 1;
+					}
+					break;
+
+				case ',':
+				case '\0':
+					if (!line_numbers.ensure_capacity(line_numbers.length + 1)) {
+						error = true;
 						break;
 					}
-					job.context[i + 1] = old_next;
+					old_char = job.context[i];
+					job.context[i] = '\0';
+					if (!parse_uint(string(job.context + start, i - start), line_numbers[line_numbers.length].value)) {
+						fprintf(stderr, "ERROR: Failed to parse line number.\n");
+						job.context[i] = ','; error = true; break;
+					}
+					job.context[i] = old_char;
+					if (first_line == UINT_MAX) {
+						line_numbers[line_numbers.length++].key = line_numbers[line_numbers.length].value;
+					} else {
+						line_numbers[line_numbers.length++].key = first_line;
+						first_line = UINT_MAX;
+					}
 					start = i + 1;
-					while (isspace(job.context[start])) start++;
+					break;
+				}
+				if (job.context[i] == '\0')
+					break;
+			}
 
-					Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
-					PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
-					hash_map<const hol_term*, hol_term*> formula_map(128);
-					Theory::clone(job.T, T_MAP, formula_map);
-					new (&proof_axioms_MAP) PriorStateType(job.proof_axioms, formula_map);
-					auto collector = make_log_probability_collector(job.T, proof_prior);
-					double max_log_probability = collector.current_log_probability;
-					for (unsigned int j = 0; j < 4; j++) {
-						for (unsigned int t = 0; t < 100; t++) {
-							bool print_debug = false;
-							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
-							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
-							do_mh_step(job.T, proof_prior, job.proof_axioms, collector);
-							if (collector.current_log_probability > max_log_probability) {
-								free(T_MAP); proof_axioms_MAP.~PriorStateType(); formula_map.clear();
-								Theory::clone(job.T, T_MAP, formula_map);
-								new (&proof_axioms_MAP) PriorStateType(job.proof_axioms, formula_map);
-								max_log_probability = collector.current_log_probability;
+			if (!error) {
+				/* read the context sentences */
+				for (const pair<unsigned int, unsigned int>& range : line_numbers) {
+					for (unsigned int i = range.key; i <= range.value; i++) {
+						// TODO: this is kind of a hacky way to get the new proof
+						hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
+						old_proofs.add_all(job.T.observations);
+						if (!read_sentence(corpus, parser, geobase[i - 1].data, job.T, names, seed_entities, proof_prior, job.proof_axioms)) {
+							std::unique_lock<std::mutex> lock(results_lock);
+							if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
+							 || !init(unparseable_context[unparseable_context.length].value, geobase[i - 1]))
+							{
+								status = false;
+								num_threads_running--;
+								num_threads_reading_context--;
+								work_queue_cv.notify_all();
+								free(job);
+								for (auto entry : names) free(entry.key);
+								free(parser); return;
+							}
+							unparseable_context[unparseable_context.length++].key = job.context_id;
+							error = true;
+							break;
+						}
+
+						nd_step<hol_term>* new_proof = nullptr;
+						for (nd_step<hol_term>* proof : job.T.observations) {
+							if (!old_proofs.contains(proof)) {
+								new_proof = proof;
+								break;
 							}
 						}
 
-						if (j + 1 < 4) {
-							for (unsigned int t = 0; t < 20; t++)
-								do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector);
+						Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
+						PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
+						hash_map<const hol_term*, hol_term*> formula_map(128);
+						Theory::clone(job.T, T_MAP, formula_map);
+						PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
+						auto collector = make_log_probability_collector(job.T, proof_prior, new_proof);
+						double max_log_probability = collector.current_log_probability;
+						for (unsigned int j = 0; j < 4; j++) {
+							for (unsigned int t = 0; t < 100; t++) {
+								fprintf(stderr, "j = %u, t = %u\n", j, t);
+								bool print_debug = false;
+								if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
+								if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
+								do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 10 ? 1.0 : 0.01));
+
+								if (collector.current_log_probability > max_log_probability) {
+									free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
+									Theory::clone(job.T, T_MAP, formula_map);
+									PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
+									max_log_probability = collector.current_log_probability;
+								}
+							}
+
+							if (j + 1 < 4) {
+								for (unsigned int t = 0; t < 20; t++)
+									do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, 1.0);
+							}
 						}
+						free(job.T); free(job.proof_axioms); formula_map.clear();
+						Theory::clone(T_MAP, job.T, formula_map);
+						PriorStateType::clone(proof_axioms_MAP, job.proof_axioms, formula_map);
+						T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
+						free(T_MAP); free(proof_axioms_MAP);
+
+						char filename[256];
+						snprintf(filename, 256, "geoquery_theories/%u.th", job.context_id);
+						FILE* theory_stream = (FILE*) fopen(filename, "wb");
+						write_random_state(theory_stream);
+						write(job.T, theory_stream, job.proof_axioms);
+						fclose(theory_stream);
 					}
-					free(job.T); job.proof_axioms.~PriorStateType(); formula_map.clear();
-					Theory::clone(T_MAP, job.T, formula_map);
-					new (&job.proof_axioms) PriorStateType(proof_axioms_MAP, formula_map);
-					T_MAP.print_axioms(stdout, *debug_terminal_printer); fflush(stdout);
-					free(T_MAP); proof_axioms_MAP.~PriorStateType();
+					if (error) break;
 				}
 			}
 
-			if (job.context[i] == '\0') {
+			if (!error) {
 				/* if we successfully read the context, enqueue the jobs for reading/answering the associated questions */
 				job.prng_engine = core::engine;
 				std::unique_lock<std::mutex> lock(work_queue_lock);
@@ -451,6 +524,7 @@ bool run_geoquery_experiments(
 		ProofPrior& proof_prior,
 		hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& seed_entities,
+		const array<string>& geobase,
 		const char* data_filepath,
 		const char* results_filepath,
 		unsigned int thread_count)
@@ -489,8 +563,8 @@ bool run_geoquery_experiments(
 				prng_engine, std::ref(corpus),
 				std::ref(parser), std::ref(proof_prior),
 				std::ref(names), std::ref(seed_entities),
-				std::ref(results_lock), std::ref(results),
-				std::ref(unparseable_questions),
+				std::ref(geobase), std::ref(results_lock),
+				std::ref(results), std::ref(unparseable_questions),
 				std::ref(unparseable_context), std::ref(total),
 				std::ref(num_threads_reading_context),
 				std::ref(num_threads_running));
@@ -595,6 +669,7 @@ bool run_geoquery_experiments_single_threaded(
 		ProofPrior& proof_prior,
 		hash_map<string, unsigned int>& names,
 		hash_set<unsigned int>& seed_entities,
+		const array<string>& geobase,
 		const char* data_filepath,
 		const char* results_filepath)
 {
@@ -675,7 +750,7 @@ bool run_geoquery_experiments_single_threaded(
 	do_geoquery_experiments(status, context_queue, question_queue,
 			context_queue_start, question_queue_start, context_queue_length,
 			question_queue_length, work_queue_lock, work_queue_cv, prng_engine,
-			corpus, parser, proof_prior, names, seed_entities,
+			corpus, parser, proof_prior, names, seed_entities, geobase,
 			results_lock, results, unparseable_questions, unparseable_context,
 			total, num_threads_reading_context, num_threads_running);
 
