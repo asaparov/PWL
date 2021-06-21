@@ -212,6 +212,41 @@ inline void on_free_set(unsigned int set_id,
 	on_free_set(set_id, sets);
 }
 
+template<typename Stream>
+bool read_terms(
+	array<hol_term*>& terms, Stream& in,
+	hash_map<string, unsigned int>& names)
+{
+	array<tptp_token> tokens = array<tptp_token>(512);
+	if (!tptp_lex(tokens, in)) {
+		fprintf(stderr, "ERROR: Lexical analysis failed.\n");
+		free_tokens(tokens); return false;
+	}
+
+	unsigned int index = 0;
+	while (index < tokens.length) {
+		array_map<string, unsigned int> variables = array_map<string, unsigned int>(16);
+		hol_term* term = (hol_term*) malloc(sizeof(hol_term));
+		if (term == NULL) {
+			fprintf(stderr, "read_terms ERROR: Out of memory.\n");
+			free_tokens(tokens); return false;
+		} else if (!tptp_interpret(tokens, index, *term, names, variables)) {
+			fprintf(stderr, "ERROR: Unable to parse higher-order term.\n");
+			for (auto entry : variables) free(entry.key);
+			free(term); free_tokens(tokens); return false;
+		} else if (!expect_token(tokens, index, tptp_token_type::SEMICOLON, "semicolon at end of higher-order term") || !terms.add(term)) {
+			free(*term); free(term);
+			free_tokens(tokens); return false;
+		}
+		index++;
+
+		if (variables.size != 0)
+			fprintf(stderr, "WARNING: Variable map is not empty.\n");
+	}
+	free_tokens(tokens);
+	return true;
+}
+
 
 unsigned int constant_offset = 0;
 
@@ -341,7 +376,29 @@ set_seed(1356941742);
 		}
 	}
 
-//run_console(stdin, "\nEnter command: ", parser, names);
+	/* read the seed axioms */
+	array<hol_term*> seed_axioms(8);
+	in = fopen("seed_axioms.txt", "rb");
+	if (in == nullptr) {
+		fprintf(stderr, "ERROR: Unable to open file for reading.\n");
+		for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+			for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+			free(paragraph);
+		}
+		for (auto entry : names) free(entry.key);
+		return EXIT_FAILURE;
+	} else if (!read_terms(seed_axioms, in, names)) {
+		fclose(in); free_all(seed_axioms);
+		for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+			for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+			free(paragraph);
+		}
+		for (auto entry : names) free(entry.key);
+		return EXIT_FAILURE;
+	}
+	fclose(in);
+
+run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
 
 //run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 /*for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
@@ -413,7 +470,7 @@ return EXIT_SUCCESS;*/
 
 	/* construct the theory */
 	typedef theory<natural_deduction<hol_term, false>, polymorphic_canonicalizer<true, false, built_in_predicates>> Theory;
-	Theory T(1000000000);
+	Theory T(seed_axioms, 1000000000);
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),

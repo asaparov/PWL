@@ -1731,6 +1731,61 @@ inline bool has_proof_step(const nd_step<Formula>* proof) {
 	return !visit<false>(proof, visitor);
 }
 
+template<bool RevisitVisitedNodes = false, typename Formula, typename Visitor>
+bool visit_with_pruning(const nd_step<Formula>* proof, Visitor& visitor)
+{
+	array<const nd_step<Formula>*> stack(64);
+	hash_set<const nd_step<Formula>*> visited(128);
+	if (!stack.add(proof)) return false;
+	while (stack.length > 0)
+	{
+		const nd_step<Formula>* node = stack.pop();
+		if (!RevisitVisitedNodes && !visited.add(node)) return false;
+
+		unsigned int operand_count;
+		const nd_step<Formula>* const* operands;
+		node->get_subproofs(operands, operand_count);
+
+		bool recurse_visit = true;
+		if (!visit_node(node, visitor, recurse_visit)) return false;
+
+		if (operand_count == 0 || !recurse_visit) continue;
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (operands[i] == NULL) continue;
+
+			if (!RevisitVisitedNodes && visited.contains(operands[i]))
+				continue;
+			if (!stack.add(operands[i]))
+				return false;
+		}
+	}
+	return true;
+}
+
+template<nd_step_type Type, typename Formula>
+struct most_recent_proof_step_finder {
+	array<const nd_step<Formula>*>& steps;
+
+	most_recent_proof_step_finder(array<const nd_step<Formula>*>& steps) : steps(steps) { }
+};
+
+template<nd_step_type Type, typename Formula>
+inline bool visit_node(const nd_step<Formula>* proof, most_recent_proof_step_finder<Type, Formula>& visitor, bool& recurse_visit) {
+	if (proof->type == Type) {
+		if (!visitor.steps.add(proof))
+			return false;
+		recurse_visit = false;
+	}
+	return true;
+}
+
+template<nd_step_type Type, typename Formula>
+inline bool get_most_recent_proof_steps(const nd_step<Formula>* proof, array<const nd_step<Formula>*>& steps)
+{
+	most_recent_proof_step_finder<Type, Formula> visitor(steps);
+	return !visit_with_pruning<true>(proof, visitor);
+}
+
 template<typename Formula, typename... ProofMap>
 bool compute_in_degrees(const nd_step<Formula>* proof,
 		hash_map<const nd_step<Formula>*, unsigned int>& in_degrees,

@@ -2354,6 +2354,26 @@ inline bool get_constants(const hol_term& src,
 	return visit(src, visitor);
 }
 
+struct offset_constant_collector {
+	array<unsigned int>& constants;
+	unsigned int inclusive_minimum;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, offset_constant_collector& visitor) {
+	if (Type == hol_term_type::CONSTANT && term.constant >= visitor.inclusive_minimum && !visitor.constants.contains(term.constant))
+		return visitor.constants.add(term.constant);
+	return true;
+}
+
+inline bool get_constants(const hol_term& src,
+		array<unsigned int>& constants,
+		unsigned int inclusive_minimum)
+{
+	offset_constant_collector visitor = {constants, inclusive_minimum};
+	return visit(src, visitor);
+}
+
 struct unambiguity_visitor { };
 
 template<hol_term_type Type>

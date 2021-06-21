@@ -169,19 +169,12 @@ void do_geoquery_experiments(bool& status,
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
-				/* if the question asks for a single entity, change it to ask for the set of all correct answers */
-				unsigned int max_variable = 0;
-				max_bound_variable(*logical_forms[0], max_variable);
-				hol_term* question = hol_term::new_lambda(max_variable + 1, hol_term::new_equals(hol_term::new_variable(max_variable + 1), logical_forms[0]));
-				logical_forms[0]->reference_count++;
-
 				/* try to answer the question */
 				array<string> answers(4);
-				if (!answer_question(answers, question, 10000, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
+				if (!answer_question<true>(answers, logical_forms[0], 10, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
 					answers[0] = "<failed to answer question>";
 					answers.length = 1;
 				}
-				free(*question); free(question);
 
 				results_lock.lock();
 				results.ensure_capacity(results.length + 1);
@@ -236,7 +229,7 @@ void do_geoquery_experiments(bool& status,
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 11 - 1) {
+if (job.context_id != 1 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -297,7 +290,15 @@ continue;
 			}
 
 			if (!error) {
+				char filename[256];
+				snprintf(filename, 256, "geoquery_theories/%u.th", job.context_id);
+
 				/* read the context sentences */
+				/*free(job.T); free(job.proof_axioms);
+				FILE* theory_stream = (FILE*) fopen(filename, "rb");
+				read_random_state(theory_stream);
+				read(job.T, theory_stream, job.proof_axioms);
+				fclose(theory_stream);*/
 				for (const pair<unsigned int, unsigned int>& range : line_numbers) {
 					for (unsigned int i = range.key; i <= range.value; i++) {
 						// TODO: this is kind of a hacky way to get the new proof
@@ -363,8 +364,6 @@ continue;
 						T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
 						free(T_MAP); free(proof_axioms_MAP);
 
-						char filename[256];
-						snprintf(filename, 256, "geoquery_theories/%u.th", job.context_id);
 						FILE* theory_stream = (FILE*) fopen(filename, "wb");
 						write_random_state(theory_stream);
 						write(job.T, theory_stream, job.proof_axioms);

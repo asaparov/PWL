@@ -95,14 +95,16 @@ inline void print_examples()
 
 template<typename Stream, typename Parser>
 void run_console(
-		Stream& input, const char* prompt, Parser& parser, hash_map<string, unsigned int>& names)
+		Stream& input, const char* prompt, Parser& parser,
+		array<hol_term*>& seed_axioms,
+		hash_map<string, unsigned int>& names)
 {
 	if (!parser.invert_name_map(names)) {
 		fprintf(stderr, "ERROR: `hdp_parser.invert_name_map` failed.\n");
 		return;
 	}
 
-	theory<natural_deduction<hol_term, true>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(1000000000);
+	theory<natural_deduction<hol_term, true>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(seed_axioms, 1000000000);
 	extern unsigned int constant_offset;
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(

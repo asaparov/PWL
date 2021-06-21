@@ -1568,7 +1568,8 @@ inline bool get_most_probable_answers(
 
 constexpr const char* UNKNOWN_CONCEPT_NAME = "<unknown concept>";
 
-template<typename ProofCalculus, typename Canonicalizer,
+template<
+	bool LinearSearch, typename ProofCalculus, typename Canonicalizer,
 	typename TheoryPrior, typename Parser, typename... Args>
 inline bool answer_question(
 		array_map<string, double>& answers,
@@ -1891,19 +1892,28 @@ print(entry.value, stderr); print('\n', stderr);
 /* TODO: for debugging; delete this */
 extern const thread_local string_map_scribe* debug_terminal_printer;
 debug_terminal_printer = &parser.get_printer();
-	theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
-	if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_form, num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
-		fprintf(stderr, "ERROR: Failed to answer question.\n");
-		for (auto entry : answers) free(entry.key);
-		return false;
-	}
+	if (LinearSearch) {
+		if (!log_joint_probability_of_lambda_by_linear_search(T, theory_prior, proof_axioms, logical_form, num_samples, on_new_proof_sample)) {
+			fprintf(stderr, "ERROR: Failed to answer question.\n");
+			for (auto entry : answers) free(entry.key);
+			return false;
+		}
+	} else {
+		theory<ProofCalculus, Canonicalizer>& T_map = *((theory<ProofCalculus, Canonicalizer>*) alloca(sizeof(theory<ProofCalculus, Canonicalizer>)));
+		if (!log_joint_probability_of_lambda(T, theory_prior, proof_axioms, logical_form, num_samples, T_map, on_new_proof_sample, std::forward<Args>(add_formula_args)...)) {
+			fprintf(stderr, "ERROR: Failed to answer question.\n");
+			for (auto entry : answers) free(entry.key);
+			return false;
+		}
 T_map.print_axioms(stderr, *debug_terminal_printer);
-	free(T_map);
+		free(T_map);
+	}
 
 	return true;
 }
 
-template<typename ProofCalculus, typename Canonicalizer,
+template<
+	bool LinearSearch, typename ProofCalculus, typename Canonicalizer,
 	typename TheoryPrior, typename Parser, typename... Args>
 inline bool answer_question(array<string>& answers,
 		typename ProofCalculus::Language* logical_form,
@@ -1914,7 +1924,7 @@ inline bool answer_question(array<string>& answers,
 		Args&&... add_formula_args)
 {
 	array_map<string, double> temp_answers(8);
-	if (!answer_question(temp_answers, logical_form, num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
+	if (!answer_question<LinearSearch>(temp_answers, logical_form, num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
 		return false;
 
 	if (!get_most_probable_answers(temp_answers, answers)) {
@@ -2017,7 +2027,7 @@ inline bool answer_question(array<string>& answers,
 	free(sentence);
 
 	array_map<string, double> temp_answers(8);
-	if (!answer_question(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...)) {
+	if (!answer_question<false>(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...)) {
 		free_logical_forms(logical_forms, parse_count);
 		return false;
 	}
@@ -2112,7 +2122,7 @@ inline bool answer_question(array<string>& answers,
 			bool failure = false;
 			auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
 				if (read_sentence(articles, parser, tokens, length, T, names, visited_articles, theory_prior, proof_axioms)) {
-					if (!answer_question(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms)) {
+					if (!answer_question<false>(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms)) {
 						failure = true;
 						return false;
 					};

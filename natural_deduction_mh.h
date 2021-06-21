@@ -1332,8 +1332,21 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 	}
 	sum = 0.0;
 	for (unsigned int i = 0; i < constants.length; i++) {
-		probabilities[i] = exp(constants[i].matching_types * 4.0 - constants[i].mismatching_types * 4.0);
+		probabilities[i] = exp(constants[i].matching_types * max(2.0, constants.length / 60.0) - constants[i].mismatching_types * max(2.0, constants.length / 60.0));
 		sum += probabilities[i];
+	}
+
+	double max_probability = 0.0;
+	unsigned int any_index = constants.length;
+	for (unsigned int i = 0; i < constants.length; i++) {
+		max_probability = max(max_probability, probabilities[i]);
+		if (constants[i].type == instance_type::ANY)
+			any_index = i;
+	}
+	if (any_index != constants.length && probabilities[any_index] * 2 < max_probability) {
+		sum -= probabilities[any_index];
+		probabilities[any_index] = max_probability / 2;
+		sum += probabilities[any_index];
 	}
 	return probabilities;
 }
@@ -3732,6 +3745,7 @@ struct query_proposal {
 	double log_one_minus_sample_query_probability;
 	const nd_step<Formula>* query_proof;
 	bool selected_query;
+	unsigned int query_step_count;
 	FallbackProposal& fallback_proposal;
 
 	static constexpr bool IsExploratory = false;
@@ -3760,13 +3774,19 @@ inline unsigned int sample(
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length;
 
-	unsigned int query_index;
-	for (query_index = 0; query_index < T.existential_intro_nodes.length; query_index++)
-		if (T.existential_intro_nodes[query_index].proof == proposal_distribution.query_proof) break;
+	array<const nd_step<Formula>*> proof_steps(4);
+	get_most_recent_proof_steps<nd_step_type::EXISTENTIAL_INTRODUCTION>(proposal_distribution.query_proof, proof_steps);
+	proposal_distribution.query_step_count = proof_steps.length;
 
 	if (sample_uniform<double>() < proposal_distribution.sample_query_probability) {
-		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability;
+		log_cache<double>::instance().ensure_size(proof_steps.length + 1);
+		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proof_steps.length);
 		proposal_distribution.selected_query = true;
+		const nd_step<Formula>* selected_step = sample_uniform(proof_steps);
+
+		unsigned int query_index;
+		for (query_index = 0; query_index < T.existential_intro_nodes.length; query_index++)
+			if (T.existential_intro_nodes[query_index].proof == selected_step) break;
 		return offset + query_index;
 	} else {
 		proposal_distribution.selected_query = false;
@@ -3780,7 +3800,7 @@ inline double log_probability(
 		int delta_atom_count, int delta_extensional_edges, int delta_unfixed_set_count)
 {
 	if (proposal_distribution.selected_query)
-		return proposal_distribution.log_sample_query_probability;
+		return proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proposal_distribution.query_step_count);
 	else return logsumexp(proposal_distribution.log_one_minus_sample_query_probability,
 			log_probability(proposal_distribution.fallback_proposal, delta_atom_count, delta_extensional_edges, delta_unfixed_set_count));
 }
@@ -3797,7 +3817,7 @@ inline double log_probability(
 		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
 {
 	if (selected_disjunction_intro.proof == proposal_distribution.query_proof) {
-		return logsumexp(proposal_distribution.log_sample_query_probability,
+		return logsumexp(proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proposal_distribution.query_step_count),
 				log_probability(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_disjunction_intro));
 	} else {
 		return proposal_distribution.log_one_minus_sample_query_probability

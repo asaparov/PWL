@@ -11,21 +11,21 @@
 {"theory":"4,13,15,17,18,23,24,25,42,49,630-639","questions":{"Q1":{"question":"The Mississippi River runs through what states?","answer":"Arkansas, Illinois, Iowa, Kentucky, Louisiana, Minnesota, Mississippi, Missouri, Tennessee, Wisconsin"}}}
 {"theory":"370,492","questions":{"Q1":{"question":"Where is Portland?","answer":"Maine, Oregon"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the cities in states through which the Mississippi runs?","answer":"Appleton, Arlington Heights, Aurora, Baton Rouge, Bloomington, Cedar Rapids, Champaign, Chattanooga, Chicago, Cicero, Columbia, Davenport, Decatur, Des Moines, Dubuque, Duluth, Elgin, Evanston, Fort Smith, Green Bay, Independence, Jackson, Joliet, Kansas City, Kenner, Kenosha, Knoxville, Lafayette, Lake Charles, Lexington, Little Rock, Louisville, Madison, Memphis, Metairie, Milwaukee, Minneapolis, Monroe, Nashville, New Orleans, North Little Rock, Oak Lawn, Peoria, Racine, Rochester, Rockford, Shreveport, Sioux City, Skokie, Springfield, St. Joseph, St. Louis, St. Paul, Waterloo, Waukegan, West Allis"}}}
-{"theory":"","questions":{"Q1":{"question":"How many people live in Houston?","answer":"1595138"}}}
+{"theory":"521","questions":{"Q1":{"question":"How many people live in Houston?","answer":"1595138"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the populations of states through which the Mississippi River runs?","answer":"2286000, 2364000, 2520000, 2913000, 4076000, 4206000, 4591000, 4700000, 4916000, 11400000"}}}
-{"theory":"","questions":{"Q1":{"question":"The Ohio River runs through what states?","answer":"Illinois, Indiana, Kentucky, Ohio, Pennsylvania, West Virginia"}}}
-{"theory":"","questions":{"Q1":{"question":"Which state has the most population?","answer":"California"}}}
+{"theory":"13,14,17,35,38,48,651-656","questions":{"Q1":{"question":"The Ohio River runs through what states?","answer":"Illinois, Indiana, Kentucky, Ohio, Pennsylvania, West Virginia"}}}
+{"theory":"1-50,580-629","questions":{"Q1":{"question":"Which state has the most population?","answer":"California"}}}
 {"theory":"","questions":{"Q1":{"question":"What states surround Kentucky?","answer":"Illinois, Indiana, Missouri, Ohio, Tennessee, Virginia, West Virginia"}}}
-{"theory":"","questions":{"Q1":{"question":"What is the capital of North Dakota?","answer":"Bismark"}}}
+{"theory":"799","questions":{"Q1":{"question":"What is the capital of North Dakota?","answer":"Bismark"}}}
 {"theory":"","questions":{"Q1":{"question":"There are how many cities in the United States?","answer":"386"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the largest capital city in the USA?","answer":"Phoenix"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the populations of states which border Texas?","answer":"1303000, 2286000, 3025000, 4206000"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the capital of states that have cities named Durham?","answer":"Raleigh"}}}
-{"theory":"","questions":{"Q1":{"question":"What is the biggest city in Kansas?","answer":"Wichita"}}}
-{"theory":"","questions":{"Q1":{"question":"What is the population of Boulder?","answer":"76685"}}}
-{"theory":"","questions":{"Q1":{"question":"Which state has the greatest population?","answer":"California"}}}
-{"theory":"","questions":{"Q1":{"question":"What is the population of Houston?","answer":"1595138"}}}
-{"theory":"","questions":{"Q1":{"question":"There are how many states?","answer":"51"}}}
+{"theory":"356-359,831","questions":{"Q1":{"question":"What is the biggest city in Kansas?","answer":"Wichita"}}}
+{"theory":"286","questions":{"Q1":{"question":"What is the population of Boulder?","answer":"76685"}}}
+{"theory":"1-50,580-629","questions":{"Q1":{"question":"Which state has the greatest population?","answer":"California"}}}
+{"theory":"521","questions":{"Q1":{"question":"What is the population of Houston?","answer":"1595138"}}}
+{"theory":"1-50","questions":{"Q1":{"question":"There are how many states?","answer":"51"}}}
 {"theory":"","questions":{"Q1":{"question":"What states border the state with the smallest area?","answer":"Maryland, Virginia"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the longest river that flows through a state that borders Indiana?","answer":"Mississippi River"}}}
 {"theory":"","questions":{"Q1":{"question":"What states border the most populous state?","answer":"Arizona, Nevada, Oregon"}}}

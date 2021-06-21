@@ -775,7 +775,7 @@ S'' nonterminal {left_arg} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 # S'' {(~)?[e]:(U(i,e) & exist(e) & ...)} -> THERE VP_R {(~)?[e]:(U(i,e) & exist(e) & ...)}
 # NOTE: This above rule is only really useful if we choose to represent "there
 # is a cat" as something like ?[x]:(U(0,x) & cat(x)).
-S'' -> THERE VP_R:try_remove_nullable_subject,try_remove_correlated,require_no_correlator,require_left_predicate_exist,set_predicate_empty,has_arg2
+S'' -> THERE VP_R:try_remove_nullable_subject,try_remove_correlated,require_no_correlator,require_left_predicate_exist,require_no_subset_arg1,set_predicate_empty,has_arg2
 
 # S'' {... & (~)?[y1]:(f(y1) & g1(y1)) & ... & (~)?[yn]:(f(yn) & gn(yn))}
 #  -> V_ADJUNCT {... & ?[y1]:(p1(y1) & f(y1)) & ... & ?[yn]:(pn(yn) & f(yn))}
@@ -1427,6 +1427,11 @@ MD -> CAN:require_no_not,remove_capable_of,require_present
 MD -> CANNOT:remove_not,remove_capable_of,require_present
 
 
+# this is to be able to parse noun phrases unambiguously (with respect to features like wide scope markers, etc)
+NP_ROOT nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+NP_ROOT -> NP:require_lambda,require_no_wide_scope
+
+
 # TODO: should this nonterminal change the universal/existential quantifiers into a single kind of quantifier, to improve generalization for the NP nonterminal and further downstream?
 NP nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
@@ -1809,6 +1814,10 @@ NP' nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
 
+# NP' {^[n]:^[P]:(... & ?[S]:(S=^[x]:f(x) & size(S)=n & ... & ![x]:(S(x) => P(s))))}
+#  -> HOW MANY NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ... & ![x]:(S(x) => P(s))))}
+NP' -> HOW:require_no_wh_minus,select_second_left_set_conjunct_root,require_size_lambda MANY NOMINAL_R:try_remove_correlated,try_add_plural,require_wide_scope,remove_second_left_set_conjunct
+
 # NP' {^[n]:^[P]:(... & ?[S]:(subset(S,^[x]:f(x)) & size(S)=n & ... & ![x]:(S(x) => P(s))))}
 #  -> HOW MANY NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ... & ![x]:(S(x) => P(s))))}
 NP' -> HOW:require_no_wh_minus,select_second_left_set_conjunct_root,require_size_lambda MANY NOMINAL_R:try_remove_correlated,try_add_plural,require_wide_scope,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
@@ -1864,7 +1873,7 @@ Q -> NUMBER:identity
 
 
 # this noun phrase nonterminal is for right-side modifiers
-NOMINAL_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
+NOMINAL_R nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 
 # NOMINAL_R {A} -> NOMINAL_L {A}
 NOMINAL_R -> NOMINAL_L:identity
@@ -1905,7 +1914,7 @@ NOMINAL_R -> NOMINAL_R:try_remove_genitive,remove_right_conjunct_in_set OF NP:tr
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(S=^[a]:(...) & ?[a]:(S(a) & P(a))))}
 #     OF_FOR
 #     NP {^[P]:(... & ?[S]:(S=^[x]:(...) & ?[x]:(S(x) & P(x))))}
-NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_predicative,remove_right_conjunct_in_set,try_add_has_arg2 OF_FOR NP:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,has_arg2_in_set
+NOMINAL_R -> NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set,try_add_has_arg2 OF_FOR NP:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,has_arg2_in_set
 
 # NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:(f(x) & ?[n]:(name(n) & arg1_of(x)=n & arg2(n)=s)) & ?[x]:(S(x) & P(x))))}
 #  -> NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ?[x]:(S(x) & P(x))))}

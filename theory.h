@@ -370,6 +370,10 @@ struct instantiation {
 		string str;
 	};
 
+	instantiation(instantiation_type type) {
+		if (!init_helper(type)) throw std::bad_alloc();
+	}
+
 	instantiation(const instantiation& src) {
 		if (!init_helper(src)) throw std::bad_alloc();
 	}
@@ -413,6 +417,17 @@ struct instantiation {
 	}
 
 private:
+	inline bool init_helper(instantiation_type inst_type) {
+		type = inst_type;
+		if (type == instantiation_type::ANY) {
+			any.excluded = (instantiation*) malloc(1);
+			if (any.excluded == nullptr)
+				return false;
+			any.excluded_count = 0;
+		}
+		return true;
+	}
+
 	inline bool init_helper(const instantiation& src) {
 		type = src.type;
 		switch (type) {
@@ -444,20 +459,14 @@ private:
 		return false;
 	}
 
+	friend bool init(instantiation&, instantiation_type);
 	friend bool init(instantiation&, const instantiation&);
 	friend bool operator != (const instantiation&, const instantiation&);
 	friend bool operator < (const instantiation&, const instantiation&);
 };
 
 inline bool init(instantiation& inst, instantiation_type type) {
-	inst.type = type;
-	if (type == instantiation_type::ANY) {
-		inst.any.excluded = (instantiation*) malloc(1);
-		if (inst.any.excluded == nullptr)
-			return false;
-		inst.any.excluded_count = 0;
-	}
-	return true;
+	return inst.init_helper(type);
 }
 
 inline bool init(instantiation& inst, const instantiation& src) {
@@ -3158,7 +3167,11 @@ inline Formula* preprocess_formula(Formula* src) {
 
 	first = normalize_optimizations(second);
 	free(*second); if (second->reference_count == 0) free(second);
-	return first;
+	if (first == nullptr) return nullptr;
+
+	second = simplify_subsets(first);
+	free(*first); if (first->reference_count == 0) free(first);
+	return second;
 }
 
 /* this is useful in `theory.add_definition` where if any sets are created in
@@ -3438,21 +3451,19 @@ struct theory
 	array<pair<Proof*, bool>> implication_axioms;
 
 	Proof* empty_set_axiom;
-	Proof* maximality_axiom;
-	Proof* minimality_axiom;
-
+	array<Proof*> built_in_axioms;
 	array<unsigned int> built_in_sets;
 
 	Term* NAME_ATOM;
 
-	theory(unsigned int new_constant_offset) :
+	theory(const array<Formula*>& seed_axioms, unsigned int new_constant_offset) :
 			new_constant_offset(new_constant_offset), atoms(64), relations(64),
 			ground_concept_capacity(64), ground_axiom_count(0),
 			reverse_definitions(256), constant_types(8),
 			constant_negated_types(8), observations(64),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
 			implication_intro_nodes(16), existential_intro_nodes(16),
-			implication_axioms(16), built_in_sets(4)
+			implication_axioms(16), built_in_axioms(8), built_in_sets(8)
 	{
 		ground_concepts = (concept<ProofCalculus>*) malloc(sizeof(concept<ProofCalculus>) * ground_concept_capacity);
 		if (ground_concepts == NULL) {
@@ -3484,147 +3495,38 @@ struct theory
 		Constants<(unsigned int) built_in_predicates::NAME>::value.reference_count++;
 		Variables<1>::value.reference_count++;
 
-		/* add definition of maximality */
-		Formula* left = Formula::new_exists(4, Formula::new_and(
-				Formula::new_apply(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATEST>::value, &Variables<2>::value), &Variables<4>::value),
-				Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<4>::value), &Variables<3>::value),
-				Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<4>::value), &Variables<1>::value)
-			));
-		if (left == nullptr) exit(EXIT_FAILURE);
-		Constants<(unsigned int) built_in_predicates::GREATEST>::value.reference_count++;
-		Constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
-		Constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
-		Variables<1>::value.reference_count++;
-		Variables<2>::value.reference_count++;
-		Variables<3>::value.reference_count++;
-		Variables<4>::value.reference_count += 3;
-		Formula* right = Formula::new_and(
-				Formula::new_apply(&Variables<3>::value, &Variables<1>::value),
-				Formula::new_for_all(4, Formula::new_if_then(
-					Formula::new_apply(Formula::new_apply(&Variables<2>::value, &Variables<1>::value), &Variables<4>::value),
-					Formula::new_for_all(5, Formula::new_if_then(
-						Formula::new_apply(&Variables<3>::value, &Variables<5>::value),
-						Formula::new_for_all(6, Formula::new_if_then(
-							Formula::new_apply(Formula::new_apply(&Variables<2>::value, &Variables<5>::value), &Variables<6>::value),
-							Formula::new_and(
-								Formula::new_if_then(
-									Formula::new_apply(&Constants<(unsigned int) built_in_predicates::NUMBER>::value, &Variables<4>::value),
-									Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, &Variables<4>::value, &Variables<6>::value)
-								),
-								Formula::new_for_all(7, Formula::new_if_then(
-									Formula::new_and(
-										Formula::new_apply(&Constants<(unsigned int) built_in_predicates::MEASURE>::value, &Variables<4>::value),
-										Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<4>::value), &Variables<7>::value)
-									),
-									Formula::new_for_all(8, Formula::new_if_then(
-										Formula::new_and(
-											Formula::new_apply(&Constants<(unsigned int) built_in_predicates::MEASURE>::value, &Variables<6>::value),
-											Formula::new_exists(9, Formula::new_and(
-												Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<4>::value), &Variables<9>::value),
-												Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<6>::value), &Variables<9>::value)
-											)),
-											Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<6>::value), &Variables<8>::value)
-										),
-										Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, &Variables<7>::value, &Variables<8>::value)
-									))
-								))
-							)
-						))
-					))
-				)));
-		if (right == nullptr) exit(EXIT_FAILURE);
-		Constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::NUMBER>::value.reference_count++;
-		Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::MEASURE>::value.reference_count += 2;
-		Variables<1>::value.reference_count += 2;
-		Variables<2>::value.reference_count += 2;
-		Variables<3>::value.reference_count += 2;
-		Variables<4>::value.reference_count += 6;
-		Variables<5>::value.reference_count += 2;
-		Variables<6>::value.reference_count += 5;
-		Variables<7>::value.reference_count += 2;
-		Variables<8>::value.reference_count += 2;
-		Variables<9>::value.reference_count += 2;
-		bool is_antecedent_new, is_consequent_new;
-		unsigned int antecedent_set, consequent_set;
-		maximality_axiom = get_subset_axiom<true>(left, right, 3, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new);
-		core::free(*left); if (left->reference_count == 0) core::free(left);
-		core::free(*right); if (right->reference_count == 0) core::free(right);
-		if (maximality_axiom == NULL || !built_in_sets.add(antecedent_set) || !built_in_sets.add(consequent_set))
+		/* add the seed axioms */
+		if (!built_in_axioms.ensure_capacity(seed_axioms.length))
 			exit(EXIT_FAILURE);
-		maximality_axiom->reference_count++;
+		for (Formula* seed_axiom : seed_axioms) {
+			uint_fast8_t arity = 0;
+			Formula* operand = seed_axiom;
+			while (operand->type == FormulaType::FOR_ALL) {
+				operand = operand->quantifier.operand;
+				arity++;
+			}
+			if (arity == 0) {
+				fprintf(stderr, "ERROR: Non-universally-quantified seed axioms are not supported.\n");
+				exit(EXIT_FAILURE);
+			} else {
+				Formula* left; Formula* right;
+				if (operand->type != FormulaType::IF_THEN) {
+					left = Formula::new_true();
+					left->reference_count--;
+					right = operand->binary.right;
+				} else {
+					left = operand->binary.left;
+					right = operand->binary.right;
+				}
 
-		/* add definition of minimality */
-		left = Formula::new_exists(4, Formula::new_and(
-				Formula::new_apply(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::LEAST>::value, &Variables<2>::value), &Variables<4>::value),
-				Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<4>::value), &Variables<3>::value),
-				Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<4>::value), &Variables<1>::value)
-			));
-		if (left == nullptr) exit(EXIT_FAILURE);
-		Constants<(unsigned int) built_in_predicates::LEAST>::value.reference_count++;
-		Constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
-		Constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
-		Variables<1>::value.reference_count++;
-		Variables<2>::value.reference_count++;
-		Variables<3>::value.reference_count++;
-		Variables<4>::value.reference_count += 3;
-		right = Formula::new_and(
-				Formula::new_apply(&Variables<3>::value, &Variables<1>::value),
-				Formula::new_for_all(4, Formula::new_if_then(
-					Formula::new_apply(Formula::new_apply(&Variables<2>::value, &Variables<1>::value), &Variables<4>::value),
-					Formula::new_for_all(5, Formula::new_if_then(
-						Formula::new_apply(&Variables<3>::value, &Variables<5>::value),
-						Formula::new_for_all(6, Formula::new_if_then(
-							Formula::new_apply(Formula::new_apply(&Variables<2>::value, &Variables<5>::value), &Variables<6>::value),
-							Formula::new_and(
-								Formula::new_if_then(
-									Formula::new_apply(&Constants<(unsigned int) built_in_predicates::NUMBER>::value, &Variables<4>::value),
-									Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, &Variables<6>::value, &Variables<4>::value)
-								),
-								Formula::new_for_all(7, Formula::new_if_then(
-									Formula::new_and(
-										Formula::new_apply(&Constants<(unsigned int) built_in_predicates::MEASURE>::value, &Variables<4>::value),
-										Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<4>::value), &Variables<7>::value)
-									),
-									Formula::new_for_all(8, Formula::new_if_then(
-										Formula::new_and(
-											Formula::new_apply(&Constants<(unsigned int) built_in_predicates::MEASURE>::value, &Variables<6>::value),
-											Formula::new_exists(9, Formula::new_and(
-												Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<4>::value), &Variables<9>::value),
-												Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG2>::value, &Variables<6>::value), &Variables<9>::value)
-											)),
-											Formula::new_equals(Formula::new_apply(&Constants<(unsigned int) built_in_predicates::ARG1>::value, &Variables<6>::value), &Variables<8>::value)
-										),
-										Formula::new_apply(&Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, &Variables<8>::value, &Variables<7>::value)
-									))
-								))
-							)
-						))
-					))
-				)));
-		if (right == nullptr) exit(EXIT_FAILURE);
-		Constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::NUMBER>::value.reference_count++;
-		Constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count += 2;
-		Constants<(unsigned int) built_in_predicates::MEASURE>::value.reference_count += 2;
-		Variables<1>::value.reference_count += 2;
-		Variables<2>::value.reference_count += 2;
-		Variables<3>::value.reference_count += 2;
-		Variables<4>::value.reference_count += 6;
-		Variables<5>::value.reference_count += 2;
-		Variables<6>::value.reference_count += 5;
-		Variables<7>::value.reference_count += 2;
-		Variables<8>::value.reference_count += 2;
-		Variables<9>::value.reference_count += 2;
-		minimality_axiom = get_subset_axiom<true>(left, right, 3, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new);
-		core::free(*left); if (left->reference_count == 0) core::free(left);
-		core::free(*right); if (right->reference_count == 0) core::free(right);
-		if (minimality_axiom == NULL || !built_in_sets.add(antecedent_set) || !built_in_sets.add(consequent_set))
-			exit(EXIT_FAILURE);
-		minimality_axiom->reference_count++;
+				bool is_antecedent_new, is_consequent_new;
+				unsigned int antecedent_set, consequent_set;
+				built_in_axioms[built_in_axioms.length] = get_subset_axiom<true>(left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new);
+				if (built_in_axioms[built_in_axioms.length] == NULL || !built_in_sets.add(antecedent_set) || !built_in_sets.add(consequent_set))
+					exit(EXIT_FAILURE);
+				built_in_axioms[built_in_axioms.length++]->reference_count++;
+			}
+		}
 	}
 
 	~theory() { free_helper(); }
@@ -3718,10 +3620,10 @@ struct theory
 		core::free(*empty_set_axiom);
 		if (empty_set_axiom->reference_count == 0)
 			core::free(empty_set_axiom);
-		core::free(*maximality_axiom);
-		sets.free_subset_axiom(maximality_axiom);
-		core::free(*minimality_axiom);
-		sets.free_subset_axiom(minimality_axiom);
+		for (Proof* axiom : built_in_axioms) {
+			core::free(*axiom);
+			sets.free_subset_axiom(axiom);
+		}
 	}
 
 	static inline void free(theory<ProofCalculus, Canonicalizer>& T) {
@@ -3738,6 +3640,7 @@ struct theory
 		core::free(T.implication_intro_nodes);
 		core::free(T.existential_intro_nodes);
 		core::free(T.implication_axioms);
+		core::free(T.built_in_axioms);
 		core::free(T.built_in_sets);
 	}
 
@@ -3818,6 +3721,7 @@ struct theory
 	void try_free_concept_id(unsigned int id) {
 		if (id < new_constant_offset) return;
 		const concept<ProofCalculus>& c = ground_concepts[id - new_constant_offset];
+		if (c.types.keys == nullptr) return;
 		if (c.types.size != 0 || c.negated_types.size != 0 || c.relations.size != 0
 		 || c.negated_relations.size != 0 || c.definitions.length > 1 || c.definitions[0]->reference_count > 2
 		 || c.existential_intro_nodes.length != 0 || c.function_values.size != 0)
@@ -4109,7 +4013,7 @@ struct theory
 		}
 		for (unsigned int ancestor : ancestors) {
 			Formula* formula = sets.sets[ancestor].set_formula();
-			if (formula->type == hol_term_type::AND) {
+			if (formula->type == FormulaType::AND) {
 				for (unsigned int i = 0; i < formula->array.length; i++) {
 					Term* arg2 = get_name_from_scope(formula->array.operands[i], 1);
 					if (arg2 == nullptr || arg2->type != TermType::STRING || name_terms.contains(arg2))
@@ -4175,23 +4079,31 @@ struct theory
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
 			return false;
-		} if (!Proof::clone(src.maximality_axiom, dst.maximality_axiom, proof_map, formula_map)) {
+		} if (!array_init(dst.built_in_axioms, src.built_in_axioms.capacity)) {
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
 			core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
 			return false;
-		} if (!Proof::clone(src.minimality_axiom, dst.minimality_axiom, proof_map, formula_map)) {
+		}
+		for (unsigned int i = 0; i < src.built_in_axioms.length; i++) {
+			if (!Proof::clone(src.built_in_axioms[i], dst.built_in_axioms[i], proof_map, formula_map)) {
+				for (unsigned int j = 0; j < i; j++) {
+					core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+				}
+				core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+				core::free(dst.observations);
+				core::free(dst.ground_concepts);
+				core::free(dst.atoms); core::free(dst.relations);
+				return false;
+			}
+			dst.built_in_axioms.length++;
+		}
+		if (!::clone(src.NAME_ATOM, dst.NAME_ATOM, formula_map)) {
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(dst.observations);
-			core::free(dst.ground_concepts);
-			core::free(dst.atoms); core::free(dst.relations);
-			return false;
-		} if (!::clone(src.NAME_ATOM, dst.NAME_ATOM, formula_map)) {
-			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
@@ -4201,18 +4113,20 @@ struct theory
 			core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.disjunction_intro_nodes, src.disjunction_intro_nodes.capacity)) {
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.negated_conjunction_nodes, src.negated_conjunction_nodes.capacity)) {
@@ -4220,9 +4134,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.implication_intro_nodes, src.implication_intro_nodes.capacity)) {
@@ -4231,9 +4146,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.existential_intro_nodes, src.existential_intro_nodes.capacity)) {
@@ -4243,9 +4159,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.implication_axioms, src.implication_axioms.capacity)) {
@@ -4255,9 +4172,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_init(dst.built_in_sets, src.built_in_sets.capacity)) {
@@ -4269,9 +4187,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_map_init(dst.constant_types, src.constant_types.capacity)) {
@@ -4284,9 +4203,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!array_map_init(dst.constant_negated_types, src.constant_negated_types.capacity)) {
@@ -4300,9 +4220,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		} else if (!hash_map_init(dst.reverse_definitions, src.reverse_definitions.table.capacity)) {
@@ -4317,9 +4238,10 @@ struct theory
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
-			core::free(*dst.maximality_axiom); if (dst.maximality_axiom->reference_count == 0) core::free(dst.maximality_axiom);
-			core::free(*dst.minimality_axiom); if (dst.minimality_axiom->reference_count == 0) core::free(dst.minimality_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
 		}
@@ -4869,19 +4791,23 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				return false;
 		}
 
+		if (atom.binary.right->type == TermType::CONSTANT)
+			try_init_concept(atom.binary.right->constant);
+
 		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
-		if (lifted_atom == nullptr)
+		if (lifted_atom == nullptr) {
+			if (atom.binary.right->type == TermType::CONSTANT)
+				try_free_concept_id(atom.binary.right->constant);
 			return false;
+		}
 		atom.binary.left->reference_count++;
 		Variables<1>::value.reference_count++;
 
-#if !defined(NDEBUG)
-		if (atom.binary.right->type == TermType::CONSTANT && (atom.binary.right->constant < new_constant_offset || ground_concepts[atom.binary.right->constant - new_constant_offset].types.keys == NULL))
-			fprintf(stderr, "theory.add_unary_atom WARNING: `ground_concepts` does not contain the concept %u.\n", atom.binary.right->constant);
-#endif
 		bool contains; unsigned int bucket;
 		if (!atoms.check_size()) {
 			core::free(*lifted_atom); core::free(lifted_atom);
+			if (atom.binary.right->type == TermType::CONSTANT)
+				try_free_concept_id(atom.binary.right->constant);
 			return false;
 		}
 
@@ -4889,10 +4815,14 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		if (!contains) {
 			if (!array_init(instance_pair.key, 8)) {
 				core::free(*lifted_atom); core::free(lifted_atom);
+				if (atom.binary.right->type == TermType::CONSTANT)
+					try_free_concept_id(atom.binary.right->constant);
 				return false;
 			} else if (!array_init(instance_pair.value, 8)) {
 				core::free(instance_pair.key);
 				core::free(*lifted_atom); core::free(lifted_atom);
+				if (atom.binary.right->type == TermType::CONSTANT)
+					try_free_concept_id(atom.binary.right->constant);
 				return false;
 			}
 			atoms.table.keys[bucket] = *lifted_atom;
@@ -4907,6 +4837,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		 || !ground_types.ensure_capacity(ground_types.size + 1))
 		{
 			core::free(*lifted_atom); core::free(lifted_atom);
+			if (atom.binary.right->type == TermType::CONSTANT)
+				try_free_concept_id(atom.binary.right->constant);
 			return false;
 		}
 
@@ -4930,21 +4862,21 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 	template<bool Negated, bool ResolveInconsistencies, typename... Args>
 	inline bool add_binary_atom(relation rel, Proof* axiom, Args&&... visitor)
 	{
-#if !defined(NDEBUG)
-		if (rel.arg1 < new_constant_offset || ground_concepts[rel.arg1 - new_constant_offset].types.keys == NULL)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg1);
-		if (rel.arg2 < new_constant_offset || ground_concepts[rel.arg2 - new_constant_offset].types.keys == NULL)
-			fprintf(stderr, "theory.add_binary_atom WARNING: `ground_concepts` does not contain the key %u.\n", rel.arg2);
-#endif
+		try_init_concept(rel.arg1);
+		try_init_concept(rel.arg2);
 
 		bool contains; unsigned int bucket;
 		if (!relations.check_size(relations.table.size + 4)) return false;
 		pair<array<instance>, array<instance>>& predicate_instance_pair = relations.get({0, rel.arg1, rel.arg2}, contains, bucket);
 		if (!contains) {
 			if (!array_init(predicate_instance_pair.key, 8)) {
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1);
 				return false;
 			} else if (!array_init(predicate_instance_pair.value, 8)) {
-				core::free(predicate_instance_pair.key); return false;
+				core::free(predicate_instance_pair.key);
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1); return false;
 			}
 			relations.table.keys[bucket] = {0, rel.arg1, rel.arg2};
 			relations.table.size++;
@@ -4953,9 +4885,13 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		pair<array<instance>, array<instance>>& arg1_instance_pair = relations.get({rel.predicate, 0, rel.arg2}, contains, bucket);
 		if (!contains) {
 			if (!array_init(arg1_instance_pair.key, 8)) {
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1);
 				return false;
 			} else if (!array_init(arg1_instance_pair.value, 8)) {
-				core::free(arg1_instance_pair.key); return false;
+				core::free(arg1_instance_pair.key);
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1); return false;
 			}
 			relations.table.keys[bucket] = {rel.predicate, 0, rel.arg2};
 			relations.table.size++;
@@ -4964,9 +4900,13 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		pair<array<instance>, array<instance>>& arg2_instance_pair = relations.get({rel.predicate, rel.arg1, 0}, contains, bucket);
 		if (!contains) {
 			if (!array_init(arg2_instance_pair.key, 8)) {
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1);
 				return false;
 			} else if (!array_init(arg2_instance_pair.value, 8)) {
-				core::free(arg2_instance_pair.key); return false;
+				core::free(arg2_instance_pair.key);
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1); return false;
 			}
 			relations.table.keys[bucket] = {rel.predicate, rel.arg1, 0};
 			relations.table.size++;
@@ -4981,15 +4921,24 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		 || !arg1_instances.ensure_capacity(arg1_instances.length + 1)
 		 || !arg2_instances.ensure_capacity(arg2_instances.length + 1)
 		 || !ground_arg1.ensure_capacity(ground_arg1.size + 3)
-		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3)) return false;
+		 || !ground_arg2.ensure_capacity(ground_arg2.size + 3))
+		{
+			try_free_concept_id(rel.arg2);
+			try_free_concept_id(rel.arg1);
+			return false;
+		}
 
 		if (rel.arg1 == rel.arg2) {
 			pair<array<instance>, array<instance>>& both_arg_instance_pair = relations.get({rel.predicate, 0, 0}, contains, bucket);
 			if (!contains) {
 				if (!array_init(both_arg_instance_pair.key, 8)) {
+					try_free_concept_id(rel.arg2);
+					try_free_concept_id(rel.arg1);
 					return false;
 				} else if (!array_init(both_arg_instance_pair.value, 8)) {
 					core::free(both_arg_instance_pair.key);
+					try_free_concept_id(rel.arg2);
+					try_free_concept_id(rel.arg1);
 					return false;
 				}
 				relations.table.keys[bucket] = {rel.predicate, 0, 0};
@@ -4997,8 +4946,11 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			}
 
 			array<instance>& both_arg_instances = (Negated ? both_arg_instance_pair.value : both_arg_instance_pair.key);
-			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1))
+			if (!both_arg_instances.ensure_capacity(both_arg_instances.length + 1)) {
+				try_free_concept_id(rel.arg2);
+				try_free_concept_id(rel.arg1);
 				return false;
+			}
 			both_arg_instances[both_arg_instances.length++] = instance_constant(rel.arg1);
 			insertion_sort(both_arg_instances);
 		}
@@ -5021,7 +4973,11 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		}
 
 		Formula* atom = Formula::new_atom(rel.predicate, Term::new_constant(rel.arg1), Term::new_constant(rel.arg2));
-		if (atom == nullptr) return false;
+		if (atom == nullptr) {
+			try_free_concept_id(rel.arg2);
+			try_free_concept_id(rel.arg1);
+			return false;
+		}
 		if (!check_set_membership_after_addition<ResolveInconsistencies>(atom, std::forward<Args>(visitor)...)) {
 			remove_binary_atom<Negated>(rel, std::forward<Args>(visitor)...);
 			core::free(*atom); core::free(atom);
@@ -5082,7 +5038,10 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			ground_axiom_count--;
 		core::free(*lifted_atom); core::free(lifted_atom);
 
-		return check_set_membership_after_subtraction(&atom, 0, std::forward<Args>(visitor)...);
+		bool result = check_set_membership_after_subtraction(&atom, 0, std::forward<Args>(visitor)...);
+		if (atom.binary.right->type == TermType::CONSTANT)
+			try_free_concept_id(atom.binary.right->constant);
+		return result;
 	}
 
 	template<bool Negated, typename... Args>
@@ -5182,6 +5141,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		if (atom == nullptr) return false;
 		bool result = check_set_membership_after_subtraction(atom, 0, std::forward<Args>(visitor)...);
 		core::free(*atom); core::free(atom);
+		try_free_concept_id(rel.arg2);
+		try_free_concept_id(rel.arg1);
 		return result;
 	}
 
@@ -5738,11 +5699,12 @@ private:
 				} else {
 					fprintf(stderr, "get_theory_changes WARNING: Found unexpected equals axiom.\n");
 				}
-			} else if (&proof != empty_set_axiom
-					&& &proof != maximality_axiom
-					&& &proof != minimality_axiom)
-			{
-				fprintf(stderr, "get_theory_changes WARNING: Found unexpected axiom.\n");
+			} else {
+				bool is_built_in = (&proof == empty_set_axiom);
+				for (unsigned int i = 0; !is_built_in && i < built_in_axioms.length; i++)
+					is_built_in = (&proof == built_in_axioms[i]);
+				if (!is_built_in)
+					fprintf(stderr, "get_theory_changes WARNING: Found unexpected axiom.\n");
 			}
 			break;
 
@@ -7889,7 +7851,7 @@ private:
 		unsigned int substitution_count = 0;
 		Term** src_variables = (Term**) alloca(sizeof(Term*) * (quantifiers.length - old_quantifier_length) * 2);
 		Term** dst_variables = src_variables + (quantifiers.length - old_quantifier_length);
-		array<hol_term*> new_operands(operand->type == FormulaType::AND ? operand->array.length : 1);
+		array<Formula*> new_operands(operand->type == FormulaType::AND ? operand->array.length : 1);
 		if (operand->type == FormulaType::AND) {
 			for (unsigned int i = 0; i < operand->array.length; i++) {
 				if (operand->array.operands[i]->type == TermType::EQUALS) {
@@ -14220,6 +14182,21 @@ private:
 			}
 		}
 
+		/* make sure all the concepts referenced from the right-hand side are initialized */
+		array<unsigned int> constants(4);
+		constants[constants.length++] = constant->constant;
+		if (!get_constants(*new_definition, constants, new_constant_offset)) {
+			try_free_concept_id(constant->constant);
+			return nullptr;
+		}
+		for (unsigned int i = 0; i < constants.length; i++) {
+			if (!try_init_concept(constants[i])) {
+				for (unsigned int j = i; j > 0; j--)
+					try_free_concept_id(constants[j - 1]);
+				return nullptr;
+			}
+		}
+
 		if (new_definition->type == FormulaType::LAMBDA) {
 			/* check if this constant defines any other sets, and indicate to the set reasoning module that they are the same set */
 			bool contains;
@@ -14240,7 +14217,8 @@ private:
 						if (sets.sets[set_id].set_size < requested_set_size.min_set_size
 						 || sets.sets[set_id].set_size > requested_set_size.max_set_size)
 						{
-							try_free_concept_id(constant->constant);
+							for (unsigned int j = constants.length; j > 0; j--)
+								try_free_concept_id(constants[j - 1]);
 							return nullptr;
 						}
 						requested_set_size.min_set_size = sets.sets[set_id].set_size;
@@ -14280,6 +14258,8 @@ private:
 							if (axiom->reference_count == 1)
 								free_subset_axiom(other_set_formula, new_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
 						}
+						for (unsigned int j = constants.length; j > 0; j--)
+							try_free_concept_id(constants[j - 1]);
 						return nullptr;
 					}
 					first_subset_axiom->reference_count++;
@@ -14307,6 +14287,8 @@ private:
 							if (axiom->reference_count == 1)
 								free_subset_axiom(other_set_formula, new_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
 						}
+						for (unsigned int j = constants.length; j > 0; j--)
+							try_free_concept_id(constants[j - 1]);
 						return nullptr;
 					}
 					second_subset_axiom->reference_count++;
@@ -14339,6 +14321,8 @@ private:
 						free_subset_axiom(other_set_formula, new_set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
 				}
 			}
+			for (unsigned int j = constants.length; j > 0; j--)
+				try_free_concept_id(constants[j - 1]);
 			return nullptr;
 		}
 		definition->reference_count++;
@@ -14451,7 +14435,13 @@ private:
 		index = reverse_definitions.table.index_of(*definition->formula->binary.right);
 		core::free(reverse_definitions.table.keys[index]);
 		reverse_definitions.remove_at(index);
-		try_free_concept_id(concept_id);
+
+		/* make sure all the concepts referenced from the right-hand side are freed if necessary */
+		array<unsigned int> constants(4);
+		constants[constants.length++] = concept_id;
+		get_constants(*definition->formula->binary.right, constants, new_constant_offset);
+		for (unsigned int j = constants.length; j > 0; j--)
+			try_free_concept_id(constants[j - 1]);
 		core::free(*definition); if (definition->reference_count == 0) core::free(definition);
 	}
 
@@ -15002,13 +14992,14 @@ bool get_proof_map(const theory<ProofCalculus, Canonicalizer>& T,
 	typedef typename ProofCalculus::Proof Proof;
 
 	if (!get_proof_map(T.empty_set_axiom, proof_map, formula_map)
-	 || !get_proof_map(T.maximality_axiom, proof_map, formula_map)
-	 || !get_proof_map(T.minimality_axiom, proof_map, formula_map)
 	 || !get_formula_map(T.NAME_ATOM, formula_map)
 	 || !get_proof_map(T.sets, proof_map, formula_map))
 	{
 		return false;
 	}
+
+	for (const Proof* axiom : T.built_in_axioms)
+		if (!get_proof_map(axiom, proof_map, formula_map)) return false;
 
 	for (const auto& entry : T.atoms) {
 		if (!get_formula_map(entry.key, formula_map))
@@ -15062,16 +15053,14 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 	typedef typename Formula::Term Term;
 
 	unsigned int empty_set_axiom_index;
-	unsigned int maximality_axiom_index;
-	unsigned int minimality_axiom_index;
 	unsigned int NAME_ATOM_index;
 	decltype(T.atoms.table.size) atom_count;
+	decltype(T.built_in_axioms.length) built_in_axiom_count;
 	if (!read(T.new_constant_offset, in)
 	 || !read(T.ground_concept_capacity, in)
 	 || !read(T.ground_axiom_count, in)
+	 || !read(built_in_axiom_count, in)
 	 || !read(empty_set_axiom_index, in)
-	 || !read(maximality_axiom_index, in)
-	 || !read(minimality_axiom_index, in)
 	 || !read(NAME_ATOM_index, in)
 	 || !read(T.sets, in, proofs, formulas))
 	{
@@ -15083,17 +15072,31 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 
 	T.empty_set_axiom = proofs[empty_set_axiom_index];
 	T.empty_set_axiom->reference_count++;
-	T.maximality_axiom = proofs[maximality_axiom_index];
-	T.maximality_axiom->reference_count++;
-	T.minimality_axiom = proofs[minimality_axiom_index];
-	T.minimality_axiom->reference_count++;
 	T.NAME_ATOM = formulas[NAME_ATOM_index];
 	T.NAME_ATOM->reference_count++;
 
+	if (!array_init(T.built_in_axioms, ((size_t) 1) << (core::log2(built_in_axiom_count == 0 ? 1 : built_in_axiom_count) + 1))) {
+		free(*T.empty_set_axiom);
+		free(*T.NAME_ATOM);
+		free(T.sets); return false;
+	}
+	for (unsigned int i = 0; i < built_in_axiom_count; i++) {
+		unsigned int index;
+		if (!read(index, in)) {
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom);
+			free(*T.NAME_ATOM);
+			free(T.sets); return false;
+		}
+		T.built_in_axioms[T.built_in_axioms.length++] = proofs[index];
+		proofs[index]->reference_count++;
+	}
+
 	if (!hash_map_init(T.atoms, 1 << (core::log2(RESIZE_THRESHOLD_INVERSE * (atom_count == 0 ? 1 : atom_count)) + 1))) {
 		free(*T.empty_set_axiom);
-		free(*T.maximality_axiom);
-		free(*T.minimality_axiom);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
 		free(*T.NAME_ATOM);
 		free(T.sets); return false;
 	}
@@ -15105,8 +15108,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.key);
 				free(entry.value.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); return false;
 		}
 		term.reference_count = 1;
@@ -15118,8 +15122,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.key);
 				free(entry.value.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); return false;
 		} else if (!read(T.atoms.values[bucket].value, in)) {
 			free(term); free(T.atoms.values[bucket].key);
@@ -15128,8 +15133,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.key);
 				free(entry.value.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); return false;
 		}
 		move(term, T.atoms.table.keys[bucket]);
@@ -15144,8 +15150,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(entry.value.key);
 			free(entry.value.value);
 		}
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); return false;
 	}
 	for (unsigned int i = 0; i < atom_count; i++) {
@@ -15159,8 +15166,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.key);
 				free(entry.value.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			return false;
 		}
@@ -15174,8 +15182,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.key);
 				free(entry.value.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			return false;
 		} else if (!read(T.relations.values[bucket].value, in)) {
@@ -15188,8 +15197,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.key);
 				free(entry.value.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			return false;
 		}
@@ -15209,8 +15219,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(entry.value.key);
 			free(entry.value.value);
 		}
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		return false;
 	}
@@ -15226,8 +15237,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.value.value);
 			} for (Proof* observation : T.observations)
 				free(*observation);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); return false;
 		}
@@ -15251,8 +15263,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(entry.value.value);
 		} for (Proof* observation : T.observations)
 			free(*observation);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); return false;
 	}
@@ -15271,8 +15284,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(*observation);
 			for (unsigned int j = 0; j < i; j++)
 				if (T.ground_concepts[j].types.keys != nullptr) free(T.ground_concepts[j]);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			return false;
@@ -15294,8 +15308,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(*observation);
 		for (unsigned int j = 0; j < T.ground_concept_capacity; j++)
 			if (T.ground_concepts[j].types.keys != nullptr) free(T.ground_concepts[j]);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		return false;
@@ -15317,8 +15332,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.key);
 				free(*entry.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); return false;
@@ -15341,8 +15357,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.key);
 				free(*entry.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); return false;
@@ -15370,8 +15387,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(entry.key);
 			free(*entry.value);
 		}
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); return false;
@@ -15396,8 +15414,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.key);
 				free(*entry.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -15424,8 +15443,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(entry.key);
 				free(*entry.value);
 			}
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -15458,8 +15478,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(entry.key);
 			free(*entry.value);
 		}
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -15493,8 +15514,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(*entry.value);
 			}
 			for (auto& node : T.disjunction_intro_nodes) free(node);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -15526,8 +15548,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 					free(*entry.value);
 				}
 				for (auto& node : T.disjunction_intro_nodes) free(node);
-				free(*T.empty_set_axiom); free(*T.maximality_axiom);
-				free(*T.minimality_axiom); free(*T.NAME_ATOM);
+				for (Proof* axiom : T.built_in_axioms) free(*axiom);
+				free(T.built_in_axioms);
+				free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 				free(T.sets); free(T.atoms); free(T.relations);
 				free(T.observations); free(T.ground_concepts);
 				free(T.constant_types); free(T.constant_negated_types);
@@ -15566,8 +15589,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			free(*entry.value);
 		}
 		for (auto& node : T.disjunction_intro_nodes) free(node);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -15603,8 +15627,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			}
 			for (auto& node : T.disjunction_intro_nodes) free(node);
 			for (auto& node : T.negated_conjunction_nodes) free(node);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -15638,8 +15663,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				}
 				for (auto& node : T.disjunction_intro_nodes) free(node);
 				for (auto& node : T.negated_conjunction_nodes) free(node);
-				free(*T.empty_set_axiom); free(*T.maximality_axiom);
-				free(*T.minimality_axiom); free(*T.NAME_ATOM);
+				for (Proof* axiom : T.built_in_axioms) free(*axiom);
+				free(T.built_in_axioms);
+				free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 				free(T.sets); free(T.atoms); free(T.relations);
 				free(T.observations); free(T.ground_concepts);
 				free(T.constant_types); free(T.constant_negated_types);
@@ -15680,8 +15706,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 		}
 		for (auto& node : T.disjunction_intro_nodes) free(node);
 		for (auto& node : T.negated_conjunction_nodes) free(node);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -15719,8 +15746,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			for (auto& node : T.disjunction_intro_nodes) free(node);
 			for (auto& node : T.negated_conjunction_nodes) free(node);
 			for (auto& node : T.implication_intro_nodes) free(node);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -15756,8 +15784,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				for (auto& node : T.disjunction_intro_nodes) free(node);
 				for (auto& node : T.negated_conjunction_nodes) free(node);
 				for (auto& node : T.implication_intro_nodes) free(node);
-				free(*T.empty_set_axiom); free(*T.maximality_axiom);
-				free(*T.minimality_axiom); free(*T.NAME_ATOM);
+				for (Proof* axiom : T.built_in_axioms) free(*axiom);
+				free(T.built_in_axioms);
+				free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 				free(T.sets); free(T.atoms); free(T.relations);
 				free(T.observations); free(T.ground_concepts);
 				free(T.constant_types); free(T.constant_negated_types);
@@ -15800,8 +15829,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 		for (auto& node : T.disjunction_intro_nodes) free(node);
 		for (auto& node : T.negated_conjunction_nodes) free(node);
 		for (auto& node : T.implication_intro_nodes) free(node);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -15841,8 +15871,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			for (auto& node : T.negated_conjunction_nodes) free(node);
 			for (auto& node : T.implication_intro_nodes) free(node);
 			for (auto& node : T.existential_intro_nodes) free(node);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -15880,8 +15911,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				for (auto& node : T.negated_conjunction_nodes) free(node);
 				for (auto& node : T.implication_intro_nodes) free(node);
 				for (auto& node : T.existential_intro_nodes) free(node);
-				free(*T.empty_set_axiom); free(*T.maximality_axiom);
-				free(*T.minimality_axiom); free(*T.NAME_ATOM);
+				for (Proof* axiom : T.built_in_axioms) free(*axiom);
+				free(T.built_in_axioms);
+				free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 				free(T.sets); free(T.atoms); free(T.relations);
 				free(T.observations); free(T.ground_concepts);
 				free(T.constant_types); free(T.constant_negated_types);
@@ -15927,8 +15959,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 		for (auto& node : T.negated_conjunction_nodes) free(node);
 		for (auto& node : T.implication_intro_nodes) free(node);
 		for (auto& node : T.existential_intro_nodes) free(node);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -15966,8 +15999,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 			for (auto& node : T.existential_intro_nodes) free(node);
 			for (auto& element : T.implication_axioms)
 				free(*element.key);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -16007,8 +16041,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 		for (auto& node : T.existential_intro_nodes) free(node);
 		for (auto& element : T.implication_axioms)
 			free(*element.key);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -16044,8 +16079,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 		for (auto& node : T.existential_intro_nodes) free(node);
 		for (auto& element : T.implication_axioms)
 			free(*element.key);
-		free(*T.empty_set_axiom); free(*T.maximality_axiom);
-		free(*T.minimality_axiom); free(*T.NAME_ATOM);
+		for (Proof* axiom : T.built_in_axioms) free(*axiom);
+		free(T.built_in_axioms);
+		free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 		free(T.sets); free(T.atoms); free(T.relations);
 		free(T.observations); free(T.ground_concepts);
 		free(T.constant_types); free(T.constant_negated_types);
@@ -16086,8 +16122,9 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 				free(*element.key);
 			for (auto entry : T.reverse_definitions)
 				core::free(entry.key);
-			free(*T.empty_set_axiom); free(*T.maximality_axiom);
-			free(*T.minimality_axiom); free(*T.NAME_ATOM);
+			for (Proof* axiom : T.built_in_axioms) free(*axiom);
+			free(T.built_in_axioms);
+			free(*T.empty_set_axiom); free(*T.NAME_ATOM);
 			free(T.sets); free(T.atoms); free(T.relations);
 			free(T.observations); free(T.ground_concepts);
 			free(T.constant_types); free(T.constant_negated_types);
@@ -16154,15 +16191,17 @@ bool write(const theory<ProofCalculus, Canonicalizer>& T, Stream& out,
 	if (!write(T.new_constant_offset, out)
 	 || !write(T.ground_concept_capacity, out)
 	 || !write(T.ground_axiom_count, out)
+	 || !write(T.built_in_axioms.length, out)
 	 || !write(proof_map.get(T.empty_set_axiom), out)
-	 || !write(proof_map.get(T.maximality_axiom), out)
-	 || !write(proof_map.get(T.minimality_axiom), out)
 	 || !write(formula_map.get(T.NAME_ATOM), out)
 	 || !write(T.sets, out, proof_map, formula_map)
 	 || !write(T.atoms.table.size, out))
 	{
 		return false;
 	}
+
+	for (const Proof* axiom : T.built_in_axioms)
+		if (!write(proof_map.get(axiom), out)) return false;
 
 	for (const auto& entry : T.atoms) {
 		if (!write(entry.key, out, formula_map)
@@ -16661,7 +16700,7 @@ bool filter_constants_helper(
 							const Term* other_arg2;
 							if (T.is_name_scope(other_right->quantifier.operand, arg1, other_arg2) && arg1->type == TermType::VARIABLE && arg1->variable == other_right->quantifier.variable) {
 								if (*arg2 == *other_arg2)
-									constants[i].matching_types += 4;
+									constants[i].matching_types += 2;
 								else constants[i].mismatching_types += 2;
 							}
 						}
@@ -17246,10 +17285,10 @@ bool filter_constants_helper(
 				arg2_of.remove(i--);
 		}
 		if (!Hypothetical) {
-			/* optimization: if this is a name scope, and it declares the name of
-			`variable`, then increase the probability of sampling a constant
-			with the same name */
 			if (formula->quantifier.operand->type == FormulaType::AND) {
+				/* optimization: if this is a name scope, and it declares the name of
+				   `variable`, then increase the probability of sampling a constant
+				   with the same name */
 				bool is_name_scope = false;
 				const Term* arg1 = nullptr;
 				const Term* arg2 = nullptr;
@@ -17289,9 +17328,106 @@ bool filter_constants_helper(
 							return false;
 						for (Term* name : names) {
 							if (*name == *arg2) {
-								constants[i].matching_types += 4;
+								constants[i].matching_types += 2;
 							} else {
 								constants[i].mismatching_types += 2;
+							}
+						}
+					}
+				}
+				/* optimization: if this quantifier defines a set with a fixed
+				   size and members of that set, then make sure the set is
+				   large enough to fit all elements */
+				Formula* set_definition = nullptr;
+				uint64_t set_size = UINT_MAX;
+				array<Term*> members(4);
+				for (unsigned int i = 0; i < formula->quantifier.operand->array.length; i++) {
+					Formula* conjunct = formula->quantifier.operand->array.operands[i];
+					if (conjunct->type == TermType::EQUALS && conjunct->binary.left->type == TermType::VARIABLE
+					 && conjunct->binary.left->variable == formula->quantifier.variable
+					 && conjunct->binary.right->type == TermType::LAMBDA
+					 && conjunct->binary.right->quantifier.operand->type != TermType::LAMBDA)
+					{
+						set_definition = conjunct->binary.right;
+					} else if (conjunct->type == TermType::EQUALS && conjunct->binary.left->type == TermType::UNARY_APPLICATION
+							&& conjunct->binary.left->binary.left->type == TermType::CONSTANT
+							&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+							&& conjunct->binary.left->binary.right->type == TermType::VARIABLE
+							&& conjunct->binary.left->binary.right->variable == formula->quantifier.variable
+							&& conjunct->binary.right->type == TermType::NUMBER)
+					{
+						if (conjunct->binary.right->number.decimal != 0
+						 || conjunct->binary.right->number.integer < 0)
+						{
+							constants.clear();
+							return false;
+						}
+						set_size = (uint64_t) conjunct->binary.right->number.integer;
+					} else if (conjunct->type == TermType::UNARY_APPLICATION && conjunct->binary.left->type == TermType::VARIABLE
+							&& conjunct->binary.left->variable == formula->quantifier.variable
+							&& (conjunct->binary.right->type == TermType::CONSTANT || conjunct->binary.right->type == TermType::NUMBER || conjunct->binary.right->type == TermType::STRING))
+					{
+						bool contains = false;
+						for (unsigned int i = 0; !contains && i < members.length; i++)
+							if (*members[i] == *conjunct->binary.right) contains = true;
+						if (!contains) members.add(conjunct->binary.right);
+					}
+				}
+				if (set_definition != nullptr && set_size != UINT_MAX) {
+					array<unsigned int> free_variables(4);
+					get_free_variables(*set_definition, free_variables);
+					if (free_variables.length == 1 && free_variables[0] == variable) {
+						array<Formula*> quantifiers(set_definition->quantifier.variable);
+						quantifiers[variable - 1] = hol_term::new_exists(variable, &HOL_ANY);
+						HOL_ANY.reference_count++;
+						quantifiers[set_definition->quantifier.variable - 1] = set_definition;
+						quantifiers.length = set_definition->quantifier.variable;
+						array<variable_assignment> provable_values(1);
+						if (!init(provable_values[0], set_definition->quantifier.variable))
+							return false;
+						provable_values.length = 1;
+						typename theory<ProofCalculus, Canonicalizer>::default_prover prover(T.sets, T.implication_axioms);
+						prover.h.set_ids[0] = 0;
+						prover.h.set_ids.length = 1;
+						T.template is_provable_without_abduction<false>(set_definition->quantifier.operand, quantifiers, provable_values, prover);
+						free(*quantifiers[variable - 1]); free(quantifiers[variable - 1]);
+
+						for (unsigned int i = 0; i < constants.length; i++) {
+							if (constants[i].type == instance_type::ANY) continue;
+
+							/* count the number of provable elements of the set */
+							unsigned int provable_set_size = members.length;
+							for (unsigned int j = 0; provable_set_size <= set_size && j < provable_values.length; j++) {
+								const instantiation& variable_value = provable_values[j].assignment.values[variable - 1];
+								if (constants[i].type == instance_type::CONSTANT) {
+									if (variable_value.type != instantiation_type::CONSTANT || variable_value.constant != constants[i].constant)
+										continue;
+								} else if (constants[i].type == instance_type::NUMBER) {
+									if (variable_value.type != instantiation_type::NUMBER || variable_value.number != constants[i].number)
+										continue;
+								} else if (constants[i].type == instance_type::STRING) {
+									if (variable_value.type != instantiation_type::STRING || variable_value.str != *constants[i].str)
+										continue;
+								}
+
+								/* check if the provable element is already in `members` */
+								const instantiation& provable_member = provable_values[j].assignment.values[set_definition->quantifier.variable - 1];
+								bool is_member = false;
+								for (const Term* member : members) {
+									if (provable_member.type == instantiation_type::CONSTANT && member->type == TermType::CONSTANT && provable_member.constant == member->constant) {
+										is_member = true; break;
+									} else if (provable_member.type == instantiation_type::NUMBER && member->type == TermType::NUMBER && provable_member.number == member->number) {
+										is_member = true; break;
+									} else if (provable_member.type == instantiation_type::STRING && member->type == TermType::STRING && provable_member.str == member->str) {
+										is_member = true; break;
+									}
+								}
+								if (is_member) continue;
+								provable_set_size++;
+							}
+							if (provable_set_size > set_size) {
+								/* the set is provably too large */
+								constants.remove(i--);
 							}
 						}
 					}
@@ -18277,7 +18413,7 @@ if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_print
 	return collector.total_log_probability();
 }
 
-template<typename ProofCanonicalizer, typename OnProofSampleFunction>
+template<typename OnProofSampleFunction>
 struct lambda_proof_sample_delegate
 {
 	OnProofSampleFunction on_new_proof_sample;
@@ -18296,9 +18432,9 @@ struct lambda_proof_sample_delegate
 	}
 };
 
-template<typename ProofCanonicalizer, typename OnProofSampleFunction>
-lambda_proof_sample_delegate<ProofCanonicalizer, OnProofSampleFunction> make_lambda_proof_sample_delegate(OnProofSampleFunction on_new_proof_sample) {
-	return lambda_proof_sample_delegate<ProofCanonicalizer, OnProofSampleFunction>(on_new_proof_sample);
+template<typename OnProofSampleFunction>
+lambda_proof_sample_delegate<OnProofSampleFunction> make_lambda_proof_sample_delegate(OnProofSampleFunction on_new_proof_sample) {
+	return lambda_proof_sample_delegate<OnProofSampleFunction>(on_new_proof_sample);
 }
 
 template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction, typename... Args>
@@ -18345,7 +18481,7 @@ T.print_axioms(stderr, *debug_terminal_printer);
 		return false;
 	}
 
-	auto new_proof_sample_delegate = make_lambda_proof_sample_delegate<typename ProofCalculus::ProofCanonicalizer>(on_new_proof_sample);
+	auto new_proof_sample_delegate = make_lambda_proof_sample_delegate(on_new_proof_sample);
 	auto collector = make_provability_collector(T, proof_prior, new_proof, new_proof_sample_delegate);
 	double max_log_probability = collector.internal_collector.current_log_probability;
 	for (unsigned int t = 0; t < num_samples; t++)
@@ -18387,6 +18523,163 @@ if (t % 1000 == 0)
 	free(*collector.internal_collector.test_proof);
 	if (collector.internal_collector.test_proof->reference_count == 0)
 		free(collector.internal_collector.test_proof);
+	return true;
+}
+
+template<typename Term, typename OnProofSampleFunction>
+struct proof_sample_delegate
+{
+	Term* term;
+	OnProofSampleFunction on_new_proof_sample;
+
+	proof_sample_delegate(Term* term, OnProofSampleFunction on_new_proof_sample) : term(term), on_new_proof_sample(on_new_proof_sample) { }
+
+	template<typename Proof>
+	inline void operator() (const Proof* test_proof, double log_probability)
+	{
+		on_new_proof_sample(term, log_probability);
+	}
+};
+
+template<typename Term, typename OnProofSampleFunction>
+proof_sample_delegate<Term, OnProofSampleFunction> make_proof_sample_delegate(Term* term, OnProofSampleFunction on_new_proof_sample) {
+	return proof_sample_delegate<Term, OnProofSampleFunction>(term, on_new_proof_sample);
+}
+
+template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction, typename... Args>
+bool log_joint_probability_of_lambda_by_linear_search_helper(
+		theory<ProofCalculus, Canonicalizer>& T,
+		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
+		typename ProofCalculus::Language* logical_form, unsigned int num_samples,
+		OnProofSampleFunction on_new_proof_sample)
+{
+	typedef typename ProofCalculus::Language Formula;
+	typedef typename ProofCalculus::Proof Proof;
+
+	unsigned int new_constant;
+	set_changes<Formula> set_diff;
+	Proof* new_proof = T.add_formula(logical_form, set_diff, new_constant);
+	if (new_proof == nullptr) {
+		return false;
+	} else if (!proof_axioms.template add<false>(new_proof, set_diff.new_set_axioms, proof_prior)) {
+		T.template remove_formula<true>(new_proof, set_diff);
+		return false;
+	}
+	set_diff.clear();
+
+	auto collector = make_provability_collector(T, proof_prior, new_proof, on_new_proof_sample);
+	for (unsigned int t = 0; t < num_samples; t++) {
+		extern thread_local bool debug_flag;
+		extern thread_local const string_map_scribe* debug_terminal_printer;
+		if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
+		if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 1.0);
+	}
+	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
+	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
+	free(*collector.internal_collector.test_proof);
+	if (collector.internal_collector.test_proof->reference_count == 0)
+		free(collector.internal_collector.test_proof);
+	return true;
+}
+
+template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction>
+bool log_joint_probability_of_lambda_by_linear_search(
+		theory<ProofCalculus, Canonicalizer>& T,
+		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
+		typename ProofCalculus::Language* logical_form, unsigned int num_samples,
+		OnProofSampleFunction on_new_proof_sample)
+{
+	typedef typename ProofCalculus::Language Formula;
+	typedef typename Formula::Term Term;
+
+	Formula* preprocessed = preprocess_formula(logical_form);
+	if (preprocessed == nullptr)
+		return false;
+
+	array_map<unsigned int, unsigned int> variable_map(16);
+	Formula* canonicalized = Canonicalizer::canonicalize(*preprocessed, variable_map);
+	core::free(*preprocessed); if (preprocessed->reference_count == 0) core::free(preprocessed);
+	if (canonicalized == nullptr)
+		return false;
+
+#if !defined(NDEBUG)
+	typedef typename Formula::Type FormulaType;
+	if (canonicalized->type != FormulaType::LAMBDA)
+		fprintf(stderr, "log_joint_probability_of_lambda_by_linear_search WARNING: `canonicalized` is not a lambda expression.\n");
+#endif
+
+	array<instance> constants(T.ground_concept_capacity + T.constant_types.size + T.constant_negated_types.size + 1);
+	if (!get_possible_constants(T, constants)) {
+		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+		return false;
+	}
+
+	array<pair<unsigned int, bool>> new_name_events(8);
+	array<const Formula*> arg1_of(4);
+	array<const Formula*> arg2_of(4);
+	if (!filter_constants_helper<false>(T, canonicalized->quantifier.operand, canonicalized->quantifier.variable, constants, new_name_events, arg1_of, arg2_of)) {
+		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+		return false;
+	}
+
+	const std::minstd_rand prng_engine = core::engine;
+
+	Term* var = Term::new_variable(canonicalized->quantifier.variable);
+	if (var == nullptr) {
+		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+		return false;
+	}
+	for (unsigned int i = 0; i < constants.length; i++) {
+		Term* constant = nullptr;
+		unsigned int constant_id;
+		if (constants[i].type == instance_type::ANY) {
+			constant_id = T.get_free_concept_id();
+			if (!T.try_init_concept(constant_id)) {
+				free(*var); free(var);
+				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+				return false;
+			}
+
+			constant = Formula::new_constant(constant_id);
+			if (constant == nullptr) {
+				free(*var); free(var);
+				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+				T.free_concept_id(constant_id); return false;
+			}
+
+		} else {
+			if (constants[i].type == instance_type::CONSTANT) {
+				constant = Term::new_constant(constants[i].constant);
+			} else if (constants[i].type == instance_type::NUMBER) {
+				constant = Term::new_number(constants[i].number);
+			} else if (constants[i].type == instance_type::STRING) {
+				constant = Term::new_string(*constants[i].str);
+			}
+			if (constant == nullptr) {
+				free(*var); free(var);
+				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+				return false;
+			}
+		}
+
+		Formula* substituted = substitute(canonicalized->quantifier.operand, var, constant);
+		if (substituted == nullptr) {
+			free(*var); free(var);
+			free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+			return false;
+		}
+
+		core::engine = prng_engine;
+
+		auto new_proof_sample_delegate = make_proof_sample_delegate(constant, on_new_proof_sample);
+		log_joint_probability_of_lambda_by_linear_search_helper(T, proof_prior, proof_axioms, substituted, num_samples, new_proof_sample_delegate);
+		free(*constant); if (constant->reference_count == 0) free(constant);
+		free(*substituted); if (substituted->reference_count == 0) free(substituted);
+		if (constants[i].type == instance_type::ANY && T.ground_concepts[constant_id - T.new_constant_offset].types.keys != nullptr)
+			T.try_free_concept_id(constant_id);
+	}
+	free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 	return true;
 }
 
