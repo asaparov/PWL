@@ -7,7 +7,7 @@
 
 #include "array_view.h"
 
-//#define DEBUG_LOG_PROBABILITY
+#define DEBUG_LOG_PROBABILITY
 
 using namespace core;
 

@@ -398,7 +398,7 @@ set_seed(1356941742);
 	}
 	fclose(in);
 
-run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
+//run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
 
 //run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 /*for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {

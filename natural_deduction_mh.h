@@ -1332,7 +1332,7 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 	}
 	sum = 0.0;
 	for (unsigned int i = 0; i < constants.length; i++) {
-		probabilities[i] = exp(constants[i].matching_types * max(2.0, constants.length / 60.0) - constants[i].mismatching_types * max(2.0, constants.length / 60.0));
+		probabilities[i] = exp(constants[i].matching_types * max(2.0, constants.length / 40.0) - constants[i].mismatching_types * max(2.0, constants.length / 40.0));
 		sum += probabilities[i];
 	}
 
@@ -1343,9 +1343,9 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 		if (constants[i].type == instance_type::ANY)
 			any_index = i;
 	}
-	if (any_index != constants.length && probabilities[any_index] * 2 < max_probability) {
+	if (any_index != constants.length && probabilities[any_index] * 3 < max_probability) {
 		sum -= probabilities[any_index];
-		probabilities[any_index] = max_probability / 2;
+		probabilities[any_index] = max_probability / 3;
 		sum += probabilities[any_index];
 	}
 	return probabilities;

@@ -16685,6 +16685,20 @@ bool filter_constants_helper(
 				}
 				free(*new_right); if (new_right->reference_count == 0) free(new_right);
 
+				/* discourage sampling constants that are already defined as other sets */
+				for (unsigned int i = 0; arity != 0 && i < constants.length; i++) {
+					if (constants[i].type == instance_type::ANY) {
+						constants[i].matching_types++;
+						continue;
+					} else if (constants[i].constant < T.new_constant_offset)
+						continue;
+					concept<ProofCalculus>& c = T.ground_concepts[constants[i].constant - T.new_constant_offset];
+					for (unsigned int j = 1; j < c.definitions.length; j++) {
+						if (c.definitions[j]->formula->binary.right->type != FormulaType::LAMBDA) continue;
+						constants[i].mismatching_types++;
+					}
+				}
+
 				/* check if this is a definition of a set of named objects */
 				const Term* arg1; const Term* arg2;
 				if (arity == 1 && T.is_name_scope(set_definition, arg1, arg2) && arg1->type == TermType::VARIABLE && arg1->variable == right->quantifier.variable) {
@@ -17315,9 +17329,13 @@ bool filter_constants_helper(
 					}
 				}
 				if (is_name_scope && arg1->type == TermType::VARIABLE && arg1->variable == variable && arg2 != nullptr) {
+					unsigned int any_index = constants.length;
+					bool found_concept_with_name = false;
 					for (unsigned int i = 0; i < constants.length; i++) {
-						if (constants[i].type == instance_type::ANY) continue;
-						else if (constants[i].type != instance_type::CONSTANT) {
+						if (constants[i].type == instance_type::ANY) {
+							any_index = i;
+							continue;
+						} else if (constants[i].type != instance_type::CONSTANT) {
 							constants.remove(i--);
 							continue;
 						} else if (constants[i].constant < T.new_constant_offset || T.ground_concepts[constants[i].constant - T.new_constant_offset].types.keys == nullptr) {
@@ -17328,12 +17346,15 @@ bool filter_constants_helper(
 							return false;
 						for (Term* name : names) {
 							if (*name == *arg2) {
+								found_concept_with_name = true;
 								constants[i].matching_types += 2;
 							} else {
 								constants[i].mismatching_types += 2;
 							}
 						}
 					}
+					if (!found_concept_with_name && any_index != constants.length)
+						constants[any_index].matching_types += 2;
 				}
 				/* optimization: if this quantifier defines a set with a fixed
 				   size and members of that set, then make sure the set is

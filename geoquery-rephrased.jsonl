@@ -18,7 +18,7 @@
 {"theory":"","questions":{"Q1":{"question":"What states surround Kentucky?","answer":"Illinois, Indiana, Missouri, Ohio, Tennessee, Virginia, West Virginia"}}}
 {"theory":"799","questions":{"Q1":{"question":"What is the capital of North Dakota?","answer":"Bismark"}}}
 {"theory":"","questions":{"Q1":{"question":"There are how many cities in the United States?","answer":"386"}}}
-{"theory":"","questions":{"Q1":{"question":"What is the largest capital city in the USA?","answer":"Phoenix"}}}
+{"theory":"1-50,766-815,196,200,206,215,280,289,311,317,322,325,329,341,350,358,363,375,395,416,420,430,439,455,466,473,488,494,508,512,518,526,551,557,570,573","questions":{"Q1":{"question":"What is the largest capital city in the USA?","answer":"Phoenix"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the populations of states which border Texas?","answer":"1303000, 2286000, 3025000, 4206000"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the capital of states that have cities named Durham?","answer":"Raleigh"}}}
 {"theory":"356-359,831","questions":{"Q1":{"question":"What is the biggest city in Kansas?","answer":"Wichita"}}}

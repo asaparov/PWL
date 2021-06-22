@@ -1,53 +1,53 @@
-Alabama is one of the 50 states.
-Alaska is a state.
-Arizona is a state.
-Arkansas is a state.
-California is a state.
-Colorado is a state.
-Connecticut is a state.
-Delaware is a state.
-Florida is a state.
-Georgia is a state.
-Hawaii is a state.
-Idaho is a state.
-Illinois is a state.
-Indiana is a state.
-Iowa is a state.
-Kansas is a state.
-Kentucky is a state.
-Louisiana is a state.
-Maine is a state.
-Maryland is a state.
-Massachusetts is a state.
-Michigan is a state.
-Minnesota is a state.
-Mississippi is a state.
-Missouri is a state.
-Montana is a state.
-Nebraska is a state.
-Nevada is a state.
-New Hampshire is a state.
-New Jersey is a state.
-New Mexico is a state.
-New York is a state.
-North Carolina is a state.
-North Dakota is a state.
-Ohio is a state.
-Oklahoma is a state.
-Oregon is a state.
-Pennsylvania is a state.
-Rhode Island is a state.
-South Carolina is a state.
-South Dakota is a state.
-Tennessee is a state.
-Texas is a state.
-Utah is a state.
-Vermont is a state.
-Virginia is a state.
-Washington is a state.
-West Virginia is a state.
-Wisconsin is a state.
-Wyoming is a state.
+Alabama is one of the 50 states in the United States.
+Alaska is a state in the United States.
+Arizona is a state in the United States.
+Arkansas is a state in the United States.
+California is a state in the United States.
+Colorado is a state in the United States.
+Connecticut is a state in the United States.
+Delaware is a state in the United States.
+Florida is a state in the United States.
+Georgia is a state in the United States.
+Hawaii is a state in the United States.
+Idaho is a state in the United States.
+Illinois is a state in the United States.
+Indiana is a state in the United States.
+Iowa is a state in the United States.
+Kansas is a state in the United States.
+Kentucky is a state in the United States.
+Louisiana is a state in the United States.
+Maine is a state in the United States.
+Maryland is a state in the United States.
+Massachusetts is a state in the United States.
+Michigan is a state in the United States.
+Minnesota is a state in the United States.
+Mississippi is a state in the United States.
+Missouri is a state in the United States.
+Montana is a state in the United States.
+Nebraska is a state in the United States.
+Nevada is a state in the United States.
+New Hampshire is a state in the United States.
+New Jersey is a state in the United States.
+New Mexico is a state in the United States.
+New York is a state in the United States.
+North Carolina is a state in the United States.
+North Dakota is a state in the United States.
+Ohio is a state in the United States.
+Oklahoma is a state in the United States.
+Oregon is a state in the United States.
+Pennsylvania is a state in the United States.
+Rhode Island is a state in the United States.
+South Carolina is a state in the United States.
+South Dakota is a state in the United States.
+Tennessee is a state in the United States.
+Texas is a state in the United States.
+Utah is a state in the United States.
+Vermont is a state in the United States.
+Virginia is a state in the United States.
+Washington is a state in the United States.
+West Virginia is a state in the United States.
+Wisconsin is a state in the United States.
+Wyoming is a state in the United States.
 The area of Alabama is 51700 square miles.
 The area of Alaska is 591000 square miles.
 The area of Arizona is 114000 square miles.
