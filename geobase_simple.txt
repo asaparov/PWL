@@ -862,3 +862,184 @@ There are 4 cities in Washington.
 There are 2 cities in West Virginia.
 There are 7 cities in Wisconsin.
 There is 1 city in Wyoming.
+The population of the city of Juneau, Alaska is 19528.
+The population of the city of Dover, Delaware is 23507.
+The population of the city of Frankfort, Kentucky is 25973.
+The population of the city of Augusta, Maine is 21819.
+The population of the city of Annapolis, Maryland is 31740.
+The population of the city of Jefferson City, Missouri is 33619.
+The population of the city of Helena, Montana is 23938.
+The population of the city of Carson City, Nevada is 32022.
+The population of the city of Concord, New Hampshire is 30400.
+The population of the city of Santa Fe, New Mexico is 48053.
+The population of the city of Bismarck, North Dakota is 44485.
+The population of the city of Harrisburg, Pennsylvania is 53264.
+The population of the city of Pierre, South Dakota is 11973.
+The population of the city of Montpelier, Vermont is 8241.
+The population of the city of Olympia, Washington is 27447.
+The population of the city of Cheyenne, Wyoming is 47283.
+There are 50 capitals in the United States.
+There are 402 cities in the United States.
+The highest point in Alabama is Cheaha Mountain.
+The highest point in Alaska is Denali.
+The highest point in Arizona is Humphreys Peak.
+The highest point in Arkansas is Magazine Mountain.
+The highest point in California is Mount Whitney.
+The highest point in Colorado is Mount Elbert.
+The highest point in Connecticut is Mount Frissell.
+The highest point in Delaware is Ebright Azimuth.
+The highest point in Florida is Britton Hill.
+The highest point in Georgia is Brasstown Bald.
+The highest point in Hawaii is Mauna Kea.
+The highest point in Idaho is Borah Peak.
+The highest point in Illinois is Charles Mound.
+The highest point in Indiana is Hoosier Hill.
+The highest point in Iowa is Hawkeye Point.
+The highest point in Kansas is Mount Sunflower.
+The highest point in Kentucky is Black Mountain.
+The highest point in Louisiana is Driskill Mountain.
+The highest point in Maine is Mount Katahdin.
+The highest point in Maryland is Backbone Mountain.
+The highest point in Massachusetts is Mount Greylock.
+The highest point in Michigan is Mount Curwood.
+The highest point in Minnesota is Eagle Mountain.
+The highest point in Mississippi is Woodall Mountain.
+The highest point in Missouri is Taum Sauk Mountain.
+The highest point in Montana is Granite Peak.
+The highest point in Nebraska is Panorama Point.
+The highest point in Nevada is Boundary Peak.
+The highest point in New Hampshire is Mount Washington.
+The highest point in New Jersey is High Point.
+The highest point in New Mexico is Wheeler Peak.
+The highest point in New York is Mount Marcy.
+The highest point in North Carolina is Mount Mitchell.
+The highest point in North Dakota is White Butte.
+The highest point in Ohio is Campbell Hill.
+The highest point in Oklahoma is Black Mesa.
+The highest point in Oregon is Mount Hood.
+The highest point in Pennsylvania is Mount Davis.
+The highest point in Rhode Island is Jerimoth Hill.
+The highest point in South Carolina is Sassafras Mountain.
+The highest point in South Dakota is Harney Peak.
+The highest point in Tennessee is Clingmans Dome.
+The highest point in Texas is Guadalupe Peak.
+The highest point in Utah is Kings Peak.
+The highest point in Vermont is Mount Mansfield.
+The highest point in Virginia is Mount Rogers.
+The highest point in Washington is Mount Rainier.
+The highest point in West Virginia is Spruce Knob.
+The highest point in Wisconsin is Timms Hill.
+The highest point in Wyoming is Gannett Peak.
+The height of Cheaha Mountain is 2411 feet.
+The height of Denali is 20310 feet.
+The height of Humphreys Peak is 12635 feet.
+The height of Magazine Mountain is 2753 feet.
+The height of Mount Whitney is 14505 feet.
+The height of Mount Elbert is 14439 feet.
+The height of Mount Frissell is 2454 feet.
+The height of Ebright Azimuth is 448 feet.
+The height of Britton Hill is 345 feet.
+The height of Brasstown Bald is 4784 feet.
+The height of Mauna Kea is 13803 feet.
+The height of Borah Peak is 12667 feet.
+The height of Charles Mound is 1235 feet.
+The height of Hoosier Hill is 1257 feet.
+The height of Hawkeye Point is 1670 feet.
+The height of Mount Sunflower is 4039 feet.
+The height of Black Mountain is 2405 feet.
+The height of Driskill Mountain is 535 feet.
+The height of Mount Katahdin is 5269 feet.
+The height of Backbone Mountain is 3662 feet.
+The height of Mount Greylock is 3491 feet.
+The height of Mount Curwood is 1978 feet.
+The height of Eagle Mountain is 2300 feet.
+The height of Woodall Mountain is 807 feet.
+The height of Taum Sauk Mountain is 1772 feet.
+The height of Granite Peak is 12807 feet.
+The height of Panorama Point is 5424 feet.
+The height of Boundary Peak is 13146 feet.
+The height of Mount Washington is 6288 feet.
+The height of High Point is 1804 feet.
+The height of Wheeler Peak is 13159 feet.
+The height of Mount Marcy is 5344 feet.
+The height of Mount Mitchell is 6684 feet.
+The height of White Butte is 3507 feet.
+The height of Campbell Hill is 1550 feet.
+The height of Black Mesa is 5705 feet.
+The height of Mount Hood is 11250 feet.
+The height of Mount Davis is 3212 feet.
+The height of Jerimoth Hill is 812 feet.
+The height of Sassafras Mountain is 3563 feet.
+The height of Harney Peak is 7244 feet.
+The height of Clingmans Dome is 6644 feet.
+The height of Guadalupe Peak is 8750 feet.
+The height of Kings Peak is 13527 feet.
+The height of Mount Mansfield is 4393 feet.
+The height of Mount Rogers is 5728 feet.
+The height of Mount Rainier is 14411 feet.
+The height of Spruce Knob is 4862 feet.
+The height of Timms Hill is 1952 feet.
+The height of Gannett Peak is 13809 feet.
+The lowest point in Alabama is the Gulf of Mexico.
+The lowest point in Alaska is the Pacific Ocean.
+The lowest point in Arizona is the Colorado River.
+The lowest point in Arkansas is the Ouachita River.
+The lowest point in California is Death Valley.
+The lowest point in Colorado is the Arkansas River.
+The lowest point in Connecticut is Long Island Sound.
+The lowest point in Delaware is the Atlantic Ocean.
+The lowest point in Florida is the Atlantic Ocean.
+The lowest point in Georgia is the Atlantic Ocean.
+The lowest point in Hawaii is the Pacific Ocean.
+The lowest point in Idaho is the Snake River.
+The lowest point in Illinois is the Mississippi River.
+The lowest point in Indiana is the Ohio River.
+The lowest point in Iowa is the Mississippi River.
+The lowest point in Kansas is the Verdigris River.
+The lowest point in Kentucky is the Mississippi River.
+The lowest point in Louisiana is New Orleans.
+The lowest point in Maine is the Atlantic Ocean.
+The lowest point in Maryland is the Atlantic Ocean.
+The lowest point in Massachusetts is the Atlantic Ocean.
+The lowest point in Michigan is Lake Erie.
+The lowest point in Minnesota is Lake Superior.
+The lowest point in Mississippi is the Gulf of Mexico.
+The lowest point in Missouri is the St. Francis River.
+The lowest point in Montana is the Kootenai River.
+The lowest point in Nebraska is the Missouri River.
+The lowest point in Nevada is the Colorado River.
+The lowest point in New Hampshire is the Atlantic Ocean.
+The lowest point in New Jersey is the Atlantic Ocean.
+The lowest point in New Mexico is Red Bluff Reservoir.
+The lowest point in New York is the Atlantic Ocean.
+The lowest point in North Carolina is the Atlantic Ocean.
+The lowest point in North Dakota is the Red River.
+The lowest point in Ohio is the Ohio River.
+The lowest point in Oklahoma is the Little River.
+The lowest point in Oregon is the Pacific Ocean.
+The lowest point in Pennsylvania is the Delaware River.
+The lowest point in Rhode Island is the Atlantic Ocean.
+The lowest point in South Carolina is the Atlantic Ocean.
+The lowest point in South Dakota is Big Stone Lake.
+The lowest point in Tennessee is the Mississippi River.
+The lowest point in Texas is the Gulf of Mexico.
+The lowest point in Utah is Beaver Dam Wash.
+The lowest point in Vermont is Lake Champlain.
+The lowest point in Virginia is the Atlantic Ocean.
+The lowest point in Washington is the Pacific Ocean.
+The lowest point in West Virginia is the Potomac River.
+The lowest point in Wisconsin is Lake Michigan.
+The lowest point in Wyoming is the Belle Fourche River.
+The height of the Gulf of Mexico is 0 feet.
+The height of the Pacific Ocean is 0 feet.
+The height of Death Valley is -282 feet.
+The height of Long Island Sound is 0 feet.
+The height of the Atlantic Ocean is 0 feet.
+The height of New Orleans is -8 feet.
+The height of Lake Erie is 571 feet.
+The height of Lake Superior is 601 feet.
+The height of Red Bluff Reservoir is 2844 feet.
+The height of Big Stone Lake is 968 feet.
+The height of Beaver Dam Wash is 2180 feet.
+The height of Lake Champlain is 95 feet.
+The height of Lake Michigan is 579 feet.

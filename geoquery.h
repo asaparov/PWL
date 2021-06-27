@@ -171,7 +171,7 @@ void do_geoquery_experiments(bool& status,
 			{
 				/* try to answer the question */
 				array<string> answers(4);
-				if (!answer_question<true>(answers, logical_forms[0], 10, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
+				if (!answer_question<true>(answers, logical_forms[0], 20, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
 					answers[0] = "<failed to answer question>";
 					answers.length = 1;
 				}
@@ -229,7 +229,7 @@ void do_geoquery_experiments(bool& status,
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 21 - 1) {
+if (job.context_id != 9 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -277,9 +277,11 @@ continue;
 					}
 					job.context[i] = old_char;
 					if (first_line == UINT_MAX) {
-						line_numbers[line_numbers.length++].key = line_numbers[line_numbers.length].value;
+						line_numbers[line_numbers.length].key = line_numbers[line_numbers.length].value;
+						line_numbers.length++;
 					} else {
-						line_numbers[line_numbers.length++].key = first_line;
+						line_numbers[line_numbers.length].key = first_line;
+						line_numbers.length++;
 						first_line = UINT_MAX;
 					}
 					start = i + 1;
@@ -294,14 +296,15 @@ continue;
 				snprintf(filename, 256, "geoquery_theories/%u.th", job.context_id);
 
 				/* read the context sentences */
-				free(job.T); free(job.proof_axioms);
+				/*free(job.T); free(job.proof_axioms);
 				FILE* theory_stream = (FILE*) fopen(filename, "rb");
 				read_random_state(theory_stream);
 				read(job.T, theory_stream, job.proof_axioms);
-				fclose(theory_stream);
+				fclose(theory_stream);*/
+				unsigned int sentence_counter = 0;
 				for (const pair<unsigned int, unsigned int>& range : line_numbers) {
 					for (unsigned int i = range.key; i <= range.value; i++) {
-if (i < 770) continue;
+//if (sentence_counter < 94) { sentence_counter++; continue; }
 						// TODO: this is kind of a hacky way to get the new proof
 						hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
 						old_proofs.add_all(job.T.observations);
@@ -369,6 +372,7 @@ if (i < 770) continue;
 						write_random_state(theory_stream);
 						write(job.T, theory_stream, job.proof_axioms);
 						fclose(theory_stream);
+						sentence_counter++;
 					}
 					if (error) break;
 				}

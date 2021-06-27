@@ -40,6 +40,7 @@ enum class built_in_predicates : unsigned int {
 	NEGATIVE,
 	HIGH_DEGREE,
 	CARDINALITY,
+	VALUE,
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
@@ -52,10 +53,6 @@ enum class built_in_predicates : unsigned int {
 	PLURAL_REF,
 	ANIMATE,
 	CAPABLE_OF,
-
-AREA, /* TODO: for debugging; delete this */
-SQUARE, /* TODO: for debugging; delete this */
-MILE, /* TODO: for debugging; delete this */
 
 	COUNT
 };
@@ -229,15 +226,13 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("negative", (unsigned int) built_in_predicates::NEGATIVE)
 		&& names.put("high_degree", (unsigned int) built_in_predicates::HIGH_DEGREE)
 		&& names.put("cardinality", (unsigned int) built_in_predicates::CARDINALITY)
+		&& names.put("value", (unsigned int) built_in_predicates::VALUE)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)
 		&& names.put("measure", (unsigned int) built_in_predicates::MEASURE)
 		&& names.put("ref", (unsigned int) built_in_predicates::REF)
 		&& names.put("plural_ref", (unsigned int) built_in_predicates::PLURAL_REF)
 		&& names.put("animate", (unsigned int) built_in_predicates::ANIMATE)
-		&& names.put("capable_of", (unsigned int) built_in_predicates::CAPABLE_OF)
-		&& names.put("area", (unsigned int) built_in_predicates::AREA)
-		&& names.put("square", (unsigned int) built_in_predicates::SQUARE)
-		&& names.put("mile", (unsigned int) built_in_predicates::MILE);
+		&& names.put("capable_of", (unsigned int) built_in_predicates::CAPABLE_OF);
 }
 
 struct no_op {

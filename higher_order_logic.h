@@ -294,6 +294,10 @@ struct hol_term
 			parameter = value;
 	}
 
+	hol_term(hol_number value) : type(hol_term_type::NUMBER), reference_count(1) {
+		number = value;
+	}
+
 	hol_term(const hol_term& src) : type(src.type), reference_count(1) {
 		init_helper(src);
 	}
@@ -312,6 +316,11 @@ struct hol_term
 
 	template<unsigned int Value>
 	struct parameters {
+		static thread_local hol_term value;
+	};
+
+	template<int64_t Integer, uint64_t Decimal>
+	struct numbers {
 		static thread_local hol_term value;
 	};
 
@@ -502,6 +511,9 @@ thread_local hol_term hol_term::variables<Value>::value(hol_term_type::VARIABLE,
 
 template<unsigned int Value>
 thread_local hol_term hol_term::parameters<Value>::value(hol_term_type::PARAMETER, Value);
+
+template<int64_t Integer, uint64_t Decimal>
+thread_local hol_term hol_term::numbers<Integer, Decimal>::value(hol_number{Integer, Decimal});
 
 inline bool init(hol_term& term, const hol_term& src) {
 	term.type = src.type;

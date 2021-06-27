@@ -1990,7 +1990,7 @@ struct set_reasoning
 				}
 			}
 			for (unsigned int first : strictly_partial_subsets) {
-				if (are_newly_disjoint(sets[first].set_formula(), set_formula, partial_superset)) {
+				if (sets[first].arity == arity && are_newly_disjoint(sets[first].set_formula(), set_formula, partial_superset)) {
 					if (!sets[partial_superset].newly_disjoint_cache.add(first < set_id ? make_pair(first, set_id) : make_pair(set_id, first))) {
 						free_set_id(set_id); return false;
 					}

@@ -1433,7 +1433,7 @@ NP_ROOT -> NP:require_lambda,require_no_wide_scope
 
 
 # TODO: should this nonterminal change the universal/existential quantifiers into a single kind of quantifier, to improve generalization for the NP nonterminal and further downstream?
-NP nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
+NP nonterminal {set_size, set_predicate} {1000.0, 10.0, 0.001} {0.0001, 1.0, 1000.0} {} 10 1.0 {}
 
 # NP {A} -> A NP' {A}
 NP -> A NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_no_constant_in_set

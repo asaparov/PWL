@@ -378,6 +378,8 @@ struct instantiation {
 		if (!init_helper(src)) throw std::bad_alloc();
 	}
 
+	~instantiation() { free(*this); }
+
 	inline bool operator = (const instantiation& src) {
 		return init_helper(src);
 	}
@@ -6487,13 +6489,50 @@ private:
 		inline bool push_axiom(
 				unsigned int set_id, Formula* formula,
 				array<variable_assignment>& possible_values,
-				unsigned int& pushed_axiom_count)
+				unsigned int& pushed_axiom_count,
+				const array<unification>& unifications)
 		{
 			if (!axioms.ensure_capacity(axioms.length + possible_values.length))
 				return false;
 			pushed_axiom_count = 0;
 			for (variable_assignment& assignment : possible_values) {
 				if (assignment.matching_axiom != nullptr) continue;
+
+				/* make sure there is a valid unification */
+				bool found_valid_unification = false;
+				for (const unification& u : unifications) {
+					bool valid = true;
+					for (const auto& entry : u.first_unifications) {
+						const instantiation& key = assignment.assignment.values[entry.key->quantifier.variable - 1];
+						if (entry.value->type == TermType::CONSTANT) {
+							instantiation temp(instantiation_type::CONSTANT);
+							temp.constant = entry.value->constant;
+							if (!is_subset(temp, key)) {
+								valid = false;
+								break;
+							}
+						} else if (entry.value->type == TermType::NUMBER) {
+							instantiation temp(instantiation_type::NUMBER);
+							temp.number = entry.value->number;
+							if (!is_subset(temp, key)) {
+								valid = false;
+								break;
+							}
+						} else if (entry.value->type == TermType::STRING) {
+							instantiation temp(instantiation_type::STRING);
+							temp.str = entry.value->str;
+							if (!is_subset(temp, key)) {
+								valid = false;
+								break;
+							}
+						}
+					}
+					if (valid) {
+						found_valid_unification = true;
+						break;
+					}
+				}
+				if (!found_valid_unification) continue;
 
 				/* only push an axiom if `formula` is not already an axiom */
 				bool already_has_axiom = false;
@@ -7119,9 +7158,10 @@ private:
 		inline bool push_axiom(
 				unsigned int set_id, Formula* formula,
 				array<variable_assignment>& possible_values,
-				unsigned int& pushed_axiom_count)
+				unsigned int& pushed_axiom_count,
+				const array<unification>& unifications)
 		{
-			return h.template push_axiom<Negated>(set_id, formula, possible_values, pushed_axiom_count);
+			return h.template push_axiom<Negated>(set_id, formula, possible_values, pushed_axiom_count, unifications);
 		}
 
 		inline void pop_axiom(unsigned int count) {
@@ -7261,9 +7301,10 @@ private:
 		inline bool push_axiom(
 				unsigned int set_id, Formula* formula,
 				array<variable_assignment>& possible_values,
-				unsigned int& pushed_axiom_count)
+				unsigned int& pushed_axiom_count,
+				const array<unification>& unifications)
 		{
-			return h.template push_axiom<Negated>(set_id, formula, possible_values, pushed_axiom_count);
+			return h.template push_axiom<Negated>(set_id, formula, possible_values, pushed_axiom_count, unifications);
 		}
 
 		inline void pop_axiom(unsigned int count) {
@@ -7515,7 +7556,7 @@ private:
 			}
 
 			unsigned int pushed_axiom_count;
-			if (!prover.template push_axiom<!Contradiction>(i, formula, possible_values, pushed_axiom_count)) {
+			if (!prover.template push_axiom<!Contradiction>(i, formula, possible_values, pushed_axiom_count, unifications)) {
 				prover.free_provable_elements(provable_elements);
 				return false;
 			} else if (pushed_axiom_count == 0) {
@@ -9132,7 +9173,10 @@ private:
 						&& formula->array.operands[i]->binary.left->binary.right->type == TermType::VARIABLE)
 				{
 					if (formula->array.operands[i]->binary.right->type == TermType::STRING
-					 || formula->array.operands[i]->binary.right->type == TermType::NUMBER)
+					 || formula->array.operands[i]->binary.right->type == TermType::NUMBER
+					 || (formula->array.operands[i]->binary.right->type == TermType::CONSTANT
+					  && (formula->array.operands[i]->binary.right->constant < new_constant_offset
+					   || ground_concepts[formula->array.operands[i]->binary.right->constant - new_constant_offset].definitions.length < 16)))
 					{
 						visited[i] = true;
 						if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
@@ -9149,19 +9193,25 @@ private:
 							if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
 						}
 					}
-				} if (!visited[i] && formula->array.operands[i]->type == TermType::EQUALS
-				   && formula->array.operands[i]->binary.right->type == TermType::VARIABLE)
-				{
-					bool constant_valued_variable = true;
-					for (const variable_assignment& value : possible_values) {
-						if (value.assignment.values[formula->array.operands[i]->binary.right->variable - 1].type != instantiation_type::CONSTANT) {
-							constant_valued_variable = false;
-							break;
+				}
+			}
+
+			if (possible_values.length != 0) {
+				for (unsigned int i = 0; i < formula->array.length; i++) {
+					if (!visited[i] && formula->array.operands[i]->type == TermType::EQUALS
+					 && formula->array.operands[i]->binary.right->type == TermType::VARIABLE)
+					{
+						bool constant_valued_variable = true;
+						for (const variable_assignment& value : possible_values) {
+							if (value.assignment.values[formula->array.operands[i]->binary.right->variable - 1].type != instantiation_type::CONSTANT) {
+								constant_valued_variable = false;
+								break;
+							}
 						}
-					}
-					if (constant_valued_variable) {
-						visited[i] = true;
-						if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
+						if (constant_valued_variable) {
+							visited[i] = true;
+							if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
+						}
 					}
 				}
 			}
@@ -9219,30 +9269,46 @@ private:
 							&& formula->array.operands[i]->binary.left->binary.left->type == TermType::CONSTANT
 							&& formula->array.operands[i]->binary.left->binary.right->type == TermType::VARIABLE)
 					{
-						bool constant_valued_variable = true;
-						for (const variable_assignment& value : possible_values) {
-							if (value.assignment.values[formula->array.operands[i]->binary.left->binary.right->variable - 1].type != instantiation_type::CONSTANT) {
-								constant_valued_variable = false;
-								break;
-							}
-						}
-						if (constant_valued_variable) {
+						if (formula->array.operands[i]->binary.right->type == TermType::STRING
+						 || formula->array.operands[i]->binary.right->type == TermType::NUMBER
+						 || (formula->array.operands[i]->binary.right->type == TermType::CONSTANT
+						  && (formula->array.operands[i]->binary.right->constant < new_constant_offset
+						   || ground_concepts[formula->array.operands[i]->binary.right->constant - new_constant_offset].definitions.length < 16)))
+						{
 							visited[i] = true;
 							if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
-						}
-					} if (!visited[i] && formula->array.operands[i]->type == TermType::EQUALS
-					   && formula->array.operands[i]->binary.right->type == TermType::VARIABLE)
-					{
-						bool constant_valued_variable = true;
-						for (const variable_assignment& value : possible_values) {
-							if (value.assignment.values[formula->array.operands[i]->binary.right->variable - 1].type != instantiation_type::CONSTANT) {
-								constant_valued_variable = false;
-								break;
+						} else {
+							bool constant_valued_variable = true;
+							for (const variable_assignment& value : possible_values) {
+								if (value.assignment.values[formula->array.operands[i]->binary.left->binary.right->variable - 1].type != instantiation_type::CONSTANT) {
+									constant_valued_variable = false;
+									break;
+								}
+							}
+							if (constant_valued_variable) {
+								visited[i] = true;
+								if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
 							}
 						}
-						if (constant_valued_variable) {
-							visited[i] = true;
-							if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
+					}
+				}
+
+				if (possible_values.length != 0) {
+					for (unsigned int i = 0; i < formula->array.length; i++) {
+						if (!visited[i] && formula->array.operands[i]->type == TermType::EQUALS
+						 && formula->array.operands[i]->binary.right->type == TermType::VARIABLE)
+						{
+							bool constant_valued_variable = true;
+							for (const variable_assignment& value : possible_values) {
+								if (value.assignment.values[formula->array.operands[i]->binary.right->variable - 1].type != instantiation_type::CONSTANT) {
+									constant_valued_variable = false;
+									break;
+								}
+							}
+							if (constant_valued_variable) {
+								visited[i] = true;
+								if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
+							}
 						}
 					}
 				}
@@ -10020,8 +10086,8 @@ private:
 			}
 
 			/* a(b)=A or A=a(b) (function definition of a evaluated at b) */
-			if ((left->type == TermType::UNARY_APPLICATION && left->binary.left->type == TermType::CONSTANT)
-			 || (right->type == TermType::UNARY_APPLICATION && right->binary.left->type == TermType::CONSTANT))
+			if ((left->type == TermType::UNARY_APPLICATION && left->binary.left->type == TermType::CONSTANT && right->type != TermType::CONSTANT)
+			 || (right->type == TermType::UNARY_APPLICATION && right->binary.left->type == TermType::CONSTANT && left->type != TermType::CONSTANT))
 			{
 				if (left->type != TermType::UNARY_APPLICATION || left->binary.left->type != TermType::CONSTANT)
 					swap(left, right);
@@ -10094,8 +10160,12 @@ private:
 					unsigned int old_size = new_possible_values.length;
 					for (unsigned int i = 0; i < possible_values.length; i++) {
 						const variable_assignment& values = possible_values[i];
-						if (values.assignment.values[left->binary.right->variable - 1].type == instantiation_type::CONSTANT
-						 && values.assignment.values[left->binary.right->variable - 1].constant >= new_constant_offset)
+						if (right->type == TermType::VARIABLE && values.assignment.values[right->variable - 1].type == instantiation_type::CONSTANT)
+						{
+							/* if `right` is a constant, this is a definition and not a function value */
+							continue;
+						} else if (values.assignment.values[left->binary.right->variable - 1].type == instantiation_type::CONSTANT
+								&& values.assignment.values[left->binary.right->variable - 1].constant >= new_constant_offset)
 						{
 							const concept<ProofCalculus>& c = ground_concepts[values.assignment.values[left->binary.right->variable - 1].constant - new_constant_offset];
 							bool contains;
@@ -13598,7 +13668,7 @@ private:
 						if (is_provably_not_a_set(left->constant))
 							return nullptr;
 						/* make sure `left->constant` is not the arg1 of a name event */
-						if (left->constant >= new_constant_offset) {
+						if (left->constant >= new_constant_offset && ground_concepts[left->constant - new_constant_offset].types.keys != nullptr) {
 							for (Proof* proof : ground_concepts[left->constant - new_constant_offset].definitions) {
 								if (proof->formula->binary.right->type == FormulaType::UNARY_APPLICATION
 								 && proof->formula->binary.right->binary.left->type == TermType::CONSTANT
@@ -16737,7 +16807,7 @@ bool filter_constants_helper(
 					return false;
 
 				/* make sure `left->constant` is not the arg1 of a name event */
-				if (left->constant >= T.new_constant_offset) {
+				if (left->constant >= T.new_constant_offset && T.ground_concepts[left->constant - T.new_constant_offset].types.keys != nullptr) {
 					for (Proof* proof : T.ground_concepts[left->constant - T.new_constant_offset].definitions) {
 						if (proof->formula->binary.right->type == FormulaType::UNARY_APPLICATION
 						 && proof->formula->binary.right->binary.left->type == TermType::CONSTANT

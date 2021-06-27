@@ -32,10 +32,10 @@ inline double log_probability(unsigned int k, const geometric_distribution& prio
 
 unsigned int sample(const geometric_distribution& prior, unsigned int min, unsigned int max) {
 	/* we use inverse transform sampling */
-	double u = sample_uniform<double>();
-	if (max == UINT_MAX)
-		return floor((min * prior.log_one_minus_p + log(1 - u)) / prior.log_one_minus_p);
-	return floor(log(pow(1 - prior.p, min) * (1 - u) + pow(1 - prior.p, max + 1) * u) / prior.log_one_minus_p);
+	double min_cdf = 1.0 - pow(1 - prior.p, min);
+	double max_cdf = (max == UINT_MAX ? 1.0 : (1.0 - pow(1 - prior.p, max + 1)));
+	double u = sample_uniform<double>() * (max_cdf - min_cdf) + min_cdf;
+	return floor(log(1.0 - u) / prior.log_one_minus_p);
 }
 
 struct very_light_tail_distribution {
