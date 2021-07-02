@@ -3143,6 +3143,10 @@
 {(ADJ "great"/"greatest")}
 	{?[g]:value(g)[sup]};
 
+: # most
+{(ADJ "many"/"most")}
+	{?[g]:value(g)[sup]};
+
 : # lowest
 {(ADJ "low"/"lowest")}
 	{?[g]:negative(value)(g)[sup]};
@@ -3464,6 +3468,124 @@
 	)
 )}
 	{^[P]:?[a]:(?[n]:(name(n) & (arg1_of(a)=n) & (arg2(n)="Argentina")) & ?[C]:((C=^[c]:(capital(c) & ?[l]:(locate(l) & (arg2(l)=a) & (arg1_of(c)=l)))) & (size(C)=1) & ?[c]:(C(c) & P(c))))[index:sg]};
+
+: # number
+{(N "number"/"number")}
+	{cardinality[index:sg,arg2]};
+
+: # Einstein lived in Princeton.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity
+							(NOMINAL_L:identity
+								(STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Einstein"/"Einstein")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_R:remove_right_conjunct
+					(VP_L:require_no_be
+						(V:require_no_empty_ref,require_no_future,require_no_perfect,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,predicate_and_tense "live"/"lived")
+					)
+				)
+				(V_ADJUNCT:select_right_conjunct,try_remove_correlated,try_remove_correlator,try_remove_wh_minus,try_remove_number,try_remove_coordinated_be
+					(PP:remove_wide_scope,add_is_adjunct,add_modifies_event,require_no_predicate_same,require_no_empty_verb,select_right_arg1_of_without_head
+						(P:require_no_preposition,remove_right_conjunct "in")
+						(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+							(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
+								(NOMINAL_R:identity
+									(NOMINAL_L:identity
+										(STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Princeton"/"Princeton")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Einstein")) & ?[p]:(?[n]:(name(n) & (arg1_of(p)=n) & (arg2(n)="Princeton")) & ?[r]:((arg1(r)=e) & reside(r) & past(r) & ?[l]:(locate(l) & (arg2(l)=p) & (arg1_of(r)=l)))))};
+
+: # The volume of Phobos is less than 6000 cubic kilometers.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
+						(THE "the")
+						(NP':try_remove_correlated,require_predicative_existential,require_singleton,remove_second_left_set_conjunct,try_add_singular
+							(NOMINAL_R:identity
+								(NOMINAL_R:try_remove_genitive,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set,try_add_has_arg2
+									(NOMINAL_L:identity
+										(N:require_no_correlator,select_predicate_in_set "volume"/"volume")
+									)
+								)
+								(OF_FOR "of")
+								(NP:try_remove_correlated,try_remove_wh_minus,try_remove_measure,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_arg1_without_head_predicative,try_remove_number,has_arg2_in_set
+									(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
+										(NOMINAL_R:identity
+											(NOMINAL_L:identity
+												(STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Phobos"/"Phobos")
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2
+				(VP_L:require_no_be
+					(BE:select_left_predicate_and_tense,try_remove_aspect "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,add_aux,add_be
+						(V_ADJUNCT:remove_be,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number,add_empty_verb
+							(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
+								(ADJP_R:try_remove_is_adjunct,add_comparative,remove_right_conjunct,remove_greater
+									(ADJP_L:try_remove_is_adjunct
+										(ADJ:require_no_correlator,remove_wide_scope "little"/"less")
+									)
+								)
+								(COMP "than")
+								(V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
+									(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+										(Q:try_add_plural,try_remove_adv,require_no_correlator,require_predicative_existential,require_measure_in_set,select_second_left_conjunct_in_set,right_arg1
+											(NUMBER:identity "6000")
+										)
+										(NOMINAL_R:add_measure,try_add_plural,try_remove_adv,try_remove_correlated,select_right_conjunct_in_set,select_right_arg2_without_head_predicative,require_predicative_existential
+											(NOMINAL_L:identity
+												(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
+													(ADJP_L:try_remove_is_adjunct
+														(ADJ:require_no_correlator,remove_wide_scope "cubic"/"cubic")
+													)
+												)
+												(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set,try_remove_superlative
+													(N:require_no_correlator,select_predicate_in_set "kilometer"/"kilometers")
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[d]:(?[n]:(name(n) & (arg1_of(d)=n) & (arg2(n)="Phobos")) & ?[X]:((X=^[x]:?[v]:(volume(v) & (arg1(v)=d) & (arg2_of(x)=v))) & (size(X)=1) & ?[x]:(X(x) & ?[k]:(?[l]:(cubic(l) & (arg1_of(k)=l)) & kilometer(k) & ?[q]:(measure(q) & (arg1(q)=6000) & (arg2(q)=k) & ?[g]:((arg1(g)=x) & greater(negative(value))(g) & present(g) & (arg2(g)=q)))))))};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

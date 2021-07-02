@@ -3173,6 +3173,14 @@ inline Formula* preprocess_formula(Formula* src) {
 
 	second = simplify_subsets(first);
 	free(*first); if (first->reference_count == 0) free(first);
+	if (second == nullptr) return nullptr;
+
+	first = normalize_comparatives(second);
+	free(*second); if (second->reference_count == 0) free(second);
+	if (first == nullptr) return nullptr;
+
+	second = simplify_properties(first);
+	free(*first); if (first->reference_count == 0) free(first);
 	return second;
 }
 
@@ -5353,7 +5361,9 @@ private:
 				}
 				continue;
 			case change_type::DEFINITION:
-				if (!add_definition<false>(c.axiom, {0, UINT_MAX}, set_diff, std::forward<Args>(visitor)...))
+				if (!add_definition<false>(c.axiom, {0, UINT_MAX},
+						(c.axiom->formula->binary.right->type == TermType::CONSTANT && c.axiom->formula->binary.right->constant != (unsigned int) built_in_predicates::UNKNOWN),
+						set_diff, std::forward<Args>(visitor)...))
 					return false;
 				continue;
 			case change_type::FUNCTION_VALUE:
@@ -12749,7 +12759,7 @@ private:
 			unsigned int arity = 1;
 			Formula* operand = new_canonicalized->quantifier.operand;
 			while (operand->type == FormulaType::FOR_ALL) {
-				operand = new_canonicalized->quantifier.operand;
+				operand = operand->quantifier.operand;
 				arity++;
 			}
 
@@ -13758,7 +13768,7 @@ private:
 						requested_set_size.min_set_size = requested_set_sizes.values[index];
 						requested_set_size.max_set_size = requested_set_sizes.values[index];
 					}
-					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, requested_set_size, set_diff, std::forward<Args>(args)...);
+					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, requested_set_size, swap_order, set_diff, std::forward<Args>(args)...);
 					if (definition != new_proof) {
 						core::free(*new_proof);
 						core::free(new_proof);
@@ -14219,7 +14229,7 @@ private:
 
 private:
 	template<bool ResolveInconsistencies, typename... Args>
-	Proof* add_definition(Proof* definition, required_set_size requested_set_size, Args&&... args)
+	Proof* add_definition(Proof* definition, required_set_size requested_set_size, bool swap_order, Args&&... args)
 	{
 		if (!reverse_definitions.check_size())
 			return nullptr;
@@ -14402,9 +14412,25 @@ private:
 		reverse_definitions.values[index] = constant->constant;
 		reverse_definitions.table.size++;
 
-		if (!check_set_membership_after_addition<ResolveInconsistencies>(definition->formula, std::forward<Args>(args)...)) {
-			remove_definition(definition, std::forward<Args>(args)...);
-			return nullptr;
+		if (swap_order) {
+			Term* swapped = Term::new_equals(definition->formula->binary.right, definition->formula->binary.left);
+			if (swapped == nullptr) {
+				remove_definition(definition, std::forward<Args>(args)...);
+				return nullptr;
+			}
+			definition->formula->binary.right->reference_count++;
+			definition->formula->binary.left->reference_count++;
+			if (!check_set_membership_after_addition<ResolveInconsistencies>(swapped, std::forward<Args>(args)...)) {
+				remove_definition(definition, std::forward<Args>(args)...);
+				core::free(*swapped); core::free(swapped);
+				return nullptr;
+			}
+			core::free(*swapped); core::free(swapped);
+		} else {
+			if (!check_set_membership_after_addition<ResolveInconsistencies>(definition->formula, std::forward<Args>(args)...)) {
+				remove_definition(definition, std::forward<Args>(args)...);
+				return nullptr;
+			}
 		}
 		return definition;
 	}

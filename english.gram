@@ -398,8 +398,7 @@
 #
 #  "Sirius is brighter than Vega."
 #  ?[g]:(arg1(g)=sirius & U(0,g) & greater(brightness)(g) & present(g) & arg2(g)=vega)
-# where we can add an axiom such as ![x,y,f]:(?[g]:(greater(f)(g) & arg1(g)=x & arg2(g)=y) & ~is_real_number(y) & ?[b]:(f(b) & arg1(b)=y) = ?[g]:(greater(f)(g) & arg1(g)=x & ?[b]:(brightness(b) & arg1(b)=y & arg2(g)=arg2(b))))
-# as well as equivalent axioms for things like height, shortness, size, length, etc.
+# where we can add an axiom such as ![x,y,f]:(?[g]:(greater(f)(g) & arg1(g)=x & arg2(g)=y) & ~is_real_number(y) & ?[b]:(f(b) & arg1(b)=y) = ?[g]:(greater(f)(g) & arg1(g)=x & ?[b]:(f(b) & arg1(b)=y & arg2(g)=arg2(b))))
 #
 #  "i see a brighter star than Vega."
 #  ?[s]:(arg1(s)=me & U(0,s) & see(s) & present(s) & ?[x,r]:(?[g]:(U(1,g) & greater(brightness)(g) & arg1(g)=x & arg2(g)=r) & U(2,x) & star(x) & r=vega & arg2(s)=x))
@@ -895,7 +894,7 @@ S'' -> V_ADJUNCT:try_remove_genitive,require_left_greatest,select_function_with_
 S'' -> VP_R:remove_nullable_subject,require_no_predicate_empty,has_arg2
 
 
-VP_R nonterminal {head_predicate} {100.0, 100.0} {0.1, 1.0} {} 10 1.0 {}
+VP_R nonterminal {head_predicate} {100.0, 10.0} {0.1, 1.0} {} 10 1.0 {}
 
 # VP_R {... & (~)?[y1]:(g1(y1) & f(y1)) & ... & (~)?[yn]:(gn(yn) & f(yn))}
 #  -> VP_R {... & (~)?[y1]:g1(y1) & ... & (~)?[yn]:gn(yn)}
@@ -2676,7 +2675,7 @@ ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
 # e.g. "more powerful than my car", "brighter than Vega"
-#ADJP_R -> ADJP_R:try_remove_is_adjunct COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+ADJP_R -> ADJP_R:try_remove_is_adjunct,add_comparative,remove_right_conjunct,remove_greater COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
 
 # ADJP_R {^[x]:?[r]:(... & arg2(r)=x)}
 #  -> HOW ADJP_R {?[r]:(...)}
@@ -2765,9 +2764,6 @@ ADJP_L -> ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove
 ADJP_L -> MOST ADJP_L:try_remove_correlated,remove_superlative,add_high_degree,remove_right_trace # for `greatest` only
 ADJP_L -> LEAST ADJP_L:try_remove_correlated,remove_superlative,negative_to_high_degree,remove_right_trace # for `least` only
 
-# ADJP_L {?[g]:(U(0,g) & greater/less(p)(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
-#ADJP_L -> ADJ:require_no_correlator,remove_wide_scope,add_comparative
-
 # ADJP_L {?[g]:(U(0,g) & greater/less(p)(g))} -> ADJP_L {?[g]:(U(0,g) & p(g))}
 #ADJP_L -> MORE ADJP_L:try_remove_correlated # for `greater` only
 #ADJP_L -> LESS ADJP_L:try_remove_correlated # for `less` only
@@ -2831,7 +2827,7 @@ ADVP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
 # e.g. "more persuasively than me"
-#ADVP_R -> ADVP_R:try_remove_is_adjunct COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+#ADVP_R -> ADVP_R:try_remove_is_adjunct,add_comparative,remove_right_conjunct,remove_greater COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
 
 ADVP_R -> ADVP_L:try_remove_is_adjunct
 
@@ -2952,9 +2948,9 @@ ADVP_L -> NEITHER ADVP_L:remove_neither,add_negative
 
 V preterminal {predicate, has_arg2} {10000000000000000000.0, 10.0, 0.1} {1.0, 1.0, 10.0} {"be", "than", "that", "those", "of", "in", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "it", "there", "one", "me", "dont", "only", "some", "can", "could", "you", "u"} 10000000000000000000 0.99 verb {"through"}
 
-N preterminal {constant, has_arg2, measure} {10000000000000000000.0, 16.0, 10.0, 0.1} {1.0, 1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "number", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000000000000000000 0.99 noun {}
+N preterminal {constant, has_arg2, measure} {10000000000000000000.0, 16.0, 10.0, 0.1} {1.0, 1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "in", "through", "with", "whose", "who", "to", "on", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "highest", "lowest", "longest", "shortest", "largest", "smallest", "biggest", "most", "least", "greatest", "fewest", "maximum", "minimum", "next", "not", "and", "but", "or", "no", "there", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u", "called"} 10000000000000000000 0.99 noun {}
 
-ADJ preterminal {outer_predicate, inner_predicate} {10000000000000000000.0, 10000.0, 0.1} {1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "many", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000000000000000000 1.0 adjective {}
+ADJ preterminal {outer_predicate, inner_predicate} {10000000000000000000.0, 10000.0, 0.1} {1.0, 1.0, 10.0} {"be", "is", "are", "do", "does", "did", "has", "have", "than", "that", "of", "in", "through", "with", "whose", "who", "to", "for", "by", "over", "at", "per", "outside", "from", "within", "as", "?", ".", "a", "an", "any", "all", "the", "what", "which", "how", "much", "where", "bigger", "smaller", "longer", "shorter", "taller", "lower", "higher", "greater", "less", "more", "number", "and", "but", "or", "no", "not", "it", "there", "name", "tell", "give", "show", "one", "count", "me", "dont", "find", "only", "list", "some", "can", "could", "you", "u"} 10000000000000000000 1.0 adjective {}
 
 ADV preterminal {} {1.0} {1.0} {} 10000 1.0 adverb {}
 

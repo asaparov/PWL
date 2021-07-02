@@ -2432,6 +2432,34 @@ inline bool has_node_type(const hol_term& src) {
 	return !visit(src, visitor);
 }
 
+struct free_variable_finder {
+	unsigned int variable;
+	bool is_bound;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, free_variable_finder& visitor) {
+	if (Type == hol_term_type::VARIABLE && term.variable == visitor.variable && !visitor.is_bound) {
+		return false;
+	} else if ((Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) && term.quantifier.variable == visitor.variable) {
+		/* TODO: an optimization is available here where we can skip the search over the operand of this quantifier */
+		visitor.is_bound = true;
+	}
+	return true;
+}
+
+template<hol_term_type Type>
+inline bool end_visit(hol_term& term, free_variable_finder& visitor) {
+	if ((Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) && term.quantifier.variable == visitor.variable)
+		visitor.is_bound = false;
+	return true;
+}
+
+inline bool is_variable_free(const hol_term& src, unsigned int variable) {
+	free_variable_finder visitor = {variable, false};
+	return !visit(src, visitor);
+}
+
 inline bool clone_constant(unsigned int src_constant, unsigned int& dst_constant) {
 	dst_constant = src_constant;
 	return true;
@@ -7935,19 +7963,20 @@ bool process_conditional_quantifier_scope(
 		hol_scope& out, hol_scope* operand,
 		unsigned int quantifier_variable)
 {
+	/* TODO: we disabled movement of operands from universal quantifiers; change this to be controllable via a flag */
 	if (!init(out, hol_term_type::IF_THEN)) {
 		free(*operand); free(operand);
 		return false;
-	} else if (!promote_from_quantifier_scope(operand->noncommutative.left, out.noncommutative.left, quantifier_variable)) {
+	} else if (false && !promote_from_quantifier_scope(operand->noncommutative.left, out.noncommutative.left, quantifier_variable)) {
 		free(out); free(*operand); free(operand);
 		return false;
-	} else if (!promote_from_quantifier_scope(operand->noncommutative.left_negated, out.noncommutative.left_negated, quantifier_variable)) {
+	} else if (false && !promote_from_quantifier_scope(operand->noncommutative.left_negated, out.noncommutative.left_negated, quantifier_variable)) {
 		free(out); free(*operand); free(operand);
 		return false;
-	} else if (!promote_from_quantifier_scope(operand->noncommutative.right, out.noncommutative.right, quantifier_variable)) {
+	} else if (false && !promote_from_quantifier_scope(operand->noncommutative.right, out.noncommutative.right, quantifier_variable)) {
 		free(out); free(*operand); free(operand);
 		return false;
-	} else if (!promote_from_quantifier_scope(operand->noncommutative.right_negated, out.noncommutative.right_negated, quantifier_variable)) {
+	} else if (false && !promote_from_quantifier_scope(operand->noncommutative.right_negated, out.noncommutative.right_negated, quantifier_variable)) {
 		free(out); free(*operand); free(operand);
 		return false;
 	}

@@ -298,7 +298,6 @@ The population of the city of Greenwich, Connecticut is 59578.
 The population of the city of Bristol, Connecticut is 57370.
 The population of the city of Meriden, Connecticut is 57118.
 The population of the city of Wilmington, Delaware is 70195.
-The population of the city of Washington, District Of Columbia is 638333.
 The population of the city of Jacksonville, Florida is 540920.
 The population of the city of Miami, Florida is 346865.
 The population of the city of Tampa, Florida is 271523.
@@ -1043,3 +1042,223 @@ The height of Big Stone Lake is 968 feet.
 The height of Beaver Dam Wash is 2180 feet.
 The height of Lake Champlain is 95 feet.
 The height of Lake Michigan is 579 feet.
+Every river that is longer than 750 miles is major.
+If the population of X is Y then the number of people living in X is Y.
+Every river that flows through X is in X.
+If the population of X is greater than 150000, X is major.
+Alabama borders Tennessee.
+Alabama borders Georgia.
+Alabama borders Florida.
+Alabama borders Mississippi.
+Arizona borders Utah.
+Arizona borders Colorado.
+Arizona borders New Mexico.
+Arizona borders California.
+Arizona borders Nevada.
+Arkansas borders Missouri.
+Arkansas borders Tennessee.
+Arkansas borders Mississippi.
+Arkansas borders Louisiana.
+Arkansas borders Texas.
+Arkansas borders Oklahoma.
+California borders Oregon.
+California borders Nevada.
+California borders Arizona.
+Colorado borders Nebraska.
+Colorado borders Kansas.
+Colorado borders Oklahoma.
+Colorado borders New Mexico.
+Colorado borders Arizona.
+Colorado borders Utah.
+Colorado borders Wyoming.
+Connecticut borders Massachusetts.
+Connecticut borders Rhode Island.
+Connecticut borders New York.
+Delaware borders Pennsylvania.
+Delaware borders New Jersey.
+Delaware borders Maryland.
+Florida borders Georgia.
+Florida borders Alabama.
+Georgia borders North Carolina.
+Georgia borders South Carolina.
+Georgia borders Florida.
+Georgia borders Alabama.
+Georgia borders Tennessee.
+Idaho borders Montana.
+Idaho borders Wyoming.
+Idaho borders Utah.
+Idaho borders Nevada.
+Idaho borders Oregon.
+Idaho borders Washington.
+Illinois borders Wisconsin.
+Illinois borders Indiana.
+Illinois borders Kentucky.
+Illinois borders Missouri.
+Illinois borders Iowa.
+Indiana borders Michigan.
+Indiana borders Ohio.
+Indiana borders Kentucky.
+Indiana borders Illinois.
+Iowa borders Minnesota.
+Iowa borders Wisconsin.
+Iowa borders Illinois.
+Iowa borders Missouri.
+Iowa borders Nebraska.
+Iowa borders South Dakota.
+Kansas borders Nebraska.
+Kansas borders Missouri.
+Kansas borders Oklahoma.
+Kansas borders Colorado.
+Kentucky borders Indiana.
+Kentucky borders Ohio.
+Kentucky borders West Virginia.
+Kentucky borders Virginia.
+Kentucky borders Tennessee.
+Kentucky borders Missouri.
+Kentucky borders Illinois.
+Louisiana borders Arkansas.
+Louisiana borders Mississippi.
+Louisiana borders Texas.
+Maine borders New Hampshire.
+Maryland borders Pennsylvania.
+Maryland borders Delaware.
+Maryland borders Virginia.
+Maryland borders West Virginia.
+Massachusetts borders New Hampshire.
+Massachusetts borders Rhode Island.
+Massachusetts borders Connecticut.
+Massachusetts borders New York.
+Massachusetts borders Vermont.
+Michigan borders Ohio.
+Michigan borders Indiana.
+Michigan borders Wisconsin.
+Minnesota borders Wisconsin.
+Minnesota borders Iowa.
+Minnesota borders South Dakota.
+Minnesota borders North Dakota.
+Mississippi borders Tennessee.
+Mississippi borders Alabama.
+Mississippi borders Louisiana.
+Mississippi borders Arkansas.
+Missouri borders Iowa.
+Missouri borders Illinois.
+Missouri borders Kentucky.
+Missouri borders Tennessee.
+Missouri borders Arkansas.
+Missouri borders Oklahoma.
+Missouri borders Kansas.
+Missouri borders Nebraska.
+Montana borders North Dakota.
+Montana borders South Dakota.
+Montana borders Wyoming.
+Montana borders Idaho.
+Nebraska borders South Dakota.
+Nebraska borders Iowa.
+Nebraska borders Missouri.
+Nebraska borders Kansas.
+Nebraska borders Colorado.
+Nebraska borders Wyoming.
+Nevada borders Idaho.
+Nevada borders Utah.
+Nevada borders Arizona.
+Nevada borders California.
+Nevada borders Oregon.
+New Hampshire borders Maine.
+New Hampshire borders Massachusetts.
+New Hampshire borders Vermont.
+New Jersey borders New York.
+New Jersey borders Delaware.
+New Jersey borders Pennsylvania.
+New Mexico borders Colorado.
+New Mexico borders Oklahoma.
+New Mexico borders Texas.
+New Mexico borders Arizona.
+New Mexico borders Utah.
+New York borders Vermont.
+New York borders Massachusetts.
+New York borders Connecticut.
+New York borders New Jersey.
+New York borders Pennsylvania.
+North Carolina borders Virginia.
+North Carolina borders South Carolina.
+North Carolina borders Georgia.
+North Carolina borders Tennessee.
+North Dakota borders Minnesota.
+North Dakota borders South Dakota.
+North Dakota borders Montana.
+Ohio borders Michigan.
+Ohio borders Pennsylvania.
+Ohio borders West Virginia.
+Ohio borders Kentucky.
+Ohio borders Indiana.
+Oklahoma borders Kansas.
+Oklahoma borders Missouri.
+Oklahoma borders Arkansas.
+Oklahoma borders Texas.
+Oklahoma borders New Mexico.
+Oklahoma borders Colorado.
+Oregon borders Washington.
+Oregon borders Idaho.
+Oregon borders Nevada.
+Oregon borders California.
+Pennsylvania borders New York.
+Pennsylvania borders New Jersey.
+Pennsylvania borders Delaware.
+Pennsylvania borders Maryland.
+Pennsylvania borders West Virginia.
+Pennsylvania borders Ohio.
+Rhode Island borders Massachusetts.
+Rhode Island borders Connecticut.
+South Carolina borders North Carolina.
+South Carolina borders Georgia.
+South Dakota borders North Dakota.
+South Dakota borders Minnesota.
+South Dakota borders Iowa.
+South Dakota borders Nebraska.
+South Dakota borders Wyoming.
+South Dakota borders Montana.
+Tennessee borders Kentucky.
+Tennessee borders Virginia.
+Tennessee borders North Carolina.
+Tennessee borders Georgia.
+Tennessee borders Alabama.
+Tennessee borders Mississippi.
+Tennessee borders Arkansas.
+Tennessee borders Missouri.
+Texas borders Oklahoma.
+Texas borders Arkansas.
+Texas borders Louisiana.
+Texas borders New Mexico.
+Utah borders Wyoming.
+Utah borders Colorado.
+Utah borders New Mexico.
+Utah borders Arizona.
+Utah borders Nevada.
+Utah borders Idaho.
+Vermont borders New Hampshire.
+Vermont borders Massachusetts.
+Vermont borders New York.
+Virginia borders Maryland.
+Virginia borders North Carolina.
+Virginia borders Tennessee.
+Virginia borders Kentucky.
+Virginia borders West Virginia.
+Washington borders Idaho.
+Washington borders Oregon.
+West Virginia borders Pennsylvania.
+West Virginia borders Maryland.
+West Virginia borders Virginia.
+West Virginia borders Kentucky.
+West Virginia borders Ohio.
+Wisconsin borders Michigan.
+Wisconsin borders Illinois.
+Wisconsin borders Iowa.
+Wisconsin borders Minnesota.
+Wyoming borders Montana.
+Wyoming borders South Dakota.
+Wyoming borders Nebraska.
+Wyoming borders Colorado.
+Wyoming borders Utah.
+Wyoming borders Idaho.
+If X is in Y and Y is in Z, then X is in Z.
+There are 50 states.

@@ -1,5 +1,2 @@
 ![x,f,S]:(?[g]:(greatest(f)(g) & (arg1(g)=S) & (arg2(g)=x)) => (S(x) & ![v]:(f(x)(v) => ![y]:(S(y) => ![w]:(f(y)(w) => ((number(v) => ≥(v,w)) & ![a]:((measure(v) & (arg1(v)=a)) => ![b]:((measure(w) & ?[u]:((arg2(v)=u) & (arg2(w)=u)) & (arg1(w)=b)) => ≥(a,b)))))))));
 ![x,f,S]:(?[g]:(least(f)(g) & (arg1(g)=S) & (arg2(g)=x)) => (S(x) & ![v]:(f(x)(v) => ![y]:(S(y) => ![w]:(f(y)(w) => ((number(v) => ≥(w,v)) & ![a]:((measure(v) & (arg1(v)=a)) => ![b]:((measure(w) & ?[u]:((arg2(v)=u) & (arg2(w)=u)) & (arg1(w)=b)) => ≥(b,a)))))))));
-![x,z]:(?[y]:(?[l]:(locate(l) & (arg1(l)=x) & (arg2(l)=y)) & ?[l]:(locate(l) & (arg1(l)=y) & (arg2(l)=z))) => ?[l]:(locate(l) & (arg1(l)=x) & (arg2(l)=z)));
-![x]:((river(x) & ?[a]:(?[v]:(measure(v) & (arg1(v)=a) & ?[m]:(mile(m) & (arg2(v)=m)) & ?[l]:(length(l) & (arg1(l)=x) & (arg2(l)=v))) & ≥(a,750))) => ?[m]:(major(m) & (arg1(m)=x)));
-![x,y]:((river(x) & ?[f]:(flow(f) & (arg1(f)=x) & ?[t]:(through(t) & (arg1(t)=f) & (arg2(t)=y)))) => ?[l]:(locate(l) & (arg1(l)=x) & (arg2(l)=y)));

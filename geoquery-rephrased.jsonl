@@ -1,35 +1,35 @@
-{"theory":"1-100","questions":{"Q1":{"question":"Which is the smallest state?","answer":"District of Columbia"}}}
+{"theory":"1-100","questions":{"Q1":{"question":"Which is the smallest state?","answer":"Rhode Island"}}}
 {"theory":"101-192,193","questions":{"Q1":{"question":"Which is the longest river in USA?","answer":"Missouri River"}}}
-{"theory":"","questions":{"Q1":{"question":"What are the highest points of all the states?","answer":"Mount McKinley"}}}
-{"theory":"104,121,150,167,656,712","questions":{"Q1":{"question":"What are the major rivers in Ohio?","answer":"Ohio River, Wabash River"}}}
-{"theory":"497","questions":{"Q1":{"question":"What is the population of Erie, Pennsylvania?","answer":"119123"}}}
+{"theory":"","questions":{"Q1":{"question":"What are the highest points of all the states?","answer":"Denali"}}}
+{"theory":"1045,1047,104,121,150,167,655,711","questions":{"Q1":{"question":"What are the major rivers in Ohio?","answer":"Ohio River, Wabash River"}}}
+{"theory":"496","questions":{"Q1":{"question":"What is the population of Erie, Pennsylvania?","answer":"119123"}}}
 {"theory":"","questions":{"Q1":{"question":"What state has the lowest population density?","answer":"Alaska"}}}
-{"theory":"194-579,865-880,882","questions":{"Q1":{"question":"Where is the smallest city?","answer":"California"}}}
+{"theory":"194-578,864-879,881","questions":{"Q1":{"question":"Where is the smallest city?","answer":"California"}}}
 {"theory":"","questions":{"Q1":{"question":"Which rivers run through states that border the state with the capital Austin?","answer":"Arkansas River, Canadian River, Cimarron River, Gila River, Mississippi River, Neosho River, Ouachita River, Pearl River, Pecos River, Red River, Rio Grande, San Juan River, St. Francis River, Washita River, White River"}}}
-{"theory":"1003","questions":{"Q1":{"question":"What is the lowest point in Massachusetts?","answer":"Atlantic Ocean"}}}
-{"theory":"599","questions":{"Q1":{"question":"What is the population of Maryland?","answer":"4217000"}}}
-{"theory":"4,13,15,17,18,23,24,25,42,49,630-639","questions":{"Q1":{"question":"The Mississippi River runs through what states?","answer":"Arkansas, Illinois, Iowa, Kentucky, Louisiana, Minnesota, Mississippi, Missouri, Tennessee, Wisconsin"}}}
-{"theory":"370,492","questions":{"Q1":{"question":"Where is Portland?","answer":"Maine, Oregon"}}}
+{"theory":"1002","questions":{"Q1":{"question":"What is the lowest point in Massachusetts?","answer":"Atlantic Ocean"}}}
+{"theory":"598","questions":{"Q1":{"question":"What is the population of Maryland?","answer":"4217000"}}}
+{"theory":"4,13,15,17,18,23,24,25,42,49,629-638","questions":{"Q1":{"question":"The Mississippi River runs through what states?","answer":"Arkansas, Illinois, Iowa, Kentucky, Louisiana, Minnesota, Mississippi, Missouri, Tennessee, Wisconsin"}}}
+{"theory":"369,491","questions":{"Q1":{"question":"Where is Portland?","answer":"Maine, Oregon"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the cities in states through which the Mississippi runs?","answer":"Appleton, Arlington Heights, Aurora, Baton Rouge, Bloomington, Cedar Rapids, Champaign, Chattanooga, Chicago, Cicero, Columbia, Davenport, Decatur, Des Moines, Dubuque, Duluth, Elgin, Evanston, Fort Smith, Green Bay, Independence, Jackson, Joliet, Kansas City, Kenner, Kenosha, Knoxville, Lafayette, Lake Charles, Lexington, Little Rock, Louisville, Madison, Memphis, Metairie, Milwaukee, Minneapolis, Monroe, Nashville, New Orleans, North Little Rock, Oak Lawn, Peoria, Racine, Rochester, Rockford, Shreveport, Sioux City, Skokie, Springfield, St. Joseph, St. Louis, St. Paul, Waterloo, Waukegan, West Allis"}}}
-{"theory":"521","questions":{"Q1":{"question":"How many people live in Houston?","answer":"1595138"}}}
+{"theory":"520,1046","questions":{"Q1":{"question":"How many people live in Houston?","answer":"1595138"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the populations of states through which the Mississippi River runs?","answer":"2286000, 2364000, 2520000, 2913000, 4076000, 4206000, 4591000, 4700000, 4916000, 11400000"}}}
-{"theory":"13,14,17,35,38,48,651-656","questions":{"Q1":{"question":"The Ohio River runs through what states?","answer":"Illinois, Indiana, Kentucky, Ohio, Pennsylvania, West Virginia"}}}
-{"theory":"1-50,580-629","questions":{"Q1":{"question":"Which state has the most population?","answer":"California"}}}
+{"theory":"13,14,17,35,38,48,650-655","questions":{"Q1":{"question":"The Ohio River runs through what states?","answer":"Illinois, Indiana, Kentucky, Ohio, Pennsylvania, West Virginia"}}}
+{"theory":"1-50,579-628","questions":{"Q1":{"question":"Which state has the most population?","answer":"California"}}}
 {"theory":"","questions":{"Q1":{"question":"What states surround Kentucky?","answer":"Illinois, Indiana, Missouri, Ohio, Tennessee, Virginia, West Virginia"}}}
-{"theory":"799","questions":{"Q1":{"question":"What is the capital of North Dakota?","answer":"Bismark"}}}
-{"theory":"882","questions":{"Q1":{"question":"There are how many cities in the United States?","answer":"402"}}}
-{"theory":"1-50,766-815,196,200,206,215,280,289,311,317,322,325,329,341,350,358,363,375,395,416,420,430,439,455,466,473,488,494,508,512,518,526,551,557,570,573,865-881,193","questions":{"Q1":{"question":"What is the largest capital city in the USA?","answer":"Phoenix"}}}
+{"theory":"798","questions":{"Q1":{"question":"What is the capital of North Dakota?","answer":"Bismark"}}}
+{"theory":"881","questions":{"Q1":{"question":"There are how many cities in the United States?","answer":"402"}}}
+{"theory":"1263,1-50,765-814,196,200,206,215,280,289,310,316,321,324,328,340,349,357,362,374,394,415,419,429,438,454,465,472,487,493,507,511,517,525,550,556,569,572,865-880,193","questions":{"Q1":{"question":"What is the largest capital city in the USA?","answer":"Phoenix"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the populations of states which border Texas?","answer":"1303000, 2286000, 3025000, 4206000"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the capital of states that have cities named Durham?","answer":"Raleigh"}}}
-{"theory":"356-359,831","questions":{"Q1":{"question":"What is the biggest city in Kansas?","answer":"Wichita"}}}
+{"theory":"355-358,830","questions":{"Q1":{"question":"What is the biggest city in Kansas?","answer":"Wichita"}}}
 {"theory":"286","questions":{"Q1":{"question":"What is the population of Boulder?","answer":"76685"}}}
-{"theory":"1-50,580-629","questions":{"Q1":{"question":"Which state has the greatest population?","answer":"California"}}}
-{"theory":"521","questions":{"Q1":{"question":"What is the population of Houston?","answer":"1595138"}}}
+{"theory":"1-50,579-628","questions":{"Q1":{"question":"Which state has the greatest population?","answer":"California"}}}
+{"theory":"520","questions":{"Q1":{"question":"What is the population of Houston?","answer":"1595138"}}}
 {"theory":"1-50","questions":{"Q1":{"question":"There are how many states?","answer":"50"}}}
 {"theory":"","questions":{"Q1":{"question":"What states border the state with the smallest area?","answer":"Maryland, Virginia"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the longest river that flows through a state that borders Indiana?","answer":"Mississippi River"}}}
-{"theory":"","questions":{"Q1":{"question":"What states border the most populous state?","answer":"Arizona, Nevada, Oregon"}}}
-{"theory":"","questions":{"Q1":{"question":"What is the largest city in California?","answer":"Los Angeles"}}}
+{"theory":"1-50,579-628,1056,1164,1203,1264","questions":{"Q1":{"question":"What states border the most populous state?","answer":"Arizona, Nevada, Oregon"}}}
+{"theory":"209-279,819","questions":{"Q1":{"question":"What is the largest city in California?","answer":"Los Angeles"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the longest river in the states that border Nebraska?","answer":"Missouri River"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the capital of New Jersey?","answer":"Trenton"}}}
 {"theory":"","questions":{"Q1":{"question":"Which state has the most major cities?","answer":"California"}}}

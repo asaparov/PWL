@@ -399,9 +399,9 @@ set_seed(1356941742);
 	fclose(in);
 
 //parser.invert_name_map(names);
-//parser.print_hdp("NP", stderr);
-//parser.print_hdp("N", stderr);
-run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
+//parser.print_hdp("V_ADJUNCT", stderr);
+//parser.print_hdp("VP_R", stderr);
+//run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
 
 //run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 /*for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {

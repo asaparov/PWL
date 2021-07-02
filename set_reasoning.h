@@ -1943,7 +1943,8 @@ struct set_reasoning
 		array<unsigned int> strictly_partial_subsets(8);
 		array<unsigned int> strictly_partial_supersets(8);
 		for (unsigned int i = 1; i < set_count + 1; i++) {
-			if (i == set_id || sets[i].size_axioms.data == nullptr) continue;
+			if (i == set_id || sets[i].size_axioms.data == nullptr || sets[i].arity != arity)
+				continue;
 			if (is_strictly_partial_subset(sets[i].set_formula(), set_formula)) {
 				if (!strictly_partial_subsets.add(i)) {
 					free_set_id(set_id); return false;
@@ -1982,7 +1983,8 @@ struct set_reasoning
 		for (unsigned int partial_superset : strictly_partial_supersets) {
 			strictly_partial_subsets.clear();
 			for (unsigned int i = 1; i < set_count + 1; i++) {
-				if (i == partial_superset || i == set_id || sets[i].size_axioms.data == nullptr) continue;
+				if (i == partial_superset || i == set_id || sets[i].size_axioms.data == nullptr || sets[i].arity != arity)
+					continue;
 				if (is_strictly_partial_subset(sets[i].set_formula(), sets[partial_superset].set_formula())) {
 					if (!strictly_partial_subsets.add(i)) {
 						free_set_id(set_id); return false;
@@ -1990,7 +1992,7 @@ struct set_reasoning
 				}
 			}
 			for (unsigned int first : strictly_partial_subsets) {
-				if (sets[first].arity == arity && are_newly_disjoint(sets[first].set_formula(), set_formula, partial_superset)) {
+				if (are_newly_disjoint(sets[first].set_formula(), set_formula, partial_superset)) {
 					if (!sets[partial_superset].newly_disjoint_cache.add(first < set_id ? make_pair(first, set_id) : make_pair(set_id, first))) {
 						free_set_id(set_id); return false;
 					}

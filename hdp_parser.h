@@ -723,6 +723,7 @@ struct flagged_logical_form
 		REQUIRE_RIGHT_PREDICATE_IN_SET,
 		REMOVE_INVERSE,
 		REMOVE_GREATEST,
+		REMOVE_GREATER,
 		REMOVE_CAPABLE_OF,
 		REMOVE_HIGHER_ORDER_PREDICATE,
 		ADD_HIGH_DEGREE,
@@ -1141,6 +1142,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_RIGHT_PREDICATE_IN_SET, "require_right_predicate_in_set"},
 	{function_type::REMOVE_INVERSE, "remove_inverse"},
 	{function_type::REMOVE_GREATEST, "remove_greatest"},
+	{function_type::REMOVE_GREATER, "remove_greater"},
 	{function_type::REMOVE_CAPABLE_OF, "remove_capable_of"},
 	{function_type::REMOVE_HIGHER_ORDER_PREDICATE, "remove_higher_order_predicate"},
 	{function_type::ADD_HIGH_DEGREE, "add_high_degree"},
@@ -1886,6 +1888,8 @@ inline bool process_event_conjunct(
 			return true;
 		if (predicate != nullptr) return false;
 		predicate = conjunct->binary.left;
+	} else if (conjunct->type == hol_term_type::TRUE) {
+		return true;
 	} else {
 		return false;
 	}
@@ -2926,6 +2930,602 @@ inline hol_term* apply(hol_term* src, subset_simplifier& normalizer)
 inline hol_term* simplify_subsets(hol_term* src)
 {
 	subset_simplifier normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct comparative_normalizer {
+	array_map<unsigned int, hol_term*> scopes;
+	array<unsigned int> remove_scopes;
+
+	comparative_normalizer() : scopes(8), remove_scopes(4) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, comparative_normalizer& normalizer)
+{
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+		if (!normalizer.scopes.put(src->quantifier.variable, src))
+			return nullptr;
+	}
+
+	hol_term* dst = nullptr;
+	if (Type == hol_term_type::EXISTS) {
+		/* check if this is a `greater` scope */
+		hol_term* operand = src->quantifier.operand;
+		if (operand->type == hol_term_type::AND) {
+			hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+			hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+			hol_term* predicate = nullptr;
+			for (unsigned int i = 0; i < operand->array.length; i++) {
+				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+					predicate = nullptr;
+					break;
+				}
+			}
+
+			if (predicate != nullptr && predicate->type == hol_term_type::UNARY_APPLICATION
+			 && predicate->binary.left->type == hol_term_type::CONSTANT
+			 && predicate->binary.left->constant == (unsigned int) built_in_predicates::GREATER
+			 && arg1 != nullptr && arg2 != nullptr)
+			{
+				hol_term* function = predicate->binary.right;
+				bool negated = false;
+				if (function->type == hol_term_type::UNARY_APPLICATION && function->binary.left->type == hol_term_type::CONSTANT
+				 && function->binary.left->constant == (unsigned int) built_in_predicates::NEGATIVE)
+				{
+					function = function->binary.right;
+					negated = true;
+				}
+
+				unsigned int max_variable = 0;
+				max_bound_variable(*src, max_variable);
+				for (const auto& entry : normalizer.scopes)
+					max_variable = max(max_variable, entry.key);
+
+				/* check if the arg2 is a `measure` instance */
+				if (arg2->type == hol_term_type::VARIABLE) {
+					hol_term* other_scope = normalizer.scopes.get(arg2->variable);
+					hol_term* other_operand = other_scope->quantifier.operand;
+					hol_term* other_arg1 = nullptr; hol_term* other_arg1_of = nullptr;
+					hol_term* other_arg2 = nullptr; hol_term* other_arg2_of = nullptr;
+					hol_term* other_predicate = nullptr;
+					unsigned int predicate_index, arg1_index, arg2_index;
+					if (other_operand->type == hol_term_type::AND) {
+						predicate_index = other_operand->array.length;
+						arg1_index = other_operand->array.length;
+						arg2_index = other_operand->array.length;
+						for (unsigned int i = 0; i < other_operand->array.length; i++) {
+							if (other_operand->array.operands[i]->type == hol_term_type::EXISTS
+							 || other_operand->array.operands[i]->type == hol_term_type::FOR_ALL
+							 || other_operand->array.operands[i]->type == hol_term_type::NOT)
+								continue;
+							if (!process_event_conjunct(other_scope->quantifier.variable, other_operand->array.operands[i], other_arg1, other_arg2, other_arg1_of, other_arg2_of, other_predicate)) {
+								other_predicate = nullptr;
+								break;
+							}
+							if (other_predicate != nullptr && predicate_index == other_operand->array.length)
+								predicate_index = i;
+							else if (other_arg1 != nullptr && arg1_index == other_operand->array.length)
+								arg1_index = i;
+							else if (other_arg2 != nullptr && arg2_index == other_operand->array.length)
+								arg2_index = i;
+						}
+					}
+
+					if (other_predicate != nullptr && other_predicate->type == hol_term_type::CONSTANT
+					 && other_predicate->constant == (unsigned int) built_in_predicates::MEASURE
+					 && other_arg1 != nullptr && other_arg2 != nullptr)
+					{
+						if (!normalizer.remove_scopes.contains(other_scope->quantifier.variable)
+						 && !normalizer.remove_scopes.add(other_scope->quantifier.variable))
+							return (hol_term*) nullptr;
+
+						/* arg2 is a `measure` instance */
+						unsigned int value_variable = ++max_variable;
+						hol_term* value_var = hol_term::new_variable(value_variable);
+						if (value_var == nullptr)
+							return (hol_term*) nullptr;
+
+						unsigned int measure_variable = other_scope->quantifier.variable;
+						hol_term* measure_var = other_operand->array.operands[predicate_index]->binary.right;
+						unsigned int function_variable = ++max_variable;
+						hol_term* function_var = hol_term::new_variable(function_variable);
+						if (function_var == nullptr) {
+							free(*value_var); free(value_var);
+							return (hol_term*) nullptr;
+						}
+
+						dst = hol_term::new_exists(value_variable, hol_term::new_and(
+								hol_term::new_exists(measure_variable, hol_term::new_and(
+									other_operand->array.operands[predicate_index],
+									hol_term::new_equals(other_operand->array.operands[arg1_index]->binary.left, value_var),
+									other_operand->array.operands[arg2_index],
+									hol_term::new_exists(function_variable, hol_term::new_and(
+										hol_term::new_apply(function, function_var),
+										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, function_var), arg1),
+										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, function_var), measure_var)
+									))
+								)),
+								(negated
+									? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, other_arg1, value_var)
+									: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, value_var, other_arg1)
+								)
+							));
+						if (dst == nullptr) {
+							free(*value_var); free(value_var);
+							free(*function_var); free(function_var);
+							return (hol_term*) nullptr;
+						}
+						value_var->reference_count += 3 - 1;
+						function_var->reference_count += 3 - 1;
+						other_operand->array.operands[predicate_index]->reference_count++;
+						other_operand->array.operands[arg1_index]->binary.left->reference_count++;
+						other_operand->array.operands[arg2_index]->reference_count++;
+						function->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
+						arg1->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+						measure_var->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
+						other_arg2->reference_count++;
+					}
+				}
+
+				if (dst == nullptr) {
+					unsigned int value_variable = ++max_variable;
+					hol_term* value_var = hol_term::new_variable(value_variable);
+					if (value_var == nullptr)
+						return (hol_term*) nullptr;
+
+					unsigned int function_variable = ++max_variable;
+					hol_term* function_var = hol_term::new_variable(function_variable);
+					if (function_var == nullptr) {
+						free(*value_var); free(value_var);
+						return (hol_term*) nullptr;
+					}
+
+					dst = hol_term::new_exists(value_variable, hol_term::new_and(
+								hol_term::new_exists(function_variable, hol_term::new_and(
+									hol_term::new_apply(function, function_var),
+									hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, function_var), arg1),
+									hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, function_var), value_var)
+								)),
+								(negated
+									? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg2, value_var)
+									: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, value_var, arg2)
+								)
+							));
+					if (function_var == nullptr) {
+						free(*value_var); free(value_var);
+						free(*function_var); free(function_var);
+						return (hol_term*) nullptr;
+					}
+					value_var->reference_count += 3 - 1;
+					function_var->reference_count += 3 - 1;
+					function->reference_count++;
+					hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
+					arg1->reference_count++;
+					hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+					hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
+					arg2->reference_count++;
+				}
+			}
+		}
+	}
+
+	if (dst == nullptr) {
+		if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+			hol_term* operand = src->quantifier.operand;
+			array<hol_term*> new_operands(operand->type == hol_term_type::AND ? operand->array.length : 1);
+			bool is_same = true;
+			if (operand->type == hol_term_type::AND) {
+				for (unsigned int i = 0; i < operand->array.length; i++) {
+					new_operands[i] = apply(operand->array.operands[i], normalizer);
+					if (new_operands[i] == nullptr) {
+						free_all(new_operands);
+						return nullptr;
+					} else if (new_operands[i] == operand->array.operands[i]) {
+						new_operands[i]->reference_count++;
+					} else {
+						is_same = false;
+					}
+					new_operands.length++;
+				}
+			} else {
+				new_operands[0] = apply(operand, normalizer);
+				if (new_operands[0] == nullptr) {
+					return nullptr;
+				} else if (new_operands[0] == operand) {
+					new_operands[0]->reference_count++;
+				} else {
+					is_same = false;
+				}
+				new_operands.length = 1;
+			}
+
+			unsigned int index = normalizer.remove_scopes.index_of(src->quantifier.variable);
+			if (index != normalizer.remove_scopes.length) {
+				normalizer.remove_scopes.remove(index);
+
+				for (unsigned int i = 0; i < new_operands.length; i++) {
+					if (is_variable_free(*new_operands[i], src->quantifier.variable)) {
+						free(*new_operands[i]); if (new_operands[i]->reference_count == 0) free(new_operands[i]);
+						new_operands.remove(i--);
+					}
+				}
+
+				if (new_operands.length == 1) {
+					dst = new_operands[0];
+				} else {
+					dst = hol_term::new_and(make_array_view(new_operands.data, new_operands.length));
+				}
+				if (dst == nullptr) {
+					free_all(new_operands);
+					return nullptr;
+				}
+
+			} else {
+				if (is_same) {
+					for (hol_term* new_operand : new_operands)
+						new_operand->reference_count--;
+					dst = src;
+				} else {
+					if (Type == hol_term_type::EXISTS)
+						dst = hol_term::new_exists(src->quantifier.variable,
+								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+					else if (Type == hol_term_type::FOR_ALL)
+						dst = hol_term::new_for_all(src->quantifier.variable,
+								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+					else if (Type == hol_term_type::LAMBDA)
+						dst = hol_term::new_lambda(src->quantifier.variable,
+								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+					if (dst == nullptr) {
+						free_all(new_operands);
+						return nullptr;
+					}
+				}
+			}
+		} else {
+			dst = default_apply<Type>(src, normalizer);
+		}
+	}
+
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+		normalizer.scopes.size--;
+
+	return dst;
+}
+
+inline hol_term* normalize_comparatives(hol_term* src)
+{
+	comparative_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct variable_name_universalizer {
+	unsigned int max_variable;
+	array_map<char, hol_term*> new_variables;
+	array_map<unsigned int, hol_term*> variable_map;
+
+	variable_name_universalizer(unsigned int max_variable) : max_variable(max_variable), new_variables(4), variable_map(4) { }
+
+	~variable_name_universalizer() {
+		for (auto entry : new_variables) {
+			free(*entry.value);
+			if (entry.value->reference_count == 0)
+				free(entry.value);
+		}
+	}
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::IF_THEN || Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, variable_name_universalizer& normalizer)
+{
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+		hol_term* operand = src->quantifier.operand;
+		if (Type == hol_term_type::EXISTS && operand->type == hol_term_type::AND && operand->array.length == 3) {
+			hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+			hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+			hol_term* predicate = nullptr;
+			for (unsigned int i = 0; i < operand->array.length; i++) {
+				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+					predicate = nullptr;
+					break;
+				}
+			}
+
+			if (predicate != nullptr && arg1_of != nullptr && arg2 != nullptr
+			 && predicate->type == hol_term_type::CONSTANT
+			 && predicate->constant == (unsigned int) built_in_predicates::NAME
+			 && arg1_of->type == hol_term_type::VARIABLE
+			 && arg2->type == hol_term_type::STRING
+			 && arg2->str.length == 1 && isupper(arg2->str[0]))
+			{
+				if (!normalizer.new_variables.ensure_capacity(normalizer.new_variables.size + 1))
+					return nullptr;
+				unsigned int index = normalizer.new_variables.index_of(arg2->str[0]);
+				hol_term* new_variable;
+				if (index != normalizer.new_variables.size) {
+					new_variable = normalizer.new_variables.values[index];
+				} else {
+					/* we found a new "variable name" */
+					new_variable = hol_term::new_variable(++normalizer.max_variable);
+					if (new_variable == nullptr)
+						return nullptr;
+					normalizer.new_variables.keys[normalizer.new_variables.size] = arg2->str[0];
+					normalizer.new_variables.values[normalizer.new_variables.size++] = new_variable;
+				}
+
+				if (!normalizer.variable_map.ensure_capacity(normalizer.variable_map.size + 1))
+					return nullptr;
+				index = normalizer.variable_map.index_of(arg1_of->variable);
+				if (index == normalizer.variable_map.size) {
+					normalizer.variable_map.keys[normalizer.variable_map.size] = arg1_of->variable;
+					normalizer.variable_map.values[normalizer.variable_map.size++] = new_variable;
+				}
+
+				HOL_TRUE.reference_count++;
+				return &HOL_TRUE;
+			}
+		}
+
+		/* check if we need to remove this quantifier */
+		hol_term* new_operand = apply(src->quantifier.operand, normalizer);
+		if (new_operand == nullptr)
+			return nullptr;
+
+		unsigned int index = normalizer.variable_map.index_of(src->quantifier.variable);
+		if (index != normalizer.variable_map.size) {
+			hol_term* src_var = hol_term::new_variable(src->quantifier.variable);
+			if (src_var == nullptr) {
+				if (new_operand != src->quantifier.operand) { free(*new_operand); free(new_operand); }
+				return nullptr;
+			}
+			hol_term* substituted = substitute<hol_term_type::VARIABLE>(new_operand, src_var, normalizer.variable_map.values[index]);
+			free(*src_var); free(src_var);
+			if (new_operand != src->quantifier.operand) {
+				free(*new_operand); if (new_operand->reference_count == 0) free(new_operand);
+			}
+			normalizer.variable_map.remove_at(index);
+			return substituted;
+		} else {
+			if (new_operand == src->quantifier.operand)
+				return src;
+			hol_term* dst = nullptr;
+			if (Type == hol_term_type::EXISTS)
+				dst = hol_term::new_exists(src->quantifier.variable, new_operand);
+			else if (Type == hol_term_type::FOR_ALL)
+				dst = hol_term::new_for_all(src->quantifier.variable, new_operand);
+			else if (Type == hol_term_type::LAMBDA)
+				dst = hol_term::new_lambda(src->quantifier.variable, new_operand);
+			if (dst == nullptr) {
+				if (new_operand != src->quantifier.operand) { free(*new_operand); free(new_operand); }
+				return nullptr;
+			}
+			if (new_operand == src->quantifier.operand) new_operand->reference_count++;
+			return dst;
+		}
+
+	} else if (Type == hol_term_type::IF_THEN) {
+		hol_term* left = apply(src->binary.left, normalizer);
+		if (left == nullptr) return nullptr;
+		hol_term* right = apply(src->binary.right, normalizer);
+		if (right == nullptr) {
+			if (left != src->binary.left) { free(*left); free(left); }
+			return nullptr;
+		}
+
+		if (normalizer.new_variables.size == 0) {
+			if (left == src->binary.left && right == src->binary.right)
+				return src;
+			hol_term* dst = hol_term::new_if_then(left, right);
+			if (dst == nullptr) {
+				if (left != src->binary.left) { free(*left); free(left); }
+				if (right != src->binary.right) { free(*right); free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+			return dst;
+		} else {
+			hol_term* operand = hol_term::new_if_then(left, right);
+			if (operand == nullptr) {
+				if (left != src->binary.left) { free(*left); free(left); }
+				if (right != src->binary.right) { free(*right); free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+
+			for (unsigned int i = 0; i < normalizer.new_variables.size; i++) {
+				hol_term* new_operand = hol_term::new_for_all(normalizer.new_variables.values[i]->variable, operand);
+				if (new_operand == nullptr) {
+					free(*operand); free(operand);
+					return nullptr;
+				}
+				operand = new_operand;
+
+				free(*normalizer.new_variables.values[i]);
+				if (normalizer.new_variables.values[i]->reference_count == 0)
+					free(normalizer.new_variables.values[i]);
+			}
+			normalizer.new_variables.size = 0;
+			return operand;
+		}
+	}
+
+	/* unreachable */
+	return nullptr;
+}
+
+inline hol_term* universalize_variable_names(hol_term* src)
+{
+	unsigned int max_variable = 0;
+	if (!max_bound_variable(*src, max_variable))
+		return nullptr;
+
+	variable_name_universalizer normalizer(max_variable);
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+bool add_flattened_conjuncts(array<hol_term*>& conjuncts, hol_term* new_conjunct) {
+	if (new_conjunct->type == hol_term_type::AND) {
+		for (unsigned int i = 0; i < new_conjunct->array.length; i++) {
+			if (!add_flattened_conjuncts(conjuncts, new_conjunct->array.operands[i]))
+				return false;
+		}
+		return true;
+	} else {
+		return conjuncts.add(new_conjunct);
+	}
+}
+
+struct property_simplifier { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, property_simplifier& normalizer)
+{
+	if (Type == hol_term_type::EXISTS && src->quantifier.operand->type == hol_term_type::AND) {
+		hol_term* operand = src->quantifier.operand;
+		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+		hol_term* predicate = nullptr;
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+				predicate = nullptr;
+				break;
+			}
+		}
+
+		if (predicate != nullptr && arg1 != nullptr && arg2 != nullptr) {
+			if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::CARDINALITY) {
+				hol_term* dst = hol_term::new_equals(
+							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value, arg1), arg2);
+				if (dst == nullptr)
+					return nullptr;
+				hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value.reference_count++;
+				arg1->reference_count++;
+				arg2->reference_count++;
+				return dst;
+			} else if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::VALUE) {
+				hol_term* dst = hol_term::new_equals(
+							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, arg1), arg2);
+				if (dst == nullptr)
+					return nullptr;
+				hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+				arg1->reference_count++;
+				arg2->reference_count++;
+				return dst;
+			}
+		}
+
+		/* check if this scope declares a set of function values */
+		array<hol_term*> new_operands(operand->array.length);
+		bool is_same = true;
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			hol_term* new_operand = apply(operand->array.operands[i], normalizer);
+			if (new_operand == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			} else if (new_operand == operand->array.operands[i]) {
+				new_operand->reference_count++;
+			} else {
+				is_same = false;
+			}
+
+			if (!add_flattened_conjuncts(new_operands, new_operand)) {
+				free_all(new_operands);
+				return nullptr;
+			}
+		}
+
+		hol_term* function = nullptr;
+		hol_term* argument = nullptr;
+		for (hol_term* conjunct : new_operands) {
+			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
+			 && conjunct->binary.left->variable == src->quantifier.variable
+			 && conjunct->binary.right->type == hol_term_type::LAMBDA
+			 && conjunct->binary.right->quantifier.operand->type == hol_term_type::EQUALS
+			 && conjunct->binary.right->quantifier.operand->binary.left->type == hol_term_type::UNARY_APPLICATION
+			 && conjunct->binary.right->quantifier.operand->binary.right->type == hol_term_type::VARIABLE
+			 && conjunct->binary.right->quantifier.operand->binary.right->variable == conjunct->binary.right->quantifier.variable)
+			{
+				function = conjunct->binary.right->quantifier.operand->binary.left;
+			} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
+					&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
+					&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+					&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
+					&& conjunct->binary.left->binary.right->variable == src->quantifier.variable
+					&& conjunct->binary.right->type == hol_term_type::NUMBER)
+			{
+				if (conjunct->binary.right->number.integer != 1 || conjunct->binary.right->number.decimal != 0) {
+					free_all(new_operands);
+					HOL_FALSE.reference_count++;
+					return &HOL_FALSE;
+				}
+			} else if (conjunct->type == hol_term_type::UNARY_APPLICATION
+					&& conjunct->binary.left->type == hol_term_type::VARIABLE
+					&& conjunct->binary.left->variable == src->quantifier.variable)
+			{
+				argument = conjunct->binary.right;
+			} else if (conjunct->type == hol_term_type::TRUE) {
+				continue;
+			} else {
+				function = nullptr;
+				break;
+			}
+		}
+
+		if (function != nullptr && argument != nullptr) {
+			hol_term* dst = hol_term::new_equals(function, argument);
+			if (dst == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			}
+			function->reference_count++;
+			argument->reference_count++;
+			free_all(new_operands);
+			return dst;
+		}
+
+		hol_term* dst;
+		if (is_same) {
+			for (hol_term* new_operand : new_operands)
+				new_operand->reference_count--;
+			dst = src;
+		} else {
+			if (Type == hol_term_type::EXISTS)
+				dst = hol_term::new_exists(src->quantifier.variable,
+						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+			else if (Type == hol_term_type::FOR_ALL)
+				dst = hol_term::new_for_all(src->quantifier.variable,
+						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+			else if (Type == hol_term_type::LAMBDA)
+				dst = hol_term::new_lambda(src->quantifier.variable,
+						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+			if (dst == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			}
+		}
+		return dst;
+	}
+
+	return default_apply<Type>(src, normalizer);
+}
+
+inline hol_term* simplify_properties(hol_term* src)
+{
+	property_simplifier normalizer;
 	hol_term* dst = apply(src, normalizer);
 	if (dst == src)
 		dst->reference_count++;
@@ -4081,6 +4681,31 @@ core::free(nonterminal_name_map);
 			core::free(parsed_syntax[j]);
 			core::free(logical_form_output[j]);
 		}
+
+		/* resolve variable names like "X" as implicit universal quantification */
+bool has_variable_names = false;
+		for (unsigned int j = 0; j < parse_count; j++) {
+			hol_term* new_logical_form = universalize_variable_names(logical_forms[j]);
+			if (new_logical_form == nullptr) {
+				for (array<sentence_token>& str : unrecognized) core::free(str);
+				unrecognized.clear();
+				for (unsigned int j = 0; j < parse_count; j++) {
+					core::free(*logical_forms[j]); core::free(logical_forms[j]);
+				}
+				return false;
+			}
+has_variable_names |= (new_logical_form != logical_forms[j]);
+			core::free(*logical_forms[j]); if (logical_forms[j]->reference_count == 0) core::free(logical_forms[j]);
+			logical_forms[j] = new_logical_form;
+		}
+
+if (has_variable_names) {
+	print(CONSOLE_BOLD "\nVariable name resolution results:\n" CONSOLE_RESET, stdout);
+	for (unsigned int j = 0; j < parse_count; j++) {
+		print(CONSOLE_BOLD "[", stdout); print(j, stdout); print("] " CONSOLE_RESET, stdout);
+		print(*logical_forms[j], stdout, terminal_printer); print('\n', stdout);
+	}
+}
 
 		/* perform coreference resolution */
 		if (!resolve_coreference<K>(logical_forms, log_probabilities, parse_count)) {
@@ -6190,9 +6815,27 @@ inline hol_term* apply(hol_term* src, head_substituter<AnyNodePosition, AnyRight
 {
 	if (src == substituter.src) {
 		if (AnyNodePosition == any_node_position::LEFT) {
-			if (substituter.dst->type == hol_term_type::ANY || substituter.dst->type == hol_term_type::ANY_RIGHT || substituter.dst->type == hol_term_type::ANY_RIGHT_ONLY
-			 || (substituter.dst->type == hol_term_type::UNARY_APPLICATION && substituter.dst->binary.left->type == hol_term_type::CONSTANT && substituter.dst->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE))
+			if (substituter.dst->type == hol_term_type::UNARY_APPLICATION && substituter.dst->binary.left->type == hol_term_type::CONSTANT && substituter.dst->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
 				substituter.could_have_wide_scope = true;
+			if (substituter.dst->type == hol_term_type::ANY || substituter.dst->type == hol_term_type::ANY_RIGHT || substituter.dst->type == hol_term_type::ANY_RIGHT_ONLY) {
+				/* check if wide scope is excluded */
+				bool wide_scope_excluded = false;
+				for (unsigned int i = 0; i < substituter.dst->any.excluded_tree_count; i++) {
+					hol_term* tree = substituter.dst->any.excluded_trees[i];
+					if (tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+						&& tree->any.included->type == hol_term_type::UNARY_APPLICATION
+						&& tree->any.included->binary.left->type == hol_term_type::CONSTANT
+						&& tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+						&& *tree->any.included->binary.right == HOL_ANY)
+					{
+						wide_scope_excluded = true;
+						break;
+					}
+				}
+
+				if (!wide_scope_excluded)
+					substituter.could_have_wide_scope = true;
+			}
 			if (substituter.has_any || substituter.dst->type == hol_term_type::ANY || substituter.dst->type == hol_term_type::ANY_RIGHT) {
 				if (substituter.src != substituter.dst)
 					substituter.dst->reference_count++;
@@ -11341,23 +11984,41 @@ inline bool apply_higher_order_predicate(
 					}
 
 					hol_term* expected_predicate;
-					if (SrcPredicate != 0) {
+					if (SrcPredicate == UINT_MAX) {
+						hol_term* excluded_constants = hol_term::new_any_constant(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT));
+						if (excluded_constants == nullptr)
+							return (hol_term*) nullptr;
 						expected_predicate = hol_term::new_apply(
 								hol_term::new_apply(
-									(SrcPredicate == UINT_MAX
-										? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
-										: &hol_term::constants<SrcPredicate>::value),
+									hol_term::new_any(nullptr, &excluded_constants, 1),
 									&HOL_ANY),
 								hol_term::new_variable(head_variable));
-						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+						if (expected_predicate == nullptr) {
+							free(*excluded_constants); free(excluded_constants);
+							return (hol_term*) nullptr;
+						}
 						HOL_ANY.reference_count++;
-						if (SrcPredicate != UINT_MAX)
-							hol_term::constants<SrcPredicate>::value.reference_count++;
-					} else {
+					} else if (SrcPredicate != 0) {
 						expected_predicate = hol_term::new_apply(
-								hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+								hol_term::new_apply(
+									&hol_term::constants<SrcPredicate>::value,
+									&HOL_ANY),
 								hol_term::new_variable(head_variable));
-						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+						if (expected_predicate == nullptr)
+							return (hol_term*) nullptr;
+						HOL_ANY.reference_count++;
+						hol_term::constants<SrcPredicate>::value.reference_count++;
+					} else {
+						hol_term* excluded_constants = hol_term::new_any_constant(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT));
+						if (excluded_constants == nullptr)
+							return (hol_term*) nullptr;
+						expected_predicate = hol_term::new_apply(
+								hol_term::new_any(nullptr, &excluded_constants, 1),
+								hol_term::new_variable(head_variable));
+						if (expected_predicate == nullptr) {
+							free(*excluded_constants); free(excluded_constants);
+							return (hol_term*) nullptr;
+						}
 					}
 
 					array<hol_term*> intersection(2);
@@ -11391,20 +12052,35 @@ inline bool apply_higher_order_predicate(
 						hol_term::constants<DstPredicate>::value.reference_count++;
 						inner_predicate->reference_count++;
 						expected_predicate->binary.right->reference_count++;
-					} else {
+					} else if (expected_dst_higher_order_predicate != nullptr) {
 						new_predicate = hol_term::new_apply(
 								hol_term::new_apply(
-									(expected_dst_higher_order_predicate != nullptr
-										? expected_dst_higher_order_predicate
-										: hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))),
+									expected_dst_higher_order_predicate,
 									inner_predicate),
 								expected_predicate->binary.right);
 						if (new_predicate == nullptr) {
 							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 							return (hol_term*) nullptr;
 						}
-						if (expected_dst_higher_order_predicate != nullptr)
-							expected_dst_higher_order_predicate->reference_count++;
+						expected_dst_higher_order_predicate->reference_count++;
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
+					} else {
+						hol_term* excluded_constants = hol_term::new_any_constant(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT));
+						if (excluded_constants == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
+						new_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									hol_term::new_any(nullptr, &excluded_constants, 1),
+									inner_predicate),
+								expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*excluded_constants); free(excluded_constants);
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
 						inner_predicate->reference_count++;
 						expected_predicate->binary.right->reference_count++;
 					}
@@ -11494,23 +12170,40 @@ inline bool apply_higher_order_predicate(
 
 				} else if (head->type == hol_term_type::EXISTS) {
 					hol_term* expected_predicate;
-					if (SrcPredicate != 0) {
+					if (SrcPredicate == UINT_MAX) {
+						hol_term* excluded_constants = hol_term::new_any_constant(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT));
+						if (excluded_constants == nullptr)
+							return (hol_term*) nullptr;
 						expected_predicate = hol_term::new_apply(
 								hol_term::new_apply(
-									(SrcPredicate == UINT_MAX
-										? hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))
-										: &hol_term::constants<SrcPredicate>::value),
+									hol_term::new_any(nullptr, &excluded_constants, 1),
+									&HOL_ANY),
+								hol_term::new_variable(head_variable));
+						if (expected_predicate == nullptr) {
+							free(*excluded_constants); free(excluded_constants);
+							return (hol_term*) nullptr;
+						}
+						HOL_ANY.reference_count++;
+					} else if (SrcPredicate != 0) {
+						expected_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									&hol_term::constants<SrcPredicate>::value,
 									&HOL_ANY),
 								hol_term::new_variable(head_variable));
 						if (expected_predicate == nullptr) return (hol_term*) nullptr;
 						HOL_ANY.reference_count++;
-						if (SrcPredicate != UINT_MAX)
-							hol_term::constants<SrcPredicate>::value.reference_count++;
+						hol_term::constants<SrcPredicate>::value.reference_count++;
 					} else {
+						hol_term* excluded_constants = hol_term::new_any_constant(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT));
+						if (excluded_constants == nullptr)
+							return (hol_term*) nullptr;
 						expected_predicate = hol_term::new_apply(
-								hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT)),
+								hol_term::new_any(nullptr, &excluded_constants, 1),
 								hol_term::new_variable(head_variable));
-						if (expected_predicate == nullptr) return (hol_term*) nullptr;
+						if (expected_predicate == nullptr) {
+							free(*excluded_constants); free(excluded_constants);
+							return (hol_term*) nullptr;
+						}
 					}
 
 					array<hol_term*> intersection(2);
@@ -11546,20 +12239,35 @@ inline bool apply_higher_order_predicate(
 						hol_term::constants<DstPredicate>::value.reference_count++;
 						inner_predicate->reference_count++;
 						expected_predicate->binary.right->reference_count++;
-					} else {
+					} else if (expected_dst_higher_order_predicate != nullptr) {
 						new_predicate = hol_term::new_apply(
 								hol_term::new_apply(
-									(expected_dst_higher_order_predicate != nullptr
-										? expected_dst_higher_order_predicate
-										: hol_term::new_any_constant_except(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT))),
+									expected_dst_higher_order_predicate,
 									inner_predicate),
 								expected_predicate->binary.right);
 						if (new_predicate == nullptr) {
 							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
 							return (hol_term*) nullptr;
 						}
-						if (expected_dst_higher_order_predicate != nullptr)
-							expected_dst_higher_order_predicate->reference_count++;
+						expected_dst_higher_order_predicate->reference_count++;
+						inner_predicate->reference_count++;
+						expected_predicate->binary.right->reference_count++;
+					} else {
+						hol_term* excluded_constants = hol_term::new_any_constant(make_array_view(hol_non_head_constants<built_in_predicates>::CONSTANTS, hol_non_head_constants<built_in_predicates>::CONSTANT_COUNT));
+						if (excluded_constants == nullptr) {
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
+						new_predicate = hol_term::new_apply(
+								hol_term::new_apply(
+									hol_term::new_any(nullptr, &excluded_constants, 1),
+									inner_predicate),
+								expected_predicate->binary.right);
+						if (new_predicate == nullptr) {
+							free(*excluded_constants); free(excluded_constants);
+							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+							return (hol_term*) nullptr;
+						}
 						inner_predicate->reference_count++;
 						expected_predicate->binary.right->reference_count++;
 					}
@@ -12215,6 +12923,9 @@ inline bool select_arg_without_head_predicative(
 										free(*quantified_term); free(quantified_term);
 										return (hol_term*) nullptr;
 									}
+
+									unsigned int index = siblings.index_of(antecedent);
+									if (index != siblings.length) siblings.remove(index);
 								}
 							} else if (scope.scope->type == hol_term_type::EXISTS && operand->type == hol_term_type::AND) {
 								hol_term* first_conjunct = operand->array.operands[0];
@@ -13177,7 +13888,6 @@ inline bool select_singleton_arg_in_set_without_head_predicative(
 						free(*excluded_terms[1]); free(excluded_terms[1]);
 						return (hol_term*) nullptr;
 					}
-					remove_wide_scope_marker = true;
 					return dst;
 				} else {
 					free_all(intersection);
@@ -23905,6 +24615,9 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REMOVE_GREATEST:
 		dst.flags = src.flags;
 		return apply_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, 0>(src.root, dst.root, nullptr);
+	case function_type::REMOVE_GREATER:
+		dst.flags = src.flags;
+		return apply_higher_order_predicate<(unsigned int) built_in_predicates::GREATER, 0>(src.root, dst.root, nullptr);
 	case function_type::REMOVE_CAPABLE_OF:
 		dst.flags = src.flags;
 		return apply_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF, 0>(src.root, dst.root, nullptr);
@@ -39748,6 +40461,9 @@ bool invert(
 	case function_type::REMOVE_GREATEST:
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::GREATEST, 0>(inverse, inverse_count, flags, first.root, second.root);
+	case function_type::REMOVE_GREATER:
+		if (!intersect(flags, first.flags, second.flags)) return false;
+		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::GREATER, 0>(inverse, inverse_count, flags, first.root, second.root);
 	case function_type::REMOVE_CAPABLE_OF:
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_apply_higher_order_predicate<(unsigned int) built_in_predicates::CAPABLE_OF, 0>(inverse, inverse_count, flags, first.root, second.root);

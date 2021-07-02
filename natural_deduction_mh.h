@@ -3778,7 +3778,7 @@ inline unsigned int sample(
 	get_most_recent_proof_steps<nd_step_type::EXISTENTIAL_INTRODUCTION>(proposal_distribution.query_proof, proof_steps);
 	proposal_distribution.query_step_count = proof_steps.length;
 
-	if (sample_uniform<double>() < proposal_distribution.sample_query_probability) {
+	if (proof_steps.length != 0 && sample_uniform<double>() < proposal_distribution.sample_query_probability) {
 		log_cache<double>::instance().ensure_size(proof_steps.length + 1);
 		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proof_steps.length);
 		proposal_distribution.selected_query = true;
