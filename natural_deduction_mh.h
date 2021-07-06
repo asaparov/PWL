@@ -1307,8 +1307,11 @@ inline void on_subtract_changes(proof_sampler<IsExploratory>& visitor) {
 template<typename Formula, bool IsExploratory>
 constexpr bool on_undo_filter_operands(const Formula* formula, const proof_sampler<IsExploratory>& visitor) { return true; }
 
-template<typename Theory, typename Formula, bool IsExploratory>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const proof_sampler<IsExploratory>& visitor) { return true; }
+template<typename Theory, typename Formula, typename Proof, bool IsExploratory>
+constexpr bool on_undo_filter_constants(
+		const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable,
+		const array_map<unsigned int, Proof*>& set_definitions, const proof_sampler<IsExploratory>& visitor)
+{ return true; }
 
 template<typename Formula, bool IsExploratory>
 inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_sampler<IsExploratory>& sampler)
@@ -1355,6 +1358,7 @@ template<typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
 inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
+		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions,
 		proof_sampler<IsExploratory>& sampler)
 {
 	if (!get_possible_constants(T, constants))
@@ -1363,7 +1367,7 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	array<pair<unsigned int, bool>> new_name_events(8);
 	array<const typename ProofCalculus::Language*> arg1_of(4);
 	array<const typename ProofCalculus::Language*> arg2_of(4);
-	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events, arg1_of, arg2_of))
+	if (!filter_constants_helper<false>(T, formula, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
 		return false;
 
 	if (IsExploratory) {
@@ -1463,6 +1467,7 @@ template<typename ProofCalculus, typename Canonicalizer>
 inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
+		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions,
 		inverse_proof_sampler& sampler)
 {
 	if (!get_possible_constants(T, constants))
@@ -1510,8 +1515,10 @@ inline bool on_undo_filter_operands(Formula* formula, inverse_proof_sampler& sam
 	return true;
 }
 
-template<typename Theory, typename Formula>
-inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typename Formula::Term* term, unsigned int variable, inverse_proof_sampler& sampler)
+template<typename Theory, typename Formula, typename Proof>
+inline bool on_undo_filter_constants(
+		Theory& T, Formula* quantified, const typename Formula::Term* term, unsigned int variable,
+		const array_map<unsigned int, Proof*>& set_definitions, inverse_proof_sampler& sampler)
 {
 	typedef typename Formula::TermType TermType;
 
@@ -1522,7 +1529,7 @@ inline bool on_undo_filter_constants(Theory& T, Formula* quantified, const typen
 	array<pair<unsigned int, bool>> new_name_events(8);
 	array<const Formula*> arg1_of(4);
 	array<const Formula*> arg2_of(4);
-	if (!filter_constants_helper<false>(T, quantified, variable, constants, new_name_events, arg1_of, arg2_of))
+	if (!filter_constants_helper<false>(T, quantified, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
 		return false;
 
 	unsigned int index;
@@ -1577,8 +1584,11 @@ inline void on_subtract_changes(const undo_remove_sets& visitor) { }
 template<typename Formula>
 constexpr bool on_undo_filter_operands(const Formula* formula, const undo_remove_sets& visitor) { return true; }
 
-template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const undo_remove_sets& visitor) { return true; }
+template<typename Theory, typename Formula, typename Proof>
+constexpr bool on_undo_filter_constants(const Theory& T,
+		const Formula* quantified, const typename Formula::Term* term, unsigned int variable,
+		const array_map<unsigned int, Proof*>& set_definitions, const undo_remove_sets& visitor)
+{ return true; }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline bool compute_new_set_size(unsigned int set_id,
@@ -1808,8 +1818,11 @@ inline void on_subtract_changes(const inverse_set_size_log_probability& visitor)
 template<typename Formula>
 constexpr bool on_undo_filter_operands(const Formula* formula, const inverse_set_size_log_probability& visitor) { return true; }
 
-template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const inverse_set_size_log_probability& visitor) { return true; }
+template<typename Theory, typename Formula, typename Proof>
+constexpr bool on_undo_filter_constants(
+		const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable,
+		const array_map<unsigned int, Proof*>& set_definitions, const inverse_set_size_log_probability& visitor)
+{ return true; }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline bool compute_new_set_size(unsigned int set_id,
@@ -2181,8 +2194,11 @@ inline void on_subtract_changes(proof_initializer& visitor) {
 template<typename Formula>
 constexpr bool on_undo_filter_operands(const Formula* formula, const proof_initializer& visitor) { return true; }
 
-template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const proof_initializer& visitor) { return true; }
+template<typename Theory, typename Formula, typename Proof>
+constexpr bool on_undo_filter_constants(
+		const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable,
+		const array_map<unsigned int, Proof*>& set_definitions, const proof_initializer& visitor)
+{ return true; }
 
 template<typename Formula>
 inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, proof_initializer& initializer)
@@ -2206,6 +2222,7 @@ template<typename ProofCalculus, typename Canonicalizer>
 inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
+		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions,
 		proof_initializer& initializer)
 {
 	if (initializer.constant_position == initializer.expected_constants.length)
@@ -2221,7 +2238,7 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	array<pair<unsigned int, bool>> new_name_events(8);
 	array<const typename ProofCalculus::Language*> arg1_of(4);
 	array<const typename ProofCalculus::Language*> arg2_of(4);
-	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events, arg1_of, arg2_of))
+	if (!filter_constants_helper<false>(T, formula, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
 		return false;
 
 	initializer.constant_position++;
@@ -3816,7 +3833,7 @@ inline double log_probability(
 		array<relation>& splittable_events,
 		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
 {
-	if (selected_disjunction_intro.proof == proposal_distribution.query_proof) {
+	if (proposal_distribution.selected_query) {
 		return logsumexp(proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proposal_distribution.query_step_count),
 				log_probability(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_disjunction_intro));
 	} else {

@@ -38,8 +38,8 @@ inline void on_subtract_changes() { }
 template<typename Formula>
 constexpr bool on_undo_filter_operands(const Formula* formula) { return true; }
 
-template<typename Theory, typename Formula>
-constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable) { return true; }
+template<typename Theory, typename Formula, typename Proof>
+constexpr bool on_undo_filter_constants(const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable, const array_map<unsigned int, Proof*>& set_definitions) { return true; }
 
 
 typedef uint_fast8_t instance_type_specifier;
@@ -2989,25 +2989,25 @@ bool read(concept<ProofCalculus>& c, Stream& in,
 	 || !read(function_value_count, in))
 		return false;
 
-	if (!array_map_init(c.types, ((size_t) 1) << (core::log2(type_count == 0 ? 1 : type_count) + 1))) {
+	if (!array_map_init(c.types, ((size_t) 1) << (core::log2(type_count + 1) + 1))) {
 		return false;
-	} else if (!array_map_init(c.negated_types, ((size_t) 1) << (core::log2(negated_type_count == 0 ? 1 : negated_type_count) + 1))) {
+	} else if (!array_map_init(c.negated_types, ((size_t) 1) << (core::log2(negated_type_count + 1) + 1))) {
 		free(c.types); return false;
-	} else if (!array_map_init(c.relations, ((size_t) 1) << (core::log2(relation_count == 0 ? 1 : relation_count) + 1))) {
+	} else if (!array_map_init(c.relations, ((size_t) 1) << (core::log2(relation_count + 1) + 1))) {
 		free(c.negated_types);
 		free(c.types); return false;
-	} else if (!array_map_init(c.negated_relations, ((size_t) 1) << (core::log2(negated_relation_count == 0 ? 1 : negated_relation_count) + 1))) {
+	} else if (!array_map_init(c.negated_relations, ((size_t) 1) << (core::log2(negated_relation_count + 1) + 1))) {
 		free(c.relations); free(c.negated_types);
 		free(c.types); return false;
-	} else if (!array_init(c.definitions, ((size_t) 1) << (core::log2(definition_count == 0 ? 1 : definition_count) + 1))) {
+	} else if (!array_init(c.definitions, ((size_t) 1) << (core::log2(definition_count + 1) + 1))) {
 		free(c.relations); free(c.negated_types);
 		free(c.types); free(c.negated_relations);
 		return false;
-	} else if (!array_init(c.existential_intro_nodes, ((size_t) 1) << (core::log2(existential_intro_node_count == 0 ? 1 : existential_intro_node_count) + 1))) {
+	} else if (!array_init(c.existential_intro_nodes, ((size_t) 1) << (core::log2(existential_intro_node_count + 1) + 1))) {
 		free(c.relations); free(c.negated_types);
 		free(c.types); free(c.negated_relations);
 		free(c.definitions); return false;
-	} else if (!array_map_init(c.function_values, ((size_t) 1) << (core::log2(function_value_count == 0 ? 1 : function_value_count) + 1))) {
+	} else if (!array_map_init(c.function_values, ((size_t) 1) << (core::log2(function_value_count + 1) + 1))) {
 		free(c.relations); free(c.negated_types);
 		free(c.types); free(c.negated_relations);
 		free(c.definitions); free(c.existential_intro_nodes);
@@ -4042,6 +4042,29 @@ struct theory
 		return true;
 	}
 
+	inline bool is_concept_name(unsigned int constant, const string& name) const
+	{
+		for (Proof* definition : ground_concepts[constant - new_constant_offset].definitions) {
+			if (definition->formula->binary.right->type != TermType::UNARY_APPLICATION
+			 || definition->formula->binary.right->binary.left->type != TermType::CONSTANT
+			 || definition->formula->binary.right->binary.left->constant != (unsigned int) built_in_predicates::ARG1
+			 || definition->formula->binary.right->binary.right->type != TermType::CONSTANT)
+				continue;
+
+			unsigned int event = definition->formula->binary.right->binary.right->constant;
+			if (!ground_concepts[event - new_constant_offset].types.contains(*NAME_ATOM))
+				continue;
+
+			bool contains;
+			Proof* function_value_axiom = ground_concepts[event - new_constant_offset].function_values.get((unsigned int) built_in_predicates::ARG2, contains);
+			if (!contains || function_value_axiom->formula->binary.right->type != TermType::STRING)
+				continue;
+			if (function_value_axiom->formula->binary.right->str == name)
+				return true;
+		}
+		return false;
+	}
+
 	inline bool get_extra_axioms(array<Formula*>& extra_axioms) const
 	{
 		for (unsigned int i = 2; i < sets.set_count + 1; i++) {
@@ -4801,9 +4824,6 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				return false;
 		}
 
-		if (atom.binary.right->type == TermType::CONSTANT)
-			try_init_concept(atom.binary.right->constant);
-
 		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
 		if (lifted_atom == nullptr) {
 			if (atom.binary.right->type == TermType::CONSTANT)
@@ -5048,10 +5068,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			ground_axiom_count--;
 		core::free(*lifted_atom); core::free(lifted_atom);
 
-		bool result = check_set_membership_after_subtraction(&atom, 0, std::forward<Args>(visitor)...);
-		if (atom.binary.right->type == TermType::CONSTANT)
-			try_free_concept_id(atom.binary.right->constant);
-		return result;
+		return check_set_membership_after_subtraction(&atom, 0, std::forward<Args>(visitor)...);
 	}
 
 	template<bool Negated, typename... Args>
@@ -5576,9 +5593,9 @@ private:
 
 					unsigned int index = index_of(existential_intro_nodes, c.intro_node.proof);
 					existential_intro_nodes[index].formula->reference_count--;
+					on_undo_filter_constants(*this, c.intro_node.formula->quantifier.operand, term, c.intro_node.formula->quantifier.variable, existential_intro_nodes[index].set_definitions, std::forward<Args>(visitor)...);
 					core::free(existential_intro_nodes[index].set_definitions);
 					existential_intro_nodes.remove(index);
-					on_undo_filter_constants(*this, c.intro_node.formula->quantifier.operand, term, c.intro_node.formula->quantifier.variable, std::forward<Args>(visitor)...);
 					continue;
 				}
 			case change_type::DISJUNCTION_INTRO_NODE:
@@ -6352,10 +6369,10 @@ private:
 			array<Formula*>& second_quantifiers,
 			array<unification>& unifications)
 	{
-		if (!array_map_init(unifications[0].first_unifications, 4)) {
+		if (!array_map_init(unifications[unifications.length].first_unifications, 4)) {
 			return false;
-		} else if (!array_map_init(unifications[0].second_unifications, 4)) {
-			core::free(unifications[0].first_unifications);
+		} else if (!array_map_init(unifications[unifications.length].second_unifications, 4)) {
+			core::free(unifications[unifications.length].first_unifications);
 			return false;
 		} else if (!unify_subformula_helper<Polarity>(first, second, first_quantifiers, second_quantifiers, unifications)) {
 			return false;
@@ -6458,7 +6475,7 @@ private:
 			array<Formula*>& quantifiers,
 			array<array_map<Formula*, Term*>>& unifications)
 	{
-		if (!array_map_init(unifications[0], 4)) {
+		if (!array_map_init(unifications[unifications.length], 4)) {
 			return false;
 		} else if (!unify_subformula_helper<Polarity>(first, second, quantifiers, unifications)) {
 			return false;
@@ -7562,17 +7579,64 @@ private:
 			array<unification> unifications(4);
 			if (!unify_subformula<Contradiction>(formula, set_formula, quantifiers, second_quantifiers, unifications) || unifications.length == 0) {
 				prover.free_provable_elements(provable_elements);
+				for (unification& u : unifications) core::free(u);
 				continue;
+			}
+
+			/* optimization: if `set_formula` contains a name scope as a
+			   conjunct, then we avoid searching over this set if
+			   `possible_values` only contains constants that don't provably
+			   have the same name */
+			if (unifications.length == 1 && unifications[0].first_unifications.size == 1
+			 && unifications[0].first_unifications.values[0]->type == TermType::VARIABLE
+			 && possible_values.length == 1)
+			{
+				unsigned int src_variable = unifications[0].first_unifications.keys[0]->quantifier.variable;
+				unsigned int dst_variable = unifications[0].first_unifications.values[0]->variable;
+
+				if (possible_values[0].assignment.values[src_variable - 1].type == instantiation_type::CONSTANT) {
+					bool found_matching_name = false;
+					unsigned int src_constant = possible_values[0].assignment.values[src_variable - 1].constant;
+					if (set_formula->type == FormulaType::AND) {
+						for (unsigned int i = 0; i < set_formula->array.length; i++) {
+							const Term* arg1; const Term* arg2;
+							if (!is_name_scope(set_formula->array.operands[i], arg1, arg2))
+								continue;
+							if (arg1->type == TermType::VARIABLE && arg1->variable == dst_variable
+							 && arg2->type == TermType::STRING && is_concept_name(src_constant, arg2->str))
+							{
+								found_matching_name = true;
+							}
+							break;
+						}
+					} else {
+						const Term* arg1; const Term* arg2;
+						if (is_name_scope(set_formula, arg1, arg2)
+						 && arg1->type == TermType::VARIABLE && arg1->variable == dst_variable
+						 && arg2->type == TermType::STRING && is_concept_name(src_constant, arg2->str))
+						{
+							found_matching_name = true;
+						}
+					}
+					if (!found_matching_name) {
+						prover.free_provable_elements(provable_elements);
+						for (unification& u : unifications) core::free(u);
+						continue;
+					}
+				}
 			}
 
 			unsigned int pushed_axiom_count;
 			if (!prover.template push_axiom<!Contradiction>(i, formula, possible_values, pushed_axiom_count, unifications)) {
 				prover.free_provable_elements(provable_elements);
+				for (unification& u : unifications) core::free(u);
 				return false;
 			} else if (pushed_axiom_count == 0) {
 				prover.free_provable_elements(provable_elements);
+				for (unification& u : unifications) core::free(u);
 				continue;
 			}
+			for (unification& u : unifications) core::free(u);
 
 			array<variable_assignment> temp_possible_values(4);
 			if (!::init(temp_possible_values[0], sets.sets[i].arity)) {
@@ -10755,9 +10819,24 @@ private:
 					set_formula = set_formula->quantifier.operand;
 				}
 				array<array_map<Formula*, Term*>> unifications(4);
-				if (!unify_subformula<true>(next_new_atom, set_formula, quantifiers, unifications)) {
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					return false;
+				array<unsigned int> unifying_conjuncts(4);
+				if (set_formula->type == FormulaType::AND) {
+					for (unsigned int i = 0; i < set_formula->array.length; i++) {
+						unsigned int old_unification_count = unifications.length;
+						if (!unify_subformula<true>(next_new_atom, set_formula->array.operands[i], quantifiers, unifications)) {
+							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+							return false;
+						}
+						if (unifications.length != old_unification_count)
+							unifying_conjuncts.add(i);
+					}
+				} else {
+					if (!unify_subformula<true>(next_new_atom, set_formula, quantifiers, unifications)) {
+						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+						return false;
+					}
+					if (unifications.length != 0)
+						unifying_conjuncts[unifying_conjuncts.length++] = 0;
 				}
 
 				array<variable_assignment> possible_values(max((size_t) 1, 4 * unifications.length));
@@ -10853,11 +10932,29 @@ private:
 				typename set_membership_prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
 				if (provable_elements.length == sets.sets[i].set_size && set_formula->type == FormulaType::AND) {
 					/* this set being full could make other expressions provable by exclusion */
-					/* TODO: we should only check conjuncts that don't unify
-					   with `next_new_atom` since we're already checking those
-					   sets anyway in this loop (this is why we require
-					   `set_formula` to be a conjunction) */
 					for (const variable_assignment& possible_value : possible_values) {
+						/* optimization: if the set formula has a name scope, only consider proof-by-exclusion if the `possible_value` has that name */
+						bool skip = false;
+						for (unsigned int k = 0; k < set_formula->array.length; k++) {
+							const Term* arg1; const Term* arg2;
+							if (is_name_scope(set_formula->array.operands[k], arg1, arg2)
+							 && arg1->type == TermType::VARIABLE && arg2->type == TermType::STRING)
+							{
+								if (possible_value.assignment.values[arg1->variable - 1].type == instantiation_type::CONSTANT
+								 && !is_concept_name(possible_value.assignment.values[arg1->variable - 1].constant, arg2->str))
+								{
+									skip = true;
+									break;
+								} else if (possible_value.assignment.values[arg1->variable - 1].type == instantiation_type::NUMBER
+										|| possible_value.assignment.values[arg1->variable - 1].type == instantiation_type::STRING)
+								{
+									skip = true;
+									break;
+								}
+							}
+						}
+						if (skip) continue;
+
 						unsigned int substitution_count = 0;
 						Term** src_variables = (Term**) malloc(sizeof(Term*) * sets.sets[i].arity * 2);
 						if (src_variables == nullptr || !new_atoms.ensure_capacity(new_atoms.length + set_formula->array.length)) {
@@ -10896,6 +10993,10 @@ private:
 						}
 
 						for (unsigned int k = 0; k < set_formula->array.length; k++) {
+							/* we only check conjuncts that don't unify with `next_new_atom` since
+							   we're already checking those sets anyway in this loop (this is why we
+							   require `set_formula` to be a conjunction) */
+							if (unifying_conjuncts.contains(k)) continue;
 							Formula* conjunct = set_formula->array.operands[k];
 							Formula* substituted;
 							if (substitution_count == 0) {
@@ -12623,7 +12724,7 @@ private:
 					Formula* lambda_formula = set_definition->formula->binary.right;
 
 					uint_fast8_t arity = 0;
-					Formula* set_formula = set_definition->formula->binary.right;
+					Formula* set_formula = lambda_formula;
 					while (set_formula->type == FormulaType::LAMBDA) {
 						set_formula = set_formula->quantifier.operand;
 						arity++;
@@ -14606,7 +14707,7 @@ private:
 		if (var == nullptr) return nullptr;
 
 		array<instance> constants(ground_concept_capacity + constant_types.size + constant_negated_types.size + 1);
-		if (!get_constants(*this, quantified, variable, constants, std::forward<Args>(args)...)) {
+		if (!get_constants(*this, quantified, variable, constants, set_definitions, std::forward<Args>(args)...)) {
 			core::free(*var); if (var->reference_count == 0) core::free(var);
 			return nullptr;
 		}
@@ -14725,12 +14826,23 @@ private:
 					if (new_axiom == NULL) return NULL;
 					new_axiom->reference_count++;
 
-					if (!try_init_concept(new_constant, 1)) {
+					array_multiset<unsigned int> constants(8);
+					if (!get_constants(*formula, constants)) {
 						core::free(*new_axiom); core::free(new_axiom);
+						return nullptr;
+					}
+					for (unsigned int i = 0; i < constants.counts.size; i++) {
+						if (!try_init_concept(constants.counts.keys[i])) {
+							core::free(*new_axiom); core::free(new_axiom);
+							return nullptr;
+						}
+					}
+
+					if (!add_unary_atom<Negated, ResolveInconsistencies>(Negated ? *formula->unary.operand : *formula, new_axiom, std::forward<Args>(args)...)) {
+						core::free(*new_axiom); core::free(new_axiom);
+						for (unsigned int i = 0; i < constants.counts.size; i++)
+							try_free_concept_id(constants.counts.keys[i]);
 						return NULL;
-					} if (!add_unary_atom<Negated, ResolveInconsistencies>(Negated ? *formula->unary.operand : *formula, new_axiom, std::forward<Args>(args)...)) {
-						core::free(*new_axiom); core::free(new_axiom);
-						free_concept_id(new_constant); return NULL;
 					}
 					return new_axiom;
 				} else {
@@ -14821,6 +14933,11 @@ private:
 						return nullptr;
 					}
 
+					array_multiset<unsigned int> constants(8);
+					if (!get_constants(*atom, constants)) return nullptr;
+					for (unsigned int i = 0; i < constants.counts.size; i++)
+						if (!try_init_concept(constants.counts.keys[i])) return nullptr;
+
 					/* there is no extensional edge that proves this atomic formula,
 					   so check if the axiom already exists, and if not, create a new axiom */
 					if (arg1->type == TermType::CONSTANT) {
@@ -14850,14 +14967,24 @@ private:
 					}
 
 					Formula* formula = Negated ? Formula::new_not(atom) : atom;
-					if (formula == NULL) return NULL;
+					if (formula == NULL) {
+						for (unsigned int i = 0; i < constants.counts.size; i++)
+							try_free_concept_id(constants.counts.keys[i]);
+						return NULL;
+					}
 					atom->reference_count++;
 					Proof* new_axiom = ProofCalculus::new_axiom(formula);
 					core::free(*formula); if (formula->reference_count == 0) core::free(formula);
-					if (new_axiom == NULL) return NULL;
+					if (new_axiom == NULL) {
+						for (unsigned int i = 0; i < constants.counts.size; i++)
+							try_free_concept_id(constants.counts.keys[i]);
+						return NULL;
+					}
 					new_axiom->reference_count++;
 					if (!add_unary_atom<Negated, ResolveInconsistencies>(*atom, new_axiom, std::forward<Args>(args)...)) {
 						core::free(*new_axiom); core::free(new_axiom);
+						for (unsigned int i = 0; i < constants.counts.size; i++)
+							try_free_concept_id(constants.counts.keys[i]);
 						return NULL;
 					}
 					return new_axiom;
@@ -16596,6 +16723,7 @@ bool filter_constants_helper(
 		const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
 		unsigned int variable, array<instance>& constants,
+		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions,
 		array<pair<unsigned int, bool>>& new_name_events,
 		array<const typename ProofCalculus::Language*>& arg1_of,
 		array<const typename ProofCalculus::Language*>& arg2_of)
@@ -17093,13 +17221,13 @@ bool filter_constants_helper(
 						for (const auto& entry : c.types) {
 							if (!negated && entry.key.binary.left->type == TermType::CONSTANT && entry.key.binary.left->constant == constants[i].constant) {
 								constants[i].matching_types++;
-							} else {
+							} else if (constants[i].constant < T.new_constant_offset) {
 								constants[i].mismatching_types++;
 							}
 						} for (const auto& entry : c.negated_types) {
 							if (negated && entry.key.binary.left->type == TermType::CONSTANT && entry.key.binary.left->constant == constants[i].constant) {
 								constants[i].matching_types++;
-							} else {
+							} else if (constants[i].constant < T.new_constant_offset) {
 								constants[i].mismatching_types++;
 							}
 						}
@@ -17242,6 +17370,23 @@ bool filter_constants_helper(
 					}
 				}
 			}
+		} else if (!negated && left->type == TermType::CONSTANT && right->type == TermType::VARIABLE && right->variable == variable) {
+			unsigned int index = set_definitions.last_index_of(left->constant);
+			if (index != static_cast<unsigned int>(-1)) {
+				Proof* set_definition = set_definitions.values[index];
+				Formula* lambda_formula = set_definition->formula->binary.right;
+
+				uint_fast8_t arity = 0;
+				Formula* set_formula = lambda_formula;
+				while (set_formula->type == FormulaType::LAMBDA) {
+					set_formula = set_formula->quantifier.operand;
+					arity++;
+				}
+				if (arity != 1) return false;
+
+				if (!filter_constants_helper<Hypothetical>(T, set_formula, lambda_formula->quantifier.variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
+					return false;
+			}
 		}
 		if (right->type == TermType::VARIABLE && right->variable == variable) {
 			if (left->type == TermType::CONSTANT) {
@@ -17261,22 +17406,22 @@ bool filter_constants_helper(
 				}
 			}
 
-			if (!Hypothetical && !is_ambiguous(*left)) {
+			if (!Hypothetical && !is_ambiguous(*left) && !(left->type == TermType::CONSTANT && left->constant >= T.new_constant_offset)) {
 				/* count the number of matching and mismatching types */
 				for (unsigned int i = 0; i < constants.length; i++) {
-					if (constants[i].type != instance_type::CONSTANT || constants[i].constant < T.new_constant_offset) continue;
+					if (constants[i].type != instance_type::CONSTANT) continue;
 					const concept<ProofCalculus>& c = T.ground_concepts[constants[i].constant - T.new_constant_offset];
 					if (c.types.keys == nullptr) continue;
 					for (const auto& entry : c.types) {
 						if (!negated && *entry.key.binary.left == *left) {
 							constants[i].matching_types++;
-						} else {
+						} else if (constants[i].constant < T.new_constant_offset) {
 							constants[i].mismatching_types++;
 						}
 					} for (const auto& entry : c.negated_types) {
 						if (negated && *entry.key.binary.left == *left) {
 							constants[i].matching_types++;
-						} else {
+						} else if (constants[i].constant < T.new_constant_offset) {
 							constants[i].mismatching_types++;
 						}
 					}
@@ -17379,14 +17524,14 @@ bool filter_constants_helper(
 		}
 	} else if (formula->type == FormulaType::AND) {
 		for (unsigned int i = 0; i < formula->array.length; i++)
-			if (!filter_constants_helper<Hypothetical>(T, formula->array.operands[i], variable, constants, new_name_events, arg1_of, arg2_of)) return false;
+			if (!filter_constants_helper<Hypothetical>(T, formula->array.operands[i], variable, constants, set_definitions, new_name_events, arg1_of, arg2_of)) return false;
 	} else if (formula->type == FormulaType::OR) {
 		for (unsigned int i = 0; i < formula->array.length; i++)
-			if (!filter_constants_helper<true>(T, formula->array.operands[i], variable, constants, new_name_events, arg1_of, arg2_of)) return false;
+			if (!filter_constants_helper<true>(T, formula->array.operands[i], variable, constants, set_definitions, new_name_events, arg1_of, arg2_of)) return false;
 	} else if (formula->type == FormulaType::EXISTS) {
 		size_t old_arg1_of_length = arg1_of.length;
 		size_t old_arg2_of_length = arg2_of.length;
-		if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, variable, constants, new_name_events, arg1_of, arg2_of)) return false;
+		if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of)) return false;
 		for (size_t i = old_arg1_of_length; i < arg1_of.length; i++) {
 			if (arg1_of[i]->type == TermType::VARIABLE && arg1_of[i]->variable == formula->quantifier.variable)
 				arg1_of.remove(i--);
@@ -17547,6 +17692,7 @@ bool filter_constants_helper(
 								constants.remove(i--);
 							}
 						}
+						for (auto& element : provable_values) core::free(element);
 					}
 				}
 			}
@@ -17594,7 +17740,7 @@ bool filter_constants_helper(
 							}
 						}
 
-						if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, formula->quantifier.variable, other_constants, new_name_events, arg1_of, arg2_of) || other_constants.length == 0)
+						if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, formula->quantifier.variable, other_constants, set_definitions, new_name_events, arg1_of, arg2_of) || other_constants.length == 0)
 							return false;
 						arg1_of.length = old_arg1_of_length;
 						arg2_of.length = old_arg2_of_length;
@@ -17647,7 +17793,7 @@ bool filter_constants_helper(
 								}
 							}
 
-							if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, formula->quantifier.variable, other_constants, new_name_events, arg1_of, arg2_of) || other_constants.length == 0)
+							if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, formula->quantifier.variable, other_constants, set_definitions, new_name_events, arg1_of, arg2_of) || other_constants.length == 0)
 								constants.remove(i--);
 							arg1_of.length = old_arg1_of_length;
 							arg2_of.length = old_arg2_of_length;
@@ -17659,7 +17805,7 @@ bool filter_constants_helper(
 	} else if (formula->type == FormulaType::FOR_ALL) {
 		size_t old_arg1_of_length = arg1_of.length;
 		size_t old_arg2_of_length = arg2_of.length;
-		if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, variable, constants, new_name_events, arg1_of, arg2_of)) return false;
+		if (!filter_constants_helper<Hypothetical>(T, formula->quantifier.operand, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of)) return false;
 		for (size_t i = old_arg1_of_length; i < arg1_of.length; i++) {
 			if (arg1_of[i]->type == TermType::VARIABLE && arg1_of[i]->variable == formula->quantifier.variable)
 				arg1_of.remove(i--);
@@ -17669,8 +17815,8 @@ bool filter_constants_helper(
 		}
 		return true;
 	} else if (formula->type == FormulaType::IF_THEN) {
-		return filter_constants_helper<true>(T, formula->binary.left, variable, constants, new_name_events, arg1_of, arg2_of)
-			&& filter_constants_helper<true>(T, formula->binary.right, variable, constants, new_name_events, arg1_of, arg2_of);
+		return filter_constants_helper<true>(T, formula->binary.left, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of)
+			&& filter_constants_helper<true>(T, formula->binary.right, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of);
 	}
 	return (constants.length > 0);
 }
@@ -17756,7 +17902,8 @@ inline bool get_possible_constants(const theory<ProofCalculus, Canonicalizer>& T
 template<typename ProofCalculus, typename Canonicalizer>
 inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
-		unsigned int variable, array<instance>& constants)
+		unsigned int variable, array<instance>& constants,
+		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions)
 {
 	typedef typename ProofCalculus::Language Formula;
 
@@ -17766,7 +17913,7 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	array<pair<unsigned int, bool>> new_name_events(8);
 	array<const Formula*> arg1_of(4);
 	array<const Formula*> arg2_of(4);
-	if (!filter_constants_helper<false>(T, formula, variable, constants, new_name_events, arg1_of, arg2_of))
+	if (!filter_constants_helper<false>(T, formula, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
 		return false;
 	shuffle(constants);
 
@@ -18708,6 +18855,7 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		OnProofSampleFunction on_new_proof_sample)
 {
 	typedef typename ProofCalculus::Language Formula;
+	typedef typename ProofCalculus::Proof Proof;
 	typedef typename Formula::Term Term;
 
 	Formula* preprocessed = preprocess_formula(logical_form);
@@ -18735,7 +18883,8 @@ bool log_joint_probability_of_lambda_by_linear_search(
 	array<pair<unsigned int, bool>> new_name_events(8);
 	array<const Formula*> arg1_of(4);
 	array<const Formula*> arg2_of(4);
-	if (!filter_constants_helper<false>(T, canonicalized->quantifier.operand, canonicalized->quantifier.variable, constants, new_name_events, arg1_of, arg2_of)) {
+	const array_map<unsigned int, Proof*> set_definitions(4);
+	if (!filter_constants_helper<false>(T, canonicalized->quantifier.operand, canonicalized->quantifier.variable, constants, set_definitions, new_name_events, arg1_of, arg2_of)) {
 		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 		return false;
 	}

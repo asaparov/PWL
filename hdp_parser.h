@@ -2738,6 +2738,7 @@ inline hol_term* apply(hol_term* src, optimization_normalizer& normalizer) {
 	}
 
 	normalizer.scopes.size--;
+	if (dst == src) dst->reference_count--;
 	return dst;
 }
 
@@ -43613,7 +43614,7 @@ inline bool set_set_predicate(hol_term* src, hol_term*& dst, unsigned int predic
 					|| predicate->binary.left->type == hol_term_type::ANY
 					|| predicate->binary.left->type == hol_term_type::ANY_RIGHT)
 			{
-				fprintf(stderr, "set_set_predicate ERROR: The set definition is ambiguous. It may or may not contain a predicate.\n");
+				/* this could be a predicate or a variable defintion, so we prune the search */
 				return false;
 			}
 		}

@@ -92,6 +92,11 @@ inline bool operator == (const geoquery_question_result& first, const geoquery_q
 
 constexpr unsigned int MAX_GEOQUERY_QUESTION_COUNT = 280;
 
+#if defined(SANITIZE_ADDRESS)
+/* TODO: for memory debugging; delete this */
+#include <sanitizer/lsan_interface.h>
+#endif
+
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_geoquery_experiments(bool& status,
 		geoquery_context_item<Theory, PriorStateType>* context_queue,
@@ -171,10 +176,18 @@ void do_geoquery_experiments(bool& status,
 			{
 				/* try to answer the question */
 				array<string> answers(4);
+#if defined(SANITIZE_ADDRESS)
+/* TODO: for memory debugging; delete this */
+__lsan_do_leak_check();
+#endif
 				if (!answer_question<true>(answers, logical_forms[0], 20, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
 					answers[0] = "<failed to answer question>";
 					answers.length = 1;
 				}
+#if defined(SANITIZE_ADDRESS)
+/* TODO: for memory debugging; delete this */
+__lsan_do_leak_check();
+#endif
 
 				results_lock.lock();
 				results.ensure_capacity(results.length + 1);
@@ -229,7 +242,7 @@ void do_geoquery_experiments(bool& status,
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 31 - 1) {
+if (job.context_id != 32 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -296,18 +309,19 @@ continue;
 				snprintf(filename, 256, "geoquery_theories/%u.th", job.context_id);
 
 				/* read the context sentences */
-				/*free(job.T); free(job.proof_axioms);
+				free(job.T); free(job.proof_axioms);
 				FILE* theory_stream = (FILE*) fopen(filename, "rb");
 				read_random_state(theory_stream);
 				read(job.T, theory_stream, job.proof_axioms);
-				fclose(theory_stream);*/
+				fclose(theory_stream);
 				unsigned int sentence_counter = 0;
 				for (const pair<unsigned int, unsigned int>& range : line_numbers) {
 					for (unsigned int i = range.key; i <= range.value; i++) {
-//if (sentence_counter < 94) { sentence_counter++; continue; }
+if (sentence_counter < 33) { sentence_counter++; continue; }
 						// TODO: this is kind of a hacky way to get the new proof
 						hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
 						old_proofs.add_all(job.T.observations);
+						printf("Reading sentence %u:\n", sentence_counter);
 						if (!read_sentence(corpus, parser, geobase[i - 1].data, job.T, names, seed_entities, proof_prior, job.proof_axioms)) {
 							std::unique_lock<std::mutex> lock(results_lock);
 							if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
@@ -334,6 +348,10 @@ continue;
 							}
 						}
 
+#if defined(SANITIZE_ADDRESS)
+/* TODO: for memory debugging; delete this */
+__lsan_do_leak_check();
+#endif
 						Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
 						PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
 						hash_map<const hol_term*, hol_term*> formula_map(128);
@@ -373,6 +391,10 @@ continue;
 						write(job.T, theory_stream, job.proof_axioms);
 						fclose(theory_stream);
 						sentence_counter++;
+#if defined(SANITIZE_ADDRESS)
+/* TODO: for memory debugging; delete this */
+__lsan_do_leak_check();
+#endif
 					}
 					if (error) break;
 				}
