@@ -1043,7 +1043,7 @@ The height of Beaver Dam Wash is 2180 feet.
 The height of Lake Champlain is 95 feet.
 The height of Lake Michigan is 579 feet.
 Every river that is longer than 750 miles is major.
-If the population of X is Y then the number of people living in X is Y.
+If the number of people living in X is Y then the population of X is Y.
 Every river that flows through X is in X.
 If the population of X is greater than 150000, X is major.
 Alabama borders Tennessee.

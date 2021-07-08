@@ -44,6 +44,7 @@ enum class built_in_predicates : unsigned int {
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
+	MAXIMAL_SUBSET,
 	SAME,
 	OBJECT,
 	NAME,
@@ -218,6 +219,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("least", (unsigned int) built_in_predicates::LEAST)
 		&& names.put("=", (unsigned int) built_in_predicates::EQUALS)
 		&& names.put("subset", (unsigned int) built_in_predicates::SUBSET)
+		&& names.put("maximal_subset", (unsigned int) built_in_predicates::MAXIMAL_SUBSET)
 		&& names.put("name", (unsigned int) built_in_predicates::NAME)
 		&& names.put("same", (unsigned int) built_in_predicates::SAME)
 		&& names.put("object", (unsigned int) built_in_predicates::OBJECT)

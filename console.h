@@ -111,7 +111,7 @@ void run_console(
 			iid_uniform_distribution<unsigned int>(100), chinese_restaurant_process<unsigned int>(1.0, 0.0),
 			make_dirichlet_process(1.0e-12, make_dirichlet_process(1000.0, make_iid_uniform_distribution<hol_term>(10000))));
 	auto theory_element_prior = make_simple_hol_term_distribution<built_in_predicates>(
-						constant_prior, geometric_distribution(0.02), very_light_tail_distribution(-40.0),
+						constant_prior, geometric_distribution(0.0001), very_light_tail_distribution(-40.0),
 						0.0199999, 0.01, 0.0000001, 0.17, 0.1, 0.1, 0.01, 0.57, 0.01, 0.01,
 						0.1099999, 0.01, 0.0000001, 0.1999999, 0.26, 0.01, 0.01, 0.0000001, 0.2, 0.2,
 						0.999999998, 0.000000001, 0.000000001, 0.3, 0.4, 0.2, 0.4, -2000.0);

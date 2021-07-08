@@ -565,6 +565,7 @@ inline bool compute_new_set_size(unsigned int set_id,
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
 		const unfixed_set_counter& visitor)
 { }
 
@@ -1116,7 +1117,7 @@ bool propose_universal_elim(
 		 && !size_axiom_is_used_in_proof)
 		{
 			double log_prob = 0.0;
-			set_size_proposal_log_probability(selected_edge.consequent_set, T.sets, log_prob);
+			set_size_proposal_log_probability(selected_edge.consequent_set, T.sets, log_prob, 0, UINT_MAX);
 			unfixed_set_count_change.log_probability -= log_prob;
 			unfixed_set_count_change.change--;
 			old_consequent_set_size_axiom = T.sets.sets[selected_edge.consequent_set].size_axioms[0]->formula;
@@ -1135,7 +1136,7 @@ bool propose_universal_elim(
 		 && !size_axiom_is_used_in_proof)
 		{
 			double log_prob = 0.0;
-			set_size_proposal_log_probability(selected_edge.antecedent_set, T.sets, log_prob);
+			set_size_proposal_log_probability(selected_edge.antecedent_set, T.sets, log_prob, 0, UINT_MAX);
 			unfixed_set_count_change.log_probability -= log_prob;
 			unfixed_set_count_change.change--;
 			old_antecedent_set_size_axiom = T.sets.sets[selected_edge.antecedent_set].size_axioms[0]->formula;
@@ -1610,6 +1611,7 @@ inline bool compute_new_set_size(unsigned int set_id,
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
 		const undo_remove_sets& visitor)
 { }
 
@@ -1785,14 +1787,8 @@ bool undo_proof_changes(
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void set_size_proposal_log_probability(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
-		double& log_probability_value)
+		double& log_probability_value, unsigned int min_set_size, unsigned int max_set_size)
 {
-	unsigned int min_set_size, max_set_size;
-	if (!sets.set_size_bounds(set_id, min_set_size, max_set_size)) {
-		fprintf(stderr, "set_size_proposal_log_probability ERROR: `set_size_bounds` failed.\n");
-		return;
-	}
-
 #if !defined(NDEBUG)
 	if (sets.sets[set_id].set_size < min_set_size || sets.sets[set_id].set_size > max_set_size)
 		fprintf(stderr, "set_size_proposal_log_probability WARNING: The set with ID %u has size outside the bounds computed by `set_reasoning.set_size_bounds`.\n", set_id);
@@ -1845,9 +1841,10 @@ inline bool compute_new_set_size(unsigned int set_id,
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
 		inverse_set_size_log_probability& visitor)
 {
-	set_size_proposal_log_probability(set_id, sets, visitor.value);
+	set_size_proposal_log_probability(set_id, sets, visitor.value, min_set_size, max_set_size);
 	visitor.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
@@ -1898,6 +1895,7 @@ inline bool compute_new_set_size(unsigned int set_id,
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
 		proof_sampler<IsExploratory>& sampler)
 {
 	if (sampler.undo) return;
@@ -1937,9 +1935,10 @@ inline bool compute_new_set_size(unsigned int set_id,
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
 		inverse_proof_sampler& visitor)
 {
-	set_size_proposal_log_probability(set_id, sets, visitor.set_size_log_probability);
+	set_size_proposal_log_probability(set_id, sets, visitor.set_size_log_probability, min_set_size, max_set_size);
 	visitor.removed_set_sizes.add(sets.sets[set_id].set_size);
 }
 
@@ -2302,6 +2301,7 @@ inline bool compute_new_set_size(
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
 		proof_initializer& initializer)
 {
 	if (initializer.undo) return;
@@ -2568,7 +2568,8 @@ inline bool do_split_merge(
 			reference_counts.size++;
 		}
 		reference_counts.values[index]--;
-		if (!T.get_theory_changes(*old_proofs[i].proof, discharged_axioms, reference_counts, old_proof_changes[i])) {
+		array_map<unsigned int, unsigned int> requested_set_sizes(4);
+		if (!T.get_theory_changes(*old_proofs[i].proof, discharged_axioms, reference_counts, requested_set_sizes, old_proof_changes[i])) {
 			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return false;
 		}

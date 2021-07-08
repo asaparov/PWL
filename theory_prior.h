@@ -2053,7 +2053,7 @@ double log_probability_helper(const hol_term* term,
 	case hol_term_type::EQUALS:
 		if (term->binary.left->type == hol_term_type::UNARY_APPLICATION
 		 && term->binary.left->binary.left->type == hol_term_type::CONSTANT
-		 && term->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+		 && term->binary.left->binary.left->constant == (unsigned int) BuiltInPredicates::SIZE
 		 && term->binary.left->binary.right->type == hol_term_type::LAMBDA
 		 && term->binary.right->type == hol_term_type::NUMBER)
 		{

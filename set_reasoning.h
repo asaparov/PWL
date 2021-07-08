@@ -1395,7 +1395,8 @@ bool write(
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline void on_free_set(unsigned int set_id,
-		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets)
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size)
 { }
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
@@ -1403,7 +1404,7 @@ inline bool compute_new_set_size(unsigned int set_id,
 		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
 		unsigned int& out, unsigned int min_set_size, unsigned int max_set_size)
 {
-	out = (max_set_size == UINT_MAX) ? (min_set_size + 20) : ((min_set_size + max_set_size + 1) / 2);
+	out = (max_set_size == UINT_MAX) ? (min_set_size + 200) : ((min_set_size + max_set_size + 1) / 2);
 	return true;
 }
 
@@ -1759,7 +1760,9 @@ struct set_reasoning
 		if (is_freeable(set_id, std::forward<Args>(visitor)...)) {
 			for (Proof* size_axiom : sets[set_id].size_axioms)
 				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-			on_free_set(set_id, *this, std::forward<Args>(visitor)...);
+			unsigned int min_set_size; unsigned int max_set_size;
+			set_size_bounds(set_id, min_set_size, max_set_size);
+			on_free_set(set_id, *this, min_set_size, max_set_size, std::forward<Args>(visitor)...);
 			free_set(set_id);
 		}
 	}
@@ -2826,12 +2829,12 @@ struct set_reasoning
 			if (is_freeable(consequent_set)) {
 				for (Proof* size_axiom : sets[consequent_set].size_axioms)
 					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-				on_free_set(consequent_set, *this);
+				on_free_set(consequent_set, *this, 0, 0);
 				free_set(consequent_set);
 			} if (is_freeable(antecedent_set)) {
 				for (Proof* size_axiom : sets[antecedent_set].size_axioms)
 					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-				on_free_set(antecedent_set, *this);
+				on_free_set(antecedent_set, *this, 0, 0);
 				free_set(antecedent_set);
 			}
 			return false;
@@ -2864,12 +2867,12 @@ struct set_reasoning
 					if (is_freeable(consequent_set)) {
 						for (Proof* size_axiom : sets[consequent_set].size_axioms)
 							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(consequent_set, *this);
+						on_free_set(consequent_set, *this, 0, 0);
 						free_set(consequent_set);
 					} if (is_freeable(antecedent_set)) {
 						for (Proof* size_axiom : sets[antecedent_set].size_axioms)
 							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(antecedent_set, *this);
+						on_free_set(antecedent_set, *this, 0, 0);
 						free_set(antecedent_set);
 					}
 					return false;
@@ -2881,12 +2884,12 @@ struct set_reasoning
 					if (is_freeable(consequent_set)) {
 						for (Proof* size_axiom : sets[consequent_set].size_axioms)
 							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(consequent_set, *this);
+						on_free_set(consequent_set, *this, 0, 0);
 						free_set(consequent_set);
 					} if (is_freeable(antecedent_set)) {
 						for (Proof* size_axiom : sets[antecedent_set].size_axioms)
 							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(antecedent_set, *this);
+						on_free_set(antecedent_set, *this, 0, 0);
 						free_set(antecedent_set);
 					}
 					return false;
@@ -3295,16 +3298,9 @@ struct set_reasoning
 		}
 
 		/* if either the antecedent or consequent sets have no references, free them */
-		if (FreeSets && is_freeable(consequent_set, std::forward<Args>(visitor)...)) {
-			for (Proof* size_axiom : sets[consequent_set].size_axioms)
-				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-			on_free_set(consequent_set, *this, std::forward<Args>(visitor)...);
-			if (!free_set(consequent_set)) return false;
-		} if (FreeSets && is_freeable(antecedent_set, std::forward<Args>(visitor)...)) {
-			for (Proof* size_axiom : sets[antecedent_set].size_axioms)
-				on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-			on_free_set(antecedent_set, *this, std::forward<Args>(visitor)...);
-			if (!free_set(antecedent_set)) return false;
+		if (FreeSets) {
+			try_free_set(consequent_set, std::forward<Args>(visitor)...);
+			try_free_set(antecedent_set, std::forward<Args>(visitor)...);
 		}
 		return true;
 	}
