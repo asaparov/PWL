@@ -1552,7 +1552,14 @@ inline bool get_most_probable_answers(
 	/* keep only the answers with highest probability */
 	if (input_answers.size == 0)
 		return true;
+
+	double max_probability = input_answers.values[0];
+	for (unsigned int i = 1; i < input_answers.size; i++)
+		max_probability = max(max_probability, input_answers.values[i]);
+
 	for (unsigned int i = input_answers.size; i > 0; i--) {
+		if (input_answers.values[i - 1] < max_probability - SUFFICIENT_KNOWLEDGE_THRESHOLD)
+			continue;
 		if (!answers.ensure_capacity(answers.length + 1)
 		 || !init(answers[answers.length], input_answers.keys[i - 1]))
 		{
@@ -1560,8 +1567,6 @@ inline bool get_most_probable_answers(
 			return false;
 		}
 		answers.length++;
-		if (i > 1 && input_answers.values[i - 2] < input_answers.values[i - 1])
-			break;
 	}
 	return true;
 }
@@ -1624,11 +1629,11 @@ inline bool answer_question(
 			}
 		} else if (term->type == TermType::CONSTANT) {
 			/* check if the constant is named */
-			bool named_constant_or_set;
+			bool named_constant_or_set_or_unit;
 			if (T.new_constant_offset > term->constant) {
 				const string_map_scribe& printer = parser.get_printer();
 				if (printer.length > term->constant) {
-					named_constant_or_set = true;
+					named_constant_or_set_or_unit = true;
 					if (!answers.ensure_capacity(answers.size + 1))
 						return;
 					unsigned int index = answers.index_of(*printer.map[term->constant]);
@@ -1641,13 +1646,13 @@ inline bool answer_question(
 						answers.size++;
 					}
 				} else {
-					named_constant_or_set = false;
+					named_constant_or_set_or_unit = false;
 				}
 			} else {
 				array<Term*> name_terms(2);
 				if (!T.get_concept_names(term->constant, name_terms))
 					return;
-				named_constant_or_set = (name_terms.length != 0);
+				named_constant_or_set_or_unit = (name_terms.length != 0);
 				for (Term* name_term : name_terms) {
 print(term->constant, stderr); print(": \"", stderr);
 print(name_term->str, stderr);
@@ -1675,7 +1680,7 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 			if (contains) {
 				array<array<string>> element_names(T.sets.sets[set_id].provable_elements.length + 1);
 				bool has_unnamed_elements = (T.sets.sets[set_id].provable_elements.length < T.sets.sets[set_id].set_size);
-				named_constant_or_set = true;
+				named_constant_or_set_or_unit = true;
 				for (const tuple& tup : T.sets.sets[set_id].provable_elements) {
 					array<string>& current_element_names = element_names[element_names.length];
 					if (!array_init(current_element_names, max(1, tup.length))) {
@@ -1863,7 +1868,50 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 				}
 			}
 
-			if (!named_constant_or_set) {
+			/* check if the constant is a unit (instance of `measure`) */
+			if (term->constant >= T.new_constant_offset) {
+				bool is_measure = false;
+				for (unsigned int i = 0; i < T.ground_concepts[term->constant - T.new_constant_offset].types.size; i++) {
+					if (T.ground_concepts[term->constant - T.new_constant_offset].types.keys[i].type == TermType::UNARY_APPLICATION
+					 && T.ground_concepts[term->constant - T.new_constant_offset].types.keys[i].binary.left->type == TermType::CONSTANT
+					 && T.ground_concepts[term->constant - T.new_constant_offset].types.keys[i].binary.left->constant == (unsigned int) built_in_predicates::MEASURE)
+					{
+						is_measure = true;
+						break;
+					}
+				}
+				if (is_measure) {
+					Term* arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(term->constant);
+					Term* arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(term->constant);
+					if (arg1 != nullptr && arg2 != nullptr && arg1->type == TermType::NUMBER && arg2->type == TermType::CONSTANT && arg2->constant >= T.new_constant_offset) {
+						int length;
+						if (arg1->number.decimal == 0)
+							length = snprintf(NULL, 0, "%" PRId64, arg1->number.integer);
+						else length = snprintf(NULL, 0, "%" PRId64 ".%" PRIu64, arg1->number.integer, arg1->number.decimal);
+						if (!answers.ensure_capacity(answers.size + 1) || length < 0)
+							return;
+
+						string new_name(length + 1);
+						if (arg1->number.decimal == 0)
+							snprintf(new_name.data, length + 1, "%" PRId64, arg1->number.integer);
+						else snprintf(new_name.data, length + 1, "%" PRId64 ".%" PRIu64, arg1->number.integer, arg1->number.decimal);
+						new_name.length = length;
+
+						unsigned int index = answers.index_of(new_name);
+						if (index < answers.size) {
+							answers.values[index] = logsumexp(answers.values[index], log_probability);
+						} else {
+							if (!init(answers.keys[index], new_name))
+								return;
+							answers.values[index] = log_probability;
+							answers.size++;
+						}
+						named_constant_or_set_or_unit = true;
+					}
+				}
+			}
+
+			if (!named_constant_or_set_or_unit) {
 print(term->constant, stderr); print(": <unnamed>, log probability: ", stderr);
 print(log_probability, stderr); print('\n', stderr);
 T.print_axioms(stderr); print('\n', stderr);

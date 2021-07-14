@@ -3190,7 +3190,11 @@ inline Formula* preprocess_formula(Formula* src) {
 
 	second = simplify_properties(first);
 	free(*first); if (first->reference_count == 0) free(first);
-	return second;
+	if (second == nullptr) return nullptr;
+
+	first = normalize_functions(second);
+	free(*second); if (second->reference_count == 0) free(second);
+	return first;
 }
 
 /* this is useful in `theory.add_definition` where if any sets are created in
@@ -13334,7 +13338,7 @@ private:
 				}
 
 				/* we couldn't find a disproof of any of the conjuncts */
-				finished_constants(canonicalized, std::forward<Args>(args)...);
+				finished_operand_indices(canonicalized, std::forward<Args>(args)...);
 				return NULL;
 			}
 
@@ -13559,7 +13563,7 @@ private:
 			}
 
 			/* we couldn't find a proof of any of the disjuncts */
-			finished_constants(canonicalized, std::forward<Args>(args)...);
+			finished_operand_indices(canonicalized, std::forward<Args>(args)...);
 			return NULL;
 
 		} else if (canonicalized->type == FormulaType::IF_THEN) {
@@ -13714,7 +13718,7 @@ private:
 				}
 			}
 
-			finished_constants(canonicalized, std::forward<Args>(args)...);
+			finished_operand_indices(canonicalized, std::forward<Args>(args)...);
 			return NULL;
 
 		} else if (canonicalized->type == FormulaType::EXISTS) {
@@ -17318,7 +17322,16 @@ bool filter_constants_helper(
 			bool left_is_name_event = is_name_event(left->constant, T, new_name_events);
 
 			for (unsigned int i = 0; i < constants.length; i++) {
-				if (constants[i].type == instance_type::ANY || constants[i].type != instance_type::CONSTANT) {
+				if ((constants[i].type == instance_type::NUMBER || constants[i].type == instance_type::STRING)
+				 && right->type == TermType::UNARY_APPLICATION && right->binary.right->type == TermType::VARIABLE
+				 && right->binary.right->variable == variable && right->binary.left->type == TermType::CONSTANT
+				 && (right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+				  || right->binary.left->constant == (unsigned int) built_in_predicates::ARG2
+				  || right->binary.left->constant == (unsigned int) built_in_predicates::ARG3))
+				{
+					constants.remove(i--);
+					continue;
+				} else if (constants[i].type == instance_type::ANY || constants[i].type != instance_type::CONSTANT) {
 					continue;
 				} else if (T.ground_concepts[constants[i].constant - T.new_constant_offset].types.keys == nullptr) {
 					continue;
@@ -17561,13 +17574,13 @@ bool filter_constants_helper(
 						for (const auto& entry : c.types) {
 							if (!negated && entry.key.binary.left->type == TermType::CONSTANT && entry.key.binary.left->constant == constants[i].constant) {
 								constants[i].matching_types++;
-							} else if (constants[i].constant < T.new_constant_offset) {
+							} else if (constants[i].constant >= T.new_constant_offset) {
 								constants[i].mismatching_types++;
 							}
 						} for (const auto& entry : c.negated_types) {
 							if (negated && entry.key.binary.left->type == TermType::CONSTANT && entry.key.binary.left->constant == constants[i].constant) {
 								constants[i].matching_types++;
-							} else if (constants[i].constant < T.new_constant_offset) {
+							} else if (constants[i].constant >= T.new_constant_offset) {
 								constants[i].mismatching_types++;
 							}
 						}
@@ -17657,12 +17670,14 @@ bool filter_constants_helper(
 				Term* arg2 = T.template get_arg<(unsigned int) built_in_predicates::ARG2>(right->constant);
 				if (arg2 != nullptr) {
 					if (arg2->type == TermType::STRING) {
-						unsigned int index = index_of_constant(constants, (unsigned int) built_in_predicates::NAME);
-						if (index < constants.length) {
-							move(constants[index], constants[0]);
-							constants.length = 1;
-						} else {
-							return false;
+						/* this could be `name` or any set since, the set could be a collection of name events */
+						for (unsigned int i = 0; i < constants.length; i++) {
+							if (constants[i].type == instance_type::ANY) {
+								continue;
+							} else if (constants[i].type != instance_type::CONSTANT || (constants[i].constant < T.new_constant_offset && constants[i].constant != (unsigned int) built_in_predicates::NAME)) {
+								constants.remove(i--);
+								continue;
+							}
 						}
 					} else if (arg2->type != TermType::VARIABLE) {
 						/* arg1 is not a string, so `left` cannot be `name` */
@@ -17755,55 +17770,55 @@ bool filter_constants_helper(
 					for (const auto& entry : c.types) {
 						if (!negated && *entry.key.binary.left == *left) {
 							constants[i].matching_types++;
-						} else if (constants[i].constant < T.new_constant_offset) {
+						} else if (constants[i].constant >= T.new_constant_offset) {
 							constants[i].mismatching_types++;
 						}
 					} for (const auto& entry : c.negated_types) {
 						if (negated && *entry.key.binary.left == *left) {
 							constants[i].matching_types++;
-						} else if (constants[i].constant < T.new_constant_offset) {
+						} else if (constants[i].constant >= T.new_constant_offset) {
 							constants[i].mismatching_types++;
 						}
 					}
 				}
+			}
 
-				/* if this is a subset statement, increment `matching_types` if the set does indeed provably contain the element */
-				if (left->type == TermType::CONSTANT && left->constant >= T.new_constant_offset) {
-					const concept<ProofCalculus>& c = T.ground_concepts[left->constant - T.new_constant_offset];
-					Formula* set_formula = c.definitions[0]->formula->binary.right->quantifier.operand;
+			/* if this is a subset statement, increment `matching_types` if the set does indeed provably contain the element */
+			if (left->type == TermType::CONSTANT && left->constant >= T.new_constant_offset) {
+				const concept<ProofCalculus>& c = T.ground_concepts[left->constant - T.new_constant_offset];
+				Formula* set_formula = c.definitions[0]->formula->binary.right->quantifier.operand;
 
-					bool contains;
-					unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
-					if (contains && T.sets.sets[set_id].arity == 1) {
-						for (unsigned int i = 0; i < constants.length; i++) {
-							if (constants[i].type == instance_type::ANY) {
-								if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
-									/* the set is full, so a new constant cannot be a member of the set */
-									constants.remove(i--);
-								}
-								continue;
-							}
-
-							tuple_element& element = *((tuple_element*) alloca(sizeof(tuple_element)));
-							if (constants[i].type == instance_type::CONSTANT) {
-								element.type = tuple_element_type::CONSTANT;
-								element.constant = constants[i].constant;
-							} else if (constants[i].type == instance_type::NUMBER) {
-								element.type = tuple_element_type::NUMBER;
-								element.number = constants[i].number;
-							} else if (constants[i].type == instance_type::STRING) {
-								element.type = tuple_element_type::STRING;
-								element.str = *constants[i].str;
-							}
-							const tuple tup = {&element, 1};
-							if (T.sets.sets[set_id].provable_elements.contains(tup)) {
-								constants[i].matching_types++;
-							} else if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
-								/* the set is full, so `constants[i]` cannot be a member of the set */
+				bool contains;
+				unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
+				if (contains && T.sets.sets[set_id].arity == 1) {
+					for (unsigned int i = 0; i < constants.length; i++) {
+						if (constants[i].type == instance_type::ANY) {
+							if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
+								/* the set is full, so a new constant cannot be a member of the set */
 								constants.remove(i--);
 							}
-							free(element);
+							continue;
 						}
+
+						tuple_element& element = *((tuple_element*) alloca(sizeof(tuple_element)));
+						if (constants[i].type == instance_type::CONSTANT) {
+							element.type = tuple_element_type::CONSTANT;
+							element.constant = constants[i].constant;
+						} else if (constants[i].type == instance_type::NUMBER) {
+							element.type = tuple_element_type::NUMBER;
+							element.number = constants[i].number;
+						} else if (constants[i].type == instance_type::STRING) {
+							element.type = tuple_element_type::STRING;
+							element.str = *constants[i].str;
+						}
+						const tuple tup = {&element, 1};
+						if (T.sets.sets[set_id].provable_elements.contains(tup)) {
+							constants[i].matching_types++;
+						} else if (T.sets.sets[set_id].provable_elements.length == T.sets.sets[set_id].set_size) {
+							/* the set is full, so `constants[i]` cannot be a member of the set */
+							constants.remove(i--);
+						}
+						free(element);
 					}
 				}
 			}
@@ -18302,6 +18317,9 @@ constexpr bool inconsistent_constant(const Formula* formula, unsigned int index)
 
 template<typename Formula>
 inline void finished_constants(const Formula* formula) { }
+
+template<typename Formula>
+inline void finished_operand_indices(const Formula* formula) { }
 
 template<bool Negated, typename Formula>
 bool intensional_element_of(
@@ -19150,19 +19168,298 @@ proof_sample_delegate<Term, OnProofSampleFunction> make_proof_sample_delegate(Te
 	return proof_sample_delegate<Term, OnProofSampleFunction>(term, on_new_proof_sample);
 }
 
-template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction, typename... Args>
+struct proof_disjunction_nodes {
+	array<instance> expected_constants;
+	array<unsigned int> expected_operand_indices;
+	unsigned int constant_position;
+	unsigned int operand_position;
+
+	proof_disjunction_nodes() : expected_constants(8), expected_operand_indices(4), constant_position(0), operand_position(0) { }
+
+	inline void clear() {
+		expected_constants.clear();
+		expected_operand_indices.clear();
+		constant_position = 0;
+		operand_position = 0;
+	}
+
+	static inline void free(proof_disjunction_nodes& initializer) {
+		core::free(initializer.expected_constants);
+		core::free(initializer.expected_operand_indices);
+	}
+};
+
+inline bool init(proof_disjunction_nodes& nodes) {
+	if (!array_init(nodes.expected_constants, 8)) {
+		return false;
+	} else if (!array_init(nodes.expected_operand_indices, 8)) {
+		free(nodes.expected_constants);
+		return false;
+	}
+	nodes.constant_position = 0;
+	nodes.operand_position = 0;
+	return true;
+}
+
+template<typename Formula>
+inline bool get_proof_disjunction_nodes(nd_step<Formula>* proof, proof_disjunction_nodes& nodes)
+{
+	typedef typename Formula::TermType TermType;
+
+	switch (proof->type) {
+	case nd_step_type::IMPLICATION_INTRODUCTION:
+		if (proof->operands[0]->type == nd_step_type::FALSITY_ELIMINATION
+		 && proof->operands[0]->operands[0]->type == nd_step_type::NEGATION_ELIMINATION
+		 && proof->operands[0]->operands[0]->operands[1] == proof->operands[1])
+		{
+			if (!nodes.expected_operand_indices.add(1)) return false;
+		} else {
+			if (!nodes.expected_operand_indices.add(0)) return false;
+		}
+		break;
+	case nd_step_type::PROOF_BY_CONTRADICTION:
+		if (proof->operands[0]->type == nd_step_type::NEGATION_ELIMINATION
+		 && proof->operands[0]->operands[0]->type == nd_step_type::CONJUNCTION_ELIMINATION
+		 && proof->operands[0]->operands[0]->operands[0] == proof->operands[1])
+		{
+			unsigned int index = proof->operands[0]->operands[0]->operands[1]->parameters[0] + 1;
+			if (!nodes.expected_operand_indices.add(index)) return false;
+		}
+		break;
+
+	case nd_step_type::EXISTENTIAL_INTRODUCTION:
+		if (proof->operands[2]->term->type == TermType::CONSTANT) {
+			if (!nodes.expected_constants.add(instance_constant(proof->operands[2]->term->constant)))
+				return false;
+		} else if (proof->operands[2]->term->type == TermType::NUMBER) {
+			if (!nodes.expected_constants.add(instance_number(proof->operands[2]->term->number)))
+				return false;
+		} else if (proof->operands[2]->term->type == TermType::STRING) {
+			if (!nodes.expected_constants.add(instance_string(&proof->operands[2]->term->str)))
+				return false;
+		}
+		break;
+
+	case nd_step_type::DISJUNCTION_INTRODUCTION:
+		if (!nodes.expected_operand_indices.add(proof->operands[2]->parameter + 1))
+			return false;
+		break;
+
+	case nd_step_type::AXIOM:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
+	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
+	case nd_step_type::CONJUNCTION_INTRODUCTION:
+	case nd_step_type::BETA_EQUIVALENCE:
+	case nd_step_type::CONJUNCTION_ELIMINATION:
+	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
+	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
+	case nd_step_type::DISJUNCTION_ELIMINATION:
+	case nd_step_type::IMPLICATION_ELIMINATION:
+	case nd_step_type::BICONDITIONAL_INTRODUCTION:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
+	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
+	case nd_step_type::NEGATION_ELIMINATION:
+	case nd_step_type::FALSITY_ELIMINATION:
+	case nd_step_type::UNIVERSAL_INTRODUCTION:
+	case nd_step_type::UNIVERSAL_ELIMINATION:
+	case nd_step_type::EXISTENTIAL_ELIMINATION:
+	case nd_step_type::EQUALITY_ELIMINATION:
+	case nd_step_type::COMPARISON_INTRODUCTION:
+	case nd_step_type::INEQUALITY_INTRODUCTION:
+	case nd_step_type::PARAMETER:
+	case nd_step_type::TERM_PARAMETER:
+	case nd_step_type::ARRAY_PARAMETER:
+	case nd_step_type::FORMULA_PARAMETER:
+	case nd_step_type::COUNT:
+		break;
+	}
+
+	unsigned int operand_count;
+	nd_step<Formula>* const* operands;
+	proof->get_subproofs(operands, operand_count);
+	for (unsigned int i = 0; i < operand_count; i++) {
+		if (operands[i] == nullptr) continue;
+		if (!get_proof_disjunction_nodes(operands[i], nodes))
+			return false;
+	}
+	return true;
+}
+
+struct cached_proof_sampler {
+	proof_disjunction_nodes prev_proof;
+	bool is_prev_proof;
+
+	cached_proof_sampler() : is_prev_proof(true) { }
+
+	inline void clear() {
+		prev_proof.clear();
+		is_prev_proof = true;
+	}
+};
+
+template<typename Proof>
+inline void visit_node(const Proof& proof, const cached_proof_sampler& visitor) { }
+
+template<bool Negated, typename Term> constexpr bool visit_unary_atom(const Term* term, const cached_proof_sampler& visitor) { return true; }
+template<bool Negated> constexpr bool visit_binary_atom(unsigned int predicate, unsigned int arg1, unsigned int arg2, const cached_proof_sampler& visitor) { return true; }
+template<typename Proof> constexpr bool visit_subset_axiom(const Proof& proof, const cached_proof_sampler& visitor) { return true; }
+constexpr bool visit_existential_intro(const cached_proof_sampler& visitor) { return true; }
+constexpr bool visit_negated_universal_intro(const cached_proof_sampler& visitor) { return true; }
+constexpr bool visit_negated_conjunction(const cached_proof_sampler& visitor) { return true; }
+constexpr bool visit_disjunction_intro(const cached_proof_sampler& visitor) { return true; }
+inline void on_subtract_changes(cached_proof_sampler& visitor) { }
+
+template<typename Formula>
+constexpr bool on_undo_filter_operands(const Formula* formula, const cached_proof_sampler& visitor) { return true; }
+
+template<typename Theory, typename Formula, typename Proof>
+constexpr bool on_undo_filter_constants(
+		const Theory& T, const Formula* quantified, const typename Formula::Term* term, unsigned int variable,
+		const array_map<unsigned int, Proof*>& set_definitions, const cached_proof_sampler& visitor)
+{ return true; }
+
+template<typename ProofCalculus, typename Canonicalizer>
+inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
+		const typename ProofCalculus::Language* formula,
+		unsigned int variable, array<instance>& constants,
+		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions,
+		cached_proof_sampler& sampler)
+{
+	if (!get_constants(T, formula, variable, constants, set_definitions))
+		return false;
+
+	if (sampler.is_prev_proof) {
+		if (sampler.prev_proof.constant_position == sampler.prev_proof.expected_constants.length)
+			/* this is currently possible when the new proof has more existential
+			   introductions than the old proof, for example if the proof of the
+			   expression `a(b)` chose a different set definition of `a` than in
+			   the old proof */
+			return false;
+
+		unsigned int index;
+		const instance& key = sampler.prev_proof.expected_constants[sampler.prev_proof.constant_position];
+		for (index = 0; index < constants.length; index++) {
+			if (key.type == instance_type::CONSTANT && key.constant >= T.new_constant_offset
+			 && T.ground_concepts[key.constant - T.new_constant_offset].types.keys == nullptr
+			 && constants[index].type == instance_type::ANY)
+			{
+				break;
+			} else if (key == constants[index]) {
+				break;
+			}
+		}
+		if (index == constants.length) {
+			sampler.is_prev_proof = false;
+		} else {
+			swap(constants[0], constants[index]);
+			sampler.prev_proof.constant_position++;
+		}
+	}
+	return true;
+}
+
+template<typename Formula>
+inline bool filter_operands(const Formula* formula, array<unsigned int>& indices, cached_proof_sampler& sampler)
+{
+	if (!filter_operands(formula, indices))
+		return false;
+
+	if (sampler.is_prev_proof) {
+		if (sampler.prev_proof.operand_position == sampler.prev_proof.expected_operand_indices.length) {
+			fprintf(stderr, "filter_operands ERROR: `cached_proof_sampler.prev_proof` has no further `expected_operand_indices`.\n");
+			exit(EXIT_FAILURE);
+		}
+
+		unsigned int index = indices.index_of(sampler.prev_proof.expected_operand_indices[sampler.prev_proof.operand_position]);
+		if (index == indices.length) {
+			sampler.is_prev_proof = false;
+		} else {
+			swap(indices[0], indices[index]);
+			sampler.prev_proof.operand_position++;
+		}
+	}
+	return true;
+}
+
+template<bool Contradiction, typename ProofCalculus, typename Canonicalizer>
+bool is_impossible(
+		typename ProofCalculus::Language* formula,
+		const theory<ProofCalculus, Canonicalizer>& T,
+		cached_proof_sampler& sampler)
+{
+	return is_impossible<Contradiction>(formula, T);
+}
+
+template<typename Formula>
+constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, cached_proof_sampler& sampler) {
+	return true;
+}
+
+template<typename Formula>
+inline bool inconsistent_constant(const Formula* formula, unsigned int index, cached_proof_sampler& sampler) {
+	sampler.is_prev_proof = false;
+	return false;
+}
+
+template<typename Formula>
+inline void finished_constants(const Formula* formula, cached_proof_sampler& sampler) {
+	sampler.prev_proof.constant_position--;
+}
+
+template<typename Formula>
+inline void finished_operand_indices(const Formula* formula, cached_proof_sampler& sampler) {
+	sampler.prev_proof.operand_position--;
+}
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+inline void on_free_set(unsigned int set_id,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int min_set_size, unsigned int max_set_size,
+		cached_proof_sampler& sampler)
+{ }
+
+template<typename Proof>
+constexpr bool on_new_size_axiom(
+		Proof* new_size_axiom,
+		const cached_proof_sampler& visitor)
+{
+	return true;
+}
+
+template<typename Proof>
+inline void on_old_size_axiom(
+		Proof* old_size_axiom,
+		const cached_proof_sampler& visitor)
+{ }
+
+template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
+inline bool compute_new_set_size(
+		unsigned int set_id,
+		set_reasoning<BuiltInConstants, ProofCalculus, Canonicalizer>& sets,
+		unsigned int& out,
+		unsigned int min_set_size,
+		unsigned int max_set_size,
+		cached_proof_sampler& sampler)
+{
+	return compute_new_set_size(set_id, sets, out, min_set_size, max_set_size);
+}
+
+template<bool InitWithPrevProof, typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction, typename... Args>
 bool log_joint_probability_of_lambda_by_linear_search_helper(
 		theory<ProofCalculus, Canonicalizer>& T,
 		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
 		typename ProofCalculus::Language* logical_form, unsigned int num_samples,
-		OnProofSampleFunction on_new_proof_sample)
+		cached_proof_sampler& sampler, OnProofSampleFunction on_new_proof_sample)
 {
 	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
 
 	unsigned int new_constant;
 	set_changes<Formula> set_diff;
-	Proof* new_proof = T.add_formula(logical_form, set_diff, new_constant);
+	Proof* new_proof;
+	if (InitWithPrevProof)
+		new_proof = T.add_formula(logical_form, set_diff, new_constant, sampler);
+	else new_proof = T.add_formula(logical_form, set_diff, new_constant);
 	if (new_proof == nullptr) {
 		return false;
 	} else if (!proof_axioms.template add<false>(new_proof, set_diff.new_set_axioms, proof_prior)) {
@@ -19179,6 +19476,8 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 		if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 1.0);
 	}
+	sampler.clear();
+	get_proof_disjunction_nodes(collector.internal_collector.test_proof, sampler.prev_proof);
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.internal_collector.test_proof);
@@ -19236,11 +19535,13 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 		return false;
 	}
+	cached_proof_sampler prev_proof;
 	for (unsigned int i = 0; i < constants.length; i++) {
 		Term* constant = nullptr;
 		unsigned int constant_id;
 		if (constants[i].type == instance_type::ANY) {
 			constant_id = T.get_free_concept_id();
+			constant_id = T.get_free_concept_id(constant_id + 100);
 			if (!T.try_init_concept(constant_id)) {
 				free(*var); free(var);
 				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
@@ -19279,7 +19580,9 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		core::engine = prng_engine;
 
 		auto new_proof_sample_delegate = make_proof_sample_delegate(constant, on_new_proof_sample);
-		log_joint_probability_of_lambda_by_linear_search_helper(T, proof_prior, proof_axioms, substituted, num_samples, new_proof_sample_delegate);
+		if (prev_proof.prev_proof.expected_constants.length == 0 && prev_proof.prev_proof.expected_operand_indices.length == 0)
+			log_joint_probability_of_lambda_by_linear_search_helper<false>(T, proof_prior, proof_axioms, substituted, num_samples, prev_proof, new_proof_sample_delegate);
+		else log_joint_probability_of_lambda_by_linear_search_helper<true>(T, proof_prior, proof_axioms, substituted, num_samples, prev_proof, new_proof_sample_delegate);
 		free(*constant); if (constant->reference_count == 0) free(constant);
 		free(*substituted); if (substituted->reference_count == 0) free(substituted);
 		if (constants[i].type == instance_type::ANY && T.ground_concepts[constant_id - T.new_constant_offset].types.keys != nullptr)

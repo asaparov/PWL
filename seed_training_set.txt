@@ -1997,9 +1997,17 @@
 {(N "point"/"point")}
 	{location[index:sg]};
 
+: # location
+{(N "location"/"location")}
+	{location[index:sg]};
+
 : # mile
 {(N "mile"/"mile")}
 	{mile[index:sg,measure]};
+
+: # foot
+{(N "foot"/"foot")}
+	{foot[index:sg,measure]};
 
 : # square
 {(ADJ "square"/"square")}
@@ -3173,7 +3181,7 @@
 
 : # elevation
 {(N "elevation"/"elevation")}
-	{elevation[index:sg,arg2]};
+	{elevation[index:sg]};
 
 : # How many moons orbit the heaviest planet of the Inner Solar System?
 {(S
@@ -3249,6 +3257,10 @@
 
 : # lives
 {(V "live"/"lives")}
+	{?[b]:(reside(b) & present(b))[index:sg]};
+
+: # resides
+{(V "reside"/"resides")}
 	{?[b]:(reside(b) & present(b))[index:sg]};
 
 : # There are how many planets in the Solar System?

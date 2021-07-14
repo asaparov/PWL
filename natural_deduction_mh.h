@@ -1270,22 +1270,25 @@ bool propose_change_set_size(
 
 template<bool IsExploratory>
 struct proof_sampler {
-	/* this tracking of inconsistent constants may too liberally exclude
-	   constants if the expression contains a set size term, since we don't
-	   keep track of inconsistent set sizes here */
-	/*hash_map<Formula, hash_set<unsigned int>> inconsistencies;*/
 	array<unsigned int> removed_set_sizes;
-	/*bool all_descendants_inconsistent;*/
 	double log_probability;
 	double set_size_log_probability;
+	proof_disjunction_nodes old_proof;
+	proof_disjunction_nodes new_proof;
+	bool is_old_proof;
 	bool undo;
 
-	proof_sampler() : /*inconsistencies(64),*/ removed_set_sizes(4), log_probability(0.0), set_size_log_probability(0.0), undo(false) { }
-	~proof_sampler() {
-		/*for (auto entry : inconsistencies) {
-			free(entry.key);
-			free(entry.value);
-		}*/
+	proof_sampler() : removed_set_sizes(4), log_probability(0.0), set_size_log_probability(0.0), is_old_proof(true), undo(false) { }
+
+	inline void clear() {
+		old_proof.constant_position = 0;
+		old_proof.operand_position = 0;
+		new_proof.clear();
+		is_old_proof = true;
+		log_probability = 0.0;
+		set_size_log_probability = 0.0;
+		removed_set_sizes.clear();
+		undo = false;
 	}
 };
 
@@ -1320,8 +1323,27 @@ inline bool filter_operands(const Formula* formula, array<unsigned int>& indices
 	if (!filter_operands(formula, indices))
 		return false;
 
+	if (sampler.is_old_proof) {
+		if (sampler.old_proof.operand_position == sampler.old_proof.expected_operand_indices.length)
+			/* this is currently possible when the new proof has more disjunction
+			   introductions than the old proof, for example if the proof of the
+			   expression `a(b)` chose a different set definition of `a` than in
+			   the old proof */
+			return false;
+
+		unsigned int index = indices.index_of(sampler.old_proof.expected_operand_indices[sampler.old_proof.operand_position]);
+		if (index != 0) {
+			sampler.is_old_proof = false;
+		} else {
+			sampler.old_proof.operand_position++;
+		}
+	}
+
 	if (!log_cache<double>::instance().ensure_size(indices.length + 1)) return false;
 	sampler.log_probability += -log_cache<double>::instance().get(indices.length);
+
+	if (!sampler.new_proof.expected_operand_indices.add(indices[0]))
+		return false;
 
 	indices.length = 1;
 	return true;
@@ -1355,6 +1377,42 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 	return probabilities;
 }
 
+template<typename ProofCalculus, typename Canonicalizer>
+inline double* compute_constant_probabilities(
+		const array<instance>& constants, double& sum,
+		const theory<ProofCalculus, Canonicalizer>& T,
+		proof_disjunction_nodes& cached_proof,
+		bool& is_cached_proof)
+{
+	double* probabilities = compute_constant_probabilities(constants, sum);
+
+	if (is_cached_proof) {
+		unsigned int index;
+		const instance& key = cached_proof.expected_constants[cached_proof.constant_position];
+		for (index = 0; index < constants.length; index++) {
+			if (key.type == instance_type::CONSTANT && key.constant >= T.new_constant_offset
+			 && T.ground_concepts[key.constant - T.new_constant_offset].types.keys == nullptr
+			 && constants[index].type == instance_type::ANY)
+			{
+				break;
+			} else if (key == constants[index]) {
+				break;
+			}
+		}
+		if (index != constants.length) {
+			double min_probability = max(1.0, sum * (cached_proof.constant_position + cached_proof.operand_position));
+			if (probabilities[index] < min_probability) {
+				sum -= probabilities[index];
+				probabilities[index] = min_probability;
+				sum += probabilities[index];
+			}
+			cached_proof.constant_position++;
+		}
+	}
+
+	return probabilities;
+}
+
 template<typename ProofCalculus, typename Canonicalizer, bool IsExploratory>
 inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const typename ProofCalculus::Language* formula,
@@ -1378,7 +1436,7 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	}
 
 	double sum;
-	double* probabilities = compute_constant_probabilities(constants, sum);
+	double* probabilities = compute_constant_probabilities(constants, sum, T, sampler.old_proof, sampler.is_old_proof);
 	if (probabilities == nullptr)
 		return false;
 
@@ -1387,28 +1445,9 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	free(probabilities);
 	swap(constants[0], constants[random]);
 
-	/*if (!sampler.inconsistencies.check_size()) return false;
-	bool contains; unsigned int bucket;
-	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
-	if (!contains) {
-		if (!hash_set_init(inconsistent_constants, 8)) {
-			return false;
-		} else if (!init(sampler.inconsistencies.table.keys[bucket], *formula)) {
-			free(inconsistent_constants);
-			return false;
-		}
-		sampler.inconsistencies.table.size++;
-	}
-	unsigned int original_constant_count = constants.length;
-	constants.length = 0;
-	for (unsigned int i = 0; i < original_constant_count; i++) {
-		if (!inconsistent_constants.contains(constants[i])) {
-			constants[0] = constants[i];
-			constants.length = 1;
-			break;
-		}
-	}
-	sampler.all_descendants_inconsistent = true;*/
+	if (!sampler.new_proof.expected_constants.add(constants[0]))
+		return false;
+
 	constants.length = 1;
 	return true;
 }
@@ -1429,23 +1468,25 @@ template<typename Formula, bool IsExploratory>
 constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_sampler<IsExploratory>& sampler) { return true; }
 
 template<typename Formula, bool IsExploratory>
-inline void finished_constants(const Formula* formula, proof_sampler<IsExploratory>& sampler) {
-	/*bool contains; unsigned int bucket;
-	hash_set<unsigned int>& inconsistent_constants = sampler.inconsistencies.get(*formula, contains, bucket);
-	sampler.all_descendants_inconsistent = (inconsistent_constants.size == original_constant_count);
-	if (sampler.all_descendants_inconsistent) {
-		free(sampler.inconsistencies.table.keys[bucket]);
-		core::free(inconsistent_constants);
-		sampler.inconsistencies.remove_at(bucket);
-	}*/
-}
+inline void finished_constants(const Formula* formula, proof_sampler<IsExploratory>& sampler) { }
+
+template<typename Formula, bool IsExploratory>
+inline void finished_operand_indices(const Formula* formula, proof_sampler<IsExploratory>& sampler) { }
 
 struct inverse_proof_sampler {
 	array<unsigned int> removed_set_sizes;
-	double log_probability;
 	double set_size_log_probability;
+	array<array<unsigned int>> operand_indices;
+	array<pair<array<instance>, unsigned int>> constants;
 
-	inverse_proof_sampler() : removed_set_sizes(4), log_probability(0.0), set_size_log_probability(0.0) { }
+	inverse_proof_sampler() : removed_set_sizes(4), set_size_log_probability(0.0), operand_indices(4), constants(4) { }
+
+	~inverse_proof_sampler() {
+		for (array<unsigned int>& indices : operand_indices)
+			free(indices);
+		for (pair<array<instance>, unsigned int>& entry : constants)
+			free(entry.key);
+	}
 };
 
 template<typename Proof>
@@ -1490,7 +1531,12 @@ template<typename Formula>
 inline bool on_undo_filter_operands(Formula* formula, inverse_proof_sampler& sampler) {
 	typedef typename Formula::Type FormulaType;
 
-	array<unsigned int> indices(8);
+	if (!sampler.operand_indices.ensure_capacity(sampler.operand_indices.length + 1)
+	 || !array_init(sampler.operand_indices[sampler.operand_indices.length], 8))
+		return false;
+	array<unsigned int>& indices = sampler.operand_indices[sampler.operand_indices.length];
+	sampler.operand_indices.length++;
+
 	if (formula->type == FormulaType::NOT && formula->unary.operand->type == FormulaType::AND) {
 		if (!indices.ensure_capacity(formula->unary.operand->array.length))
 			return false;
@@ -1508,12 +1554,7 @@ inline bool on_undo_filter_operands(Formula* formula, inverse_proof_sampler& sam
 		indices.length = formula->array.length;
 	}
 
-	if (!filter_operands(formula, indices))
-		return false;
-
-	if (!log_cache<double>::instance().ensure_size(indices.length + 1)) return false;
-	sampler.log_probability += -log_cache<double>::instance().get(indices.length);
-	return true;
+	return filter_operands(formula, indices);
 }
 
 template<typename Theory, typename Formula, typename Proof>
@@ -1523,7 +1564,12 @@ inline bool on_undo_filter_constants(
 {
 	typedef typename Formula::TermType TermType;
 
-	array<instance> constants(T.ground_concept_capacity + T.constant_types.size + T.constant_negated_types.size + 1);
+	if (!sampler.constants.ensure_capacity(sampler.constants.length + 1)
+	 || !array_init(sampler.constants[sampler.constants.length].key, T.ground_concept_capacity + T.constant_types.size + T.constant_negated_types.size + 1))
+		return false;
+	array<instance>& constants = sampler.constants[sampler.constants.length].key;
+	unsigned int& index = sampler.constants[sampler.constants.length].value;
+	sampler.constants.length++;
 	if (!get_possible_constants(T, constants))
 		return false;
 
@@ -1533,7 +1579,6 @@ inline bool on_undo_filter_constants(
 	if (!filter_constants_helper<false>(T, quantified, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
 		return false;
 
-	unsigned int index;
 	bool is_new_concept = (term->type == TermType::CONSTANT && term->constant >= T.new_constant_offset && T.ground_concepts[term->constant - T.new_constant_offset].types.keys == nullptr);
 	for (index = 0; index < constants.length; index++) {
 		if (is_new_concept && constants[index].type == instance_type::ANY)
@@ -1554,15 +1599,41 @@ inline bool on_undo_filter_constants(
 		for (index = 0; index < constants.length; index++)
 			if (constants[index].type == instance_type::ANY) break;
 	}
-
-	double sum;
-	double* probabilities = compute_constant_probabilities(constants, sum);
-	if (probabilities == nullptr)
-		return false;
-
-	sampler.log_probability += log(probabilities[index] / sum);
-	free(probabilities);
 	return true;
+}
+
+template<typename Theory>
+double proof_sample_log_probability(const inverse_proof_sampler& sampler, const Theory& T, proof_disjunction_nodes& new_proof)
+{
+	double log_probability = 0.0;
+	bool is_new_proof = true;
+	for (unsigned int i = sampler.operand_indices.length; i > 0; i--) {
+		const array<unsigned int>& indices = sampler.operand_indices[i - 1];
+
+		if (is_new_proof) {
+			unsigned int index = indices.index_of(new_proof.expected_operand_indices[new_proof.operand_position]);
+			if (index != 0) {
+				is_new_proof = false;
+			} else {
+				new_proof.operand_position++;
+			}
+		}
+
+		log_cache<double>::instance().ensure_size(indices.length + 1);
+		log_probability += -log_cache<double>::instance().get(indices.length);
+	}
+	for (unsigned int i = sampler.constants.length; i > 0; i--) {
+		const array<instance>& constants = sampler.constants[i - 1].key;
+
+		double sum;
+		double* probabilities = compute_constant_probabilities(constants, sum, T, new_proof, is_new_proof);
+		if (probabilities == nullptr)
+			return false;
+
+		log_probability += log(probabilities[sampler.constants[i - 1].value] / sum);
+		free(probabilities);
+	}
+	return log_probability;
 }
 
 template<typename Formula>
@@ -1573,6 +1644,9 @@ constexpr bool inconsistent_constant(const Formula* formula, const instance& con
 
 template<typename Formula>
 inline void finished_constants(const Formula* formula, inverse_proof_sampler& sampler) { }
+
+template<typename Formula>
+inline void finished_operand_indices(const Formula* formula, inverse_proof_sampler& sampler) { }
 
 struct undo_remove_sets {
 	array<unsigned int>& removed_set_sizes;
@@ -2007,6 +2081,7 @@ bool propose_disjunction_intro(
 	nd_step<Formula>* new_proof;
 	proof_sampler<ProposalDistribution::IsExploratory> sampler;
 	set_changes<Formula> new_set_diff;
+	get_proof_disjunction_nodes(selected_proof_step.proof, sampler.old_proof);
 unsigned int debug = 0;
 bool debug_flag = false;
 if (debug_flag) {
@@ -2017,10 +2092,7 @@ print(*selected_proof_step.formula, stderr); print('\n', stderr);
 		   and avoiding paths that we've previously proved to be inconsistent,
 		   also compute the log probability of the new path */
 		unsigned int new_constant = 0;
-		sampler.log_probability = 0.0;
-		sampler.set_size_log_probability = 0.0;
-		sampler.removed_set_sizes.clear();
-		sampler.undo = false;
+		sampler.clear();
 if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u\n", debug);
 T.print_axioms(stderr);
@@ -2041,7 +2113,7 @@ T.print_axioms(stderr);
 
 	log_proposal_probability_ratio -= sampler.log_probability;
 	log_proposal_probability_ratio -= sampler.set_size_log_probability;
-	log_proposal_probability_ratio += inverse_sampler.log_probability;
+	log_proposal_probability_ratio += proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
 	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
 
 	typename Theory::changes& new_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
@@ -2140,36 +2212,27 @@ T.print_axioms(stderr);
 }
 
 struct proof_initializer {
-	array<instance> expected_constants;
-	array<unsigned int> expected_operand_indices;
-	unsigned int constant_position;
+	proof_disjunction_nodes nodes;
 	unsigned int operand_position;
 	array<unsigned int> removed_set_sizes;
 	double set_size_log_probability;
 	bool undo;
 
-	proof_initializer() : expected_constants(8), expected_operand_indices(4), constant_position(0), operand_position(0), removed_set_sizes(4), set_size_log_probability(0.0), undo(false) { }
+	proof_initializer() : removed_set_sizes(4), set_size_log_probability(0.0), undo(false) { }
 
 	static inline void free(proof_initializer& initializer) {
-		core::free(initializer.expected_constants);
-		core::free(initializer.expected_operand_indices);
+		core::free(initializer.nodes);
 		core::free(initializer.removed_set_sizes);
 	}
 };
 
 inline bool init(proof_initializer& initializer) {
-	if (!array_init(initializer.expected_constants, 8)) {
-		return false;
-	} else if (!array_init(initializer.expected_operand_indices, 8)) {
-		free(initializer.expected_constants);
+	if (!init(initializer.nodes)) {
 		return false;
 	} else if (!array_init(initializer.removed_set_sizes, 4)) {
-		free(initializer.expected_constants);
-		free(initializer.expected_operand_indices);
+		free(initializer.nodes);
 		return false;
 	}
-	initializer.constant_position = 0;
-	initializer.operand_position = 0;
 	initializer.set_size_log_probability = 0.0;
 	initializer.undo = false;
 	return true;
@@ -2205,14 +2268,14 @@ inline bool filter_operands(const Formula* formula, array<unsigned int>& indices
 	if (!filter_operands(formula, indices))
 		return false;
 
-	if (initializer.operand_position == initializer.expected_operand_indices.length) {
+	if (initializer.nodes.operand_position == initializer.nodes.expected_operand_indices.length) {
 		fprintf(stderr, "filter_operands ERROR: `proof_initializer` has no further `expected_operand_indices`.\n");
 		exit(EXIT_FAILURE);
-	} else if (!indices.contains(initializer.expected_operand_indices[initializer.operand_position])) {
+	} else if (!indices.contains(initializer.nodes.expected_operand_indices[initializer.nodes.operand_position])) {
 		indices.length = 0;
 		return false;
 	}
-	indices[0] = initializer.expected_operand_indices[initializer.operand_position++];
+	indices[0] = initializer.nodes.expected_operand_indices[initializer.nodes.operand_position++];
 	indices.length = 1;
 	return true;
 }
@@ -2224,14 +2287,14 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const array_map<unsigned int, typename ProofCalculus::Proof*>& set_definitions,
 		proof_initializer& initializer)
 {
-	if (initializer.constant_position == initializer.expected_constants.length)
+	if (initializer.nodes.constant_position == initializer.nodes.expected_constants.length)
 		/* this is currently possible when the new proof has more existential
 		   introductions than the old proof, for example if the proof of the
 		   expression `a(b)` chose a different set definition of `a` than in
 		   the old proof */
 		return false;
 
-	constants[0] = initializer.expected_constants[initializer.constant_position];
+	constants[0] = initializer.nodes.expected_constants[initializer.nodes.constant_position];
 	constants.length = 1;
 
 	array<pair<unsigned int, bool>> new_name_events(8);
@@ -2240,7 +2303,7 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 	if (!filter_constants_helper<false>(T, formula, variable, constants, set_definitions, new_name_events, arg1_of, arg2_of))
 		return false;
 
-	initializer.constant_position++;
+	initializer.nodes.constant_position++;
 	return true;
 }
 
@@ -2254,16 +2317,24 @@ inline constexpr bool is_impossible(
 }
 
 template<typename Formula>
-constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_initializer& initializer) { return true; }
-
-template<typename Formula>
-inline bool inconsistent_constant(const Formula* formula, const instance& constant, proof_initializer& initializer) {
-	initializer.constant_position--;
+constexpr bool inconsistent_constant(const Formula* formula, unsigned int index, proof_initializer& initializer) {
 	return true;
 }
 
 template<typename Formula>
-inline void finished_constants(const Formula* formula, proof_initializer& initializer) { }
+constexpr bool inconsistent_constant(const Formula* formula, const instance& constant, proof_initializer& initializer) {
+	return true;
+}
+
+template<typename Formula>
+inline void finished_constants(const Formula* formula, proof_initializer& initializer) {
+	initializer.nodes.constant_position--;
+}
+
+template<typename Formula>
+inline void finished_operand_indices(const Formula* formula, proof_initializer& initializer) {
+	initializer.nodes.operand_position--;
+}
 
 template<typename BuiltInConstants, typename ProofCalculus, typename Canonicalizer>
 inline bool compute_new_set_size(
@@ -2321,90 +2392,6 @@ inline void on_old_size_axiom(
 		Proof* old_size_axiom,
 		const proof_initializer& visitor)
 { }
-
-template<typename Formula>
-inline bool get_proof_initializer(nd_step<Formula>* proof, proof_initializer& initializer)
-{
-	typedef typename Formula::TermType TermType;
-
-	switch (proof->type) {
-	case nd_step_type::IMPLICATION_INTRODUCTION:
-		if (proof->operands[0]->type == nd_step_type::FALSITY_ELIMINATION
-		 && proof->operands[0]->operands[0]->type == nd_step_type::NEGATION_ELIMINATION
-		 && proof->operands[0]->operands[0]->operands[1] == proof->operands[1])
-		{
-			if (!initializer.expected_operand_indices.add(1)) return false;
-		} else {
-			if (!initializer.expected_operand_indices.add(0)) return false;
-		}
-		break;
-	case nd_step_type::PROOF_BY_CONTRADICTION:
-		if (proof->operands[0]->type == nd_step_type::NEGATION_ELIMINATION
-		 && proof->operands[0]->operands[0]->type == nd_step_type::CONJUNCTION_ELIMINATION
-		 && proof->operands[0]->operands[0]->operands[0] == proof->operands[1])
-		{
-			unsigned int index = proof->operands[0]->operands[0]->operands[1]->parameters[0] + 1;
-			if (!initializer.expected_operand_indices.add(index)) return false;
-		}
-		break;
-
-	case nd_step_type::EXISTENTIAL_INTRODUCTION:
-		if (proof->operands[2]->term->type == TermType::CONSTANT) {
-			if (!initializer.expected_constants.add(instance_constant(proof->operands[2]->term->constant)))
-				return false;
-		} else if (proof->operands[2]->term->type == TermType::NUMBER) {
-			if (!initializer.expected_constants.add(instance_number(proof->operands[2]->term->number)))
-				return false;
-		} else if (proof->operands[2]->term->type == TermType::STRING) {
-			if (!initializer.expected_constants.add(instance_string(&proof->operands[2]->term->str)))
-				return false;
-		}
-		break;
-
-	case nd_step_type::DISJUNCTION_INTRODUCTION:
-		if (!initializer.expected_operand_indices.add(proof->operands[2]->parameter + 1))
-			return false;
-		break;
-
-	case nd_step_type::AXIOM:
-	case nd_step_type::DISJUNCTION_INTRODUCTION_LEFT:
-	case nd_step_type::DISJUNCTION_INTRODUCTION_RIGHT:
-	case nd_step_type::CONJUNCTION_INTRODUCTION:
-	case nd_step_type::BETA_EQUIVALENCE:
-	case nd_step_type::CONJUNCTION_ELIMINATION:
-	case nd_step_type::CONJUNCTION_ELIMINATION_LEFT:
-	case nd_step_type::CONJUNCTION_ELIMINATION_RIGHT:
-	case nd_step_type::DISJUNCTION_ELIMINATION:
-	case nd_step_type::IMPLICATION_ELIMINATION:
-	case nd_step_type::BICONDITIONAL_INTRODUCTION:
-	case nd_step_type::BICONDITIONAL_ELIMINATION_LEFT:
-	case nd_step_type::BICONDITIONAL_ELIMINATION_RIGHT:
-	case nd_step_type::NEGATION_ELIMINATION:
-	case nd_step_type::FALSITY_ELIMINATION:
-	case nd_step_type::UNIVERSAL_INTRODUCTION:
-	case nd_step_type::UNIVERSAL_ELIMINATION:
-	case nd_step_type::EXISTENTIAL_ELIMINATION:
-	case nd_step_type::EQUALITY_ELIMINATION:
-	case nd_step_type::COMPARISON_INTRODUCTION:
-	case nd_step_type::INEQUALITY_INTRODUCTION:
-	case nd_step_type::PARAMETER:
-	case nd_step_type::TERM_PARAMETER:
-	case nd_step_type::ARRAY_PARAMETER:
-	case nd_step_type::FORMULA_PARAMETER:
-	case nd_step_type::COUNT:
-		break;
-	}
-
-	unsigned int operand_count;
-	nd_step<Formula>* const* operands;
-	proof->get_subproofs(operands, operand_count);
-	for (unsigned int i = 0; i < operand_count; i++) {
-		if (operands[i] == nullptr) continue;
-		if (!get_proof_initializer(operands[i], initializer))
-			return false;
-	}
-	return true;
-}
 
 template<typename Formula, bool Intuitionistic,
 	typename Canonicalizer, typename DstEventType,
@@ -2541,7 +2528,7 @@ inline bool do_split_merge(
 	inverse_set_size_log_probability set_size_log_probability;
 	array_map<const Proof*, unsigned int> reference_counts(32);
 	for (unsigned int i = 0; i < old_proofs.length; i++) {
-		if (!get_proof_initializer(old_proofs[i].proof, initializers[i])
+		if (!get_proof_disjunction_nodes(old_proofs[i].proof, initializers[i].nodes)
 		 || !reference_counts.ensure_capacity(reference_counts.size + 1))
 		{
 			set_changes<Formula> dummy;
@@ -2557,7 +2544,7 @@ inline bool do_split_merge(
 			free(initializers); free(new_proofs); return false;
 		}
 
-		for (instance& inst : initializers[i].expected_constants)
+		for (instance& inst : initializers[i].nodes.expected_constants)
 			map_constants(inst);
 
 		array<const Proof*> discharged_axioms(16);
@@ -3793,7 +3780,7 @@ inline unsigned int sample(
 			+ T.implication_intro_nodes.length;
 
 	array<const nd_step<Formula>*> proof_steps(4);
-	get_most_recent_proof_steps<nd_step_type::EXISTENTIAL_INTRODUCTION>(proposal_distribution.query_proof, proof_steps);
+	get_proof_steps<nd_step_type::EXISTENTIAL_INTRODUCTION>(proposal_distribution.query_proof, proof_steps);
 	proposal_distribution.query_step_count = proof_steps.length;
 
 	if (proof_steps.length != 0 && sample_uniform<double>() < proposal_distribution.sample_query_probability) {

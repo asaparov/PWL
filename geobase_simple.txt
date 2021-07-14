@@ -813,13 +813,13 @@ The capital of West Virginia is Charleston.
 The capital of Wisconsin is Madison.
 The capital of Wyoming is Cheyenne.
 There are 5 cities in Alabama.
-There is 1 city in Alaska.
+There are 2 cities in Alaska.
 There are 6 cities in Arizona.
 There are 3 cities in Arkansas.
 There are 71 cities in California.
 There are 8 cities in Colorado.
 There are 12 cities in Connecticut.
-There is 1 city in Delaware.
+There are 2 cities in Delaware.
 There are 15 cities in Florida.
 There are 5 cities in Georgia.
 There are 3 cities in Hawaii.
@@ -828,39 +828,39 @@ There are 15 cities in Illinois.
 There are 9 cities in Indiana.
 There are 6 cities in Iowa.
 There are 4 cities in Kansas.
-There are 2 cities in Kentucky.
+There are 3 cities in Kentucky.
 There are 8 cities in Louisiana.
-There is 1 city in Maine.
-There are 4 cities in Maryland.
+There is 2 cities in Maine.
+There are 5 cities in Maryland.
 There are 16 cities in Massachusetts.
 There are 24 cities in Michigan.
 There are 5 cities in Minnesota.
 There is 1 city in Mississippi.
-There are 6 cities in Missouri.
-There are 2 cities in Montana.
+There are 7 cities in Missouri.
+There are 3 cities in Montana.
 There are 2 cities in Nebraska.
-There are 2 cities in Nevada.
-There are 2 cities in New Hampshire.
+There are 3 cities in Nevada.
+There are 3 cities in New Hampshire.
 There are 14 cities in New Jersey.
-There is 1 city in New Mexico.
+There are 2 cities in New Mexico.
 There are 15 cities in New York.
 There are 7 cities in North Carolina.
-There is 1 city in North Dakota.
+There are 2 cities in North Dakota.
 There are 16 cities in Ohio.
 There are 4 cities in Oklahoma.
 There are 3 cities in Oregon.
-There are 3 cities in Pennsylvania.
+There are 14 cities in Pennsylvania.
 There are 4 cities in Rhode Island.
 There are 4 cities in South Carolina.
-There is 1 city in South Dakota.
+There are 2 cities in South Dakota.
 There are 4 cities in Tennessee.
 There are 30 cities in Texas.
 There are 4 cities in Utah.
 There are 11 cities in Virginia.
-There are 4 cities in Washington.
+There are 5 cities in Washington.
 There are 2 cities in West Virginia.
 There are 7 cities in Wisconsin.
-There is 1 city in Wyoming.
+There are 2 cities in Wyoming.
 The population of the city of Juneau, Alaska is 19528.
 The population of the city of Dover, Delaware is 23507.
 The population of the city of Frankfort, Kentucky is 25973.
@@ -1262,3 +1262,59 @@ Wyoming borders Utah.
 Wyoming borders Idaho.
 If X is in Y and Y is in Z, then X is in Z.
 There are 50 states.
+Every elevation is a location.
+The United States is a country.
+There is 1 city in Vermont.
+There are 2 rivers in Alabama.
+There are 0 rivers in Alaska.
+There are 2 rivers in Arizona.
+There are 6 rivers in Arkansas.
+There is 1 river in California.
+There are 10 rivers in Colorado.
+There is 1 river in Connecticut.
+There is 1 river in Delaware.
+There is 1 river in Florida.
+There is 1 river in Georgia.
+There are 0 rivers in Hawaii.
+There are 2 rivers in Idaho.
+There are 4 rivers in Illinois.
+There are 2 rivers in Indiana.
+There are 2 rivers in Iowa.
+There are 5 rivers in Kansas.
+There are 4 rivers in Kentucky.
+There are 4 rivers in Louisiana.
+There are 0 rivers in Maine.
+There is 1 river in Maryland.
+There is 1 river in Massachusetts.
+There is 1 river in Michigan.
+There is 1 river in Minnesota.
+There are 2 rivers in Mississippi.
+There are 4 rivers in Missouri.
+There are 6 rivers in Montana.
+There are 5 rivers in Nebraska.
+There is 1 river in Nevada.
+There is 1 river in New Hampshire.
+There are 2 rivers in New Jersey.
+There are 7 rivers in New Mexico.
+There are 3 rivers in New York.
+There are 2 rivers in North Carolina.
+There are 5 rivers in North Dakota.
+There are 2 rivers in Ohio.
+There are 6 rivers in Oklahoma.
+There are 2 rivers in Oregon.
+There are 3 rivers in Pennsylvania.
+There are 0 rivers in Rhode Island.
+There is 1 river in South Carolina.
+There are 3 rivers in South Dakota.
+There are 3 rivers in Tennessee.
+There are 5 rivers in Texas.
+There are 3 rivers in Utah.
+There are 2 rivers in Virginia.
+There is 1 river in Vermont.
+There are 2 rivers in Washington.
+There are 2 rivers in West Virginia.
+There are 2 rivers in Wisconsin.
+There are 9 rivers in Wyoming.
+If X is in Y then Y has X.
+Washington State is the state of Washington.
+New York State is the state of New York.

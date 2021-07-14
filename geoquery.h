@@ -90,6 +90,31 @@ inline bool operator == (const geoquery_question_result& first, const geoquery_q
 		&& first.question_id == second.question_id;
 }
 
+inline bool get_answer(string& out, const array<string>& answers) {
+	if (answers.length == 0) {
+		return init(out, "");
+	} else if (answers.length == 1) {
+		return init(out, answers[0]);
+	} else {
+		unsigned int length = answers[0].length;
+		for (unsigned int i = 1; i < answers.length; i++)
+			length += 2 + answers[i].length;
+
+		if (!init(out, length))
+			return false;
+		out.length = 0;
+		for (unsigned int i = 0; i < answers.length; i++) {
+			if (i != 0) {
+				out[out.length++] = ',';
+				out[out.length++] = ' ';
+			}
+			for (unsigned int j = 0; j < answers[i].length; j++)
+				out[out.length++] = answers[i][j];
+		}
+		return true;
+	}
+}
+
 constexpr unsigned int MAX_GEOQUERY_QUESTION_COUNT = 280;
 
 #if defined(SANITIZE_ADDRESS)
@@ -169,7 +194,7 @@ void do_geoquery_experiments(bool& status,
 			core::engine = context_queue[job.context_id].prng_engine;
 
 			unsigned int parse_count;
-			constexpr unsigned int max_parse_count = 2;
+			constexpr unsigned int max_parse_count = 3;
 			hol_term* logical_forms[max_parse_count];
 			double log_probabilities[max_parse_count];
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
@@ -180,7 +205,24 @@ void do_geoquery_experiments(bool& status,
 /* TODO: for memory debugging; delete this */
 __lsan_do_leak_check();
 #endif
-				if (!answer_question<true>(answers, logical_forms[0], 20, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0) {
+				for (unsigned int i = 0; i < parse_count; i++) {
+					if (!answer_question<true>(answers, logical_forms[0], 20, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0)
+						continue;
+					bool confident = true;
+					for (unsigned int j = 0; j < answers.length; j++) {
+						if (answers[j] == UNKNOWN_CONCEPT_NAME) {
+							confident = false;
+							break;
+						}
+					}
+					if (confident) {
+						break;
+					} else {
+						for (string& str : answers) free(str);
+						answers.clear();
+					}
+				}
+				if (answers.length == 0) {
 					answers[0] = "<failed to answer question>";
 					answers.length = 1;
 				}
@@ -193,7 +235,7 @@ __lsan_do_leak_check();
 				results.ensure_capacity(results.length + 1);
 				results[results.length].context_id = job.context_id;
 				results[results.length].question_id = job.question_id;
-				if (!init(results[results.length].answer, answers[0])) {
+				if (!get_answer(results[results.length].answer, answers)) {
 					for (string& str : answers) free(str);
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
@@ -213,6 +255,8 @@ __lsan_do_leak_check();
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
 				}
+				printf("Answer for question %u: ", job.context_id + 1);
+				print(results[results.length].answer, stdout); printf("\n");
 				results.length++;
 				results_lock.unlock();
 				for (string& str : answers) free(str);
@@ -242,7 +286,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 14 - 1) {
+if (job.context_id != 120 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -317,7 +361,7 @@ continue;
 				unsigned int sentence_counter = 0;
 				for (const pair<unsigned int, unsigned int>& range : line_numbers) {
 					for (unsigned int i = range.key; i <= range.value; i++) {
-//if (sentence_counter < 33) { sentence_counter++; continue; }
+//if (sentence_counter < 4) { sentence_counter++; continue; }
 						// TODO: this is kind of a hacky way to get the new proof
 						hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
 						old_proofs.add_all(job.T.observations);
@@ -365,7 +409,7 @@ __lsan_do_leak_check();
 								bool print_debug = false;
 								if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
 								if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
-								do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 10 ? 1.0 : 0.01));
+								do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 40 ? 1.0 : 0.01));
 
 								if (collector.current_log_probability > max_log_probability) {
 									free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
