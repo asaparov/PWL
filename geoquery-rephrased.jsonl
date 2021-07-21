@@ -118,7 +118,7 @@
 {"theory":"896","questions":{"Q1":{"question":"What is the highest point in Iowa?","answer":"Ocheyedan Mound"}}}
 {"theory":"","questions":{"Q1":{"question":"What are the populations of the states through which the Mississippi runs?","answer":"2286000, 2364000, 2520000, 2913000, 4076000, 4206000, 4591000, 4700000, 4916000, 11400000"}}}
 {"theory":"779","questions":{"Q1":{"question":"What is the capital of Iowa?","answer":"Des Moines"}}}
-{"theory":"","questions":{"Q1":{"question":"Which state capital has the smallest population?","answer":"Charleston"}}}
+{"theory":"765-814,196,864,200,206,215,280,289,865,310,316,321,324,328,340,349,357,866,362,867,868,374,394,415,419,869,870,429,871,872,438,873,454,465,874,472,487,493,875,507,511,876,517,525,550,877,556,878,569,572,879","questions":{"Q1":{"question":"Which state capital has the smallest population?","answer":"Charleston"}}}
 {"theory":"","questions":{"Q1":{"question":"What is the biggest American city in a state with a river?","answer":"New York"}}}
 {"theory":"","questions":{"Q1":{"question":"Which state borders Hawaii?","answer":""}}}
 {"theory":"","questions":{"Q1":{"question":"How large is Alaska?","answer":"591000"}}}

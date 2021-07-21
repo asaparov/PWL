@@ -286,7 +286,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 120 - 1) {
+if (job.context_id < 6 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -297,55 +297,76 @@ continue;
 			core::engine = prng_engine;
 
 			/* parse the list of line numbers */
+			// unsigned int i = 0;
+			// unsigned int start = 0;
+			// unsigned int first_line = UINT_MAX;
+			// array<pair<unsigned int, unsigned int>> line_numbers(8);
+			// bool error = false;
+			// for (; !error; i++) {
+			// 	char old_char;
+			// 	switch (job.context[i]) {
+			// 	case '-':
+			// 		/* parse the first line */
+			// 		if (first_line != UINT_MAX) {
+			// 			fprintf(stderr, "WARNING: Found a line number range with more than one hyphen.\n");
+			// 		} else {
+			// 			job.context[i] = '\0';
+			// 			if (!parse_uint(string(job.context + start, i - start), first_line)) {
+			// 				fprintf(stderr, "ERROR: Failed to parse line number.\n");
+			// 				job.context[i] = '-'; error = true; break;
+			// 			}
+			// 			job.context[i] = '-';
+			// 			start = i + 1;
+			// 		}
+			// 		break;
+
+			// 	case ',':
+			// 	case '\0':
+			// 		if (!line_numbers.ensure_capacity(line_numbers.length + 1)) {
+			// 			error = true;
+			// 			break;
+			// 		}
+			// 		old_char = job.context[i];
+			// 		job.context[i] = '\0';
+			// 		if (!parse_uint(string(job.context + start, i - start), line_numbers[line_numbers.length].value)) {
+			// 			fprintf(stderr, "ERROR: Failed to parse line number.\n");
+			// 			job.context[i] = ','; error = true; break;
+			// 		}
+			// 		job.context[i] = old_char;
+			// 		if (first_line == UINT_MAX) {
+			// 			line_numbers[line_numbers.length].key = line_numbers[line_numbers.length].value;
+			// 			line_numbers.length++;
+			// 		} else {
+			// 			line_numbers[line_numbers.length].key = first_line;
+			// 			line_numbers.length++;
+			// 			first_line = UINT_MAX;
+			// 		}
+			// 		start = i + 1;
+			// 		break;
+			// 	}
+			// 	if (job.context[i] == '\0')
+			// 		break;
+			// }
+
+			/* read the context sentences */
 			unsigned int i = 0;
 			unsigned int start = 0;
-			unsigned int first_line = UINT_MAX;
-			array<pair<unsigned int, unsigned int>> line_numbers(8);
+			array<string> context_sentences(16);
 			bool error = false;
-			for (; !error; i++) {
-				char old_char;
-				switch (job.context[i]) {
-				case '-':
-					/* parse the first line */
-					if (first_line != UINT_MAX) {
-						fprintf(stderr, "WARNING: Found a line number range with more than one hyphen.\n");
-					} else {
-						job.context[i] = '\0';
-						if (!parse_uint(string(job.context + start, i - start), first_line)) {
-							fprintf(stderr, "ERROR: Failed to parse line number.\n");
-							job.context[i] = '-'; error = true; break;
-						}
-						job.context[i] = '-';
-						start = i + 1;
-					}
-					break;
-
-				case ',':
-				case '\0':
-					if (!line_numbers.ensure_capacity(line_numbers.length + 1)) {
+			for (; job.context[i] != '\0'; i++) {
+				if (job.context[i] == '.' && !isdigit(job.context[i + 1])) {
+					if (!context_sentences.ensure_capacity(context_sentences.length + 1)
+					 || !init(context_sentences[context_sentences.length], job.context + start, i - start + 2))
+					{
 						error = true;
 						break;
 					}
-					old_char = job.context[i];
-					job.context[i] = '\0';
-					if (!parse_uint(string(job.context + start, i - start), line_numbers[line_numbers.length].value)) {
-						fprintf(stderr, "ERROR: Failed to parse line number.\n");
-						job.context[i] = ','; error = true; break;
-					}
-					job.context[i] = old_char;
-					if (first_line == UINT_MAX) {
-						line_numbers[line_numbers.length].key = line_numbers[line_numbers.length].value;
-						line_numbers.length++;
-					} else {
-						line_numbers[line_numbers.length].key = first_line;
-						line_numbers.length++;
-						first_line = UINT_MAX;
-					}
+					context_sentences[context_sentences.length][i - start + 1] = '\0';
+					context_sentences[context_sentences.length].length = i - start + 1;
+					context_sentences.length++;
 					start = i + 1;
-					break;
+					while (isspace(job.context[start])) start++;
 				}
-				if (job.context[i] == '\0')
-					break;
 			}
 
 			if (!error) {
@@ -359,89 +380,87 @@ continue;
 				read(job.T, theory_stream, job.proof_axioms);
 				fclose(theory_stream);*/
 				unsigned int sentence_counter = 0;
-				for (const pair<unsigned int, unsigned int>& range : line_numbers) {
-					for (unsigned int i = range.key; i <= range.value; i++) {
-//if (sentence_counter < 4) { sentence_counter++; continue; }
-						// TODO: this is kind of a hacky way to get the new proof
-						hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
-						old_proofs.add_all(job.T.observations);
-						printf("Sentence index: %u\n", sentence_counter);
-						if (!read_sentence(corpus, parser, geobase[i - 1].data, job.T, names, seed_entities, proof_prior, job.proof_axioms)) {
-							std::unique_lock<std::mutex> lock(results_lock);
-							if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
-							 || !init(unparseable_context[unparseable_context.length].value, geobase[i - 1]))
-							{
-								status = false;
-								num_threads_running--;
-								num_threads_reading_context--;
-								work_queue_cv.notify_all();
-								free(job);
-								for (auto entry : names) free(entry.key);
-								free(parser); return;
-							}
-							unparseable_context[unparseable_context.length++].key = job.context_id;
-							error = true;
+				for (unsigned int i = 0; i < context_sentences.length; i++) {
+//if (sentence_counter < context_sentences.length) { sentence_counter++; continue; }
+					// TODO: this is kind of a hacky way to get the new proof
+					hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
+					old_proofs.add_all(job.T.observations);
+					printf("Sentence index: %u\n", sentence_counter);
+					if (!read_sentence(corpus, parser, context_sentences[i].data, job.T, names, seed_entities, proof_prior, job.proof_axioms)) {
+						std::unique_lock<std::mutex> lock(results_lock);
+						if (!unparseable_context.ensure_capacity(unparseable_context.length + 1)
+						 || !init(unparseable_context[unparseable_context.length].value, context_sentences[i]))
+						{
+							status = false;
+							num_threads_running--;
+							num_threads_reading_context--;
+							work_queue_cv.notify_all();
+							free(job);
+							for (auto entry : names) free(entry.key);
+							free(parser); return;
+						}
+						unparseable_context[unparseable_context.length++].key = job.context_id;
+						error = true;
+						break;
+					}
+
+					nd_step<hol_term>* new_proof = nullptr;
+					for (nd_step<hol_term>* proof : job.T.observations) {
+						if (!old_proofs.contains(proof)) {
+							new_proof = proof;
 							break;
 						}
-
-						nd_step<hol_term>* new_proof = nullptr;
-						for (nd_step<hol_term>* proof : job.T.observations) {
-							if (!old_proofs.contains(proof)) {
-								new_proof = proof;
-								break;
-							}
-						}
-
-#if defined(SANITIZE_ADDRESS)
-// TODO: for memory debugging; delete this
-__lsan_do_leak_check();
-#endif
-						Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
-						PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
-						hash_map<const hol_term*, hol_term*> formula_map(128);
-						Theory::clone(job.T, T_MAP, formula_map);
-						PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
-						auto collector = make_log_probability_collector(job.T, proof_prior, new_proof);
-						double max_log_probability = collector.current_log_probability;
-						for (unsigned int j = 0; j < 4; j++) {
-							for (unsigned int t = 0; t < 100; t++) {
-								fprintf(stderr, "j = %u, t = %u\n", j, t);
-								bool print_debug = false;
-								if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
-								if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
-								do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 40 ? 1.0 : 0.01));
-
-								if (collector.current_log_probability > max_log_probability) {
-									free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
-									Theory::clone(job.T, T_MAP, formula_map);
-									PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
-									max_log_probability = collector.current_log_probability;
-								}
-							}
-
-							if (j + 1 < 4) {
-								for (unsigned int t = 0; t < 20; t++)
-									do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, 1.0);
-							}
-						}
-						free(job.T); free(job.proof_axioms); formula_map.clear();
-						Theory::clone(T_MAP, job.T, formula_map);
-						PriorStateType::clone(proof_axioms_MAP, job.proof_axioms, formula_map);
-						T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
-						free(T_MAP); free(proof_axioms_MAP);
-
-						FILE* theory_stream = (FILE*) fopen(filename, "wb");
-						write_random_state(theory_stream);
-						write(job.T, theory_stream, job.proof_axioms);
-						fclose(theory_stream);
-						sentence_counter++;
-#if defined(SANITIZE_ADDRESS)
-// TODO: for memory debugging; delete this
-__lsan_do_leak_check();
-#endif
 					}
-					if (error) break;
+
+#if defined(SANITIZE_ADDRESS)
+// TODO: for memory debugging; delete this
+__lsan_do_leak_check();
+#endif
+					Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
+					PriorStateType& proof_axioms_MAP = *((PriorStateType*) alloca(sizeof(PriorStateType)));
+					hash_map<const hol_term*, hol_term*> formula_map(128);
+					Theory::clone(job.T, T_MAP, formula_map);
+					PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
+					auto collector = make_log_probability_collector(job.T, proof_prior, new_proof);
+					double max_log_probability = collector.current_log_probability;
+					for (unsigned int j = 0; j < 4; j++) {
+						for (unsigned int t = 0; t < 100; t++) {
+							fprintf(stderr, "j = %u, t = %u\n", j, t);
+							bool print_debug = false;
+							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
+							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
+							do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 40 ? 1.0 : 0.01));
+
+							if (collector.current_log_probability > max_log_probability) {
+								free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
+								Theory::clone(job.T, T_MAP, formula_map);
+								PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
+								max_log_probability = collector.current_log_probability;
+							}
+						}
+
+						if (j + 1 < 4) {
+							for (unsigned int t = 0; t < 20; t++)
+								do_exploratory_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, 1.0);
+						}
+					}
+					free(job.T); free(job.proof_axioms); formula_map.clear();
+					Theory::clone(T_MAP, job.T, formula_map);
+					PriorStateType::clone(proof_axioms_MAP, job.proof_axioms, formula_map);
+					T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
+					free(T_MAP); free(proof_axioms_MAP);
+
+					FILE* theory_stream = (FILE*) fopen(filename, "wb");
+					write_random_state(theory_stream);
+					write(job.T, theory_stream, job.proof_axioms);
+					fclose(theory_stream);
+					sentence_counter++;
+#if defined(SANITIZE_ADDRESS)
+// TODO: for memory debugging; delete this
+__lsan_do_leak_check();
+#endif
 				}
+				if (error) break;
 			}
 
 			if (!error) {

@@ -3181,7 +3181,7 @@
 
 : # elevation
 {(N "elevation"/"elevation")}
-	{elevation[index:sg]};
+	{elevation[index:sg,arg2]};
 
 : # How many moons orbit the heaviest planet of the Inner Solar System?
 {(S
