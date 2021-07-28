@@ -33,7 +33,7 @@ function unhighlight(x) {
 
 const phi_conjugate = 0.618033988749895;
 var h = 0.0;
-var num_colors = 0;
+var next_color = 0;
 
 document.addEventListener('DOMContentLoaded', function(event) {
 	const socket = io();
@@ -92,13 +92,13 @@ document.addEventListener('DOMContentLoaded', function(event) {
 				} while (index != -1);
 				const num_str = digits.join('');
 				const num = parseInt(num_str);
-				if (num_colors < num) {
+				if (next_color <= num) {
 					var new_style = ["<style>"];
-					while (num_colors < num) {
-						num_colors++;
+					while (next_color <= num) {
 						[r,g,b] = hsv_to_rgb(h,0.85,0.5);
-						new_style.push(".var-" + num_colors + "{color:rgb(" + r + "," + g + "," + b + ");border-radius:2px;}");
+						new_style.push(".var-" + next_color + "{color:rgb(" + r + "," + g + "," + b + ");border-radius:2px;}");
 						h = (h + phi_conjugate) % 1;
+						next_color++;
 					}
 					new_style.push("</style>");
 					console.innerHTML += new_style.join("");
