@@ -1141,6 +1141,8 @@ inline bool intersect_with_any(instantiation& dst,
 		dst.any.excluded_count = new_excluded.length;
 		return true;
 	} else if (second.type == instantiation_type::ANY_NUMBER) {
+		if (first.any.excluded_count == 0)
+			return init(dst, second);
 		if (!subtract(dst, second, first.any.excluded[0]))
 			return false;
 		if (dst.type == instantiation_type::NUMBER) {
@@ -3194,7 +3196,11 @@ inline Formula* preprocess_formula(Formula* src) {
 
 	first = normalize_functions(second);
 	free(*second); if (second->reference_count == 0) free(second);
-	return first;
+	if (first == nullptr) return nullptr;
+
+	second = normalize_multiple_universal_quantifiers(first);
+	free(*first); if (first->reference_count == 0) free(first);
+	return second;
 }
 
 /* this is useful in `theory.add_definition` where if any sets are created in
@@ -18719,6 +18725,7 @@ struct model_evidence_collector
 	typedef typename ProofCalculus::Proof Proof;
 	typedef typename ProofCalculus::ProofType ProofType;
 
+	const theory<ProofCalculus, Canonicalizer>& T;
 	hash_set<theory_sample<Proof>> samples;
 	unsigned int observation_count;
 	double current_log_probability;
@@ -18735,10 +18742,10 @@ struct model_evidence_collector
 	{ }
 
 	template<typename ProofPrior, typename TheorySampleCollector>
-	model_evidence_collector(const theory<ProofCalculus, Canonicalizer>& T,
+	model_evidence_collector(const theory<ProofCalculus, Canonicalizer>& T_src,
 			ProofPrior& proof_prior, Proof* test_proof, TheorySampleCollector& sample_collector,
 			OnProofSampleFunction on_new_proof_sample = no_op()) :
-		samples(1024), observation_count(T.observations.size), test_proof(test_proof), on_new_proof_sample(on_new_proof_sample)
+		T(T_src), samples(1024), observation_count(T.observations.size), test_proof(test_proof), on_new_proof_sample(on_new_proof_sample)
 	{
 		/* initialize `current_log_probability` */
 		array<Formula*> extra_axioms(16);
@@ -18763,7 +18770,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		theory_sample<Proof>& new_sample = *((theory_sample<Proof>*) alloca(sizeof(theory_sample<Proof>)));
 		if (!init(new_sample, T.observations, extra_axioms, current_log_probability))
 			throw std::runtime_error("Failed to initialize first theory_sample.");
-		on_new_proof_sample(test_proof, current_log_probability);
+		on_new_proof_sample(T, test_proof, current_log_probability);
 
 #if !defined(NDEBUG)
 		new_sample.id = samples.size;
@@ -18816,7 +18823,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 					new_sample.log_probability, expected_log_probability);
 		}
 #endif
-		on_new_proof_sample(test_proof, current_log_probability);
+		on_new_proof_sample(T, test_proof, current_log_probability);
 		move(new_sample, samples.keys[bucket]);
 		samples.size++;
 		return true;
@@ -19042,15 +19049,16 @@ struct lambda_proof_sample_delegate
 
 	lambda_proof_sample_delegate(OnProofSampleFunction on_new_proof_sample) : on_new_proof_sample(on_new_proof_sample) { }
 
-	template<typename Proof>
-	inline void operator() (const Proof* test_proof, double log_probability)
+	template<typename ProofCalculus, typename Canonicalizer>
+	inline void operator() (const theory<ProofCalculus, Canonicalizer>& T,
+			const typename ProofCalculus::Proof* test_proof, double log_probability)
 	{
-		typedef typename Proof::FormulaType Formula;
+		typedef typename ProofCalculus::Language Formula;
 		typedef typename Formula::Term Term;
 
 		/* get the current value of the term used to introduce the existential quantifier */
 		Term* current_term = test_proof->operands[2]->term;
-		on_new_proof_sample(current_term, log_probability);
+		on_new_proof_sample(T, current_term, log_probability);
 	}
 };
 
@@ -19156,10 +19164,11 @@ struct proof_sample_delegate
 
 	proof_sample_delegate(Term* term, OnProofSampleFunction on_new_proof_sample) : term(term), on_new_proof_sample(on_new_proof_sample) { }
 
-	template<typename Proof>
-	inline void operator() (const Proof* test_proof, double log_probability)
+	template<typename ProofCalculus, typename Canonicalizer>
+	inline void operator() (const theory<ProofCalculus, Canonicalizer>& T,
+			const typename ProofCalculus::Proof* test_proof, double log_probability)
 	{
-		on_new_proof_sample(term, log_probability);
+		on_new_proof_sample(T, term, log_probability);
 	}
 };
 
@@ -19488,7 +19497,7 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 
 template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction>
 bool log_joint_probability_of_lambda_by_linear_search(
-		theory<ProofCalculus, Canonicalizer>& T,
+		const theory<ProofCalculus, Canonicalizer>& T,
 		ProofPrior& proof_prior, typename ProofPrior::PriorState& proof_axioms,
 		typename ProofCalculus::Language* logical_form, unsigned int num_samples,
 		OnProofSampleFunction on_new_proof_sample)
@@ -19496,6 +19505,8 @@ bool log_joint_probability_of_lambda_by_linear_search(
 	typedef typename ProofCalculus::Language Formula;
 	typedef typename ProofCalculus::Proof Proof;
 	typedef typename Formula::Term Term;
+	typedef theory<ProofCalculus, Canonicalizer> Theory;
+	typedef typename ProofPrior::PriorState PriorStateType;
 
 	Formula* preprocessed = preprocess_formula(logical_form);
 	if (preprocessed == nullptr)
@@ -19536,15 +19547,24 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		return false;
 	}
 	cached_proof_sampler prev_proof;
-	for (unsigned int i = 0; i < constants.length; i++) {
+	for (unsigned int i = 0; i < constants.length; i++)
+	{
+		/* copy the theory */
+		Theory& T_copy = *((Theory*) alloca(sizeof(Theory)));
+		PriorStateType& proof_axioms_copy = *((PriorStateType*) alloca(sizeof(PriorStateType)));
+		hash_map<const hol_term*, hol_term*> formula_map(128);
+		Theory::clone(T, T_copy, formula_map);
+		PriorStateType::clone(proof_axioms, proof_axioms_copy, formula_map);
+
 		Term* constant = nullptr;
 		unsigned int constant_id;
 		if (constants[i].type == instance_type::ANY) {
-			constant_id = T.get_free_concept_id();
-			constant_id = T.get_free_concept_id(constant_id + 100);
-			if (!T.try_init_concept(constant_id)) {
+			constant_id = T_copy.get_free_concept_id();
+			constant_id = T_copy.get_free_concept_id(constant_id + 100);
+			if (!T_copy.try_init_concept(constant_id)) {
 				free(*var); free(var);
 				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+				free(T_copy); free(proof_axioms_copy);
 				return false;
 			}
 
@@ -19552,7 +19572,9 @@ bool log_joint_probability_of_lambda_by_linear_search(
 			if (constant == nullptr) {
 				free(*var); free(var);
 				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
-				T.free_concept_id(constant_id); return false;
+				T_copy.free_concept_id(constant_id);
+				free(T_copy); free(proof_axioms_copy);
+				return false;
 			}
 
 		} else {
@@ -19566,6 +19588,7 @@ bool log_joint_probability_of_lambda_by_linear_search(
 			if (constant == nullptr) {
 				free(*var); free(var);
 				free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+				free(T_copy); free(proof_axioms_copy);
 				return false;
 			}
 		}
@@ -19574,6 +19597,7 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		if (substituted == nullptr) {
 			free(*var); free(var);
 			free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
+			free(T_copy); free(proof_axioms_copy);
 			return false;
 		}
 
@@ -19581,12 +19605,14 @@ bool log_joint_probability_of_lambda_by_linear_search(
 
 		auto new_proof_sample_delegate = make_proof_sample_delegate(constant, on_new_proof_sample);
 		if (prev_proof.prev_proof.expected_constants.length == 0 && prev_proof.prev_proof.expected_operand_indices.length == 0)
-			log_joint_probability_of_lambda_by_linear_search_helper<false>(T, proof_prior, proof_axioms, substituted, num_samples, prev_proof, new_proof_sample_delegate);
-		else log_joint_probability_of_lambda_by_linear_search_helper<true>(T, proof_prior, proof_axioms, substituted, num_samples, prev_proof, new_proof_sample_delegate);
+			log_joint_probability_of_lambda_by_linear_search_helper<false>(T_copy, proof_prior, proof_axioms_copy, substituted, num_samples, prev_proof, new_proof_sample_delegate);
+		else log_joint_probability_of_lambda_by_linear_search_helper<true>(T_copy, proof_prior, proof_axioms_copy, substituted, num_samples, prev_proof, new_proof_sample_delegate);
 		free(*constant); if (constant->reference_count == 0) free(constant);
 		free(*substituted); if (substituted->reference_count == 0) free(substituted);
-		if (constants[i].type == instance_type::ANY && T.ground_concepts[constant_id - T.new_constant_offset].types.keys != nullptr)
-			T.try_free_concept_id(constant_id);
+		if (constants[i].type == instance_type::ANY && T.ground_concepts[constant_id - T_copy.new_constant_offset].types.keys != nullptr)
+			T_copy.try_free_concept_id(constant_id);
+
+		free(T_copy); free(proof_axioms_copy);
 	}
 	free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 	return true;

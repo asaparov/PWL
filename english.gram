@@ -1812,6 +1812,7 @@ NP' nonterminal {set_predicate} {1000.0, 0.001} {0.0001, 1000.0} {} 10 1.0 {}
 # this depends on whether the head predicate of the left conjunct f(S) is one that expresses information about the size of the set
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct
 NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+NP' -> Q:try_remove_genitive,select_second_left_set_conjunct_root,size NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_maximal_subset_with_equality
 
 # NP' {^[n]:^[P]:(... & ?[S]:(subset(S,^[x]:f(x)) & size(S)=n & ... & ![x]:(S(x) => P(s))))}
 #  -> HOW MANY NOMINAL_R {^[P]:(... & ?[S]:(S=^[x]:f(x) & ... & ![x]:(S(x) => P(s))))}
@@ -2671,7 +2672,7 @@ ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
 # e.g. "more powerful than my car", "brighter than Vega"
-ADJP_R -> ADJP_R:try_remove_is_adjunct,add_comparative,remove_right_conjunct,remove_greater COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
+ADJP_R -> ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove_right_conjunct,remove_greater COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
 
 # ADJP_R {^[x]:?[r]:(... & arg2(r)=x)}
 #  -> HOW ADJP_R {?[r]:(...)}

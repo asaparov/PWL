@@ -805,6 +805,11 @@ struct flagged_logical_form
 		RIGHT_ARG1,
 		SET_SIZE,
 		REQUIRE_LEFT_ARG1,
+		REQUIRE_LEFT_ARG2,
+		REQUIRE_LEFT_ARG3,
+		REQUIRE_RIGHT_ARG1,
+		REQUIRE_RIGHT_ARG2,
+		REQUIRE_RIGHT_ARG3,
 		REQUIRE_LAMBDA,
 		REQUIRE_NO_LAMBDA,
 		REMOVE_LEFT_PREDICATE,
@@ -1225,6 +1230,11 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::RIGHT_ARG1, "right_arg1"},
 	{function_type::SET_SIZE, "set_size"},
 	{function_type::REQUIRE_LEFT_ARG1, "require_left_arg1"},
+	{function_type::REQUIRE_LEFT_ARG2, "require_left_arg2"},
+	{function_type::REQUIRE_LEFT_ARG3, "require_left_arg3"},
+	{function_type::REQUIRE_RIGHT_ARG1, "require_right_arg1"},
+	{function_type::REQUIRE_RIGHT_ARG2, "require_right_arg2"},
+	{function_type::REQUIRE_RIGHT_ARG3, "require_right_arg3"},
 	{function_type::REQUIRE_LAMBDA, "require_lambda"},
 	{function_type::REQUIRE_NO_LAMBDA, "require_no_lambda"},
 	{function_type::REMOVE_LEFT_PREDICATE, "remove_left_predicate"},
@@ -1828,3620 +1838,6 @@ apply(r.nt.transformations[i], logical_form, transformed);
 		free(transformed);
 	}
 	return true;
-}
-
-struct ambiguous_to_unknown_converter { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::ANY_CONSTANT_EXCEPT>::type* = nullptr>
-inline hol_term* apply(hol_term* src, ambiguous_to_unknown_converter& converter) {
-	HOL_UNKNOWN.reference_count++;
-	return &HOL_UNKNOWN;
-}
-
-inline hol_term* ambiguous_to_unknown(hol_term* src)
-{
-	ambiguous_to_unknown_converter converter;
-	hol_term* dst = apply(src, converter);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct same_to_equals_converter { };
-
-inline bool process_event_conjunct(
-		unsigned int variable, hol_term* conjunct,
-		hol_term*& arg1, hol_term*& arg2,
-		hol_term*& arg1_of, hol_term*& arg2_of,
-		hol_term*& predicate)
-{
-	if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
-			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
-			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1
-			&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
-			&& conjunct->binary.left->binary.right->variable == variable)
-	{
-		arg1 = conjunct->binary.right;
-	} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
-			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
-			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2
-			&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
-			&& conjunct->binary.left->binary.right->variable == variable)
-	{
-		arg2 = conjunct->binary.right;
-	} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
-			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
-			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1_OF
-			&& conjunct->binary.right->type == hol_term_type::VARIABLE
-			&& conjunct->binary.right->variable == variable)
-	{
-		arg1_of = conjunct->binary.left->binary.right;
-	} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
-			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
-			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2_OF
-			&& conjunct->binary.right->type == hol_term_type::VARIABLE
-			&& conjunct->binary.right->variable == variable)
-	{
-		arg2_of = conjunct->binary.left->binary.right;
-	} else if (conjunct->type == hol_term_type::UNARY_APPLICATION
-			&& conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == variable)
-	{
-		if (conjunct->binary.left->type == hol_term_type::CONSTANT && is_tense_predicate(conjunct->binary.left->constant))
-			return true;
-		if (predicate != nullptr) return false;
-		predicate = conjunct->binary.left;
-	} else if (conjunct->type == hol_term_type::TRUE) {
-		return true;
-	} else {
-		return false;
-	}
-	return true;
-}
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
-inline hol_term* apply(hol_term* src, same_to_equals_converter& converter) {
-	hol_term* operand = src->quantifier.operand;
-	if (operand->type != hol_term_type::AND || operand->array.length != 4)
-		return default_apply<Type>(src, converter);
-
-	hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-	hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-	hol_term* predicate = nullptr;
-	for (unsigned int i = 0; i < operand->array.length; i++) {
-		if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate))
-			return default_apply<Type>(src, converter);
-	}
-
-	if (arg1 == nullptr || arg2 == nullptr || arg1_of != nullptr || arg2_of != nullptr
-	 || predicate->type != hol_term_type::CONSTANT || predicate->constant != (unsigned int) built_in_predicates::SAME)
-		return default_apply<Type>(src, converter);
-
-	hol_term* new_term = hol_term::new_equals(arg1, arg2);
-	if (new_term == nullptr)
-		return nullptr;
-	arg1->reference_count++;
-	arg2->reference_count++;
-	return new_term;
-}
-
-inline hol_term* same_to_equals(hol_term* src)
-{
-	same_to_equals_converter converter;
-	hol_term* dst = apply(src, converter);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct exists_remover { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
-inline hol_term* apply(hol_term* src, exists_remover& converter) {
-	hol_term* operand = src->quantifier.operand;
-	if (operand->type != hol_term_type::AND || operand->array.length != 3)
-		return default_apply<Type>(src, converter);
-
-	hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-	hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-	hol_term* predicate = nullptr;
-	for (unsigned int i = 0; i < operand->array.length; i++) {
-		if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate))
-			return default_apply<Type>(src, converter);
-	}
-
-	if (arg1 == nullptr || arg2 != nullptr || arg1_of != nullptr || arg2_of != nullptr
-	 || predicate->type != hol_term_type::CONSTANT || predicate->constant != (unsigned int) built_in_predicates::EXIST)
-		return default_apply<Type>(src, converter);
-
-	HOL_TRUE.reference_count++;
-	return &HOL_TRUE;
-}
-
-inline hol_term* remove_exists(hol_term* src)
-{
-	exists_remover converter;
-	hol_term* dst = apply(src, converter);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct arg_of_to_arg_converter { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EQUALS>::type* = nullptr>
-inline hol_term* apply(hol_term* src, arg_of_to_arg_converter& converter) {
-	if (src->binary.left->type == hol_term_type::UNARY_APPLICATION
-	 && src->binary.left->binary.left->type == hol_term_type::CONSTANT)
-	{
-		unsigned int index = index_of(src->binary.left->binary.left->constant, ARGS_OF, array_length(ARGS_OF));
-		if (index < array_length(ARGS_OF)) {
-			hol_term* left = apply(src->binary.left->binary.right, converter);
-			if (left == nullptr) return nullptr;
-			hol_term* right = apply(src->binary.right, converter);
-			if (right == nullptr) {
-				if (left != src->binary.left->binary.right) { free(*left); if (left->reference_count == 0) free(left); }
-				return nullptr;
-			}
-
-			hol_term* new_term = hol_term::new_equals(hol_term::new_apply(hol_term::new_constant(ARGS[index]), right), left);
-			if (new_term == nullptr) {
-				if (left != src->binary.left->binary.right) { free(*left); if (left->reference_count == 0) free(left); }
-				if (right != src->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
-				return nullptr;
-			}
-			if (left == src->binary.left->binary.right) left->reference_count++;
-			if (right == src->binary.right) right->reference_count++;
-			return new_term;
-		}
-	} if (src->binary.right->type == hol_term_type::UNARY_APPLICATION
-	   && src->binary.right->binary.left->type == hol_term_type::CONSTANT)
-	{
-		unsigned int index = index_of(src->binary.right->binary.left->constant, ARGS_OF, array_length(ARGS_OF));
-		if (index < array_length(ARGS_OF)) {
-			hol_term* right = apply(src->binary.right->binary.right, converter);
-			if (right == nullptr) return nullptr;
-			hol_term* left = apply(src->binary.left, converter);
-			if (left == nullptr) {
-				if (right != src->binary.right->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
-				return nullptr;
-			}
-
-			hol_term* new_term = hol_term::new_equals(right, hol_term::new_apply(hol_term::new_constant(ARGS[index]), left));
-			if (new_term == nullptr) {
-				if (right != src->binary.right->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
-				if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
-				return nullptr;
-			}
-			if (right == src->binary.right->binary.right) right->reference_count++;
-			if (left == src->binary.left) left->reference_count++;
-			return new_term;
-		}
-	}
-	return default_apply<Type>(src, converter);
-}
-
-inline hol_term* arg_of_to_arg(hol_term* src)
-{
-	arg_of_to_arg_converter converter;
-	hol_term* dst = apply(src, converter);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct tense_remover { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
-inline hol_term* apply(hol_term* src, tense_remover& remover) {
-	if (src->binary.left->type == hol_term_type::CONSTANT)
-	{
-		if (is_tense_predicate(src->binary.left->constant)) {
-			HOL_TRUE.reference_count++;
-			return &HOL_TRUE;
-		}
-	}
-	return default_apply<Type>(src, remover);
-}
-
-inline hol_term* remove_tense(hol_term* src)
-{
-	tense_remover remover;
-	hol_term* dst = apply(src, remover);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct object_remover { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
-inline hol_term* apply(hol_term* src, object_remover& remover) {
-	if (src->binary.left->type == hol_term_type::CONSTANT
-	 && (src->binary.left->constant == (unsigned int) built_in_predicates::OBJECT
-	  || src->binary.left->constant == (unsigned int) built_in_predicates::ANIMATE))
-	{
-		HOL_TRUE.reference_count++;
-		return &HOL_TRUE;
-	}
-	return default_apply<Type>(src, remover);
-}
-
-inline hol_term* remove_object(hol_term* src)
-{
-	object_remover remover;
-	hol_term* dst = apply(src, remover);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct inverse_remover { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
-inline hol_term* apply(hol_term* src, inverse_remover& converter) {
-	hol_term* operand = src->quantifier.operand;
-	if (operand->type != hol_term_type::AND)
-		return default_apply<Type>(src, converter);
-
-	pair<hol_term*, unsigned int> arg1 = {nullptr, 0};
-	pair<hol_term*, unsigned int> arg1_of = {nullptr, 0};
-	pair<hol_term*, unsigned int> arg2 = {nullptr, 0};
-	pair<hol_term*, unsigned int> arg2_of = {nullptr, 0};
-	pair<hol_term*, unsigned int> predicate = {nullptr, 0};
-	for (unsigned int i = 0; i < operand->array.length; i++) {
-		bool found_arg1 = (arg1.key != nullptr);
-		bool found_arg2 = (arg2.key != nullptr);
-		bool found_arg1_of = (arg1_of.key != nullptr);
-		bool found_arg2_of = (arg2_of.key != nullptr);
-		bool found_predicate = (predicate.key != 0);
-		if (process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1.key, arg2.key, arg1_of.key, arg2_of.key, predicate.key)) {
-			if (!found_arg1 && arg1.key != nullptr) arg1.value = i;
-			if (!found_arg2 && arg2.key != nullptr) arg2.value = i;
-			if (!found_arg1_of && arg1_of.key != nullptr) arg1_of.value = i;
-			if (!found_arg2_of && arg2_of.key != nullptr) arg2_of.value = i;
-			if (!found_predicate && predicate.key != nullptr) predicate.value = i;
-		}
-	}
-
-	if (predicate.key == nullptr || predicate.key->type != hol_term_type::UNARY_APPLICATION
-	 || predicate.key->binary.left->type != hol_term_type::CONSTANT
-	 || predicate.key->binary.left->constant != (unsigned int) built_in_predicates::INVERSE)
-		return default_apply<Type>(src, converter);
-
-	hol_term** new_operands = (hol_term**) malloc(sizeof(hol_term*) * operand->array.length);
-	if (new_operands == nullptr) {
-		fprintf(stderr, "apply ERROR: Insufficient memory for `new_operands` array when removing inverse events.\n");
-		return nullptr;
-	}
-	for (unsigned int i = 0; i < operand->array.length; i++) {
-		hol_term* new_operand;
-		if (i == predicate.value) {
-			new_operand = hol_term::new_apply(predicate.key->binary.right, operand->array.operands[i]->binary.right);
-			if (new_operand == nullptr) {
-				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
-				free(new_operands); return nullptr;
-			}
-			predicate.key->binary.right->reference_count++;
-			operand->array.operands[i]->binary.right->reference_count++;
-		} else if (i == arg1.value) {
-			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, operand->array.operands[i]->binary.left->binary.right), arg1.key);
-			if (new_operand == nullptr) {
-				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
-				free(new_operands); return nullptr;
-			}
-			hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
-			operand->array.operands[i]->binary.left->binary.right->reference_count++;
-			arg1.key->reference_count++;
-		} else if (i == arg2.value) {
-			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, operand->array.operands[i]->binary.left->binary.right), arg2.key);
-			if (new_operand == nullptr) {
-				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
-				free(new_operands); return nullptr;
-			}
-			hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
-			operand->array.operands[i]->binary.left->binary.right->reference_count++;
-			arg2.key->reference_count++;
-		} else if (i == arg1_of.value) {
-			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2_OF>::value, arg1_of.key), operand->array.operands[i]->binary.right);
-			if (new_operand == nullptr) {
-				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
-				free(new_operands); return nullptr;
-			}
-			hol_term::constants<(unsigned int) built_in_predicates::ARG2_OF>::value.reference_count++;
-			arg1_of.key->reference_count++;
-			operand->array.operands[i]->binary.right->reference_count++;
-		} else if (i == arg2_of.value) {
-			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value, arg2_of.key), operand->array.operands[i]->binary.right);
-			if (new_operand == nullptr) {
-				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
-				free(new_operands); return nullptr;
-			}
-			hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value.reference_count++;
-			arg2_of.key->reference_count++;
-			operand->array.operands[i]->binary.right->reference_count++;
-		} else {
-			new_operand = apply(operand->array.operands[i], converter);
-			if (new_operand == operand->array.operands[i])
-				new_operand->reference_count++;
-		}
-		new_operands[i] = new_operand;
-	}
-
-	hol_term* new_term = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(new_operands, operand->array.length)));
-	if (new_term == nullptr) {
-		for (unsigned int j = 0; j < operand->array.length; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
-		free(new_operands); return nullptr;
-	}
-	free(new_operands);
-	return new_term;
-}
-
-inline hol_term* remove_inverse(hol_term* src)
-{
-	inverse_remover converter;
-	hol_term* dst = apply(src, converter);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct named_entity_collector {
-	array<string>& named_entities;
-};
-
-template<hol_term_type Type>
-inline bool visit(const hol_term& term, named_entity_collector& visitor) {
-	if (Type == hol_term_type::EXISTS) {
-		hol_term* operand = term.quantifier.operand;
-		if (operand->type != hol_term_type::AND)
-			return true;
-
-		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-		hol_term* predicate = nullptr;
-		for (unsigned int i = 0; i < operand->array.length; i++) {
-			if (!process_event_conjunct(term.quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate))
-				return true;
-		}
-
-		if (arg2 == nullptr || predicate->type != hol_term_type::CONSTANT
-		 || predicate->constant != (unsigned int) built_in_predicates::NAME || arg2->type != hol_term_type::STRING)
-			return true;
-
-		if (!visitor.named_entities.ensure_capacity(visitor.named_entities.length + 1)
-		 || !init(visitor.named_entities[visitor.named_entities.length], arg2->str))
-			return false;
-		visitor.named_entities.length++;
-	}
-	return true;
-}
-
-inline bool get_named_entities(const hol_term& src, array<string>& named_entities) {
-	named_entity_collector visitor = {named_entities};
-	return visit(src, visitor);
-}
-
-struct set_operation_normalizer {
-	array<unsigned int> variable_stack;
-	array_map<unsigned int, hol_term*> maximal_subsets;
-
-	set_operation_normalizer() : variable_stack(8), maximal_subsets(4) { }
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
-inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer) {
-	if (src->binary.left->type == hol_term_type::CONSTANT
-	 && src->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-	 && src->binary.right->type == hol_term_type::CONSTANT)
-	{
-		unsigned int max_variable = normalizer.variable_stack[0];
-		for (unsigned int i = 1; i < normalizer.variable_stack.length; i++)
-			max_variable = max(max_variable, normalizer.variable_stack[i]);
-		hol_term* new_term = hol_term::new_apply(src->binary.left, hol_term::new_lambda(max_variable + 1, hol_term::new_apply(src->binary.left, hol_term::new_variable(max_variable + 1))));
-		if (new_term == nullptr)
-			return nullptr;
-		src->binary.left->reference_count += 2;
-		return new_term;
-	}
-	return default_apply<Type>(src, normalizer);
-}
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::BINARY_APPLICATION>::type* = nullptr>
-inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer) {
-	if (src->ternary.first->type == hol_term_type::CONSTANT
-	 && src->ternary.first->constant == (unsigned int) built_in_predicates::SUBSET)
-	{
-		hol_term* antecedent;
-		hol_term* consequent;
-
-		unsigned int variable;
-		if (src->ternary.second->type == hol_term_type::LAMBDA) {
-			variable = src->ternary.second->quantifier.variable;
-
-			/* check that the variable is not used in the consequent */
-			if (src->ternary.third->type == hol_term_type::LAMBDA
-			 && src->ternary.third->quantifier.variable != variable)
-			{
-				array<unsigned int> variables(8);
-				if (!get_bound_variables(*src->ternary.third->quantifier.operand, variables))
-					return nullptr;
-				if (variables.contains(variable)) {
-					/* we can't use the antecedent variable, so check if we can use the consequent variable */
-					variable = src->ternary.third->quantifier.variable;
-					if (!get_bound_variables(*src->ternary.second->quantifier.operand, variables))
-						return nullptr;
-					if (variables.contains(variable)) {
-						/* we can't use either variable, so let's use a new one */
-						variable = normalizer.variable_stack[0];
-						for (unsigned int i = 1; i < normalizer.variable_stack.length; i++)
-							variable = max(variable, normalizer.variable_stack[i]);
-						for (unsigned int i = 0; i < variables.length; i++)
-							variable = max(variable, variables[i]);
-					}
-				}
-			}
-		} else if (src->ternary.third->type == hol_term_type::LAMBDA) {
-			variable = src->ternary.third->quantifier.variable;
-		} else {
-			/* neither antecedent or consequent are lambda expressions, so just use a new variable */
-			variable = normalizer.variable_stack[0];
-			for (unsigned int i = 1; i < normalizer.variable_stack.length; i++)
-				variable = max(variable, normalizer.variable_stack[i]);
-		}
-
-		hol_term* dst_var = hol_term::new_variable(variable);
-		if (dst_var == nullptr)
-			return nullptr;
-
-		if (src->ternary.second->type == hol_term_type::LAMBDA) {
-			antecedent = src->ternary.second->quantifier.operand;
-			if (src->ternary.second->quantifier.variable != variable) {
-				hol_term* src_var = hol_term::new_variable(src->ternary.second->quantifier.variable);
-				if (src_var == nullptr) {
-					free(*dst_var); free(dst_var);
-					return nullptr;
-				}
-				antecedent = substitute(antecedent, src_var, dst_var);
-				free(*src_var); free(src_var);
-				if (antecedent == nullptr) {
-					free(*dst_var); free(dst_var);
-					return nullptr;
-				}
-			} else {
-				antecedent->reference_count++;
-			}
-		} else {
-			antecedent = hol_term::new_apply(src->ternary.second, dst_var);
-			src->ternary.second->reference_count++;
-			dst_var->reference_count++;
-		}
-
-		if (src->ternary.third->type == hol_term_type::LAMBDA) {
-			consequent = src->ternary.third->quantifier.operand;
-			if (src->ternary.third->quantifier.variable != variable) {
-				hol_term* src_var = hol_term::new_variable(src->ternary.third->quantifier.variable);
-				if (src_var == nullptr) {
-					free(*dst_var); free(dst_var);
-					return nullptr;
-				}
-				consequent = substitute(consequent, src_var, dst_var);
-				free(*src_var); free(src_var);
-				if (consequent == nullptr) {
-					free(*dst_var); free(dst_var);
-					return nullptr;
-				}
-			} else {
-				consequent->reference_count++;
-			}
-		} else {
-			consequent = hol_term::new_apply(src->ternary.third, dst_var);
-			src->ternary.third->reference_count++;
-			dst_var->reference_count++;
-		}
-
-		free(*dst_var); if (dst_var->reference_count == 0) free(dst_var);
-		hol_term* new_term = hol_term::new_for_all(variable, hol_term::new_if_then(antecedent, consequent));
-		if (new_term == nullptr) {
-			free(*antecedent); if (antecedent->reference_count == 0) free(antecedent);
-			free(*consequent); if (consequent->reference_count == 0) free(consequent);
-			return nullptr;
-		}
-		return new_term;
-	}
-	return default_apply<Type>(src, normalizer);
-}
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer)
-{
-	normalizer.variable_stack.add(src->quantifier.variable);
-
-	hol_term* dst = nullptr;
-	if (Type == hol_term_type::EXISTS && src->quantifier.operand->type == hol_term_type::AND) {
-		hol_term* operand = src->quantifier.operand;
-		hol_term* left = operand->array.operands[0];
-		if (left->type == hol_term_type::BINARY_APPLICATION && left->ternary.first->type == hol_term_type::CONSTANT
-		 && left->ternary.first->constant == (unsigned int) built_in_predicates::MAXIMAL_SUBSET
-		 && left->ternary.second->type == hol_term_type::VARIABLE && left->ternary.second->variable == src->quantifier.variable
-		 && left->ternary.third->type == hol_term_type::LAMBDA && left->ternary.third->quantifier.operand->type != hol_term_type::LAMBDA)
-		{
-			hol_term* set_definition = left->ternary.third->quantifier.operand;
-			array<hol_term*> new_operands(operand->array.length);
-			unsigned int index = normalizer.maximal_subsets.size;
-			normalizer.maximal_subsets.put(src->quantifier.variable, nullptr);
-			unsigned int operand_with_universal_index = operand->array.length;
-			for (unsigned int i = 1; i < operand->array.length; i++) {
-				hol_term* new_operand = apply(operand->array.operands[i], normalizer);
-				if (new_operand == nullptr) {
-					free_all(new_operands);
-					return nullptr;
-				} else if (new_operand == operand->array.operands[i]) {
-					new_operand->reference_count++;
-				}
-				if (operand_with_universal_index == operand->array.length && normalizer.maximal_subsets.values[index] != nullptr)
-					operand_with_universal_index = new_operands.length;
-				new_operands[new_operands.length++] = new_operand;
-			}
-			hol_term* inner_operand = normalizer.maximal_subsets.values[index];
-			normalizer.maximal_subsets.size--;
-
-			unsigned int max_variable = 0;
-			max_bound_variable(*left->ternary.third, max_variable);
-			max_bound_variable(*inner_operand, max_variable);
-			max_bound_variable(*new_operands[operand_with_universal_index], max_variable);
-			for (unsigned int variable : normalizer.variable_stack)
-				max_variable = max(max_variable, variable);
-
-			unsigned int new_variable = ++max_variable;
-			hol_term* dst_variable = hol_term::new_variable(new_variable);
-			if (dst_variable == nullptr) {
-				free_all(new_operands);
-				return nullptr;
-			}
-			hol_term* src_variable = hol_term::new_variable(left->ternary.third->quantifier.variable);
-			if (src_variable == nullptr) {
-				free(*dst_variable); free(dst_variable);
-				free_all(new_operands); return nullptr;
-			}
-			hol_term* new_set_definition = substitute<hol_term_type::VARIABLE>(set_definition, src_variable, dst_variable);
-			free(*src_variable); free(src_variable);
-			if (new_set_definition == nullptr) {
-				free(*dst_variable); free(dst_variable);
-				free_all(new_operands); return nullptr;
-			}
-
-			src_variable = hol_term::new_variable(inner_operand->quantifier.variable);
-			if (src_variable == nullptr) {
-				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
-				free(*dst_variable); free(dst_variable);
-				free_all(new_operands); return nullptr;
-			}
-			hol_term* new_inner_operand = substitute<hol_term_type::VARIABLE>(inner_operand->quantifier.operand->binary.right, src_variable, dst_variable);
-			free(*src_variable); free(src_variable);
-			free(*dst_variable); if (dst_variable->reference_count == 0) free(dst_variable);
-			if (new_inner_operand == nullptr) {
-				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
-				free_all(new_operands); return nullptr;
-			}
-
-			normalizer.variable_stack.add(new_variable);
-			hol_term* dst_set_definition = apply(new_set_definition, normalizer);
-			if (dst_set_definition == nullptr) {
-				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
-				free(*new_inner_operand); if (new_inner_operand->reference_count == 0) free(new_inner_operand);
-				free_all(new_operands); return nullptr;
-			} else if (dst_set_definition != new_set_definition) {
-				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
-			}
-			hol_term* dst_inner_operand = apply(new_inner_operand, normalizer);
-			if (dst_inner_operand == nullptr) {
-				free(*dst_set_definition); if (dst_set_definition->reference_count == 0) free(dst_set_definition);
-				free(*new_inner_operand); if (new_inner_operand->reference_count == 0) free(new_inner_operand);
-				free_all(new_operands); return nullptr;
-			} else if (dst_inner_operand != new_inner_operand) {
-				free(*new_inner_operand); if (new_inner_operand->reference_count == 0) free(new_inner_operand);
-			}
-			normalizer.variable_stack.length--;
-
-			hol_term* new_left;
-			if (dst_set_definition->type == hol_term_type::AND) {
-				if (dst_inner_operand->type == hol_term_type::AND) {
-					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
-							hol_term::new_lambda(new_variable, hol_term::new_and(make_concat_array_view(
-								make_array_view(dst_set_definition->array.operands, dst_set_definition->array.length),
-								make_array_view(dst_inner_operand->array.operands, dst_inner_operand->array.length)))));
-				} else {
-					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
-							hol_term::new_lambda(new_variable, hol_term::new_and(make_appended_array_view(
-								make_array_view(dst_set_definition->array.operands, dst_set_definition->array.length), dst_inner_operand))));
-				}
-			} else {
-				if (dst_inner_operand->type == hol_term_type::AND) {
-					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
-							hol_term::new_lambda(new_variable, hol_term::new_and(make_prepended_array_view(
-								dst_set_definition, make_array_view(dst_inner_operand->array.operands, dst_inner_operand->array.length)))));
-				} else {
-					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
-							hol_term::new_lambda(new_variable, hol_term::new_and(dst_set_definition, dst_inner_operand)));
-				}
-			}
-			if (new_left == nullptr) {
-				free(*dst_set_definition); if (dst_set_definition->reference_count == 0) free(dst_set_definition);
-				free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
-				free_all(new_operands); return nullptr;
-			}
-			if (dst_set_definition->type == hol_term_type::AND) {
-				for (unsigned int i = 0; i < dst_set_definition->array.length; i++)
-					dst_set_definition->array.operands[i]->reference_count++;
-				free(*dst_set_definition); if (dst_set_definition->reference_count == 0) free(dst_set_definition);
-			} if (dst_inner_operand->type == hol_term_type::AND) {
-				for (unsigned int i = 0; i < dst_inner_operand->array.length; i++)
-					dst_inner_operand->array.operands[i]->reference_count++;
-				free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
-			}
-
-			hol_term* outer = new_operands[operand_with_universal_index];
-			shift_left(new_operands.data + operand_with_universal_index, new_operands.length - operand_with_universal_index - 1);
-			new_operands.length--;
-
-			dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(
-					make_prepended_array_view(new_left, make_array_view(new_operands.data, new_operands.length))));
-			if (dst == nullptr) {
-				free(*outer); if (outer->reference_count == 0) free(outer);
-				free(*new_left); free(new_left);
-				free_all(new_operands); return nullptr;
-			}
-
-			hol_term* temp = substitute<hol_term_type::CONSTANT>(outer, &HOL_ZERO, dst);
-			free(*outer); if (outer->reference_count == 0) free(outer);
-			free(*dst); if (dst->reference_count == 0) free(dst);
-			if (temp == nullptr)
-				return nullptr;
-			dst = temp;
-		}
-	} else if (Type == hol_term_type::FOR_ALL && src->quantifier.operand->type == hol_term_type::IF_THEN
-			&& src->quantifier.operand->binary.left->type == hol_term_type::UNARY_APPLICATION
-			&& src->quantifier.operand->binary.left->binary.left->type == hol_term_type::VARIABLE
-			&& src->quantifier.operand->binary.left->binary.right->type == hol_term_type::VARIABLE
-			&& src->quantifier.operand->binary.left->binary.right->variable == src->quantifier.variable)
-	{
-		unsigned int index = normalizer.maximal_subsets.index_of(src->quantifier.operand->binary.left->binary.left->variable);
-		if (index != normalizer.maximal_subsets.size) {
-			normalizer.maximal_subsets.values[index] = src;
-			dst = &HOL_ZERO;
-			HOL_ZERO.reference_count++;
-		}
-	}
-
-	if (dst == nullptr)
-		dst = default_apply<Type>(src, normalizer);
-
-#if !defined(NDEBUG)
-	if (normalizer.variable_stack.length == 0) {
-		fprintf(stderr, "apply ERROR: Quantified term is not well-formed while normalizing set operations.\n");
-		return dst;
-	}
-#endif
-	normalizer.variable_stack.length--;
-	return dst;
-}
-
-inline hol_term* normalize_set_operations(hol_term* src)
-{
-	set_operation_normalizer normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct conjunction_iterator {
-	array<pair<hol_term*, unsigned int>> stack;
-
-	conjunction_iterator(hol_term* conjunction) : stack(4) {
-		stack[0].key = conjunction;
-		stack[0].value = 0;
-		stack.length = 1;
-	}
-
-	hol_term* next() {
-		pair<hol_term*, unsigned int>& current = stack[stack.length - 1];
-		if (current.value < current.key->array.length) {
-			hol_term* next_item = current.key->array.operands[current.value];
-			if (next_item->type == hol_term_type::AND) {
-				if (!stack.add(make_pair(next_item, 0u)))
-					return nullptr;
-				return next();
-			} else {
-				current.value++;
-				return next_item;
-			}
-		}
-
-		stack.length--;
-		if (stack.length == 0)
-			return nullptr;
-		stack[stack.length - 1].value++;
-		return next();
-	}
-};
-
-struct equality_quantifier_normalizer { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
-inline hol_term* apply(hol_term* src, equality_quantifier_normalizer& normalizer) {
-	hol_term* operand = src->quantifier.operand;
-	if (operand->type != hol_term_type::AND) {
-		hol_term* other = nullptr;
-		if (operand->type == hol_term_type::EQUALS) {
-			if (operand->binary.left->type == hol_term_type::VARIABLE && operand->binary.left->variable == src->quantifier.variable
-			 && (operand->binary.right->type == hol_term_type::CONSTANT || operand->binary.right->type == hol_term_type::VARIABLE))
-			{
-				other = operand->binary.right;
-			} else if (operand->binary.right->type == hol_term_type::VARIABLE && operand->binary.right->variable == src->quantifier.variable
-					&& (operand->binary.left->type == hol_term_type::CONSTANT || operand->binary.left->type == hol_term_type::VARIABLE))
-			{
-				other = operand->binary.left;
-			}
-		}
-		if (other != nullptr) {
-			HOL_TRUE.reference_count++;
-			return &HOL_TRUE;
-		} else {
-			return default_apply<Type>(src, normalizer);
-		}
-	} else {
-		hol_term* var = nullptr;
-		hol_term* substitution = nullptr;
-		array<hol_term*> new_conjuncts(8);
-		conjunction_iterator iterator(operand);
-		hol_term* conjunct = iterator.next();
-		while (conjunct != nullptr) {
-			hol_term* other = nullptr;
-			if (substitution == nullptr && conjunct->type == hol_term_type::EQUALS) {
-				if (conjunct->binary.left->type == hol_term_type::VARIABLE && conjunct->binary.left->variable == src->quantifier.variable
-				 && (conjunct->binary.right->type == hol_term_type::CONSTANT || conjunct->binary.right->type == hol_term_type::VARIABLE))
-				{
-					var = conjunct->binary.left;
-					other = conjunct->binary.right;
-				} else if (conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == src->quantifier.variable
-						&& (conjunct->binary.left->type == hol_term_type::CONSTANT || conjunct->binary.left->type == hol_term_type::VARIABLE))
-				{
-					var = conjunct->binary.right;
-					other = conjunct->binary.left;
-				}
-			}
-			if (other == nullptr) {
-				if (!new_conjuncts.ensure_capacity(new_conjuncts.length + 1)) {
-					free_all(new_conjuncts);
-					return nullptr;
-				}
-				new_conjuncts[new_conjuncts.length] = apply(conjunct, normalizer);
-				if (new_conjuncts[new_conjuncts.length] == conjunct)
-					new_conjuncts[new_conjuncts.length]->reference_count++;
-				new_conjuncts.length++;
-			} else {
-				if (other->type == hol_term_type::VARIABLE && other->variable == src->quantifier.variable) {
-					conjunct = iterator.next();
-					continue;
-				}
-				substitution = other;
-			}
-			conjunct = iterator.next();
-		}
-
-		if (new_conjuncts.length == 0) {
-			HOL_TRUE.reference_count++;
-			return &HOL_TRUE;
-		}
-
-		if (substitution == nullptr) {
-			bool same_as_src = (new_conjuncts.length == operand->array.length);
-			for (unsigned int i = 0; same_as_src && i < new_conjuncts.length; i++)
-				if (new_conjuncts[i] != operand->array.operands[i]) same_as_src = false;
-			if (same_as_src) {
-				for (unsigned int i = 0; i < new_conjuncts.length; i++)
-					free(*new_conjuncts[i]);
-				return src;
-			} else {
-				hol_term* dst;
-				if (new_conjuncts.length == 1) {
-					dst = hol_term::new_exists(src->quantifier.variable, new_conjuncts[0]);
-				} else {
-					dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(new_conjuncts.data, new_conjuncts.length)));
-				}
-				if (dst == nullptr) {
-					free_all(new_conjuncts);
-					return nullptr;
-				}
-				return dst;
-			}
-		}
-
-		for (unsigned int i = 0; i < new_conjuncts.length; i++) {
-			hol_term* substituted = substitute(new_conjuncts[i], var, substitution);
-			if (substituted == nullptr) {
-				free_all(new_conjuncts);
-				return nullptr;
-			}
-			free(*new_conjuncts[i]); if (new_conjuncts[i]->reference_count == 0) free(new_conjuncts[i]);
-			new_conjuncts[i] = substituted;
-		}
-
-		hol_term* dst;
-		if (new_conjuncts.length == 1) {
-			dst = new_conjuncts[0];
-		} else {
-			dst = hol_term::new_and(make_array_view(new_conjuncts.data, new_conjuncts.length));
-		}
-		if (dst == nullptr) {
-			free_all(new_conjuncts);
-			return nullptr;
-		}
-		return dst;
-	}
-}
-
-inline hol_term* normalize_quantifiers_with_equality(hol_term* src)
-{
-	equality_quantifier_normalizer normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct negative_remover {
-	unsigned int target_variable;
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, negative_remover& normalizer)
-{
-	hol_term* operand = src->quantifier.operand;
-	hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-	hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-	hol_term* predicate = nullptr;
-	hol_term* dst = nullptr;
-	if (operand->type == hol_term_type::AND) {
-		unsigned int predicate_index = operand->array.length;
-		for (unsigned int i = 0; i < operand->array.length; i++) {
-			if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
-				predicate = nullptr;
-				break;
-			}
-			if (predicate != nullptr && predicate_index == operand->array.length)
-				predicate_index = i;
-		}
-
-		if (predicate != nullptr && predicate->type == hol_term_type::UNARY_APPLICATION
-		 && predicate->binary.left->type == hol_term_type::CONSTANT
-		 && predicate->binary.left->constant == (unsigned int) built_in_predicates::NEGATIVE
-		 && arg2 != nullptr && arg2->type == hol_term_type::VARIABLE
-		 && arg2->variable == normalizer.target_variable)
-		{
-			hol_term* new_predicate = hol_term::new_apply(predicate->binary.right, operand->array.operands[predicate_index]->binary.right);
-			if (new_predicate == nullptr)
-				return nullptr;
-			predicate->binary.right->reference_count++;
-			operand->array.operands[predicate_index]->binary.right->reference_count++;
-
-			if (Type == hol_term_type::EXISTS)
-				dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(
-						make_replaced_array_view(make_array_view(operand->array.operands, operand->array.length), new_predicate, predicate_index)));
-			else if (Type == hol_term_type::FOR_ALL)
-				dst = hol_term::new_for_all(src->quantifier.variable, hol_term::new_and(
-						make_replaced_array_view(make_array_view(operand->array.operands, operand->array.length), new_predicate, predicate_index)));
-			else if (Type == hol_term_type::LAMBDA)
-				dst = hol_term::new_lambda(src->quantifier.variable, hol_term::new_and(
-						make_replaced_array_view(make_array_view(operand->array.operands, operand->array.length), new_predicate, predicate_index)));
-			if (dst == nullptr) {
-				free(*new_predicate); free(new_predicate);
-				return nullptr;
-			}
-			for (unsigned int i = 0; i < operand->array.length; i++) {
-				if (i == predicate_index) continue;
-				operand->array.operands[i]->reference_count++;
-			}
-		}
-	}
-
-	if (dst == nullptr)
-		dst = default_apply<Type>(src, normalizer);
-
-	return dst;
-}
-
-inline hol_term* remove_negative(hol_term* src, unsigned int target_variable)
-{
-	negative_remover normalizer = {target_variable};
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct optimization_normalizer {
-	array_map<unsigned int, hol_term*> scopes;
-	array_map<unsigned int, hol_term*> negate_functions;
-
-	optimization_normalizer() : scopes(8), negate_functions(4) { }
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, optimization_normalizer& normalizer) {
-	if (!normalizer.scopes.put(src->quantifier.variable, src))
-		return nullptr;
-
-	hol_term* dst = nullptr;
-	if (Type == hol_term_type::EXISTS) {
-		hol_term* operand = src->quantifier.operand;
-
-		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-		hol_term* predicate = nullptr;
-		unsigned int predicate_index = operand->array.length;
-		if (operand->type == hol_term_type::AND) {
-			for (unsigned int i = 0; i < operand->array.length; i++) {
-				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
-					predicate = nullptr;
-					break;
-				}
-				if (predicate_index == operand->array.length && predicate != nullptr
-				 && predicate->type == hol_term_type::UNARY_APPLICATION
-				 && predicate->binary.left->type == hol_term_type::CONSTANT
-				 && predicate->binary.left->constant == (unsigned int) built_in_predicates::GREATEST
-				 && predicate->binary.right->type == hol_term_type::VARIABLE)
-				{
-					predicate_index = i;
-				}
-			}
-		}
-
-		if (predicate_index != operand->array.length) {
-			unsigned int function_variable = predicate->binary.right->variable;
-			hol_term* function_definition = normalizer.scopes.get(function_variable);
-			hol_term* left;
-			if (function_definition->quantifier.operand->type == hol_term_type::AND) {
-				left = function_definition->quantifier.operand->array.operands[0];
-			} else {
-				left = function_definition->quantifier.operand;
-			}
-
-			if (left->type == hol_term_type::EQUALS && left->binary.left->type == hol_term_type::VARIABLE
-			 && left->binary.left->variable == function_variable
-			 && left->binary.right->type == hol_term_type::LAMBDA
-			 && left->binary.right->quantifier.operand->type == hol_term_type::LAMBDA
-			 && left->binary.right->quantifier.operand->quantifier.operand->type == hol_term_type::EXISTS)
-			{
-				hol_term* function = left->binary.right->quantifier.operand->quantifier.operand;
-				hol_term* new_function = remove_negative(function, left->binary.right->quantifier.operand->quantifier.variable);
-				if (new_function == function) {
-					function->reference_count--;
-				} else {
-					/* we found a `greatest(f)` scope where `f` is a `negative` function */
-					if (!normalizer.negate_functions.put(function_variable, new_function)) {
-						free(*new_function); free(new_function);
-						return nullptr;
-					}
-
-					array<hol_term*> operands(operand->array.length);
-					for (unsigned int i = 0; i < operand->array.length; i++) {
-						if (i == predicate_index) {
-							operands[i] = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::LEAST>::value, predicate->binary.right), operand->array.operands[predicate_index]->binary.right);
-							if (operands[i] == nullptr) {
-								free_all(operands);
-								return nullptr;
-							}
-							hol_term::constants<(unsigned int) built_in_predicates::LEAST>::value.reference_count++;
-							predicate->binary.right->reference_count++;
-							operand->array.operands[predicate_index]->binary.right->reference_count++;
-						} else {
-							operands[i] = apply(operand->array.operands[i], normalizer);
-							if (operands[i] == nullptr) {
-								free_all(operands);
-								return nullptr;
-							} else if (operands[i] == operand->array.operands[i]) {
-								operands[i]->reference_count++;
-							}
-						}
-						operands.length++;
-					}
-
-					dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(operands.data, operands.length)));
-					if (dst == nullptr) {
-						free_all(operands);
-						return nullptr;
-					}
-				}
-			}
-		}
-	}
-
-	if (dst == nullptr) {
-		dst = default_apply<Type>(src, normalizer);
-		if (dst == nullptr) return nullptr;
-		else if (dst == src) dst->reference_count++;
-	}
-
-	unsigned int index = normalizer.negate_functions.index_of(dst->quantifier.variable);
-	if (index != normalizer.negate_functions.size) {
-		hol_term* new_function = normalizer.negate_functions.values[index];
-		normalizer.negate_functions.remove_at(index);
-
-		hol_term* left;
-		if (dst->quantifier.operand->type == hol_term_type::AND) {
-			left = dst->quantifier.operand->array.operands[0];
-		} else {
-			left = dst->quantifier.operand;
-		}
-
-		hol_term* new_left = hol_term::new_equals(left->binary.left, hol_term::new_lambda(left->binary.right->quantifier.variable, hol_term::new_lambda(left->binary.right->quantifier.operand->quantifier.variable, new_function)));
-		if (new_left == nullptr) {
-			free(*dst); if (dst->reference_count == 0) free(dst);
-			free(*new_function); if (new_function->reference_count == 0) free(new_function);
-			return nullptr;
-		}
-		left->binary.left->reference_count++;
-
-		hol_term* new_dst;
-		if (dst->quantifier.operand->type == hol_term_type::AND) {
-			new_dst = hol_term::new_exists(dst->quantifier.variable, hol_term::new_and(make_replaced_array_view(
-					make_array_view(dst->quantifier.operand->array.operands, dst->quantifier.operand->array.length), new_left, 0)));
-			if (new_dst == nullptr) {
-				free(*dst); if (dst->reference_count == 0) free(dst);
-				free(*new_left); if (new_left->reference_count == 0) free(new_left);
-				return nullptr;
-			}
-			for (unsigned int i = 1; i < new_dst->quantifier.operand->array.length; i++)
-				new_dst->quantifier.operand->array.operands[i]->reference_count++;
-		} else {
-			new_dst = hol_term::new_exists(dst->quantifier.variable, new_left);
-			if (new_dst == nullptr) {
-				free(*dst); if (dst->reference_count == 0) free(dst);
-				free(*new_left); if (new_left->reference_count == 0) free(new_left);
-				return nullptr;
-			}
-		}
-
-		free(*dst); if (dst->reference_count == 0) free(dst);
-		dst = new_dst;
-	}
-
-	normalizer.scopes.size--;
-	if (dst == src) dst->reference_count--;
-	return dst;
-}
-
-inline hol_term* normalize_optimizations(hol_term* src)
-{
-	optimization_normalizer normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct subset_substituter {
-	unsigned int variable;
-	hol_term* set;
-	hol_term* lambda_var;
-
-	subset_substituter(unsigned int variable, hol_term* set) : variable(variable), set(set) {
-		lambda_var = hol_term::new_variable(set->quantifier.variable);
-		if (lambda_var == nullptr) throw std::bad_alloc();
-	}
-
-	~subset_substituter() {
-		free(*lambda_var); free(lambda_var);
-	}
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
-inline hol_term* apply(hol_term* src, subset_substituter& normalizer)
-{
-	if (src->binary.left->type == hol_term_type::VARIABLE && src->binary.left->variable == normalizer.variable) {
-		return substitute(normalizer.set->quantifier.operand, normalizer.lambda_var, src->binary.right);
-	} else {
-		return default_apply<Type>(src, normalizer);
-	}
-}
-
-inline hol_term* substitute_subsets(hol_term* src, unsigned int variable, hol_term* set)
-{
-	subset_substituter normalizer(variable, set);
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct subset_simplifier {
-	array<unsigned int> irreducible_variables;
-
-	subset_simplifier() : irreducible_variables(4) { }
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::UNARY_APPLICATION || Type == hol_term_type::VARIABLE>::type* = nullptr>
-inline hol_term* apply(hol_term* src, subset_simplifier& normalizer)
-{
-	if (Type == hol_term_type::EXISTS) {
-		if (src->quantifier.operand->type != hol_term_type::AND)
-			return default_apply<Type>(src, normalizer);
-
-		unsigned int operand_count = src->quantifier.operand->array.length;
-		unsigned int set_definition_index = operand_count;
-		array<hol_term*> new_operands(operand_count);
-		for (unsigned int i = 0; i < operand_count; i++) {
-			hol_term* operand = src->quantifier.operand->array.operands[i];
-			if (operand->type == hol_term_type::EQUALS && operand->binary.left->type == hol_term_type::VARIABLE && operand->binary.left->variable == src->quantifier.variable
-			 && operand->binary.right->type == hol_term_type::LAMBDA && operand->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
-			{
-				set_definition_index = i;
-				hol_term* right = apply(operand->binary.right, normalizer);
-				if (right == operand->binary.right) {
-					new_operands[i] = operand;
-				} else {
-					new_operands[i] = hol_term::new_equals(operand->binary.left, right);
-					if (new_operands[i] == nullptr) {
-						free(*right); free(right);
-						new_operands[i] = nullptr;
-					} else {
-						operand->binary.left->reference_count++;
-					}
-				}
-			} else {
-				new_operands[i] = apply(operand, normalizer);
-			}
-
-			if (new_operands[i] == nullptr) {
-				for (unsigned int j = 0; j < i; j++) {
-					if (new_operands[j] != src->quantifier.operand->array.operands[j]) {
-						free(*new_operands[j]); free(new_operands[j]);
-					}
-				}
-				return nullptr;
-			}
-		}
-
-		if (set_definition_index < operand_count) {
-			unsigned int index = normalizer.irreducible_variables.index_of(src->quantifier.variable);
-			if (index < normalizer.irreducible_variables.length) {
-				normalizer.irreducible_variables.remove(index);
-			} else {
-				for (unsigned int i = 0; i < operand_count; i++)
-					if (new_operands[i] == src->quantifier.operand->array.operands[i]) new_operands[i]->reference_count++;
-				for (unsigned int i = 0; i < operand_count; i++) {
-					if (i == set_definition_index) continue;
-					hol_term* new_operand = substitute_subsets(new_operands[i], src->quantifier.variable, new_operands[set_definition_index]->binary.right);
-					if (new_operand == nullptr) {
-						for (unsigned int j = 0; j < operand_count; j++) {
-							free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]);
-						}
-						return nullptr;
-					}
-					free(*new_operands[i]); if (new_operands[i]->reference_count == 0) free(new_operands[i]);
-					new_operands[i] = new_operand;
-				}
-
-				if (operand_count == 2) {
-					free(*new_operands[set_definition_index]); if (new_operands[set_definition_index]->reference_count == 0) free(new_operands[set_definition_index]);
-					hol_term* dst = new_operands[1 - set_definition_index];
-					if (dst == src->quantifier.operand->array.operands[1 - set_definition_index])
-						dst->reference_count--;
-					return dst;
-				} else {
-					hol_term* dst = hol_term::new_and(make_excluded_array_view(new_operands.data, operand_count, set_definition_index));
-					if (dst == nullptr) {
-						for (unsigned int j = 0; j < operand_count; j++) {
-							free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]);
-						}
-						return nullptr;
-					}
-					free(*new_operands[set_definition_index]); if (new_operands[set_definition_index]->reference_count == 0) free(new_operands[set_definition_index]);
-					return dst;
-				}
-			}
-		} else {
-			unsigned int index = normalizer.irreducible_variables.index_of(src->quantifier.variable);
-			if (index != normalizer.irreducible_variables.length)
-				normalizer.irreducible_variables.remove(index);
-		}
-
-		bool same_as_src = true;
-		for (unsigned int i = 0; same_as_src && i < operand_count; i++)
-			if (new_operands[i] != src->quantifier.operand->array.operands[i]) same_as_src = false;
-		if (same_as_src)
-			return src;
-
-		hol_term* dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(new_operands.data, operand_count)));
-		if (dst == nullptr) {
-			for (unsigned int j = 0; j < operand_count; j++) {
-				if (new_operands[j] != src->quantifier.operand->array.operands[j]) {
-					free(*new_operands[j]); free(new_operands[j]);
-				}
-			}
-			return nullptr;
-		}
-		for (unsigned int i = 0; i < operand_count; i++) {
-			if (new_operands[i] == src->quantifier.operand->array.operands[i])
-				new_operands[i]->reference_count++;
-		}
-		return dst;
-
-	} else if (Type == hol_term_type::VARIABLE) {
-		if (!normalizer.irreducible_variables.contains(src->variable) && !normalizer.irreducible_variables.add(src->variable))
-			return nullptr;
-		return default_apply<Type>(src, normalizer);
-
-	} else if (Type == hol_term_type::UNARY_APPLICATION) {
-		if (src->binary.left->type == hol_term_type::VARIABLE) {
-			hol_term* right = apply(src->binary.right, normalizer);
-			if (right == nullptr) {
-				return nullptr;
-			} else if (right == src->binary.right) {
-				return src;
-			}
-
-			hol_term* dst = hol_term::new_apply(src->binary.right, right);
-			if (dst == nullptr) {
-				free(*right); free(right);
-				return nullptr;
-			}
-			src->binary.right->reference_count++;
-			return dst;
-		} else {
-			return default_apply<Type>(src, normalizer);
-		}
-	}
-
-	/* unreachable */
-	return nullptr;
-}
-
-inline hol_term* simplify_subsets(hol_term* src)
-{
-	subset_simplifier normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct comparative_normalizer {
-	array_map<unsigned int, hol_term*> scopes;
-	array<unsigned int> remove_scopes;
-
-	comparative_normalizer() : scopes(8), remove_scopes(4) { }
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, comparative_normalizer& normalizer)
-{
-	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
-		if (!normalizer.scopes.put(src->quantifier.variable, src))
-			return nullptr;
-	}
-
-	hol_term* dst = nullptr;
-	if (Type == hol_term_type::EXISTS) {
-		/* check if this is a `greater` scope */
-		hol_term* operand = src->quantifier.operand;
-		if (operand->type == hol_term_type::AND) {
-			hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-			hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-			hol_term* predicate = nullptr;
-			for (unsigned int i = 0; i < operand->array.length; i++) {
-				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
-					predicate = nullptr;
-					break;
-				}
-			}
-
-			if (predicate != nullptr && predicate->type == hol_term_type::UNARY_APPLICATION
-			 && predicate->binary.left->type == hol_term_type::CONSTANT
-			 && predicate->binary.left->constant == (unsigned int) built_in_predicates::GREATER
-			 && arg1 != nullptr && arg2 != nullptr)
-			{
-				hol_term* function = predicate->binary.right;
-				bool negated = false;
-				if (function->type == hol_term_type::UNARY_APPLICATION && function->binary.left->type == hol_term_type::CONSTANT
-				 && function->binary.left->constant == (unsigned int) built_in_predicates::NEGATIVE)
-				{
-					function = function->binary.right;
-					negated = true;
-				}
-
-				unsigned int max_variable = 0;
-				max_bound_variable(*src, max_variable);
-				for (const auto& entry : normalizer.scopes)
-					max_variable = max(max_variable, entry.key);
-
-				/* check if the arg2 is a `measure` instance */
-				if (arg2->type == hol_term_type::VARIABLE) {
-					hol_term* other_scope = normalizer.scopes.get(arg2->variable);
-					hol_term* other_operand = other_scope->quantifier.operand;
-					hol_term* other_arg1 = nullptr; hol_term* other_arg1_of = nullptr;
-					hol_term* other_arg2 = nullptr; hol_term* other_arg2_of = nullptr;
-					hol_term* other_predicate = nullptr;
-					unsigned int predicate_index, arg1_index, arg2_index;
-					if (other_operand->type == hol_term_type::AND) {
-						predicate_index = other_operand->array.length;
-						arg1_index = other_operand->array.length;
-						arg2_index = other_operand->array.length;
-						for (unsigned int i = 0; i < other_operand->array.length; i++) {
-							if (other_operand->array.operands[i]->type == hol_term_type::EXISTS
-							 || other_operand->array.operands[i]->type == hol_term_type::FOR_ALL
-							 || other_operand->array.operands[i]->type == hol_term_type::NOT)
-								continue;
-							if (!process_event_conjunct(other_scope->quantifier.variable, other_operand->array.operands[i], other_arg1, other_arg2, other_arg1_of, other_arg2_of, other_predicate)) {
-								other_predicate = nullptr;
-								break;
-							}
-							if (other_predicate != nullptr && predicate_index == other_operand->array.length)
-								predicate_index = i;
-							else if (other_arg1 != nullptr && arg1_index == other_operand->array.length)
-								arg1_index = i;
-							else if (other_arg2 != nullptr && arg2_index == other_operand->array.length)
-								arg2_index = i;
-						}
-					}
-
-					if (other_predicate != nullptr && other_predicate->type == hol_term_type::CONSTANT
-					 && other_predicate->constant == (unsigned int) built_in_predicates::MEASURE
-					 && other_arg1 != nullptr && other_arg2 != nullptr)
-					{
-						if (!normalizer.remove_scopes.contains(other_scope->quantifier.variable)
-						 && !normalizer.remove_scopes.add(other_scope->quantifier.variable))
-							return (hol_term*) nullptr;
-
-						/* arg2 is a `measure` instance */
-						unsigned int value_variable = ++max_variable;
-						hol_term* value_var = hol_term::new_variable(value_variable);
-						if (value_var == nullptr)
-							return (hol_term*) nullptr;
-
-						unsigned int measure_variable = other_scope->quantifier.variable;
-						hol_term* measure_var = other_operand->array.operands[predicate_index]->binary.right;
-						unsigned int function_variable = ++max_variable;
-						hol_term* function_var = hol_term::new_variable(function_variable);
-						if (function_var == nullptr) {
-							free(*value_var); free(value_var);
-							return (hol_term*) nullptr;
-						}
-
-						dst = hol_term::new_exists(value_variable, hol_term::new_and(
-								hol_term::new_exists(measure_variable, hol_term::new_and(
-									other_operand->array.operands[predicate_index],
-									hol_term::new_equals(other_operand->array.operands[arg1_index]->binary.left, value_var),
-									other_operand->array.operands[arg2_index],
-									hol_term::new_exists(function_variable, hol_term::new_and(
-										hol_term::new_apply(function, function_var),
-										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, function_var), arg1),
-										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, function_var), measure_var)
-									))
-								)),
-								(negated
-									? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, other_arg1, value_var)
-									: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, value_var, other_arg1)
-								)
-							));
-						if (dst == nullptr) {
-							free(*value_var); free(value_var);
-							free(*function_var); free(function_var);
-							return (hol_term*) nullptr;
-						}
-						value_var->reference_count += 3 - 1;
-						function_var->reference_count += 3 - 1;
-						other_operand->array.operands[predicate_index]->reference_count++;
-						other_operand->array.operands[arg1_index]->binary.left->reference_count++;
-						other_operand->array.operands[arg2_index]->reference_count++;
-						function->reference_count++;
-						hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
-						arg1->reference_count++;
-						hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
-						measure_var->reference_count++;
-						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
-						other_arg2->reference_count++;
-					}
-				}
-
-				if (dst == nullptr) {
-					if (function->type == hol_term_type::CONSTANT && function->constant == (unsigned int) built_in_predicates::VALUE) {
-						dst = (negated
-								? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg2, arg1)
-								: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg1, arg2));
-						if (dst == nullptr)
-							return (hol_term*) nullptr;
-						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
-						arg1->reference_count++;
-						arg2->reference_count++;
-					} else {
-						unsigned int value_variable = ++max_variable;
-						hol_term* value_var = hol_term::new_variable(value_variable);
-						if (value_var == nullptr)
-							return (hol_term*) nullptr;
-
-						unsigned int function_variable = ++max_variable;
-						hol_term* function_var = hol_term::new_variable(function_variable);
-						if (function_var == nullptr) {
-							free(*value_var); free(value_var);
-							return (hol_term*) nullptr;
-						}
-
-						dst = hol_term::new_exists(value_variable, hol_term::new_and(
-									hol_term::new_exists(function_variable, hol_term::new_and(
-										hol_term::new_apply(function, function_var),
-										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, function_var), arg1),
-										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, function_var), value_var)
-									)),
-									(negated
-										? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg2, value_var)
-										: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, value_var, arg2)
-									)
-								));
-						if (function_var == nullptr) {
-							free(*value_var); free(value_var);
-							free(*function_var); free(function_var);
-							return (hol_term*) nullptr;
-						}
-						value_var->reference_count += 3 - 1;
-						function_var->reference_count += 3 - 1;
-						function->reference_count++;
-						hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
-						arg1->reference_count++;
-						hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
-						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
-						arg2->reference_count++;
-					}
-				}
-			}
-		}
-	}
-
-	if (dst == nullptr) {
-		if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
-			hol_term* operand = src->quantifier.operand;
-			array<hol_term*> new_operands(operand->type == hol_term_type::AND ? operand->array.length : 1);
-			bool is_same = true;
-			if (operand->type == hol_term_type::AND) {
-				for (unsigned int i = 0; i < operand->array.length; i++) {
-					new_operands[i] = apply(operand->array.operands[i], normalizer);
-					if (new_operands[i] == nullptr) {
-						free_all(new_operands);
-						return nullptr;
-					} else if (new_operands[i] == operand->array.operands[i]) {
-						new_operands[i]->reference_count++;
-					} else {
-						is_same = false;
-					}
-					new_operands.length++;
-				}
-			} else {
-				new_operands[0] = apply(operand, normalizer);
-				if (new_operands[0] == nullptr) {
-					return nullptr;
-				} else if (new_operands[0] == operand) {
-					new_operands[0]->reference_count++;
-				} else {
-					is_same = false;
-				}
-				new_operands.length = 1;
-			}
-
-			unsigned int index = normalizer.remove_scopes.index_of(src->quantifier.variable);
-			if (index != normalizer.remove_scopes.length) {
-				normalizer.remove_scopes.remove(index);
-
-				for (unsigned int i = 0; i < new_operands.length; i++) {
-					if (is_variable_free(*new_operands[i], src->quantifier.variable)) {
-						free(*new_operands[i]); if (new_operands[i]->reference_count == 0) free(new_operands[i]);
-						new_operands.remove(i--);
-					}
-				}
-
-				if (new_operands.length == 1) {
-					dst = new_operands[0];
-				} else {
-					dst = hol_term::new_and(make_array_view(new_operands.data, new_operands.length));
-				}
-				if (dst == nullptr) {
-					free_all(new_operands);
-					return nullptr;
-				}
-
-			} else {
-				if (is_same) {
-					for (hol_term* new_operand : new_operands)
-						new_operand->reference_count--;
-					dst = src;
-				} else {
-					if (Type == hol_term_type::EXISTS)
-						dst = hol_term::new_exists(src->quantifier.variable,
-								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
-					else if (Type == hol_term_type::FOR_ALL)
-						dst = hol_term::new_for_all(src->quantifier.variable,
-								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
-					else if (Type == hol_term_type::LAMBDA)
-						dst = hol_term::new_lambda(src->quantifier.variable,
-								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
-					if (dst == nullptr) {
-						free_all(new_operands);
-						return nullptr;
-					}
-				}
-			}
-		} else {
-			dst = default_apply<Type>(src, normalizer);
-		}
-	}
-
-	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-		normalizer.scopes.size--;
-
-	return dst;
-}
-
-inline hol_term* normalize_comparatives(hol_term* src)
-{
-	comparative_normalizer normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct variable_name_universalizer {
-	unsigned int max_variable;
-	array_map<char, hol_term*> new_variables;
-	array_map<unsigned int, hol_term*> variable_map;
-
-	variable_name_universalizer(unsigned int max_variable) : max_variable(max_variable), new_variables(4), variable_map(4) { }
-
-	~variable_name_universalizer() {
-		for (auto entry : new_variables) {
-			free(*entry.value);
-			if (entry.value->reference_count == 0)
-				free(entry.value);
-		} for (auto entry : variable_map) {
-			free(*entry.value);
-			if (entry.value->reference_count == 0)
-				free(entry.value);
-		}
-	}
-};
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::IF_THEN || Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, variable_name_universalizer& normalizer)
-{
-	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
-		hol_term* operand = src->quantifier.operand;
-		if (Type == hol_term_type::EXISTS && operand->type == hol_term_type::AND && operand->array.length == 3) {
-			hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-			hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-			hol_term* predicate = nullptr;
-			for (unsigned int i = 0; i < operand->array.length; i++) {
-				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
-					predicate = nullptr;
-					break;
-				}
-			}
-
-			if (predicate != nullptr && arg1_of != nullptr && arg2 != nullptr
-			 && predicate->type == hol_term_type::CONSTANT
-			 && predicate->constant == (unsigned int) built_in_predicates::NAME
-			 && arg1_of->type == hol_term_type::VARIABLE
-			 && arg2->type == hol_term_type::STRING
-			 && arg2->str.length == 1 && isupper(arg2->str[0]))
-			{
-				if (!normalizer.new_variables.ensure_capacity(normalizer.new_variables.size + 1))
-					return nullptr;
-				unsigned int index = normalizer.new_variables.index_of(arg2->str[0]);
-				hol_term* new_variable;
-				if (index != normalizer.new_variables.size) {
-					new_variable = normalizer.new_variables.values[index];
-				} else {
-					/* we found a new "variable name" */
-					new_variable = hol_term::new_variable(++normalizer.max_variable);
-					if (new_variable == nullptr)
-						return nullptr;
-					normalizer.new_variables.keys[normalizer.new_variables.size] = arg2->str[0];
-					normalizer.new_variables.values[normalizer.new_variables.size++] = new_variable;
-				}
-
-				if (!normalizer.variable_map.ensure_capacity(normalizer.variable_map.size + 1))
-					return nullptr;
-				index = normalizer.variable_map.index_of(arg1_of->variable);
-				if (index == normalizer.variable_map.size) {
-					normalizer.variable_map.keys[normalizer.variable_map.size] = arg1_of->variable;
-					normalizer.variable_map.values[normalizer.variable_map.size++] = new_variable;
-					new_variable->reference_count++;
-				}
-
-				HOL_TRUE.reference_count++;
-				return &HOL_TRUE;
-			}
-		}
-
-		/* check if we need to remove this quantifier */
-		hol_term* new_operand = apply(src->quantifier.operand, normalizer);
-		if (new_operand == nullptr)
-			return nullptr;
-
-		unsigned int index = normalizer.variable_map.index_of(src->quantifier.variable);
-		if (index != normalizer.variable_map.size) {
-			hol_term* src_var = hol_term::new_variable(src->quantifier.variable);
-			if (src_var == nullptr) {
-				if (new_operand != src->quantifier.operand) { free(*new_operand); free(new_operand); }
-				return nullptr;
-			}
-			hol_term* new_variable = normalizer.variable_map.values[index];
-			hol_term* substituted = substitute<hol_term_type::VARIABLE>(new_operand, src_var, new_variable);
-			free(*src_var); free(src_var);
-			if (new_operand != src->quantifier.operand) {
-				free(*new_operand); if (new_operand->reference_count == 0) free(new_operand);
-			}
-			normalizer.variable_map.remove_at(index);
-			free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
-			return substituted;
-		} else {
-			if (new_operand == src->quantifier.operand)
-				return src;
-			hol_term* dst = nullptr;
-			if (Type == hol_term_type::EXISTS)
-				dst = hol_term::new_exists(src->quantifier.variable, new_operand);
-			else if (Type == hol_term_type::FOR_ALL)
-				dst = hol_term::new_for_all(src->quantifier.variable, new_operand);
-			else if (Type == hol_term_type::LAMBDA)
-				dst = hol_term::new_lambda(src->quantifier.variable, new_operand);
-			if (dst == nullptr) {
-				if (new_operand != src->quantifier.operand) { free(*new_operand); free(new_operand); }
-				return nullptr;
-			}
-			if (new_operand == src->quantifier.operand) new_operand->reference_count++;
-			return dst;
-		}
-
-	} else if (Type == hol_term_type::IF_THEN) {
-		hol_term* left = apply(src->binary.left, normalizer);
-		if (left == nullptr) return nullptr;
-		hol_term* right = apply(src->binary.right, normalizer);
-		if (right == nullptr) {
-			if (left != src->binary.left) { free(*left); free(left); }
-			return nullptr;
-		}
-
-		if (normalizer.new_variables.size == 0) {
-			if (left == src->binary.left && right == src->binary.right)
-				return src;
-			hol_term* dst = hol_term::new_if_then(left, right);
-			if (dst == nullptr) {
-				if (left != src->binary.left) { free(*left); free(left); }
-				if (right != src->binary.right) { free(*right); free(right); }
-				return nullptr;
-			}
-			if (left == src->binary.left) left->reference_count++;
-			if (right == src->binary.right) right->reference_count++;
-			return dst;
-		} else {
-			hol_term* operand = hol_term::new_if_then(left, right);
-			if (operand == nullptr) {
-				if (left != src->binary.left) { free(*left); free(left); }
-				if (right != src->binary.right) { free(*right); free(right); }
-				return nullptr;
-			}
-			if (left == src->binary.left) left->reference_count++;
-			if (right == src->binary.right) right->reference_count++;
-
-			for (unsigned int i = 0; i < normalizer.new_variables.size; i++) {
-				hol_term* new_operand = hol_term::new_for_all(normalizer.new_variables.values[i]->variable, operand);
-				if (new_operand == nullptr) {
-					free(*operand); free(operand);
-					return nullptr;
-				}
-				operand = new_operand;
-
-				free(*normalizer.new_variables.values[i]);
-				if (normalizer.new_variables.values[i]->reference_count == 0)
-					free(normalizer.new_variables.values[i]);
-			}
-			normalizer.new_variables.size = 0;
-			return operand;
-		}
-	}
-
-	/* unreachable */
-	return nullptr;
-}
-
-inline hol_term* universalize_variable_names(hol_term* src)
-{
-	unsigned int max_variable = 0;
-	if (!max_bound_variable(*src, max_variable))
-		return nullptr;
-
-	variable_name_universalizer normalizer(max_variable);
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-bool add_flattened_conjuncts(array<hol_term*>& conjuncts, hol_term* new_conjunct) {
-	if (new_conjunct->type == hol_term_type::AND) {
-		for (unsigned int i = 0; i < new_conjunct->array.length; i++) {
-			if (!add_flattened_conjuncts(conjuncts, new_conjunct->array.operands[i]))
-				return false;
-		}
-		return true;
-	} else {
-		return conjuncts.add(new_conjunct);
-	}
-}
-
-struct property_simplifier {
-	array_map<unsigned int, hol_term*> scopes;
-
-	property_simplifier() : scopes(8) { }
-};
-
-bool is_event(hol_term* scope, const array_map<unsigned int, hol_term*>& scopes)
-{
-	/* check if `variable` has any arguments */
-	hol_term* any_arg_term = hol_term::new_any(hol_term::new_equals(hol_term::new_apply(
-			hol_term::new_any_constant(
-				(unsigned int) built_in_predicates::ARG1,
-				(unsigned int) built_in_predicates::ARG2,
-				(unsigned int) built_in_predicates::ARG3),
-			hol_term::new_variable(scope->quantifier.variable)), &HOL_ANY));
-	if (any_arg_term == nullptr)
-		return false;
-	HOL_ANY.reference_count++;
-
-	bool has_arg_term = has_intersection<built_in_predicates>(scope, any_arg_term);
-	free(*any_arg_term); free(any_arg_term);
-	if (has_arg_term) return true;
-
-	/* check if `scope->quantifier.variable` is an element of a set of events */
-	hol_term* operand = scope->quantifier.operand;
-	unsigned int set_variable = 0;
-	if (operand->type == hol_term_type::AND) {
-		for (unsigned int i = 0; i < operand->array.length; i++) {
-			hol_term* conjunct = operand->array.operands[i];
-			if (conjunct->type == hol_term_type::UNARY_APPLICATION
-			 && conjunct->binary.left->type == hol_term_type::VARIABLE
-			 && conjunct->binary.left->variable != scope->quantifier.variable
-			 && conjunct->binary.right->type == hol_term_type::VARIABLE
-			 && conjunct->binary.right->variable == scope->quantifier.variable)
-			{
-				set_variable = conjunct->binary.left->variable;
-				break;
-			}
-		}
-	} else if (operand->type == hol_term_type::UNARY_APPLICATION
-			&& operand->binary.left->type == hol_term_type::VARIABLE
-			&& operand->binary.left->variable != scope->quantifier.variable
-			&& operand->binary.right->type == hol_term_type::VARIABLE
-			&& operand->binary.right->variable == scope->quantifier.variable)
-	{
-		set_variable = operand->binary.left->variable;
-	}
-
-	if (set_variable == 0)
-		return false;
-	hol_term* set_scope = scopes.get(set_variable);
-	hol_term* set_operand = set_scope->quantifier.operand;
-	hol_term* set_definition = nullptr;
-	if (set_operand->type == hol_term_type::AND) {
-		for (unsigned int i = 0; i < set_operand->array.length; i++) {
-			hol_term* conjunct = set_operand->array.operands[i];
-			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
-			 && conjunct->binary.left->variable == set_variable && conjunct->binary.right->type == hol_term_type::LAMBDA
-			 && conjunct->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
-			{
-				set_definition = conjunct->binary.right;
-				break;
-			}
-		}
-	} else if (set_operand->type == hol_term_type::EQUALS && set_operand->binary.left->type == hol_term_type::VARIABLE
-			&& set_operand->binary.left->variable == set_variable && set_operand->binary.right->type == hol_term_type::LAMBDA
-			&& set_operand->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
-	{
-		set_definition = set_operand->binary.right;
-	}
-
-	if (set_definition == nullptr)
-		return false;
-
-	return is_event(set_definition, scopes);
-}
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, property_simplifier& normalizer)
-{
-	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
-		if (!normalizer.scopes.put(src->quantifier.variable, src))
-			return nullptr;
-	}
-
-	if (Type == hol_term_type::EXISTS && src->quantifier.operand->type == hol_term_type::AND) {
-		hol_term* operand = src->quantifier.operand;
-		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
-		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
-		hol_term* predicate = nullptr;
-		for (unsigned int i = 0; i < operand->array.length; i++) {
-			if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
-				predicate = nullptr;
-				break;
-			}
-		}
-
-		if (predicate != nullptr && arg1 != nullptr && arg2 != nullptr) {
-			if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::CARDINALITY) {
-				hol_term* dst = hol_term::new_equals(
-							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value, arg1), arg2);
-				if (dst == nullptr)
-					return nullptr;
-				hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value.reference_count++;
-				arg1->reference_count++;
-				arg2->reference_count++;
-				if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-					normalizer.scopes.size--;
-				return dst;
-			} else if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::VALUE) {
-				hol_term* dst = hol_term::new_equals(
-							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, arg1), arg2);
-				if (dst == nullptr)
-					return nullptr;
-				hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
-				arg1->reference_count++;
-				arg2->reference_count++;
-				if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-					normalizer.scopes.size--;
-				return dst;
-			} else if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::HAS
-					&& arg2->type == hol_term_type::VARIABLE && is_event(normalizer.scopes.get(arg2->variable), normalizer.scopes))
-			{
-				hol_term* dst = hol_term::new_equals(
-							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, arg2), arg1);
-				if (dst == nullptr)
-					return nullptr;
-				hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
-				arg1->reference_count++;
-				arg2->reference_count++;
-				if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-					normalizer.scopes.size--;
-				return dst;
-			}
-		}
-
-		/* check if this scope declares a set of function values */
-		array<hol_term*> new_operands(operand->array.length);
-		bool is_same = true;
-		for (unsigned int i = 0; i < operand->array.length; i++) {
-			hol_term* new_operand = apply(operand->array.operands[i], normalizer);
-			if (new_operand == nullptr) {
-				free_all(new_operands);
-				return nullptr;
-			} else if (new_operand == operand->array.operands[i]) {
-				new_operand->reference_count++;
-			} else {
-				is_same = false;
-			}
-
-			if (!add_flattened_conjuncts(new_operands, new_operand)) {
-				free_all(new_operands);
-				return nullptr;
-			}
-		}
-
-		hol_term* function = nullptr;
-		hol_term* argument = nullptr;
-		for (hol_term* conjunct : new_operands) {
-			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
-			 && conjunct->binary.left->variable == src->quantifier.variable
-			 && conjunct->binary.right->type == hol_term_type::LAMBDA
-			 && conjunct->binary.right->quantifier.operand->type == hol_term_type::EQUALS
-			 && conjunct->binary.right->quantifier.operand->binary.left->type == hol_term_type::UNARY_APPLICATION
-			 && conjunct->binary.right->quantifier.operand->binary.right->type == hol_term_type::VARIABLE
-			 && conjunct->binary.right->quantifier.operand->binary.right->variable == conjunct->binary.right->quantifier.variable)
-			{
-				function = conjunct->binary.right->quantifier.operand->binary.left;
-			} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
-					&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
-					&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
-					&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
-					&& conjunct->binary.left->binary.right->variable == src->quantifier.variable
-					&& conjunct->binary.right->type == hol_term_type::NUMBER)
-			{
-				if (conjunct->binary.right->number.integer != 1 || conjunct->binary.right->number.decimal != 0) {
-					free_all(new_operands);
-					HOL_FALSE.reference_count++;
-					if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-						normalizer.scopes.size--;
-					return &HOL_FALSE;
-				}
-			} else if (conjunct->type == hol_term_type::UNARY_APPLICATION
-					&& conjunct->binary.left->type == hol_term_type::VARIABLE
-					&& conjunct->binary.left->variable == src->quantifier.variable)
-			{
-				argument = conjunct->binary.right;
-			} else if (conjunct->type == hol_term_type::TRUE) {
-				continue;
-			} else {
-				function = nullptr;
-				break;
-			}
-		}
-
-		if (function != nullptr && argument != nullptr) {
-			hol_term* dst = hol_term::new_equals(function, argument);
-			if (dst == nullptr) {
-				free_all(new_operands);
-				return nullptr;
-			}
-			function->reference_count++;
-			argument->reference_count++;
-			free_all(new_operands);
-			if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-				normalizer.scopes.size--;
-			return dst;
-		}
-
-		hol_term* dst;
-		if (is_same) {
-			for (hol_term* new_operand : new_operands)
-				new_operand->reference_count--;
-			dst = src;
-		} else {
-			if (Type == hol_term_type::EXISTS)
-				dst = hol_term::new_exists(src->quantifier.variable,
-						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
-			else if (Type == hol_term_type::FOR_ALL)
-				dst = hol_term::new_for_all(src->quantifier.variable,
-						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
-			else if (Type == hol_term_type::LAMBDA)
-				dst = hol_term::new_lambda(src->quantifier.variable,
-						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
-			if (dst == nullptr) {
-				free_all(new_operands);
-				return nullptr;
-			}
-		}
-		if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-			normalizer.scopes.size--;
-		return dst;
-	}
-
-	hol_term* dst = default_apply<Type>(src, normalizer);
-	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
-		normalizer.scopes.size--;
-	return dst;
-}
-
-inline hol_term* simplify_properties(hol_term* src)
-{
-	property_simplifier normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct function_normalizer { };
-
-template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::LAMBDA>::type* = nullptr>
-inline hol_term* apply(hol_term* src, function_normalizer& normalizer)
-{
-	hol_term* dst = nullptr;
-	if (src->quantifier.operand->type == hol_term_type::LAMBDA && src->quantifier.operand->quantifier.operand->type == hol_term_type::EXISTS
-	 && src->quantifier.operand->quantifier.operand->quantifier.operand->type == hol_term_type::AND)
-	{
-		hol_term* function_definition = src->quantifier.operand->quantifier.operand;
-		hol_term* function_operand = function_definition->quantifier.operand;
-		hol_term* set_definition = nullptr;
-		hol_term* inner_function = nullptr;
-		for (unsigned int i = 0; i < function_operand->array.length; i++) {
-			hol_term* conjunct = function_operand->array.operands[i];
-			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
-			 && conjunct->binary.left->variable == function_definition->quantifier.variable
-			 && conjunct->binary.right->type == hol_term_type::LAMBDA
-			 && conjunct->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
-			{
-				set_definition = conjunct->binary.right;
-			} else if (conjunct->type == hol_term_type::EXISTS && conjunct->quantifier.operand->type == hol_term_type::AND
-					&& conjunct->quantifier.operand->array.operands[0]->type == hol_term_type::UNARY_APPLICATION
-					&& conjunct->quantifier.operand->array.operands[0]->binary.left->type == hol_term_type::VARIABLE
-					&& conjunct->quantifier.operand->array.operands[0]->binary.left->variable == function_definition->quantifier.variable
-					&& conjunct->quantifier.operand->array.operands[0]->binary.right->type == hol_term_type::VARIABLE
-					&& conjunct->quantifier.operand->array.operands[0]->binary.right->variable == conjunct->quantifier.variable)
-			{
-				inner_function = conjunct;
-			}
-		}
-
-		if (set_definition != nullptr && inner_function != nullptr) {
-			hol_term* dst_var = hol_term::new_variable(function_definition->quantifier.variable);
-			if (dst_var == nullptr)
-				return nullptr;
-
-			hol_term* src_var = hol_term::new_variable(set_definition->quantifier.variable);
-			if (src_var == nullptr) {
-				free(*dst_var); free(dst_var);
-				return nullptr;
-			}
-
-			hol_term* new_set_definition = substitute<hol_term_type::VARIABLE>(set_definition->quantifier.operand, src_var, dst_var);
-			free(*src_var); free(src_var);
-			if (new_set_definition == nullptr) {
-				free(*dst_var); free(dst_var);
-				return nullptr;
-			}
-
-			array<hol_term*> new_operands((new_set_definition->type == hol_term_type::AND ? new_set_definition->array.length : 1) + inner_function->quantifier.operand->array.length - 1);
-			if (new_set_definition->type == hol_term_type::AND) {
-				for (unsigned int i = 0; i < new_set_definition->array.length; i++) {
-					new_operands[i] = new_set_definition->array.operands[i];
-					new_operands[i]->reference_count++;
-				}
-				new_operands.length = new_set_definition->array.length;
-				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
-			} else {
-				new_operands[0] = new_set_definition;
-				new_operands.length++;
-			}
-
-			src_var = hol_term::new_variable(inner_function->quantifier.variable);
-			if (src_var == nullptr) {
-				free_all(new_operands);
-				free(*dst_var); free(dst_var);
-				return nullptr;
-			}
-
-			for (unsigned int i = 1; i < inner_function->quantifier.operand->array.length; i++) {
-				hol_term* new_operand = substitute<hol_term_type::VARIABLE>(inner_function->quantifier.operand->array.operands[i], src_var, dst_var);
-				if (new_operand == nullptr) {
-					free_all(new_operands);
-					free(*src_var); free(src_var);
-					free(*dst_var); free(dst_var);
-					return nullptr;
-				}
-				new_operands[new_operands.length++] = new_operand;
-			}
-			free(*src_var); free(src_var);
-			free(*dst_var); if (dst_var->reference_count == 0) free(dst_var);
-
-			dst = hol_term::new_lambda(src->quantifier.variable, hol_term::new_lambda(src->quantifier.operand->quantifier.variable,
-					hol_term::new_exists(function_definition->quantifier.variable, hol_term::new_and(make_array_view(new_operands.data, new_operands.length)))));
-			if (dst == nullptr) {
-				free_all(new_operands);
-				return nullptr;
-			}
-		}
-	}
-
-	if (dst == nullptr)
-		dst = default_apply<Type>(src, normalizer);
-	return dst;
-}
-
-inline hol_term* normalize_functions(hol_term* src)
-{
-	function_normalizer normalizer;
-	hol_term* dst = apply(src, normalizer);
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-template<typename Semantics>
-inline bool populate_inflected_terminals(
-		rule<Semantics>& terminal,
-		const unsigned int* sentence,
-		unsigned int& position)
-{
-	if (terminal.t.inflected != nullptr)
-		return true;
-
-	terminal.t.inflected = (unsigned int*) malloc(sizeof(unsigned int) * terminal.t.length);
-	if (terminal.t.inflected == nullptr) {
-		fprintf(stderr, "populate_inflected_terminals ERROR: Out of memory.\n");
-		return false;
-	}
-	for (unsigned int i = 0; i < terminal.t.length; i++)
-		terminal.t.inflected[i] = sentence[position + i];
-	terminal.t.inflected_length = terminal.t.length;
-	position += terminal.t.length;
-	return true;
-}
-
-template<typename Semantics>
-bool populate_inflected_terminals(
-		syntax_node<Semantics>& node,
-		const unsigned int* sentence,
-		unsigned int nonterminal,
-		unsigned int& position)
-{
-	if (node.is_terminal())
-		return populate_inflected_terminals(node.right, sentence, position);
-
-	for (unsigned int i = 0; i < node.right.nt.length; i++) {
-		if (!populate_inflected_terminals(*node.children[i], sentence, node.right.nt.nonterminals[i], position))
-			return false;
-	}
-	return true;
-}
-
-template<typename Semantics>
-inline bool populate_inflected_terminals(
-		syntax_node<Semantics>& node,
-		const unsigned int* sentence,
-		unsigned int nonterminal = 1)
-{
-	unsigned int position = 0;
-	return populate_inflected_terminals(node, sentence, nonterminal, position);
-}
-
-inline bool preprocess_sentence(
-		sequence& seq, unsigned int LPAREN_ID, unsigned int RPAREN_ID,
-		unsigned int COMMA_ID, unsigned int A_ID, unsigned int AN_ID,
-		unsigned int* forbidden_tokens, unsigned int forbidden_token_count,
-		hash_map<string, unsigned int>& names, string_map_scribe& terminal_printer)
-{
-	/* make sure there aren't any forbidden tokens */
-	for (unsigned int i = 0; i < seq.length; i++) {
-		if (index_of(seq[i], forbidden_tokens, forbidden_token_count) < forbidden_token_count)
-			return false;
-	}
-
-	/* remove any comma that follows a number, and is succeeded by a three digit number */
-	unsigned int curr = 0;
-	for (unsigned int i = 0; i < seq.length; i++) {
-		bool is_number = true;
-		const string* str = terminal_printer.map[seq[i]];
-		if (str->length > 3) { seq[curr++] = seq[i]; continue; }
-		for (unsigned int j = 0; is_number && j < str->length; j++)
-			if (!isdigit(str->data[j])) is_number = false;
-		if (!is_number) { seq[curr++] = seq[i]; continue; }
-
-		if (i + 1 == seq.length || seq[i + 1] != COMMA_ID) {
-			seq[curr++] = seq[i];
-			continue;
-		}
-
-		unsigned int next = i + 2;
-		while (is_number) {
-			const string* str = terminal_printer.map[seq[next]];
-			if (str->length != 3) { is_number = false; break; }
-			for (unsigned int j = 0; is_number && j < str->length; j++)
-				if (!isdigit(str->data[j])) is_number = false;
-			if (!is_number) break;
-
-			next++;
-			if (next == seq.length || seq[next] != COMMA_ID)
-				/* we've found a valid comma-separated number */
-				break;
-			next++;
-		}
-		if (!is_number) { seq[curr++] = seq[i]; continue; }
-
-		/* get the token of the non-comma separated number */
-		string new_number(3 * ((next - i + 1) / 2));
-		new_number.length = 0;
-		for (unsigned int j = i; j < next; j += 2) {
-			const string* str = terminal_printer.map[seq[j]];
-			for (unsigned int k = 0; k < str->length; k++)
-				new_number[new_number.length++] = str->data[k];
-		}
-		const string* old_keys = names.table.keys;
-		unsigned int old_size = names.table.size;
-		if (!get_token(new_number, seq[curr], names))
-			return false;
-		if (old_keys != names.table.keys || old_size != names.table.size) {
-			free(terminal_printer.map);
-			terminal_printer.map = invert(names);
-			terminal_printer.length = names.table.size + 1;
-			if (terminal_printer.map == nullptr)
-				return false;
-		}
-		curr++;
-		i = next - 1;
-	}
-	seq.length = curr;
-
-	/* remove parentheses, and any comma that succeeds a right parenthesis */
-	curr = 0;
-	unsigned int parens = 0;
-	for (unsigned int i = 0; i < seq.length; i++) {
-		if (seq[i] == LPAREN_ID) {
-			parens++;
-		} else if (seq[i] == RPAREN_ID) {
-			parens--;
-		} else {
-			if (parens == 0 && !(i > 0 && seq[i] == COMMA_ID && seq[i - 1] == RPAREN_ID))
-				seq[curr++] = (seq[i] == AN_ID) ? A_ID : seq[i];
-		}
-	}
-	seq.length = curr;
-	return true;
-}
-
-
-/* forward declarations for `yield` */
-
-template<bool First, typename Formula, typename PartOfSpeechType>
-bool morphology_inflect(
-		const morphology_en&, const sequence&, PartOfSpeechType,
-		const flagged_logical_form<Formula>&, array<sequence>&);
-
-
-struct generated_utterance {
-	unsigned int*& tokens;
-	unsigned int& length;
-	unsigned int capacity;
-
-	generated_utterance(sequence& seq) : tokens(seq.tokens), length(seq.length), capacity(16) {
-		tokens = (unsigned int*) malloc(sizeof(unsigned int) * capacity);
-		if (tokens == nullptr) {
-			fprintf(stderr, "generated_utterance ERROR: Out of memory.\n");
-			exit(EXIT_FAILURE);
-		}
-		length = 0;
-	}
-
-	static inline void free(generated_utterance& utterance) {
-		core::free(utterance.tokens);
-	}
-};
-
-template<typename Semantics, typename Distribution>
-inline bool yield(
-		const rule<Semantics>& terminal,
-		const Distribution& rule_distribution,
-		const Semantics& logical_form,
-		generated_utterance& utterance,
-		const morphology_en& morph)
-{
-	array<sequence> inflections(8);
-	sequence root(terminal.t.terminals, terminal.t.length);
-	if ((utterance.length == 0 && !morphology_inflect<true>(morph, root, rule_distribution.get_part_of_speech(), logical_form, inflections))
-	 || (utterance.length != 0 && !morphology_inflect<false>(morph, root, rule_distribution.get_part_of_speech(), logical_form, inflections))
-	 || inflections.length == 0)
-		return false;
-
-	if (!ensure_capacity(utterance.tokens, utterance.capacity, utterance.length + inflections.last().length)) {
-		for (sequence& inflection : inflections) free(inflection);
-		return false;
-	}
-	memcpy(utterance.tokens + utterance.length, inflections.last().tokens, sizeof(inflections.last().tokens[0]) * inflections.last().length);
-	utterance.length += inflections.last().length;
-	for (sequence& inflection : inflections) free(inflection);
-	return true;
-}
-
-enum class binding_state : uint_fast8_t {
-	NOT_BOUND = 0,
-	EXISTENTIAL,
-	UNIVERSAL
-};
-
-struct anaphora_binder {
-	const array_map<const hol_term*, const hol_term*>& assignments;
-	array_map<unsigned int, hol_term*> variable_map;
-	unsigned int variable_offset;
-
-	pair<binding_state, bool>* binding_states;
-	bool polarity;
-
-	anaphora_binder(const array_map<const hol_term*, const hol_term*>& assignments, unsigned int variable_offset) :
-			assignments(assignments), variable_map(8), variable_offset(variable_offset), polarity(true)
-	{
-		binding_states = (pair<binding_state, bool>*) calloc(assignments.size, sizeof(pair<binding_state, bool>));
-		if (binding_states == nullptr)
-			throw std::bad_alloc();
-	}
-
-	~anaphora_binder() {
-		free(binding_states);
-	}
-};
-
-template<hol_term_type Type>
-inline hol_term* apply(hol_term* src, anaphora_binder& binder)
-{
-	pair<bool, bool>* old_binding_states = (pair<bool, bool>*) malloc(sizeof(pair<bool, bool>) * binder.assignments.size);
-	if (old_binding_states == nullptr)
-		return nullptr;
-	for (unsigned int i = 0; i < binder.assignments.size; i++) {
-		old_binding_states[i].key = (binder.binding_states[i].key != binding_state::NOT_BOUND);
-		old_binding_states[i].value = binder.binding_states[i].value;
-	}
-
-	hol_term* result = nullptr;
-	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
-		unsigned int index = index_of(src, binder.assignments.keys, binder.assignments.size);
-		if (index < binder.assignments.size) {
-			/* this is an anaphora scope */
-			hol_term* new_variable = hol_term::new_variable(binder.variable_offset + index);
-			if (new_variable == nullptr) {
-				free(old_binding_states);
-				return nullptr;
-			} else if (!binder.variable_map.put(src->quantifier.variable, new_variable)) {
-				free(old_binding_states);
-				free(*new_variable); free(new_variable);
-				return nullptr;
-			}
-
-			if (src->quantifier.operand->type != hol_term_type::AND) {
-				fprintf(stderr, "apply ERROR: Expected anaphora scope operand to be a conjunction.\n");
-				free(old_binding_states);
-				return nullptr;
-			}
-
-			hol_term** new_operands = (hol_term**) malloc(sizeof(hol_term*) * src->quantifier.operand->array.length);
-			unsigned int new_operand_count = 0;
-			for (unsigned int i = 0; i < src->quantifier.operand->array.length; i++) {
-				hol_term* operand = src->quantifier.operand->array.operands[i];
-				if (operand->type == hol_term_type::UNARY_APPLICATION
-				 && operand->binary.left->type == hol_term_type::CONSTANT
-				 && (operand->binary.left->constant == (unsigned int) built_in_predicates::PLURAL_REF
-				  || operand->binary.left->constant == (unsigned int) built_in_predicates::REF))
-				{
-					continue;
-				}
-
-				new_operands[new_operand_count] = apply(src->quantifier.operand->array.operands[i], binder);
-				if (new_operands[new_operand_count] == nullptr) {
-					for (unsigned int i = 0; i < new_operand_count; i++) {
-						free(*new_operands[i]);
-						if (new_operands[i]->reference_count == 0)
-							free(new_operands[i]);
-					}
-					free(old_binding_states);
-					return nullptr;
-				}
-				if (new_operands[new_operand_count] == src->quantifier.operand->array.operands[i])
-					new_operands[new_operand_count]->reference_count++;
-				new_operand_count++;
-			}
-
-			if (new_operand_count == 1) {
-				result = new_operands[0];
-				free(new_operands);
-			} else {
-				if (!new_hol_term(result)) {
-					for (unsigned int i = 0; i < new_operand_count; i++) {
-						free(*new_operands[i]);
-						if (new_operands[i]->reference_count == 0)
-							free(new_operands[i]);
-					}
-					free(old_binding_states);
-					return nullptr;
-				}
-				result->type = hol_term_type::AND;
-				result->reference_count = 1;
-				result->array.operands = new_operands;
-				result->array.length = new_operand_count;
-			}
-
-			binder.variable_map.size--;
-			free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
-			binder.binding_states[index].value = true;
-		} else {
-			index = index_of(src, binder.assignments.values, binder.assignments.size);
-			if (index < binder.assignments.size) {
-				/* this is a referent scope */
-				hol_term* new_variable = hol_term::new_variable(binder.variable_offset + index);
-				if (new_variable == nullptr) {
-					free(old_binding_states);
-					return nullptr;
-				} else if (!binder.variable_map.put(src->quantifier.variable, new_variable)) {
-					free(old_binding_states);
-					free(*new_variable); free(new_variable);
-					return nullptr;
-				}
-
-				result = apply(src->quantifier.operand, binder);
-				if (result == nullptr) {
-					free(old_binding_states);
-					return nullptr;
-				}
-
-				binder.variable_map.size--;
-				free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
-				if (Type == hol_term_type::EXISTS) {
-					binder.binding_states[index].key = (binder.polarity ? binding_state::EXISTENTIAL : binding_state::UNIVERSAL);
-				} else {
-					binder.binding_states[index].key = (binder.polarity ? binding_state::UNIVERSAL : binding_state::EXISTENTIAL);
-				}
-			}
-		}
-	} else if (Type == hol_term_type::VARIABLE) {
-		bool contains;
-		hol_term* new_variable = binder.variable_map.get(src->variable, contains);
-		if (contains) {
-			result = new_variable;
-			new_variable->reference_count++;
-		}
-	} else if (Type == hol_term_type::NOT) {
-		binder.polarity = !binder.polarity;
-		result = default_apply<Type>(src, binder);
-		if (result == nullptr) {
-			free(old_binding_states);
-			return nullptr;
-		}
-		binder.polarity = !binder.polarity;
-	} else if (Type == hol_term_type::IF_THEN) {
-		binder.polarity = !binder.polarity;
-		hol_term* left = apply(src->binary.left, binder);
-		if (left == nullptr) {
-			free(old_binding_states);
-			return nullptr;
-		}
-		binder.polarity = !binder.polarity;
-
-		hol_term* right = apply(src->binary.right, binder);
-		if (right == nullptr) {
-			free(old_binding_states);
-			if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
-			return nullptr;
-		}
-
-		if (left == src->binary.left && right == src->binary.right) {
-			result = src;
-		} else {
-			result = hol_term::new_if_then(left, right);
-			if (result == nullptr) {
-				free(old_binding_states);
-				if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
-				if (right != src->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
-				return nullptr;
-			}
-			if (left == src->binary.left) left->reference_count++;
-			if (right == src->binary.right) right->reference_count++;
-		}
-	}
-
-	if (result == nullptr) {
-		result = default_apply<Type>(src, binder);
-		if (result == nullptr) {
-			free(old_binding_states);
-			return nullptr;
-		}
-	}
-
-	/* check if this is the most recent common ancestor scope of an anaphora and its referent */
-	for (unsigned int i = 0; i < binder.assignments.size; i++) {
-		if (!old_binding_states[i].key && !old_binding_states[i].value
-		 && binder.binding_states[i].key != binding_state::NOT_BOUND
-		 && binder.binding_states[i].value)
-		{
-			hol_term* new_scope;
-			if (binder.binding_states[i].key == binding_state::EXISTENTIAL) {
-				new_scope = hol_term::new_exists(binder.variable_offset + i, result);
-			} else {
-				new_scope = hol_term::new_for_all(binder.variable_offset + i, result);
-			}
-			if (new_scope == nullptr) {
-				free(old_binding_states);
-				if (result != src) { free(*result); if (result->reference_count == 0) free(result); }
-				return nullptr;
-			}
-			if (result == src) result->reference_count++;
-			result = new_scope;
-
-			binder.binding_states[i].key = binding_state::NOT_BOUND;
-			binder.binding_states[i].value = false;
-		}
-	}
-	free(old_binding_states);
-	return result;
-}
-
-inline hol_term* bind_anaphora(hol_term* src,
-		const array_map<const hol_term*, const hol_term*>& anaphora_assignments,
-		unsigned int new_variable_offset)
-{
-	anaphora_binder binder(anaphora_assignments, new_variable_offset);
-	hol_term* dst = apply(src, binder);
-	if (dst == nullptr) {
-		for (auto entry : binder.variable_map) {
-			free(*entry.value);
-			if (entry.value->reference_count == 0)
-				free(entry.value);
-		}
-	}
-	if (dst == src)
-		dst->reference_count++;
-	return dst;
-}
-
-struct referent_iterator
-{
-	hol_term* logical_form;
-	unsigned int max_variable;
-
-	/* an array map of referents and their parent scopes */
-	array_map<const hol_term*, const hol_term*> referents;
-
-	array_map<const hol_term*, unsigned int> anaphora;
-
-	static inline void free(referent_iterator& iterator) {
-		core::free(iterator.anaphora);
-		core::free(iterator.referents);
-	}
-};
-
-inline bool init(referent_iterator& iterator, hol_term* logical_form) {
-	iterator.max_variable = 0;
-	if (!array_map_init(iterator.referents, 16)) {
-		return false;
-	} else if (!array_map_init(iterator.anaphora, 8)) {
-		free(iterator.referents);
-		return false;
-	} else if (!max_bound_variable(*logical_form, iterator.max_variable)) {
-		free(iterator.anaphora);
-		free(iterator.referents);
-		return false;
-	}
-	iterator.logical_form = logical_form;
-	return true;
-}
-
-struct referent_iterator_state {
-	const referent_iterator* iterator;
-	unsigned int* indices;
-	double log_probability;
-
-	referent_iterator_state(const referent_iterator* iterator, double log_probability) :
-			iterator(iterator), log_probability(log_probability)
-	{
-		indices = (unsigned int*) malloc(sizeof(unsigned int) * iterator->anaphora.size);
-		if (indices == nullptr)
-			throw std::bad_alloc();
-	}
-
-	referent_iterator_state(const referent_iterator_state& other) :
-			iterator(other.iterator), log_probability(other.log_probability)
-	{
-		indices = (unsigned int*) malloc(sizeof(unsigned int) * iterator->anaphora.size);
-		if (indices == nullptr)
-			throw std::bad_alloc();
-		for (unsigned int i = 0; i < iterator->anaphora.size; i++)
-			indices[i] = other.indices[i];
-	}
-
-	~referent_iterator_state() {
-		free(indices);
-	}
-
-	referent_iterator_state& operator = (referent_iterator_state const& other) = delete;
-};
-
-inline bool operator == (const referent_iterator_state& first, const referent_iterator_state& second) {
-	if (first.iterator != second.iterator)
-		return false;
-	for (unsigned int i = 0; i < first.iterator->anaphora.size; i++) {
-		if (first.indices[i] != second.indices[i])
-			return false;
-	}
-	return true;
-}
-
-inline bool operator < (const referent_iterator_state& first, const referent_iterator_state& second) {
-	return first.log_probability < second.log_probability;
-}
-
-bool process_referent_iterator(
-		const referent_iterator_state& state,
-		std::set<referent_iterator_state>& queue,
-		hol_term** resolved_logical_forms,
-		double* resolved_log_probabilities,
-		unsigned int& resolved_logical_form_count)
-{
-	/* check that the anaphora don't point referents that share the same parent */
-	bool has_illegal_anaphora = false;
-	for (unsigned int i = 0; !has_illegal_anaphora && i < state.iterator->anaphora.size; i++) {
-		bool contains;
-		const hol_term* anaphora = state.iterator->anaphora.keys[i];
-		unsigned int anaphora_start = state.iterator->anaphora.values[i];
-		const hol_term* anaphora_parent = state.iterator->referents.get(anaphora, contains);
-		if (!contains) continue;
-
-		const hol_term* referent_parent = state.iterator->referents.values[anaphora_start - state.indices[i] - 1];
-		if (anaphora_parent == referent_parent)
-			has_illegal_anaphora = true;
-	}
-
-	/* check that no anaphora refers to another anaphora */
-	for (unsigned int i = 0; !has_illegal_anaphora && i < state.iterator->anaphora.size; i++) {
-		unsigned int anaphora_start = state.iterator->anaphora.values[i];
-		const hol_term* referent = state.iterator->referents.keys[anaphora_start - state.indices[i] - 1];
-		if (state.iterator->anaphora.contains(referent))
-			has_illegal_anaphora = true;
-	}
-
-	if (!has_illegal_anaphora) {
-		/* consider the case where there are no anaphora */
-		if (state.iterator->anaphora.size == 0) {
-			resolved_logical_forms[resolved_logical_form_count] = state.iterator->logical_form;
-			resolved_log_probabilities[resolved_logical_form_count++] = state.log_probability;
-			state.iterator->logical_form->reference_count++;
-			return true;
-		}
-
-		/* resolve the logical form with the current anaphora assignment */
-		array_map<const hol_term*, const hol_term*> assignment(state.iterator->anaphora.size);
-		for (unsigned int i = 0; i < state.iterator->anaphora.size; i++) {
-			unsigned int anaphora_start = state.iterator->anaphora.values[i];
-			assignment.keys[i] = state.iterator->anaphora.keys[i];
-			assignment.values[i] = state.iterator->referents.keys[anaphora_start - state.indices[i] - 1];
-		}
-		assignment.size = state.iterator->anaphora.size;
-
-		hol_term* resolved_logical_form = bind_anaphora(state.iterator->logical_form, assignment, state.iterator->max_variable + 1);
-		if (resolved_logical_form != nullptr) {
-			resolved_logical_forms[resolved_logical_form_count] = resolved_logical_form;
-			resolved_log_probabilities[resolved_logical_form_count++] = state.log_probability;
-		}
-	}
-
-	for (unsigned int i = 0; i < state.iterator->anaphora.size; i++) {
-		unsigned int anaphora_start = state.iterator->anaphora.values[i];
-		if (state.indices[i] + 1 >= anaphora_start)
-			/* there are no more referents for this anaphora to bind to */
-			continue;
-
-		referent_iterator_state new_state(state.iterator, state.log_probability - 1.0);
-		for (unsigned int j = 0; j < state.iterator->anaphora.size; j++)
-			new_state.indices[j] = state.indices[i];
-		new_state.indices[i]++;
-
-		queue.insert(new_state);
-	}
-	return true;
-}
-
-bool get_referents(const hol_term* logical_form,
-		referent_iterator& iterator,
-		array_map<unsigned int, const hol_term*>& bound_variables)
-{
-	if (logical_form->type == hol_term_type::EXISTS) {
-		if (!iterator.referents.put(logical_form, nullptr))
-			return false;
-	}
-
-	switch (logical_form->type) {
-	case hol_term_type::VARIABLE:
-	case hol_term_type::CONSTANT:
-	case hol_term_type::PARAMETER:
-	case hol_term_type::NUMBER:
-	case hol_term_type::STRING:
-	case hol_term_type::UINT_LIST:
-	case hol_term_type::TRUE:
-	case hol_term_type::FALSE:
-		return true;
-	case hol_term_type::EQUALS:
-		if (logical_form->binary.left->type == hol_term_type::UNARY_APPLICATION
-		 && logical_form->binary.left->binary.left->type == hol_term_type::CONSTANT
-		 && (logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1
-		  || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2
-		  || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG3)
-		 && logical_form->binary.left->binary.right->type == hol_term_type::VARIABLE)
-		{
-			const hol_term* scope = bound_variables.get(logical_form->binary.left->binary.right->variable);
-			unsigned int index = iterator.referents.index_of(scope);
-			if (index < iterator.referents.size) {
-				shift_left(iterator.referents.keys + index, iterator.referents.size - index - 1);
-				shift_left(iterator.referents.values + index, iterator.referents.size - index - 1);
-				iterator.referents.size--;
-				for (unsigned int i = 0; i < iterator.anaphora.size; i++) {
-					if (iterator.anaphora.values[i] > index) {
-						iterator.anaphora.values[i]--;
-						if (iterator.anaphora.values[i] == 0)
-							iterator.anaphora.remove_at(i--);
-					}
-				}
-			}
-
-			if (logical_form->binary.right->type == hol_term_type::VARIABLE) {
-				/* `logical_form->binary.left->binary.right->variable` is the parent scope of `logical_form->binary.right->variable` */
-				const hol_term* child_scope = bound_variables.get(logical_form->binary.right->variable);
-				index = iterator.referents.index_of(child_scope);
-				if (index < iterator.referents.size)
-					iterator.referents.values[index] = scope;
-			}
-		} else if (logical_form->binary.left->type == hol_term_type::UNARY_APPLICATION
-				&& logical_form->binary.left->binary.left->type == hol_term_type::CONSTANT
-				&& (logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1_OF
-				 || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2_OF
-				 || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG3_OF)
-				&& logical_form->binary.right->type == hol_term_type::VARIABLE)
-		{
-			const hol_term* scope = bound_variables.get(logical_form->binary.right->variable);
-			unsigned int index = iterator.referents.index_of(scope);
-			if (index < iterator.referents.size) {
-				shift_left(iterator.referents.keys + index, iterator.referents.size - index - 1);
-				shift_left(iterator.referents.values + index, iterator.referents.size - index - 1);
-				iterator.referents.size--;
-				for (unsigned int i = 0; i < iterator.anaphora.size; i++) {
-					if (iterator.anaphora.values[i] > index) {
-						iterator.anaphora.values[i]--;
-						if (iterator.anaphora.values[i] == 0)
-							iterator.anaphora.remove_at(i--);
-					}
-				}
-			}
-
-			if (logical_form->binary.left->binary.right->type == hol_term_type::VARIABLE) {
-				/* `logical_form->binary.right->variable` is the parent scope of `logical_form->binary.left->binary.right->variable` */
-				const hol_term* child_scope = bound_variables.get(logical_form->binary.left->binary.right->variable);
-				index = iterator.referents.index_of(child_scope);
-				if (index < iterator.referents.size)
-					iterator.referents.values[index] = scope;
-			}
-		} else {
-			return get_referents(logical_form->binary.left, iterator, bound_variables)
-				&& get_referents(logical_form->binary.right, iterator, bound_variables);
-		}
-		return true;
-	case hol_term_type::NOT:
-		if (!get_referents(logical_form->unary.operand, iterator, bound_variables))
-			return false;
-		return true;
-	case hol_term_type::AND:
-	case hol_term_type::OR:
-	case hol_term_type::IFF:
-		for (unsigned int i = 0; i < logical_form->array.length; i++) {
-			if (!get_referents(logical_form->array.operands[i], iterator, bound_variables))
-				return false;
-		}
-		return true;
-	case hol_term_type::FOR_ALL:
-	case hol_term_type::EXISTS:
-	case hol_term_type::LAMBDA:
-		if (!bound_variables.put(logical_form->quantifier.variable, logical_form)
-		 || !get_referents(logical_form->quantifier.operand, iterator, bound_variables))
-			return false;
-		bound_variables.size--;
-		return true;
-	case hol_term_type::IF_THEN:
-	case hol_term_type::UNARY_APPLICATION:
-		if (logical_form->type == hol_term_type::UNARY_APPLICATION
-		 && logical_form->binary.left->type == hol_term_type::CONSTANT
-		 && (logical_form->binary.left->constant == (unsigned int) built_in_predicates::REF
-		  || logical_form->binary.left->constant == (unsigned int) built_in_predicates::PLURAL_REF)
-		 && logical_form->binary.right->type == hol_term_type::VARIABLE)
-		{
-			if (iterator.referents.size > 1
-			 && !iterator.anaphora.put(bound_variables.get(logical_form->binary.right->variable), iterator.referents.size - 1))
-				return false;
-		} else {
-			return get_referents(logical_form->binary.left, iterator, bound_variables)
-				&& get_referents(logical_form->binary.right, iterator, bound_variables);
-		}
-		return true;
-	case hol_term_type::BINARY_APPLICATION:
-		if (!get_referents(logical_form->ternary.first, iterator, bound_variables)
-		 || !get_referents(logical_form->ternary.second, iterator, bound_variables)
-		 || !get_referents(logical_form->ternary.third, iterator, bound_variables))
-			return false;
-		return true;
-	case hol_term_type::VARIABLE_PREIMAGE:
-	case hol_term_type::ANY:
-	case hol_term_type::ANY_RIGHT:
-	case hol_term_type::ANY_ARRAY:
-	case hol_term_type::ANY_QUANTIFIER:
-	case hol_term_type::ANY_CONSTANT:
-	case hol_term_type::ANY_CONSTANT_EXCEPT:
-	case hol_term_type::ANY_RIGHT_ONLY:
-		return true;
-	}
-	fprintf(stderr, "get_referents ERROR: Unrecognized hol_term_type.\n");
-	return false;
-}
-
-template<typename Formula>
-struct hdp_parser
-{
-	typedef flagged_logical_form<Formula> logical_form_type;
-	typedef rooted_syntax_node<flagged_logical_form<Formula>> DerivationType;
-	typedef sentence<rooted_syntax_node<flagged_logical_form<Formula>>> SentenceType;
-
-	morphology_en morph;
-	hdp_grammar_type<Formula> G;
-	string_map_scribe terminal_printer;
-
-	unsigned int LPAREN_ID;
-	unsigned int RPAREN_ID;
-	unsigned int COMMA_ID;
-	unsigned int A_ID;
-	unsigned int AN_ID;
-	unsigned int ASTERISK_ID;
-	unsigned int HOW_ID;
-	unsigned int CAPITAL_HOW_ID;
-	unsigned int MANY_ID;
-	unsigned int NONTERMINAL_NP_ID;
-	unsigned int NONTERMINAL_V_ID;
-
-	static constexpr const char* FORBIDDEN_TOKEN_STRS[] = { "{", "}", "[", "]", "<", ">", ":" };
-	static constexpr unsigned int FORBIDDEN_TOKEN_COUNT = array_length(FORBIDDEN_TOKEN_STRS);
-
-	unsigned int forbidden_token_ids[FORBIDDEN_TOKEN_COUNT];
-
-	number_parser_en number_parser;
-
-	hdp_parser(unsigned int unknown_id,
-			hash_map<string, unsigned int>& names,
-			const char* morphology_filepath,
-			const char* grammar_filepath) : number_parser(names)
-	{
-		terminal_printer.map = nullptr;
-		terminal_printer.length = 0;
-
-		if (!get_token("(", LPAREN_ID, names) || !get_token(")", RPAREN_ID, names)
-		 || !get_token(",", COMMA_ID, names) || !get_token("a", A_ID, names)
-		 || !get_token("an", AN_ID, names) || !get_token("*", ASTERISK_ID, names)
-		 || !get_token("how", HOW_ID, names) || !get_token("How", CAPITAL_HOW_ID, names)
-		 || !get_token("many", MANY_ID, names))
-			throw std::runtime_error("`get_token` failed.");
-
-		for (unsigned int i = 0; i < FORBIDDEN_TOKEN_COUNT; i++)
-			if (!get_token(FORBIDDEN_TOKEN_STRS[i], forbidden_token_ids[i], names))
-				throw std::runtime_error("`get_token` failed.");
-
-		printf("Loading morphology data...\n"); fflush(stdout);
-		if (!morph.initialize(names)
-		 || !morphology_read(morph, names, morphology_filepath))
-		{
-			fflush(stdout); fprintf(stderr, "\nERROR: Unable to initialize morphology model.\n");
-			throw std::runtime_error("Unable to initialize morphology model.");
-		}
-		printf("Done loading morphology data.\n");
-
-		printf("Loading grammar...\n"); fflush(stdout);
-		if (!read_grammar(G, names, grammar_filepath)) {
-			fflush(stdout); fprintf(stderr, "\nERROR: Unable to read grammar at '%s'.\n", grammar_filepath);
-			throw std::runtime_error("Unable to read grammar file.");
-		}
-		printf("Done loading grammar.\n");
-
-		bool contains;
-		NONTERMINAL_NP_ID = G.nonterminal_names.get("NP", contains);
-		if (!contains) {
-			fflush(stdout); fprintf(stderr, "\nERROR: Grammar is missing nonterminal `NP`.\n");
-			throw std::runtime_error("Grammar is missing nonterminal `NP`.");
-		}
-
-		NONTERMINAL_V_ID = G.nonterminal_names.get("V", contains);
-		if (!contains) NONTERMINAL_V_ID = 0;
-	}
-
-	~hdp_parser() { free_helper(); }
-
-	static inline void free(hdp_parser<Formula>& p) {
-		p.free_helper();
-		core::free(p.morph);
-		core::free(p.G);
-	}
-
-	bool invert_name_map(hash_map<string, unsigned int>& names) {
-		if (!init_capitalization_map(morph, names))
-			return false;
-		if (terminal_printer.map != NULL) core::free(terminal_printer.map);
-		terminal_printer.map = invert(names);
-		if (terminal_printer.map == NULL) return false;
-		terminal_printer.length = names.table.size + 1;
-		return true;
-	}
-
-	inline const string& map_to_string(unsigned int id) const {
-		return *terminal_printer.map[id];
-	}
-
-	bool train(
-			const array<array_map<SentenceType, flagged_logical_form<Formula>>>& data,
-			hash_map<string, unsigned int>& names,
-			unsigned int iteration_count)
-	{
-		if (!init_capitalization_map(morph, names))
-			return false;
-		terminal_printer.map = invert(names);
-		terminal_printer.length = names.table.size + 1;
-		const string** nonterminal_name_map = invert(G.nonterminal_names);
-		if (terminal_printer.map == NULL || nonterminal_name_map == NULL) {
-			if (terminal_printer.map != NULL) core::free(terminal_printer.map);
-			terminal_printer.map = NULL;
-			return false;
-		}
-		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
-/* TODO: for debugging; remove this */
-debug_terminal_printer = &terminal_printer;
-debug_nonterminal_printer = &nonterminal_printer;
-detect_duplicate_logical_forms = true;
-		/* construct the initial derivation trees (running the parser with an empty grammar) */
-		rooted_syntax_node<logical_form_type>** syntax = (rooted_syntax_node<logical_form_type>**)
-				calloc(data.length, sizeof(rooted_syntax_node<logical_form_type>*));
-		unsigned int* order = (unsigned int*) malloc(sizeof(unsigned int) * data.length);
-		if (syntax == NULL || order == NULL) {
-			fprintf(stderr, "hdp_parser.train ERROR: Out of memory.\n");
-			cleanup(data, nonterminal_name_map, syntax, order);
-			return false;
-		}
-		for (unsigned int i = 0; i < data.length; i++) {
-			syntax[i] = (rooted_syntax_node<logical_form_type>*) calloc(data[i].size, sizeof(rooted_syntax_node<logical_form_type>));
-			if (syntax[i] == NULL) {
-				fprintf(stderr, "hdp_parser.train ERROR: Out of memory.\n");
-				cleanup(data, nonterminal_name_map, syntax, order);
-				return false;
-			}
-		}
-		for (unsigned int i = 0; i < data.length; i++) order[i] = i;
-#if defined(SHUFFLE_TRAINING_EXAMPLES)
-		shuffle(order, (unsigned int) data.length);
-#else
-		reverse(order, (unsigned int) data.length);
-#endif
-		for (unsigned int i = 0; i < data.length; i++) {
-			unsigned int id = order[i];
-			for (unsigned int j = 0; j < data[id].size; j++) {
-				/* TODO: add a discourse model instead of treating each sentence in each passage as independent */
-				const logical_form_type& logical_form = data[id].values[j];
-				if (!is_empty(data[id].keys[j].derivation)) {
-					/* this sentence has a fully specified derivation tree */
-					logical_form_type any(HOL_ANY);
-					initialize_any(any.flags);
-					bool test_equivalence = (data[id].keys[j].derivation.root != NONTERMINAL_V_ID);
-					if (!is_parseable(*data[id].keys[j].derivation.tree, logical_form, G, morph, any, nonterminal_printer, terminal_printer, *this, data[id].keys[j].derivation.root, test_equivalence))
-					{
-						fprintf(stderr, "hdp_parser.train ERROR: Derivation for example %u, sentence %u is not parseable: '", id, j);
-						print(data[id].keys[j], stderr, terminal_printer); print("'\n", stderr);
-						print(logical_form, stderr, terminal_printer); print("\n", stderr);
-						cleanup(data, nonterminal_name_map, syntax, order);
-						return false;
-					}
-					syntax[id][j] = data[id].keys[j].derivation;
-				} else {
-					sequence& seq = *((sequence*) alloca(sizeof(sequence)));
-					if (!init(seq, data[id].keys[j])) {
-						cleanup(data, nonterminal_name_map, syntax, order);
-						return false;
-					} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
-						cleanup(data, nonterminal_name_map, syntax, order);
-						core::free(seq); return false;
-					}
-					auto sentence = tokenized_sentence<logical_form_type>(seq);
-					core::free(seq);
-					syntax[id][j].tree = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>));
-					/* NOTE: sample can set syntax[id] to null */
-					if (syntax[id][j].tree == NULL || !sample(syntax[id][j].tree, G, logical_form, sentence, morph, *this, syntax[id][j].root) || syntax[id][j].tree == NULL)
-					{
-						fprintf(stderr, "hdp_parser.train ERROR: Unable to sample derivation for example %u, sentence %u: '", id, j);
-						print(data[id].keys[j], stderr, terminal_printer); print("'\n", stderr);
-						print(logical_form, stderr, terminal_printer); print("\n", stderr);
-						cleanup(data, nonterminal_name_map, syntax, order);
-						return false;
-					}
-
-					print(logical_form, stdout, terminal_printer); print('\n', stdout);
-					print(*syntax[id][j].tree, stdout, nonterminal_printer, terminal_printer, syntax[id][j].root); print("\n\n", stdout);
-					fflush(stdout);
-				}
-
-				if (!add_tree(syntax[id][j].root, *syntax[id][j].tree, logical_form, G)) {
-					cleanup(data, nonterminal_name_map, syntax, order);
-					return false;
-				}
-			}
-		}
-
-		/* perform MCMC */
-		for (unsigned int t = 0; t < iteration_count; t++) {
-			shuffle(order, (unsigned int) data.length);
-			for (unsigned int i = 0; i < data.length; i++) {
-				unsigned int id = order[i];
-				for (unsigned int j = 0; j < data[id].size; j++) {
-					if (!is_empty(data[id].keys[j].derivation))
-						/* do not resample training examples labeled with derivation trees */
-						continue;
-					const logical_form_type& logical_form = data[id].values[j];
-					sequence& seq = *((sequence*) alloca(sizeof(sequence)));
-					unsigned int old_names_size = names.table.size;
-					if (!init(seq, data[id].keys[j])) {
-						cleanup(data, nonterminal_name_map, syntax, order);
-						return false;
-					} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
-						cleanup(data, nonterminal_name_map, syntax, order);
-						core::free(seq); return false;
-					} if (names.table.size != old_names_size) {
-						core::free(terminal_printer.map);
-						terminal_printer.map = invert(names);
-						terminal_printer.length = names.table.size + 1;
-						if (terminal_printer.map == nullptr) {
-							cleanup(data, nonterminal_name_map, syntax, order);
-							core::free(seq); return false;
-						}
-						terminal_printer = { terminal_printer.map, names.table.size + 1 };
-					}
-					auto sentence = tokenized_sentence<logical_form_type>(seq);
-					core::free(seq);
-					resample(syntax[id][j].tree, G, logical_form, sentence, morph, *this, syntax[id][j].root);
-				}
-			}
-			sample_grammar(G);
-			/*fprintf(stdout, "Unnormalized log posterior probability: %lf\n",
-					log_probability(G, syntax, data, *this));
-
-			if (t % 1 == 0) {
-				fprintf(stdout, "[iteration %u]\n", t);
-				print_nonterminal_hdps(G, stdout, terminal_printer, nonterminal_printer);
-				fflush(stdout);
-			}*/
-		}
-
-		/* cleanup */
-		cleanup(data, nonterminal_name_map, syntax, order);
-		return true;
-	}
-
-	template<unsigned int K>
-	inline bool resolve_coreference(Formula** logical_forms, double* log_probabilities, unsigned int& parse_count)
-	{
-		if (parse_count == 0)
-			return true;
-		referent_iterator* iterators = (referent_iterator*) malloc(sizeof(referent_iterator) * parse_count);
-		if (iterators == nullptr)
-			return false;
-		for (unsigned int i = 0; i < parse_count; i++) {
-			if (!init(iterators[i], logical_forms[i])) {
-				for (unsigned int j = 0; j < i; j++)
-					core::free(iterators[j]);
-				core::free(iterators);
-				return false;
-			}
-
-			array_map<unsigned int, const hol_term*> bound_variables(8);
-			if (!get_referents(logical_forms[i], iterators[i], bound_variables)) {
-				for (unsigned int j = 0; j < i + 1; j++)
-					core::free(iterators[j]);
-				core::free(iterators);
-				return false;
-			}
-		}
-
-		std::set<referent_iterator_state> queue;
-		for (unsigned int i = 0; i < parse_count; i++) {
-			referent_iterator_state initial_state(&iterators[i], log_probabilities[i]);
-			for (unsigned int j = 0; j < iterators[i].anaphora.size; j++)
-				initial_state.indices[j] = 0;
-			queue.insert(initial_state);
-		}
-
-		Formula* resolved_formulas[K];
-		double resolved_log_probabilities[K];
-		unsigned int resolved_formula_count = 0;
-		while (!queue.empty()) {
-			auto last = queue.cend(); last--;
-			referent_iterator_state state = *last;
-			queue.erase(last);
-
-			process_referent_iterator(state, queue, resolved_formulas, resolved_log_probabilities, resolved_formula_count);
-			if (resolved_formula_count == K)
-				break;
-		}
-
-/* TODO: for debugging; delete this */
-bool has_anaphora = false;
-for (unsigned int i = 0; !has_anaphora && i < parse_count; i++)
-	has_anaphora = (iterators[i].anaphora.size != 0);
-if (has_anaphora) {
-	if (resolved_formula_count == 0) {
-		print(CONSOLE_BOLD "\nCoreference resolution failed.\n" CONSOLE_RESET, stdout);
-	} else {
-		print(CONSOLE_BOLD "\nCoreference resolution results:\n" CONSOLE_RESET, stdout);
-		for (unsigned int i = 0; i < resolved_formula_count; i++) {
-			print(CONSOLE_BOLD "[", stdout); print(i, stdout); print("] " CONSOLE_RESET, stdout);
-			print(*resolved_formulas[i], stdout, terminal_printer); print('\n', stdout);
-		}
-	}
-}
-
-		for (unsigned int i = 0; i < parse_count; i++) {
-			core::free(iterators[i]);
-			core::free(*logical_forms[i]); if (logical_forms[i]->reference_count == 0) core::free(logical_forms[i]);
-		} for (unsigned int i = 0; i < resolved_formula_count; i++) {
-			logical_forms[i] = resolved_formulas[i];
-			log_probabilities[i] = resolved_log_probabilities[i];
-		}
-		core::free(iterators);
-		parse_count = resolved_formula_count;
-		return true;
-	}
-
-	template<unsigned int K, typename TheoryType>
-	bool parse(const SentenceType& s,
-			Formula** logical_forms, double* log_probabilities,
-			unsigned int& parse_count, const TheoryType& T,
-			array<array<sentence_token>>& unrecognized,
-			hash_map<string, unsigned int>& names)
-	{
-		static_assert(K > 0, "`K` must be at least 1.");
-#if !defined(NDEBUG)
-		if (terminal_printer.map == NULL) {
-			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.parse`.\n");
-			return false;
-		}
-#endif
-
-		logical_form_type logical_form(HOL_ANY);
-		syntax_node<logical_form_type>* parsed_syntax =
-				(syntax_node<logical_form_type>*) alloca(K * sizeof(syntax_node<logical_form_type>));
-		logical_form_type* logical_form_output =
-				(logical_form_type*) alloca(K * sizeof(logical_form_type));
-		sequence& seq = *((sequence*) alloca(sizeof(sequence)));
-		if (!init(seq, s)) {
-			return false;
-		} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
-			core::free(seq);
-			return false;
-		}
-		auto sentence = tokenized_sentence<logical_form_type>(seq);
-
-/* TODO: for debugging; remove this */
-const string** nonterminal_name_map = invert(G.nonterminal_names);
-string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
-debug_terminal_printer = &terminal_printer;
-debug_nonterminal_printer = &nonterminal_printer;
-		if (!::parse<false, false, K>(parsed_syntax, parse_count,
-				logical_form, logical_form_output, G, sentence, morph, *this))
-		{
-/* TODO: for debugging; remove this */
-core::free(nonterminal_name_map);
-			core::free(seq);
-			return false;
-		}
-
-		array<pair<unsigned int, unsigned int>> ambiguous_terminal_indices(8);
-		for (unsigned int i = 0; i < parse_count; i++) {
-/* TODO: for debugging; remove this */
-print(CONSOLE_BOLD "Parse result ", stdout); print(i, stdout); print(":\n" CONSOLE_RESET, stdout);
-print(logical_form_output[i], stdout, terminal_printer); print('\n', stdout);
-print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]);
-			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
-print("\nLog likelihood: ", stdout); print(log_likelihood, stdout); print("\n\n", stdout); fflush(stdout);
-			/* TODO: compute this prior */
-			double log_prior = 0.0; //log_probability<true>(T, logical_form_output[i]);
-			log_probabilities[i] = log_likelihood + log_prior;
-
-			if (i == 0) {
-				unsigned int left = 0;
-				if (!get_unrecognized_terminals(ambiguous_terminal_indices, parsed_syntax[i], logical_form_output[i], left)
-				 || !unrecognized.ensure_capacity(ambiguous_terminal_indices.length))
-				{
-					fprintf(stderr, "hdp_parser.parse ERROR: Unable to retrieve unrecognized terminals. This"
-							" is likely due to a bug in a transformation function in the derivation tree.\n");
-					for (unsigned int j = 0; j < i; j++) {
-						core::free(*logical_forms[j]); core::free(logical_forms[j]);
-					} for (unsigned int j = 0; j < parse_count; j++) {
-						core::free(parsed_syntax[j]);
-						core::free(logical_form_output[j]);
-					}
-/* TODO: for debugging; remove this */
-core::free(nonterminal_name_map);
-					core::free(seq);
-					return false;
-				}
-
-#if !defined(NDEBUG)
-				logical_form_type copy(logical_form_output[i]);
-				if (!populate_inflected_terminals(parsed_syntax[i], seq.tokens)
-				 || !is_parseable(parsed_syntax[i], logical_form_output[i], G, morph, copy, nonterminal_printer, terminal_printer, *this))
-					fprintf(stderr, "hdp_parser.parse WARNING: Top logical form output is not parseable. This"
-							" is likely due to a bug in a transformation function in the derivation tree.\n");
-#endif
-			}
-
-			logical_forms[i] = ambiguous_to_unknown(logical_form_output[i].root);
-			if (logical_forms[i] == NULL) {
-				fprintf(stderr, "hdp_parser.parse ERROR: Out of memory.\n");
-				for (unsigned int j = 0; j < i; j++) {
-					core::free(*logical_forms[j]); core::free(logical_forms[j]);
-				} for (unsigned int j = 0; j < parse_count; j++) {
-					core::free(parsed_syntax[j]);
-					core::free(logical_form_output[j]);
-				}
-/* TODO: for debugging; remove this */
-core::free(nonterminal_name_map);
-				core::free(seq);
-				return false;
-			}
-		}
-		core::free(seq);
-/* TODO: for debugging; remove this */
-core::free(nonterminal_name_map);
-
-		for (pair<unsigned int, unsigned int> index : ambiguous_terminal_indices) {
-			array<sentence_token>& next_unknown_string = unrecognized[unrecognized.length];
-			if (!array_init(next_unknown_string, index.value)) {
-				for (array<sentence_token>& str : unrecognized) core::free(str);
-				unrecognized.clear();
-				for (unsigned int j = 0; j < parse_count; j++) {
-					core::free(*logical_forms[j]); core::free(logical_forms[j]);
-					core::free(parsed_syntax[j]);
-					core::free(logical_form_output[j]);
-				}
-				return false;
-			}
-			unrecognized.length++;
-
-			for (unsigned int i = 0; i < index.value; i++)
-				next_unknown_string[i] = { s.tokens[index.key + i] };
-			next_unknown_string.length = index.value;
-		}
-
-		for (unsigned int j = 0; j < parse_count; j++) {
-			core::free(parsed_syntax[j]);
-			core::free(logical_form_output[j]);
-		}
-
-		/* resolve variable names like "X" as implicit universal quantification */
-bool has_variable_names = false;
-		for (unsigned int j = 0; j < parse_count; j++) {
-			hol_term* new_logical_form = universalize_variable_names(logical_forms[j]);
-			if (new_logical_form == nullptr) {
-				for (array<sentence_token>& str : unrecognized) core::free(str);
-				unrecognized.clear();
-				for (unsigned int j = 0; j < parse_count; j++) {
-					core::free(*logical_forms[j]); core::free(logical_forms[j]);
-				}
-				return false;
-			}
-has_variable_names |= (new_logical_form != logical_forms[j]);
-			core::free(*logical_forms[j]); if (logical_forms[j]->reference_count == 0) core::free(logical_forms[j]);
-			logical_forms[j] = new_logical_form;
-		}
-
-if (has_variable_names) {
-	print(CONSOLE_BOLD "\nVariable name resolution results:\n" CONSOLE_RESET, stdout);
-	for (unsigned int j = 0; j < parse_count; j++) {
-		print(CONSOLE_BOLD "[", stdout); print(j, stdout); print("] " CONSOLE_RESET, stdout);
-		print(*logical_forms[j], stdout, terminal_printer); print('\n', stdout);
-	}
-}
-
-		/* perform coreference resolution */
-		if (!resolve_coreference<K>(logical_forms, log_probabilities, parse_count)) {
-			for (array<sentence_token>& str : unrecognized) core::free(str);
-			unrecognized.clear();
-			for (unsigned int j = 0; j < parse_count; j++) {
-				core::free(*logical_forms[j]); core::free(logical_forms[j]);
-			}
-			return false;
-		}
-
-		return (parse_count != 0);
-	}
-
-	bool add_definition(const SentenceType& s, Formula* definition,
-			unsigned int new_constant, hash_map<string, unsigned int>& names)
-	{
-#if !defined(NDEBUG)
-		if (terminal_printer.map == NULL) {
-			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
-			return false;
-		}
-#endif
-
-		/* first replace `unknown` in `definition` with `new_constant` */
-		hol_term* constant = hol_term::new_constant(new_constant);
-		if (constant == nullptr)
-			return false;
-		hol_term* new_definition = substitute(definition, &HOL_UNKNOWN, constant);
-		core::free(*constant); if (constant->reference_count == 0) core::free(constant);
-		if (new_definition == nullptr)
-			return false;
-
-		const logical_form_type logical_form(*new_definition);
-		core::free(*new_definition); if (new_definition->reference_count == 0) core::free(new_definition);
-		sequence& seq = *((sequence*) alloca(sizeof(sequence)));
-		if (!init(seq, s)) {
-			return false;
-		} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
-			core::free(seq);
-			return false;
-		}
-		auto sentence = tokenized_sentence<logical_form_type>(seq);
-		core::free(seq);
-
-		const string** nonterminal_name_map = invert(G.nonterminal_names);
-		if (nonterminal_name_map == nullptr)
-			return false;
-		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
-		auto printer = get_printer(terminal_printer);
-debug_terminal_printer = &printer;
-debug_nonterminal_printer = &nonterminal_printer;
-
-		syntax_node<logical_form_type>* syntax = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>));
-		/* NOTE: sample can set syntax.tree to null */
-		print("Training with new labeled sentence:\n", stdout);
-		print("  Sentence: '", stdout); print(s, stdout, printer); print("'\n", stdout);
-		print("  Logical form: ", stdout); print(logical_form, stdout, printer); print("\n", stdout);
-		if (syntax == NULL || !sample(syntax, G, logical_form, sentence, morph, *this) || syntax == NULL)
-		{
-			fprintf(stderr, "hdp_parser.add_definition ERROR: Unable to sample derivation for new sentence.\n");
-			core::free(nonterminal_name_map); return false;
-		}
-		print(*syntax, stdout, nonterminal_printer, printer, 1); print("\n\n", stdout);
-		fflush(stdout);
-		core::free(nonterminal_name_map);
-
-		if (!add_tree(1, *syntax, logical_form, G)) {
-			core::free(*syntax); core::free(syntax);
-			return false;
-		}
-		core::free(*syntax); core::free(syntax);
-
-		/* TODO: do some MCMC iterations */
-		return true;
-	}
-
-	template<unsigned int K>
-	inline bool generate(
-			syntax_node<logical_form_type>* generated_derivations,
-			double* log_likelihoods,
-			unsigned int& generated_derivation_count,
-			Formula* logical_form,
-			hash_map<string, unsigned int>& names)
-	{
-#if !defined(NDEBUG)
-		if (terminal_printer.map == NULL) {
-			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
-			return false;
-		}
-#endif
-
-const string** nonterminal_name_map = invert(G.nonterminal_names);
-string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
-debug_terminal_printer = &terminal_printer;
-debug_nonterminal_printer = &nonterminal_printer;
-		const logical_form_type root_logical_form(*logical_form);
-		bool result = ::generate<K>(generated_derivations, generated_derivation_count, root_logical_form, G, morph, names);
-core::free(nonterminal_name_map);
-		if (names.table.size >= terminal_printer.length) {
-			core::free(terminal_printer.map);
-			terminal_printer.map = invert(names);
-			if (terminal_printer.map == nullptr) {
-				for (unsigned int i = 0; i < generated_derivation_count; i++)
-					core::free(generated_derivations[i]);
-				return false;
-			}
-			terminal_printer.length = names.table.size + 1;
-		}
-		for (unsigned int i = 0; i < generated_derivation_count; i++) {
-			double log_likelihood = log_probability(G, generated_derivations[i], root_logical_form, *this);
-			log_likelihoods[i] = log_likelihood;
-		}
-		return result;
-	}
-
-	inline bool yield(
-			const syntax_node<logical_form_type>& derivation,
-			Formula* logical_form, sequence& output_sentence,
-			unsigned int nonterminal = 1)
-	{
-		generated_utterance utterance(output_sentence);
-		const logical_form_type root_logical_form(*logical_form);
-		return ::yield(G, derivation, nonterminal, root_logical_form, get_printer(terminal_printer), utterance, morph);
-	}
-
-	inline bool yield_search_query(
-			const syntax_node<logical_form_type>& derivation,
-			Formula* logical_form, sequence& output_sentence) const
-	{
-		if (logical_form->type != hol_term_type::LAMBDA) {
-			fprintf(stderr, "hdp_parser.yield_search_query ERROR: `logical_form` is not a lambda expression.");
-			return false;
-		}
-
-		const logical_form_type root_logical_form(*logical_form);
-		generated_utterance utterance(output_sentence);
-		bool is_interrogative;
-		return yield_search_query(derivation, 1, root_logical_form, terminal_printer, utterance, morph, logical_form->quantifier.variable, is_interrogative);
-	}
-
-	template<typename Printer>
-	constexpr Printer& get_printer(Printer& constant_printer) const {
-		return constant_printer;
-	}
-
-	const string_map_scribe& get_printer() const {
-		return terminal_printer;
-	}
-
-	const string** reverse_string_map() const {
-		return terminal_printer.map;
-	}
-
-	template<typename Stream>
-	inline bool print_hdp(const char* nonterminal_name, Stream& out) {
-		bool contains;
-		unsigned int nonterminal = G.nonterminal_names.get(nonterminal_name, contains);
-		if (!contains) {
-			fprintf(stderr, "hdp_parser.print_hdp ERROR: No such nonterminal '%s' in the grammar.\n", nonterminal_name);
-			return false;
-		}
-
-		const string** nonterminal_name_map = invert(G.nonterminal_names);
-		if (nonterminal_name_map == nullptr)
-			return false;
-		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
-
-		auto printers = make_pair<const string_map_scribe&, const string_map_scribe&>(terminal_printer, nonterminal_printer);
-		bool success = print(G.nonterminals[nonterminal - 1].rule_distribution.type, out); success &= print(' ', out);
-		success &= print(G.nonterminals[nonterminal - 1].name, out); success &= (fprintf(out, " (%u) HDP: ", G.nonterminals[nonterminal - 1].id) >= 0);
-		success &= print(G.nonterminals[nonterminal - 1].rule_distribution.sampler, out, terminal_printer, printers); success &= print('\n', out);
-		success &= print(G.nonterminals[nonterminal - 1].rule_distribution.h.alpha, G.nonterminals[nonterminal - 1].rule_distribution.feature_count + 1, out); success &= print('\n', out);
-		core::free(nonterminal_name_map);
-		return success;
-	}
-
-private:
-	template<typename Semantics, typename Printer>
-	bool yield_search_query(
-			const syntax_node<Semantics>& node,
-			unsigned int nonterminal,
-			const Semantics& logical_form,
-			Printer& printer,
-			generated_utterance& utterance,
-			const morphology_en& morph,
-			unsigned int query_variable,
-			bool& is_interrogative) const
-	{
-		if (node.is_terminal()) {
-			is_interrogative = false;
-			hol_term* term = logical_form.root;
-			while (term->type == hol_term_type::LAMBDA) {
-				if (term->quantifier.variable == query_variable) {
-					is_interrogative = true;
-					break;
-				}
-				term = term->quantifier.operand;
-			}
-
-			return ::yield(node.right, G.nonterminals[nonterminal - 1].rule_distribution, logical_form, utterance, morph);
-		}
-
-		for (unsigned int i = 0; i < node.right.nt.length; i++) {
-			Semantics transformed;
-			if (!apply(node.right.nt.transformations[i], logical_form, transformed)) {
-				print("yield ERROR: Unable to apply semantic transformation '", stderr);
-				print(node.right.nt.transformations[i], stderr); print("' to logical form:\n", stderr);
-				print(logical_form, stderr, printer); print('\n', stderr); return false;
-			}
-
-			/* check if the interrogative phrase is in this child subtree */
-			bool could_child_be_interrogative = false;
-			hol_term* term = transformed.root;
-			while (term->type == hol_term_type::LAMBDA) {
-				if (term->quantifier.variable == query_variable) {
-					could_child_be_interrogative = true;
-					break;
-				}
-				term = term->quantifier.operand;
-			}
-
-			if (could_child_be_interrogative) {
-				bool is_child_interrogative = false;
-				unsigned int old_length = utterance.length;
-				if (!yield_search_query(*node.children[i], node.right.nt.nonterminals[i], transformed, printer, utterance, morph, query_variable, is_child_interrogative))
-					return false;
-				/* check if "how many" was generated, and if so, replace with an asterisk */
-				for (unsigned int j = old_length; j + 2 < utterance.length; j++) {
-					if ((utterance.tokens[j] == HOW_ID || (j == 0 && utterance.tokens[j] == CAPITAL_HOW_ID)) && utterance.tokens[j + 1] == MANY_ID) {
-						utterance.tokens[j] = ASTERISK_ID;
-						shift_left(utterance.tokens + j + 1, utterance.length - j - 2);
-						utterance.length--;
-						is_child_interrogative = false;
-						is_interrogative = false;
-						break;
-					}
-				}
-				if (node.right.nt.nonterminals[i] == NONTERMINAL_NP_ID && is_child_interrogative) {
-					/* we found the interrogative noun phrase, so replace it with `*` */
-					utterance.tokens[old_length] = ASTERISK_ID;
-					utterance.length = old_length + 1;
-					is_interrogative = false;
-				} else if (is_child_interrogative) {
-					is_interrogative = true;
-				}
-			} else {
-				if (!::yield(G, *node.children[i], node.right.nt.nonterminals[i], transformed, printer, utterance, morph))
-					return false;
-			}
-		}
-		return true;
-	}
-
-	void cleanup(
-			const array<array_map<SentenceType, flagged_logical_form<Formula>>>& data,
-			const string** nonterminal_name_map, rooted_syntax_node<logical_form_type>** syntax, unsigned int* order)
-	{
-		if (syntax != NULL) {
-			for (unsigned int k = 0; k < data.length; k++) {
-				if (syntax[k] == NULL) continue;
-				for (unsigned int l = 0; l < data[k].size; l++)
-					if (!is_empty(syntax[k][l])) core::free(syntax[k][l]);
-				core::free(syntax[k]);
-			}
-			core::free(syntax);
-		}
-		if (order != NULL) core::free(order);
-		if (terminal_printer.map != NULL) core::free(terminal_printer.map);
-		if (nonterminal_name_map != NULL) core::free(nonterminal_name_map);
-		terminal_printer.map = NULL;
-	}
-
-	inline void free_helper() {
-		if (terminal_printer.map != nullptr)
-			core::free(terminal_printer.map);
-	}
-};
-
-template<typename Formula>
-constexpr const char* hdp_parser<Formula>::FORBIDDEN_TOKEN_STRS[];
-
-template<typename Formula>
-bool init(hdp_parser<Formula>& dst, const hdp_parser<Formula>& src)
-{
-	dst.LPAREN_ID = src.LPAREN_ID;
-	dst.RPAREN_ID = src.RPAREN_ID;
-	dst.COMMA_ID = src.COMMA_ID;
-	dst.A_ID = src.A_ID;
-	dst.AN_ID = src.AN_ID;
-	dst.ASTERISK_ID = src.ASTERISK_ID;
-	dst.NONTERMINAL_NP_ID = src.NONTERMINAL_NP_ID;
-	dst.NONTERMINAL_V_ID = src.NONTERMINAL_V_ID;
-	for (unsigned int i = 0; i < array_length(src.forbidden_token_ids); i++)
-		dst.forbidden_token_ids[i] = src.forbidden_token_ids[i];
-	dst.number_parser = src.number_parser;
-
-	dst.terminal_printer.map = nullptr;
-	dst.terminal_printer.length = 0;
-
-	if (!init(dst.morph, src.morph)) {
-		return false;
-	} else if (!copy(src.G, dst.G)) {
-		free(dst.morph);
-		return false;
-	}
-	return true;
-}
-
-/* Computes the log joint probability of the grammar and given derivations */
-template<typename Formula>
-double log_probability(
-	hdp_grammar_type<Formula>& G,
-	const rooted_syntax_node<flagged_logical_form<Formula>>* const* syntax,
-	const array<array_map<typename hdp_parser<Formula>::SentenceType, flagged_logical_form<Formula>>>& data,
-	const hdp_parser<Formula>& parser)
-{
-	typedef flagged_logical_form<Formula> logical_form_type;
-
-	double score = 0.0;
-	for (unsigned int i = 0; i < G.nonterminals.length; i++)
-		score += log_probability(G.nonterminals[i].rule_distribution);
-	for (unsigned int i = 0; i < data.length; i++) {
-		for (unsigned int j = 0; j < data[i].size; j++) {
-			const logical_form_type& logical_form = data[i].values[j];
-			score += log_probability(G, *syntax[i][j].tree, logical_form, parser, syntax[i][j].root);
-		}
-	}
-	return score;
-}
-
-template<typename Formula>
-inline bool is_ambiguous(const flagged_logical_form<Formula>& exp) {
-	return is_ambiguous(*exp.root);
 }
 
 template<typename BuiltInPredicates>
@@ -8249,6 +4645,3819 @@ hol_term* find_head(hol_term* term, head_index& predicate_index, TryFindHeadFunc
 	}
 	fprintf(stderr, "find_head ERROR: Unrecognied hol_term_type.\n");
 	return nullptr;
+}
+
+struct ambiguous_to_unknown_converter { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::ANY_CONSTANT_EXCEPT>::type* = nullptr>
+inline hol_term* apply(hol_term* src, ambiguous_to_unknown_converter& converter) {
+	HOL_UNKNOWN.reference_count++;
+	return &HOL_UNKNOWN;
+}
+
+inline hol_term* ambiguous_to_unknown(hol_term* src)
+{
+	ambiguous_to_unknown_converter converter;
+	hol_term* dst = apply(src, converter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct same_to_equals_converter { };
+
+inline bool process_event_conjunct(
+		unsigned int variable, hol_term* conjunct,
+		hol_term*& arg1, hol_term*& arg2,
+		hol_term*& arg1_of, hol_term*& arg2_of,
+		hol_term*& predicate)
+{
+	if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
+			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
+			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+			&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
+			&& conjunct->binary.left->binary.right->variable == variable)
+	{
+		arg1 = conjunct->binary.right;
+	} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
+			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
+			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2
+			&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
+			&& conjunct->binary.left->binary.right->variable == variable)
+	{
+		arg2 = conjunct->binary.right;
+	} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
+			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
+			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1_OF
+			&& conjunct->binary.right->type == hol_term_type::VARIABLE
+			&& conjunct->binary.right->variable == variable)
+	{
+		arg1_of = conjunct->binary.left->binary.right;
+	} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
+			&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
+			&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2_OF
+			&& conjunct->binary.right->type == hol_term_type::VARIABLE
+			&& conjunct->binary.right->variable == variable)
+	{
+		arg2_of = conjunct->binary.left->binary.right;
+	} else if (conjunct->type == hol_term_type::UNARY_APPLICATION
+			&& conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == variable)
+	{
+		if (conjunct->binary.left->type == hol_term_type::CONSTANT && is_tense_predicate(conjunct->binary.left->constant))
+			return true;
+		if (predicate != nullptr) return false;
+		predicate = conjunct->binary.left;
+	} else if (conjunct->type == hol_term_type::TRUE) {
+		return true;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, same_to_equals_converter& converter) {
+	hol_term* operand = src->quantifier.operand;
+	if (operand->type != hol_term_type::AND || operand->array.length != 4)
+		return default_apply<Type>(src, converter);
+
+	hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+	hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+	hol_term* predicate = nullptr;
+	for (unsigned int i = 0; i < operand->array.length; i++) {
+		if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate))
+			return default_apply<Type>(src, converter);
+	}
+
+	if (arg1 == nullptr || arg2 == nullptr || arg1_of != nullptr || arg2_of != nullptr
+	 || predicate->type != hol_term_type::CONSTANT || predicate->constant != (unsigned int) built_in_predicates::SAME)
+		return default_apply<Type>(src, converter);
+
+	hol_term* new_term = hol_term::new_equals(arg1, arg2);
+	if (new_term == nullptr)
+		return nullptr;
+	arg1->reference_count++;
+	arg2->reference_count++;
+	return new_term;
+}
+
+inline hol_term* same_to_equals(hol_term* src)
+{
+	same_to_equals_converter converter;
+	hol_term* dst = apply(src, converter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct exists_remover { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, exists_remover& converter) {
+	hol_term* operand = src->quantifier.operand;
+	if (operand->type != hol_term_type::AND || operand->array.length != 3)
+		return default_apply<Type>(src, converter);
+
+	hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+	hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+	hol_term* predicate = nullptr;
+	for (unsigned int i = 0; i < operand->array.length; i++) {
+		if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate))
+			return default_apply<Type>(src, converter);
+	}
+
+	if (arg1 == nullptr || arg2 != nullptr || arg1_of != nullptr || arg2_of != nullptr
+	 || predicate->type != hol_term_type::CONSTANT || predicate->constant != (unsigned int) built_in_predicates::EXIST)
+		return default_apply<Type>(src, converter);
+
+	HOL_TRUE.reference_count++;
+	return &HOL_TRUE;
+}
+
+inline hol_term* remove_exists(hol_term* src)
+{
+	exists_remover converter;
+	hol_term* dst = apply(src, converter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct arg_of_to_arg_converter { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EQUALS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, arg_of_to_arg_converter& converter) {
+	if (src->binary.left->type == hol_term_type::UNARY_APPLICATION
+	 && src->binary.left->binary.left->type == hol_term_type::CONSTANT)
+	{
+		unsigned int index = index_of(src->binary.left->binary.left->constant, ARGS_OF, array_length(ARGS_OF));
+		if (index < array_length(ARGS_OF)) {
+			hol_term* left = apply(src->binary.left->binary.right, converter);
+			if (left == nullptr) return nullptr;
+			hol_term* right = apply(src->binary.right, converter);
+			if (right == nullptr) {
+				if (left != src->binary.left->binary.right) { free(*left); if (left->reference_count == 0) free(left); }
+				return nullptr;
+			}
+
+			hol_term* new_term = hol_term::new_equals(hol_term::new_apply(hol_term::new_constant(ARGS[index]), right), left);
+			if (new_term == nullptr) {
+				if (left != src->binary.left->binary.right) { free(*left); if (left->reference_count == 0) free(left); }
+				if (right != src->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left->binary.right) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+			return new_term;
+		}
+	} if (src->binary.right->type == hol_term_type::UNARY_APPLICATION
+	   && src->binary.right->binary.left->type == hol_term_type::CONSTANT)
+	{
+		unsigned int index = index_of(src->binary.right->binary.left->constant, ARGS_OF, array_length(ARGS_OF));
+		if (index < array_length(ARGS_OF)) {
+			hol_term* right = apply(src->binary.right->binary.right, converter);
+			if (right == nullptr) return nullptr;
+			hol_term* left = apply(src->binary.left, converter);
+			if (left == nullptr) {
+				if (right != src->binary.right->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				return nullptr;
+			}
+
+			hol_term* new_term = hol_term::new_equals(right, hol_term::new_apply(hol_term::new_constant(ARGS[index]), left));
+			if (new_term == nullptr) {
+				if (right != src->binary.right->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
+				return nullptr;
+			}
+			if (right == src->binary.right->binary.right) right->reference_count++;
+			if (left == src->binary.left) left->reference_count++;
+			return new_term;
+		}
+	}
+	return default_apply<Type>(src, converter);
+}
+
+inline hol_term* arg_of_to_arg(hol_term* src)
+{
+	arg_of_to_arg_converter converter;
+	hol_term* dst = apply(src, converter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct tense_remover { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, tense_remover& remover) {
+	if (src->binary.left->type == hol_term_type::CONSTANT)
+	{
+		if (is_tense_predicate(src->binary.left->constant)) {
+			HOL_TRUE.reference_count++;
+			return &HOL_TRUE;
+		}
+	}
+	return default_apply<Type>(src, remover);
+}
+
+inline hol_term* remove_tense(hol_term* src)
+{
+	tense_remover remover;
+	hol_term* dst = apply(src, remover);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct object_remover { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, object_remover& remover) {
+	if (src->binary.left->type == hol_term_type::CONSTANT
+	 && (src->binary.left->constant == (unsigned int) built_in_predicates::OBJECT
+	  || src->binary.left->constant == (unsigned int) built_in_predicates::ANIMATE))
+	{
+		HOL_TRUE.reference_count++;
+		return &HOL_TRUE;
+	}
+	return default_apply<Type>(src, remover);
+}
+
+inline hol_term* remove_object(hol_term* src)
+{
+	object_remover remover;
+	hol_term* dst = apply(src, remover);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct inverse_remover { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, inverse_remover& converter) {
+	hol_term* operand = src->quantifier.operand;
+	if (operand->type != hol_term_type::AND)
+		return default_apply<Type>(src, converter);
+
+	pair<hol_term*, unsigned int> arg1 = {nullptr, 0};
+	pair<hol_term*, unsigned int> arg1_of = {nullptr, 0};
+	pair<hol_term*, unsigned int> arg2 = {nullptr, 0};
+	pair<hol_term*, unsigned int> arg2_of = {nullptr, 0};
+	pair<hol_term*, unsigned int> predicate = {nullptr, 0};
+	for (unsigned int i = 0; i < operand->array.length; i++) {
+		bool found_arg1 = (arg1.key != nullptr);
+		bool found_arg2 = (arg2.key != nullptr);
+		bool found_arg1_of = (arg1_of.key != nullptr);
+		bool found_arg2_of = (arg2_of.key != nullptr);
+		bool found_predicate = (predicate.key != 0);
+		if (process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1.key, arg2.key, arg1_of.key, arg2_of.key, predicate.key)) {
+			if (!found_arg1 && arg1.key != nullptr) arg1.value = i;
+			if (!found_arg2 && arg2.key != nullptr) arg2.value = i;
+			if (!found_arg1_of && arg1_of.key != nullptr) arg1_of.value = i;
+			if (!found_arg2_of && arg2_of.key != nullptr) arg2_of.value = i;
+			if (!found_predicate && predicate.key != nullptr) predicate.value = i;
+		}
+	}
+
+	if (predicate.key == nullptr || predicate.key->type != hol_term_type::UNARY_APPLICATION
+	 || predicate.key->binary.left->type != hol_term_type::CONSTANT
+	 || predicate.key->binary.left->constant != (unsigned int) built_in_predicates::INVERSE)
+		return default_apply<Type>(src, converter);
+
+	hol_term** new_operands = (hol_term**) malloc(sizeof(hol_term*) * operand->array.length);
+	if (new_operands == nullptr) {
+		fprintf(stderr, "apply ERROR: Insufficient memory for `new_operands` array when removing inverse events.\n");
+		return nullptr;
+	}
+	for (unsigned int i = 0; i < operand->array.length; i++) {
+		hol_term* new_operand;
+		if (i == predicate.value) {
+			new_operand = hol_term::new_apply(predicate.key->binary.right, operand->array.operands[i]->binary.right);
+			if (new_operand == nullptr) {
+				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
+				free(new_operands); return nullptr;
+			}
+			predicate.key->binary.right->reference_count++;
+			operand->array.operands[i]->binary.right->reference_count++;
+		} else if (i == arg1.value) {
+			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, operand->array.operands[i]->binary.left->binary.right), arg1.key);
+			if (new_operand == nullptr) {
+				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
+				free(new_operands); return nullptr;
+			}
+			hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+			operand->array.operands[i]->binary.left->binary.right->reference_count++;
+			arg1.key->reference_count++;
+		} else if (i == arg2.value) {
+			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, operand->array.operands[i]->binary.left->binary.right), arg2.key);
+			if (new_operand == nullptr) {
+				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
+				free(new_operands); return nullptr;
+			}
+			hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
+			operand->array.operands[i]->binary.left->binary.right->reference_count++;
+			arg2.key->reference_count++;
+		} else if (i == arg1_of.value) {
+			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2_OF>::value, arg1_of.key), operand->array.operands[i]->binary.right);
+			if (new_operand == nullptr) {
+				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
+				free(new_operands); return nullptr;
+			}
+			hol_term::constants<(unsigned int) built_in_predicates::ARG2_OF>::value.reference_count++;
+			arg1_of.key->reference_count++;
+			operand->array.operands[i]->binary.right->reference_count++;
+		} else if (i == arg2_of.value) {
+			new_operand = hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value, arg2_of.key), operand->array.operands[i]->binary.right);
+			if (new_operand == nullptr) {
+				for (unsigned int j = 0; j < i; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
+				free(new_operands); return nullptr;
+			}
+			hol_term::constants<(unsigned int) built_in_predicates::ARG1_OF>::value.reference_count++;
+			arg2_of.key->reference_count++;
+			operand->array.operands[i]->binary.right->reference_count++;
+		} else {
+			new_operand = apply(operand->array.operands[i], converter);
+			if (new_operand == operand->array.operands[i])
+				new_operand->reference_count++;
+		}
+		new_operands[i] = new_operand;
+	}
+
+	hol_term* new_term = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(new_operands, operand->array.length)));
+	if (new_term == nullptr) {
+		for (unsigned int j = 0; j < operand->array.length; j++) { free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]); }
+		free(new_operands); return nullptr;
+	}
+	free(new_operands);
+	return new_term;
+}
+
+inline hol_term* remove_inverse(hol_term* src)
+{
+	inverse_remover converter;
+	hol_term* dst = apply(src, converter);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct named_entity_collector {
+	array<string>& named_entities;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, named_entity_collector& visitor) {
+	if (Type == hol_term_type::EXISTS) {
+		hol_term* operand = term.quantifier.operand;
+		if (operand->type != hol_term_type::AND)
+			return true;
+
+		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+		hol_term* predicate = nullptr;
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			if (!process_event_conjunct(term.quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate))
+				return true;
+		}
+
+		if (arg2 == nullptr || predicate->type != hol_term_type::CONSTANT
+		 || predicate->constant != (unsigned int) built_in_predicates::NAME || arg2->type != hol_term_type::STRING)
+			return true;
+
+		if (!visitor.named_entities.ensure_capacity(visitor.named_entities.length + 1)
+		 || !init(visitor.named_entities[visitor.named_entities.length], arg2->str))
+			return false;
+		visitor.named_entities.length++;
+	}
+	return true;
+}
+
+inline bool get_named_entities(const hol_term& src, array<string>& named_entities) {
+	named_entity_collector visitor = {named_entities};
+	return visit(src, visitor);
+}
+
+struct set_operation_normalizer {
+	array<unsigned int> variable_stack;
+	array_map<unsigned int, hol_term*> maximal_subsets;
+
+	set_operation_normalizer() : variable_stack(8), maximal_subsets(4) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer) {
+	if (src->binary.left->type == hol_term_type::CONSTANT
+	 && src->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+	 && src->binary.right->type == hol_term_type::CONSTANT)
+	{
+		unsigned int max_variable = normalizer.variable_stack[0];
+		for (unsigned int i = 1; i < normalizer.variable_stack.length; i++)
+			max_variable = max(max_variable, normalizer.variable_stack[i]);
+		hol_term* new_term = hol_term::new_apply(src->binary.left, hol_term::new_lambda(max_variable + 1, hol_term::new_apply(src->binary.left, hol_term::new_variable(max_variable + 1))));
+		if (new_term == nullptr)
+			return nullptr;
+		src->binary.left->reference_count += 2;
+		return new_term;
+	}
+	return default_apply<Type>(src, normalizer);
+}
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::BINARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer) {
+	if (src->ternary.first->type == hol_term_type::CONSTANT
+	 && src->ternary.first->constant == (unsigned int) built_in_predicates::SUBSET)
+	{
+		hol_term* antecedent;
+		hol_term* consequent;
+
+		unsigned int variable;
+		if (src->ternary.second->type == hol_term_type::LAMBDA) {
+			variable = src->ternary.second->quantifier.variable;
+
+			/* check that the variable is not used in the consequent */
+			if (src->ternary.third->type == hol_term_type::LAMBDA
+			 && src->ternary.third->quantifier.variable != variable)
+			{
+				array<unsigned int> variables(8);
+				if (!get_bound_variables(*src->ternary.third->quantifier.operand, variables))
+					return nullptr;
+				if (variables.contains(variable)) {
+					/* we can't use the antecedent variable, so check if we can use the consequent variable */
+					variable = src->ternary.third->quantifier.variable;
+					if (!get_bound_variables(*src->ternary.second->quantifier.operand, variables))
+						return nullptr;
+					if (variables.contains(variable)) {
+						/* we can't use either variable, so let's use a new one */
+						variable = normalizer.variable_stack[0];
+						for (unsigned int i = 1; i < normalizer.variable_stack.length; i++)
+							variable = max(variable, normalizer.variable_stack[i]);
+						for (unsigned int i = 0; i < variables.length; i++)
+							variable = max(variable, variables[i]);
+					}
+				}
+			}
+		} else if (src->ternary.third->type == hol_term_type::LAMBDA) {
+			variable = src->ternary.third->quantifier.variable;
+		} else {
+			/* neither antecedent or consequent are lambda expressions, so just use a new variable */
+			variable = normalizer.variable_stack[0];
+			for (unsigned int i = 1; i < normalizer.variable_stack.length; i++)
+				variable = max(variable, normalizer.variable_stack[i]);
+		}
+
+		hol_term* dst_var = hol_term::new_variable(variable);
+		if (dst_var == nullptr)
+			return nullptr;
+
+		if (src->ternary.second->type == hol_term_type::LAMBDA) {
+			antecedent = src->ternary.second->quantifier.operand;
+			if (src->ternary.second->quantifier.variable != variable) {
+				hol_term* src_var = hol_term::new_variable(src->ternary.second->quantifier.variable);
+				if (src_var == nullptr) {
+					free(*dst_var); free(dst_var);
+					return nullptr;
+				}
+				antecedent = substitute(antecedent, src_var, dst_var);
+				free(*src_var); free(src_var);
+				if (antecedent == nullptr) {
+					free(*dst_var); free(dst_var);
+					return nullptr;
+				}
+			} else {
+				antecedent->reference_count++;
+			}
+		} else {
+			antecedent = hol_term::new_apply(src->ternary.second, dst_var);
+			src->ternary.second->reference_count++;
+			dst_var->reference_count++;
+		}
+
+		if (src->ternary.third->type == hol_term_type::LAMBDA) {
+			consequent = src->ternary.third->quantifier.operand;
+			if (src->ternary.third->quantifier.variable != variable) {
+				hol_term* src_var = hol_term::new_variable(src->ternary.third->quantifier.variable);
+				if (src_var == nullptr) {
+					free(*dst_var); free(dst_var);
+					return nullptr;
+				}
+				consequent = substitute(consequent, src_var, dst_var);
+				free(*src_var); free(src_var);
+				if (consequent == nullptr) {
+					free(*dst_var); free(dst_var);
+					return nullptr;
+				}
+			} else {
+				consequent->reference_count++;
+			}
+		} else {
+			consequent = hol_term::new_apply(src->ternary.third, dst_var);
+			src->ternary.third->reference_count++;
+			dst_var->reference_count++;
+		}
+
+		free(*dst_var); if (dst_var->reference_count == 0) free(dst_var);
+		hol_term* new_term = hol_term::new_for_all(variable, hol_term::new_if_then(antecedent, consequent));
+		if (new_term == nullptr) {
+			free(*antecedent); if (antecedent->reference_count == 0) free(antecedent);
+			free(*consequent); if (consequent->reference_count == 0) free(consequent);
+			return nullptr;
+		}
+		return new_term;
+	}
+	return default_apply<Type>(src, normalizer);
+}
+
+struct dependent_scope_finder {
+	unsigned int variable;
+
+	dependent_scope_finder(unsigned int variable) : variable(variable) { }
+
+	inline void operator () (
+			hol_term* src, hol_term*& head,
+			head_index& predicate_index)
+	{
+		if (src->type == hol_term_type::EXISTS || src->type == hol_term_type::FOR_ALL) {
+			hol_term* operand = src->quantifier.operand;
+			while (true) {
+				if (operand->type == hol_term_type::AND || operand->type == hol_term_type::OR || operand->type == hol_term_type::IFF) {
+					for (unsigned int i = 0; i + 1 < operand->array.length; i++) {
+						if (is_variable_free(*operand->array.operands[i], variable)) {
+							head = src;
+							return;
+						}
+					}
+					operand = operand->array.operands[operand->array.length - 1];
+				} else if (operand->type == hol_term_type::IF_THEN) {
+					if (is_variable_free(*operand->binary.left, variable)) {
+						head = src;
+						return;
+					}
+					operand = operand->binary.right;
+				} else {
+					break;
+				}
+			}
+
+			head = nullptr;
+			return;
+		} else if (src->type == hol_term_type::AND || src->type == hol_term_type::OR || src->type == hol_term_type::IFF || src->type == hol_term_type::IF_THEN) {
+			head = nullptr;
+			return;
+		}
+		head = src;
+	}
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer)
+{
+	normalizer.variable_stack.add(src->quantifier.variable);
+
+	hol_term* dst = nullptr;
+	if (Type == hol_term_type::EXISTS && src->quantifier.operand->type == hol_term_type::AND) {
+		hol_term* operand = src->quantifier.operand;
+		hol_term* left = operand->array.operands[0];
+		if (left->type == hol_term_type::BINARY_APPLICATION && left->ternary.first->type == hol_term_type::CONSTANT
+		 && left->ternary.first->constant == (unsigned int) built_in_predicates::MAXIMAL_SUBSET
+		 && left->ternary.second->type == hol_term_type::VARIABLE && left->ternary.second->variable == src->quantifier.variable
+		 && left->ternary.third->type == hol_term_type::LAMBDA && left->ternary.third->quantifier.operand->type != hol_term_type::LAMBDA)
+		{
+			hol_term* set_definition = left->ternary.third->quantifier.operand;
+			array<hol_term*> new_operands(operand->array.length);
+			unsigned int index = normalizer.maximal_subsets.size;
+			normalizer.maximal_subsets.put(src->quantifier.variable, nullptr);
+			unsigned int operand_with_universal_index = operand->array.length;
+			for (unsigned int i = 1; i < operand->array.length; i++) {
+				hol_term* new_operand = apply(operand->array.operands[i], normalizer);
+				if (new_operand == nullptr) {
+					free_all(new_operands);
+					return nullptr;
+				} else if (new_operand == operand->array.operands[i]) {
+					new_operand->reference_count++;
+				}
+				if (operand_with_universal_index == operand->array.length && normalizer.maximal_subsets.values[index] != nullptr)
+					operand_with_universal_index = new_operands.length;
+				new_operands[new_operands.length++] = new_operand;
+			}
+			hol_term* inner_operand = normalizer.maximal_subsets.values[index];
+			normalizer.maximal_subsets.size--;
+
+			unsigned int max_variable = 0;
+			max_bound_variable(*left->ternary.third, max_variable);
+			max_bound_variable(*inner_operand, max_variable);
+			max_bound_variable(*new_operands[operand_with_universal_index], max_variable);
+			for (unsigned int variable : normalizer.variable_stack)
+				max_variable = max(max_variable, variable);
+
+			unsigned int new_variable = ++max_variable;
+			hol_term* dst_variable = hol_term::new_variable(new_variable);
+			if (dst_variable == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			}
+			hol_term* src_variable = hol_term::new_variable(left->ternary.third->quantifier.variable);
+			if (src_variable == nullptr) {
+				free(*dst_variable); free(dst_variable);
+				free_all(new_operands); return nullptr;
+			}
+			hol_term* new_set_definition = substitute<hol_term_type::VARIABLE>(set_definition, src_variable, dst_variable);
+			free(*src_variable); free(src_variable);
+			if (new_set_definition == nullptr) {
+				free(*dst_variable); free(dst_variable);
+				free_all(new_operands); return nullptr;
+			}
+
+			src_variable = hol_term::new_variable(inner_operand->quantifier.variable);
+			if (src_variable == nullptr) {
+				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
+				free(*dst_variable); free(dst_variable);
+				free_all(new_operands); return nullptr;
+			}
+			hol_term* new_inner_operand = substitute<hol_term_type::VARIABLE>(inner_operand->quantifier.operand->binary.right, src_variable, dst_variable);
+			free(*src_variable); free(src_variable);
+			free(*dst_variable); if (dst_variable->reference_count == 0) free(dst_variable);
+			if (new_inner_operand == nullptr) {
+				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
+				free_all(new_operands); return nullptr;
+			}
+
+			normalizer.variable_stack.add(new_variable);
+			hol_term* dst_set_definition = apply(new_set_definition, normalizer);
+			if (dst_set_definition == nullptr) {
+				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
+				free(*new_inner_operand); if (new_inner_operand->reference_count == 0) free(new_inner_operand);
+				free_all(new_operands); return nullptr;
+			} else if (dst_set_definition != new_set_definition) {
+				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
+			}
+			hol_term* dst_inner_operand = apply(new_inner_operand, normalizer);
+			if (dst_inner_operand == nullptr) {
+				free(*dst_set_definition); if (dst_set_definition->reference_count == 0) free(dst_set_definition);
+				free(*new_inner_operand); if (new_inner_operand->reference_count == 0) free(new_inner_operand);
+				free_all(new_operands); return nullptr;
+			} else if (dst_inner_operand != new_inner_operand) {
+				free(*new_inner_operand); if (new_inner_operand->reference_count == 0) free(new_inner_operand);
+			}
+			normalizer.variable_stack.length--;
+
+			/* find the right-most scope in `dst_inner_operand` that depends on the universally-quantified variable */
+			head_index predicate_index; no_op apply;
+			dependent_scope_finder head_finder(new_variable);
+			hol_term* inner_operand_head = find_head(dst_inner_operand, predicate_index, head_finder, apply);
+
+			hol_term* new_left;
+			if (dst_set_definition->type == hol_term_type::AND) {
+				if (inner_operand_head->type == hol_term_type::AND) {
+					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
+							hol_term::new_lambda(new_variable, hol_term::new_and(make_concat_array_view(
+								make_array_view(dst_set_definition->array.operands, dst_set_definition->array.length),
+								make_array_view(inner_operand_head->array.operands, inner_operand_head->array.length)))));
+				} else {
+					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
+							hol_term::new_lambda(new_variable, hol_term::new_and(make_appended_array_view(
+								make_array_view(dst_set_definition->array.operands, dst_set_definition->array.length), inner_operand_head))));
+				}
+			} else {
+				if (inner_operand_head->type == hol_term_type::AND) {
+					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
+							hol_term::new_lambda(new_variable, hol_term::new_and(make_prepended_array_view(
+								dst_set_definition, make_array_view(inner_operand_head->array.operands, inner_operand_head->array.length)))));
+				} else {
+					new_left = hol_term::new_equals(hol_term::new_variable(src->quantifier.variable),
+							hol_term::new_lambda(new_variable, hol_term::new_and(dst_set_definition, inner_operand_head)));
+				}
+			}
+			if (new_left == nullptr) {
+				free(*dst_set_definition); if (dst_set_definition->reference_count == 0) free(dst_set_definition);
+				free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
+				free_all(new_operands); return nullptr;
+			}
+			if (dst_set_definition->type == hol_term_type::AND) {
+				for (unsigned int i = 0; i < dst_set_definition->array.length; i++)
+					dst_set_definition->array.operands[i]->reference_count++;
+				free(*dst_set_definition); if (dst_set_definition->reference_count == 0) free(dst_set_definition);
+			} if (inner_operand_head->type == hol_term_type::AND) {
+				for (unsigned int i = 0; i < inner_operand_head->array.length; i++)
+					inner_operand_head->array.operands[i]->reference_count++;
+			} else {
+				inner_operand_head->reference_count++;
+			}
+
+			hol_term* outer = new_operands[operand_with_universal_index];
+			shift_left(new_operands.data + operand_with_universal_index, new_operands.length - operand_with_universal_index - 1);
+			new_operands.length--;
+
+			dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(
+					make_prepended_array_view(new_left, make_array_view(new_operands.data, new_operands.length))));
+			if (dst == nullptr) {
+				free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
+				free(*outer); if (outer->reference_count == 0) free(outer);
+				free(*new_left); free(new_left);
+				free_all(new_operands); return nullptr;
+			}
+
+			hol_term* temp = substitute<hol_term_type::CONSTANT>(outer, &HOL_ZERO, dst);
+			free(*outer); if (outer->reference_count == 0) free(outer);
+			free(*dst); if (dst->reference_count == 0) free(dst);
+			if (temp == nullptr) {
+				free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
+				return nullptr;
+			}
+			dst = temp;
+
+			temp = substitute_head<any_node_position::NONE>(dst_inner_operand, inner_operand_head, dst);
+			free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
+			if (temp == nullptr)
+				return nullptr;
+			dst = temp;
+		}
+	} else if (Type == hol_term_type::FOR_ALL && src->quantifier.operand->type == hol_term_type::IF_THEN
+			&& src->quantifier.operand->binary.left->type == hol_term_type::UNARY_APPLICATION
+			&& src->quantifier.operand->binary.left->binary.left->type == hol_term_type::VARIABLE
+			&& src->quantifier.operand->binary.left->binary.right->type == hol_term_type::VARIABLE
+			&& src->quantifier.operand->binary.left->binary.right->variable == src->quantifier.variable)
+	{
+		unsigned int index = normalizer.maximal_subsets.index_of(src->quantifier.operand->binary.left->binary.left->variable);
+		if (index != normalizer.maximal_subsets.size) {
+			normalizer.maximal_subsets.values[index] = src;
+			dst = &HOL_ZERO;
+			HOL_ZERO.reference_count++;
+		}
+	}
+
+	if (dst == nullptr)
+		dst = default_apply<Type>(src, normalizer);
+
+#if !defined(NDEBUG)
+	if (normalizer.variable_stack.length == 0) {
+		fprintf(stderr, "apply ERROR: Quantified term is not well-formed while normalizing set operations.\n");
+		return dst;
+	}
+#endif
+	normalizer.variable_stack.length--;
+	return dst;
+}
+
+inline hol_term* normalize_set_operations(hol_term* src)
+{
+	set_operation_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct conjunction_iterator {
+	array<pair<hol_term*, unsigned int>> stack;
+
+	conjunction_iterator(hol_term* conjunction) : stack(4) {
+		stack[0].key = conjunction;
+		stack[0].value = 0;
+		stack.length = 1;
+	}
+
+	hol_term* next() {
+		pair<hol_term*, unsigned int>& current = stack[stack.length - 1];
+		if (current.value < current.key->array.length) {
+			hol_term* next_item = current.key->array.operands[current.value];
+			if (next_item->type == hol_term_type::AND) {
+				if (!stack.add(make_pair(next_item, 0u)))
+					return nullptr;
+				return next();
+			} else {
+				current.value++;
+				return next_item;
+			}
+		}
+
+		stack.length--;
+		if (stack.length == 0)
+			return nullptr;
+		stack[stack.length - 1].value++;
+		return next();
+	}
+};
+
+struct equality_quantifier_normalizer { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS>::type* = nullptr>
+inline hol_term* apply(hol_term* src, equality_quantifier_normalizer& normalizer) {
+	hol_term* operand = src->quantifier.operand;
+	if (operand->type != hol_term_type::AND) {
+		hol_term* other = nullptr;
+		if (operand->type == hol_term_type::EQUALS) {
+			if (operand->binary.left->type == hol_term_type::VARIABLE && operand->binary.left->variable == src->quantifier.variable
+			 && (operand->binary.right->type == hol_term_type::CONSTANT || operand->binary.right->type == hol_term_type::VARIABLE))
+			{
+				other = operand->binary.right;
+			} else if (operand->binary.right->type == hol_term_type::VARIABLE && operand->binary.right->variable == src->quantifier.variable
+					&& (operand->binary.left->type == hol_term_type::CONSTANT || operand->binary.left->type == hol_term_type::VARIABLE))
+			{
+				other = operand->binary.left;
+			}
+		}
+		if (other != nullptr) {
+			HOL_TRUE.reference_count++;
+			return &HOL_TRUE;
+		} else {
+			return default_apply<Type>(src, normalizer);
+		}
+	} else {
+		hol_term* var = nullptr;
+		hol_term* substitution = nullptr;
+		array<hol_term*> new_conjuncts(8);
+		conjunction_iterator iterator(operand);
+		hol_term* conjunct = iterator.next();
+		while (conjunct != nullptr) {
+			hol_term* other = nullptr;
+			if (substitution == nullptr && conjunct->type == hol_term_type::EQUALS) {
+				if (conjunct->binary.left->type == hol_term_type::VARIABLE && conjunct->binary.left->variable == src->quantifier.variable
+				 && (conjunct->binary.right->type == hol_term_type::CONSTANT || conjunct->binary.right->type == hol_term_type::VARIABLE))
+				{
+					var = conjunct->binary.left;
+					other = conjunct->binary.right;
+				} else if (conjunct->binary.right->type == hol_term_type::VARIABLE && conjunct->binary.right->variable == src->quantifier.variable
+						&& (conjunct->binary.left->type == hol_term_type::CONSTANT || conjunct->binary.left->type == hol_term_type::VARIABLE))
+				{
+					var = conjunct->binary.right;
+					other = conjunct->binary.left;
+				}
+			}
+			if (other == nullptr) {
+				if (!new_conjuncts.ensure_capacity(new_conjuncts.length + 1)) {
+					free_all(new_conjuncts);
+					return nullptr;
+				}
+				new_conjuncts[new_conjuncts.length] = apply(conjunct, normalizer);
+				if (new_conjuncts[new_conjuncts.length] == conjunct)
+					new_conjuncts[new_conjuncts.length]->reference_count++;
+				new_conjuncts.length++;
+			} else {
+				if (other->type == hol_term_type::VARIABLE && other->variable == src->quantifier.variable) {
+					conjunct = iterator.next();
+					continue;
+				}
+				substitution = other;
+			}
+			conjunct = iterator.next();
+		}
+
+		if (new_conjuncts.length == 0) {
+			HOL_TRUE.reference_count++;
+			return &HOL_TRUE;
+		}
+
+		if (substitution == nullptr) {
+			bool same_as_src = (new_conjuncts.length == operand->array.length);
+			for (unsigned int i = 0; same_as_src && i < new_conjuncts.length; i++)
+				if (new_conjuncts[i] != operand->array.operands[i]) same_as_src = false;
+			if (same_as_src) {
+				for (unsigned int i = 0; i < new_conjuncts.length; i++)
+					free(*new_conjuncts[i]);
+				return src;
+			} else {
+				hol_term* dst;
+				if (new_conjuncts.length == 1) {
+					dst = hol_term::new_exists(src->quantifier.variable, new_conjuncts[0]);
+				} else {
+					dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(new_conjuncts.data, new_conjuncts.length)));
+				}
+				if (dst == nullptr) {
+					free_all(new_conjuncts);
+					return nullptr;
+				}
+				return dst;
+			}
+		}
+
+		for (unsigned int i = 0; i < new_conjuncts.length; i++) {
+			hol_term* substituted = substitute(new_conjuncts[i], var, substitution);
+			if (substituted == nullptr) {
+				free_all(new_conjuncts);
+				return nullptr;
+			}
+			free(*new_conjuncts[i]); if (new_conjuncts[i]->reference_count == 0) free(new_conjuncts[i]);
+			new_conjuncts[i] = substituted;
+		}
+
+		hol_term* dst;
+		if (new_conjuncts.length == 1) {
+			dst = new_conjuncts[0];
+		} else {
+			dst = hol_term::new_and(make_array_view(new_conjuncts.data, new_conjuncts.length));
+		}
+		if (dst == nullptr) {
+			free_all(new_conjuncts);
+			return nullptr;
+		}
+		return dst;
+	}
+}
+
+inline hol_term* normalize_quantifiers_with_equality(hol_term* src)
+{
+	equality_quantifier_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct negative_remover {
+	unsigned int target_variable;
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, negative_remover& normalizer)
+{
+	hol_term* operand = src->quantifier.operand;
+	hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+	hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+	hol_term* predicate = nullptr;
+	hol_term* dst = nullptr;
+	if (operand->type == hol_term_type::AND) {
+		unsigned int predicate_index = operand->array.length;
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+				predicate = nullptr;
+				break;
+			}
+			if (predicate != nullptr && predicate_index == operand->array.length)
+				predicate_index = i;
+		}
+
+		if (predicate != nullptr && predicate->type == hol_term_type::UNARY_APPLICATION
+		 && predicate->binary.left->type == hol_term_type::CONSTANT
+		 && predicate->binary.left->constant == (unsigned int) built_in_predicates::NEGATIVE
+		 && arg2 != nullptr && arg2->type == hol_term_type::VARIABLE
+		 && arg2->variable == normalizer.target_variable)
+		{
+			hol_term* new_predicate = hol_term::new_apply(predicate->binary.right, operand->array.operands[predicate_index]->binary.right);
+			if (new_predicate == nullptr)
+				return nullptr;
+			predicate->binary.right->reference_count++;
+			operand->array.operands[predicate_index]->binary.right->reference_count++;
+
+			if (Type == hol_term_type::EXISTS)
+				dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(
+						make_replaced_array_view(make_array_view(operand->array.operands, operand->array.length), new_predicate, predicate_index)));
+			else if (Type == hol_term_type::FOR_ALL)
+				dst = hol_term::new_for_all(src->quantifier.variable, hol_term::new_and(
+						make_replaced_array_view(make_array_view(operand->array.operands, operand->array.length), new_predicate, predicate_index)));
+			else if (Type == hol_term_type::LAMBDA)
+				dst = hol_term::new_lambda(src->quantifier.variable, hol_term::new_and(
+						make_replaced_array_view(make_array_view(operand->array.operands, operand->array.length), new_predicate, predicate_index)));
+			if (dst == nullptr) {
+				free(*new_predicate); free(new_predicate);
+				return nullptr;
+			}
+			for (unsigned int i = 0; i < operand->array.length; i++) {
+				if (i == predicate_index) continue;
+				operand->array.operands[i]->reference_count++;
+			}
+		}
+	}
+
+	if (dst == nullptr)
+		dst = default_apply<Type>(src, normalizer);
+
+	return dst;
+}
+
+inline hol_term* remove_negative(hol_term* src, unsigned int target_variable)
+{
+	negative_remover normalizer = {target_variable};
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct optimization_normalizer {
+	array_map<unsigned int, hol_term*> scopes;
+	array_map<unsigned int, hol_term*> negate_functions;
+
+	optimization_normalizer() : scopes(8), negate_functions(4) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, optimization_normalizer& normalizer) {
+	if (!normalizer.scopes.put(src->quantifier.variable, src))
+		return nullptr;
+
+	hol_term* dst = nullptr;
+	if (Type == hol_term_type::EXISTS) {
+		hol_term* operand = src->quantifier.operand;
+
+		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+		hol_term* predicate = nullptr;
+		unsigned int predicate_index = operand->array.length;
+		if (operand->type == hol_term_type::AND) {
+			for (unsigned int i = 0; i < operand->array.length; i++) {
+				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+					predicate = nullptr;
+					break;
+				}
+				if (predicate_index == operand->array.length && predicate != nullptr
+				 && predicate->type == hol_term_type::UNARY_APPLICATION
+				 && predicate->binary.left->type == hol_term_type::CONSTANT
+				 && predicate->binary.left->constant == (unsigned int) built_in_predicates::GREATEST
+				 && predicate->binary.right->type == hol_term_type::VARIABLE)
+				{
+					predicate_index = i;
+				}
+			}
+		}
+
+		if (predicate_index != operand->array.length) {
+			unsigned int function_variable = predicate->binary.right->variable;
+			hol_term* function_definition = normalizer.scopes.get(function_variable);
+			hol_term* left;
+			if (function_definition->quantifier.operand->type == hol_term_type::AND) {
+				left = function_definition->quantifier.operand->array.operands[0];
+			} else {
+				left = function_definition->quantifier.operand;
+			}
+
+			if (left->type == hol_term_type::EQUALS && left->binary.left->type == hol_term_type::VARIABLE
+			 && left->binary.left->variable == function_variable
+			 && left->binary.right->type == hol_term_type::LAMBDA
+			 && left->binary.right->quantifier.operand->type == hol_term_type::LAMBDA
+			 && left->binary.right->quantifier.operand->quantifier.operand->type == hol_term_type::EXISTS)
+			{
+				hol_term* function = left->binary.right->quantifier.operand->quantifier.operand;
+				hol_term* new_function = remove_negative(function, left->binary.right->quantifier.operand->quantifier.variable);
+				if (new_function == function) {
+					function->reference_count--;
+				} else {
+					/* we found a `greatest(f)` scope where `f` is a `negative` function */
+					if (!normalizer.negate_functions.put(function_variable, new_function)) {
+						free(*new_function); free(new_function);
+						return nullptr;
+					}
+
+					array<hol_term*> operands(operand->array.length);
+					for (unsigned int i = 0; i < operand->array.length; i++) {
+						if (i == predicate_index) {
+							operands[i] = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::LEAST>::value, predicate->binary.right), operand->array.operands[predicate_index]->binary.right);
+							if (operands[i] == nullptr) {
+								free_all(operands);
+								return nullptr;
+							}
+							hol_term::constants<(unsigned int) built_in_predicates::LEAST>::value.reference_count++;
+							predicate->binary.right->reference_count++;
+							operand->array.operands[predicate_index]->binary.right->reference_count++;
+						} else {
+							operands[i] = apply(operand->array.operands[i], normalizer);
+							if (operands[i] == nullptr) {
+								free_all(operands);
+								return nullptr;
+							} else if (operands[i] == operand->array.operands[i]) {
+								operands[i]->reference_count++;
+							}
+						}
+						operands.length++;
+					}
+
+					dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(operands.data, operands.length)));
+					if (dst == nullptr) {
+						free_all(operands);
+						return nullptr;
+					}
+				}
+			}
+		}
+	}
+
+	if (dst == nullptr) {
+		dst = default_apply<Type>(src, normalizer);
+		if (dst == nullptr) return nullptr;
+		else if (dst == src) dst->reference_count++;
+	}
+
+	unsigned int index = normalizer.negate_functions.index_of(dst->quantifier.variable);
+	if (index != normalizer.negate_functions.size) {
+		hol_term* new_function = normalizer.negate_functions.values[index];
+		normalizer.negate_functions.remove_at(index);
+
+		hol_term* left;
+		if (dst->quantifier.operand->type == hol_term_type::AND) {
+			left = dst->quantifier.operand->array.operands[0];
+		} else {
+			left = dst->quantifier.operand;
+		}
+
+		hol_term* new_left = hol_term::new_equals(left->binary.left, hol_term::new_lambda(left->binary.right->quantifier.variable, hol_term::new_lambda(left->binary.right->quantifier.operand->quantifier.variable, new_function)));
+		if (new_left == nullptr) {
+			free(*dst); if (dst->reference_count == 0) free(dst);
+			free(*new_function); if (new_function->reference_count == 0) free(new_function);
+			return nullptr;
+		}
+		left->binary.left->reference_count++;
+
+		hol_term* new_dst;
+		if (dst->quantifier.operand->type == hol_term_type::AND) {
+			new_dst = hol_term::new_exists(dst->quantifier.variable, hol_term::new_and(make_replaced_array_view(
+					make_array_view(dst->quantifier.operand->array.operands, dst->quantifier.operand->array.length), new_left, 0)));
+			if (new_dst == nullptr) {
+				free(*dst); if (dst->reference_count == 0) free(dst);
+				free(*new_left); if (new_left->reference_count == 0) free(new_left);
+				return nullptr;
+			}
+			for (unsigned int i = 1; i < new_dst->quantifier.operand->array.length; i++)
+				new_dst->quantifier.operand->array.operands[i]->reference_count++;
+		} else {
+			new_dst = hol_term::new_exists(dst->quantifier.variable, new_left);
+			if (new_dst == nullptr) {
+				free(*dst); if (dst->reference_count == 0) free(dst);
+				free(*new_left); if (new_left->reference_count == 0) free(new_left);
+				return nullptr;
+			}
+		}
+
+		free(*dst); if (dst->reference_count == 0) free(dst);
+		dst = new_dst;
+	}
+
+	normalizer.scopes.size--;
+	if (dst == src) dst->reference_count--;
+	return dst;
+}
+
+inline hol_term* normalize_optimizations(hol_term* src)
+{
+	optimization_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct subset_substituter {
+	unsigned int variable;
+	hol_term* set;
+	hol_term* lambda_var;
+
+	subset_substituter(unsigned int variable, hol_term* set) : variable(variable), set(set) {
+		lambda_var = hol_term::new_variable(set->quantifier.variable);
+		if (lambda_var == nullptr) throw std::bad_alloc();
+	}
+
+	~subset_substituter() {
+		free(*lambda_var); free(lambda_var);
+	}
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::UNARY_APPLICATION>::type* = nullptr>
+inline hol_term* apply(hol_term* src, subset_substituter& normalizer)
+{
+	if (src->binary.left->type == hol_term_type::VARIABLE && src->binary.left->variable == normalizer.variable) {
+		return substitute(normalizer.set->quantifier.operand, normalizer.lambda_var, src->binary.right);
+	} else {
+		return default_apply<Type>(src, normalizer);
+	}
+}
+
+inline hol_term* substitute_subsets(hol_term* src, unsigned int variable, hol_term* set)
+{
+	subset_substituter normalizer(variable, set);
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct subset_simplifier {
+	array<unsigned int> irreducible_variables;
+
+	subset_simplifier() : irreducible_variables(4) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::UNARY_APPLICATION || Type == hol_term_type::VARIABLE>::type* = nullptr>
+inline hol_term* apply(hol_term* src, subset_simplifier& normalizer)
+{
+	if (Type == hol_term_type::EXISTS) {
+		if (src->quantifier.operand->type != hol_term_type::AND)
+			return default_apply<Type>(src, normalizer);
+
+		unsigned int operand_count = src->quantifier.operand->array.length;
+		unsigned int set_definition_index = operand_count;
+		array<hol_term*> new_operands(operand_count);
+		for (unsigned int i = 0; i < operand_count; i++) {
+			hol_term* operand = src->quantifier.operand->array.operands[i];
+			if (operand->type == hol_term_type::EQUALS && operand->binary.left->type == hol_term_type::VARIABLE && operand->binary.left->variable == src->quantifier.variable
+			 && operand->binary.right->type == hol_term_type::LAMBDA && operand->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
+			{
+				set_definition_index = i;
+				hol_term* right = apply(operand->binary.right, normalizer);
+				if (right == operand->binary.right) {
+					new_operands[i] = operand;
+				} else {
+					new_operands[i] = hol_term::new_equals(operand->binary.left, right);
+					if (new_operands[i] == nullptr) {
+						free(*right); free(right);
+						new_operands[i] = nullptr;
+					} else {
+						operand->binary.left->reference_count++;
+					}
+				}
+			} else {
+				new_operands[i] = apply(operand, normalizer);
+			}
+
+			if (new_operands[i] == nullptr) {
+				for (unsigned int j = 0; j < i; j++) {
+					if (new_operands[j] != src->quantifier.operand->array.operands[j]) {
+						free(*new_operands[j]); free(new_operands[j]);
+					}
+				}
+				return nullptr;
+			}
+		}
+
+		if (set_definition_index < operand_count) {
+			unsigned int index = normalizer.irreducible_variables.index_of(src->quantifier.variable);
+			if (index < normalizer.irreducible_variables.length) {
+				normalizer.irreducible_variables.remove(index);
+			} else {
+				for (unsigned int i = 0; i < operand_count; i++)
+					if (new_operands[i] == src->quantifier.operand->array.operands[i]) new_operands[i]->reference_count++;
+				for (unsigned int i = 0; i < operand_count; i++) {
+					if (i == set_definition_index) continue;
+					hol_term* new_operand = substitute_subsets(new_operands[i], src->quantifier.variable, new_operands[set_definition_index]->binary.right);
+					if (new_operand == nullptr) {
+						for (unsigned int j = 0; j < operand_count; j++) {
+							free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]);
+						}
+						return nullptr;
+					}
+					free(*new_operands[i]); if (new_operands[i]->reference_count == 0) free(new_operands[i]);
+					new_operands[i] = new_operand;
+				}
+
+				if (operand_count == 2) {
+					free(*new_operands[set_definition_index]); if (new_operands[set_definition_index]->reference_count == 0) free(new_operands[set_definition_index]);
+					hol_term* dst = new_operands[1 - set_definition_index];
+					if (dst == src->quantifier.operand->array.operands[1 - set_definition_index])
+						dst->reference_count--;
+					return dst;
+				} else {
+					hol_term* dst = hol_term::new_and(make_excluded_array_view(new_operands.data, operand_count, set_definition_index));
+					if (dst == nullptr) {
+						for (unsigned int j = 0; j < operand_count; j++) {
+							free(*new_operands[j]); if (new_operands[j]->reference_count == 0) free(new_operands[j]);
+						}
+						return nullptr;
+					}
+					free(*new_operands[set_definition_index]); if (new_operands[set_definition_index]->reference_count == 0) free(new_operands[set_definition_index]);
+					return dst;
+				}
+			}
+		} else {
+			unsigned int index = normalizer.irreducible_variables.index_of(src->quantifier.variable);
+			if (index != normalizer.irreducible_variables.length)
+				normalizer.irreducible_variables.remove(index);
+		}
+
+		bool same_as_src = true;
+		for (unsigned int i = 0; same_as_src && i < operand_count; i++)
+			if (new_operands[i] != src->quantifier.operand->array.operands[i]) same_as_src = false;
+		if (same_as_src)
+			return src;
+
+		hol_term* dst = hol_term::new_exists(src->quantifier.variable, hol_term::new_and(make_array_view(new_operands.data, operand_count)));
+		if (dst == nullptr) {
+			for (unsigned int j = 0; j < operand_count; j++) {
+				if (new_operands[j] != src->quantifier.operand->array.operands[j]) {
+					free(*new_operands[j]); free(new_operands[j]);
+				}
+			}
+			return nullptr;
+		}
+		for (unsigned int i = 0; i < operand_count; i++) {
+			if (new_operands[i] == src->quantifier.operand->array.operands[i])
+				new_operands[i]->reference_count++;
+		}
+		return dst;
+
+	} else if (Type == hol_term_type::VARIABLE) {
+		if (!normalizer.irreducible_variables.contains(src->variable) && !normalizer.irreducible_variables.add(src->variable))
+			return nullptr;
+		return default_apply<Type>(src, normalizer);
+
+	} else if (Type == hol_term_type::UNARY_APPLICATION) {
+		if (src->binary.left->type == hol_term_type::VARIABLE) {
+			hol_term* right = apply(src->binary.right, normalizer);
+			if (right == nullptr) {
+				return nullptr;
+			} else if (right == src->binary.right) {
+				return src;
+			}
+
+			hol_term* dst = hol_term::new_apply(src->binary.right, right);
+			if (dst == nullptr) {
+				free(*right); free(right);
+				return nullptr;
+			}
+			src->binary.right->reference_count++;
+			return dst;
+		} else {
+			return default_apply<Type>(src, normalizer);
+		}
+	}
+
+	/* unreachable */
+	return nullptr;
+}
+
+inline hol_term* simplify_subsets(hol_term* src)
+{
+	subset_simplifier normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct comparative_normalizer {
+	array_map<unsigned int, hol_term*> scopes;
+	array<unsigned int> remove_scopes;
+
+	comparative_normalizer() : scopes(8), remove_scopes(4) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, comparative_normalizer& normalizer)
+{
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+		if (!normalizer.scopes.put(src->quantifier.variable, src))
+			return nullptr;
+	}
+
+	hol_term* dst = nullptr;
+	if (Type == hol_term_type::EXISTS) {
+		/* check if this is a `greater` scope */
+		hol_term* operand = src->quantifier.operand;
+		if (operand->type == hol_term_type::AND) {
+			hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+			hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+			hol_term* predicate = nullptr;
+			for (unsigned int i = 0; i < operand->array.length; i++) {
+				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+					predicate = nullptr;
+					break;
+				}
+			}
+
+			if (predicate != nullptr && predicate->type == hol_term_type::UNARY_APPLICATION
+			 && predicate->binary.left->type == hol_term_type::CONSTANT
+			 && predicate->binary.left->constant == (unsigned int) built_in_predicates::GREATER
+			 && arg1 != nullptr && arg2 != nullptr)
+			{
+				hol_term* function = predicate->binary.right;
+				bool negated = false;
+				if (function->type == hol_term_type::UNARY_APPLICATION && function->binary.left->type == hol_term_type::CONSTANT
+				 && function->binary.left->constant == (unsigned int) built_in_predicates::NEGATIVE)
+				{
+					function = function->binary.right;
+					negated = true;
+				}
+
+				unsigned int max_variable = 0;
+				max_bound_variable(*src, max_variable);
+				for (const auto& entry : normalizer.scopes)
+					max_variable = max(max_variable, entry.key);
+
+				/* check if the arg2 is a `measure` instance */
+				if (arg2->type == hol_term_type::VARIABLE) {
+					hol_term* other_scope = normalizer.scopes.get(arg2->variable);
+					hol_term* other_operand = other_scope->quantifier.operand;
+					hol_term* other_arg1 = nullptr; hol_term* other_arg1_of = nullptr;
+					hol_term* other_arg2 = nullptr; hol_term* other_arg2_of = nullptr;
+					hol_term* other_predicate = nullptr;
+					unsigned int predicate_index, arg1_index, arg2_index;
+					if (other_operand->type == hol_term_type::AND) {
+						predicate_index = other_operand->array.length;
+						arg1_index = other_operand->array.length;
+						arg2_index = other_operand->array.length;
+						for (unsigned int i = 0; i < other_operand->array.length; i++) {
+							if (other_operand->array.operands[i]->type == hol_term_type::EXISTS
+							 || other_operand->array.operands[i]->type == hol_term_type::FOR_ALL
+							 || other_operand->array.operands[i]->type == hol_term_type::NOT)
+								continue;
+							if (!process_event_conjunct(other_scope->quantifier.variable, other_operand->array.operands[i], other_arg1, other_arg2, other_arg1_of, other_arg2_of, other_predicate)) {
+								other_predicate = nullptr;
+								break;
+							}
+							if (other_predicate != nullptr && predicate_index == other_operand->array.length)
+								predicate_index = i;
+							else if (other_arg1 != nullptr && arg1_index == other_operand->array.length)
+								arg1_index = i;
+							else if (other_arg2 != nullptr && arg2_index == other_operand->array.length)
+								arg2_index = i;
+						}
+					}
+
+					if (other_predicate != nullptr && other_predicate->type == hol_term_type::CONSTANT
+					 && other_predicate->constant == (unsigned int) built_in_predicates::MEASURE
+					 && other_arg1 != nullptr && other_arg2 != nullptr)
+					{
+						if (!normalizer.remove_scopes.contains(other_scope->quantifier.variable)
+						 && !normalizer.remove_scopes.add(other_scope->quantifier.variable))
+							return (hol_term*) nullptr;
+
+						/* arg2 is a `measure` instance */
+						unsigned int value_variable = ++max_variable;
+						hol_term* value_var = hol_term::new_variable(value_variable);
+						if (value_var == nullptr)
+							return (hol_term*) nullptr;
+
+						unsigned int measure_variable = other_scope->quantifier.variable;
+						hol_term* measure_var = other_operand->array.operands[predicate_index]->binary.right;
+						unsigned int function_variable = ++max_variable;
+						hol_term* function_var = hol_term::new_variable(function_variable);
+						if (function_var == nullptr) {
+							free(*value_var); free(value_var);
+							return (hol_term*) nullptr;
+						}
+
+						dst = hol_term::new_exists(value_variable, hol_term::new_and(
+								hol_term::new_exists(measure_variable, hol_term::new_and(
+									other_operand->array.operands[predicate_index],
+									hol_term::new_equals(other_operand->array.operands[arg1_index]->binary.left, value_var),
+									other_operand->array.operands[arg2_index],
+									hol_term::new_exists(function_variable, hol_term::new_and(
+										hol_term::new_apply(function, function_var),
+										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, function_var), arg1),
+										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, function_var), measure_var)
+									))
+								)),
+								(negated
+									? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, other_arg1, value_var)
+									: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, value_var, other_arg1)
+								)
+							));
+						if (dst == nullptr) {
+							free(*value_var); free(value_var);
+							free(*function_var); free(function_var);
+							return (hol_term*) nullptr;
+						}
+						value_var->reference_count += 3 - 1;
+						function_var->reference_count += 3 - 1;
+						other_operand->array.operands[predicate_index]->reference_count++;
+						other_operand->array.operands[arg1_index]->binary.left->reference_count++;
+						other_operand->array.operands[arg2_index]->reference_count++;
+						function->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
+						arg1->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+						measure_var->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
+						other_arg1->reference_count++;
+					}
+				}
+
+				if (dst == nullptr) {
+					if (function->type == hol_term_type::CONSTANT && function->constant == (unsigned int) built_in_predicates::VALUE) {
+						dst = (negated
+								? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg2, arg1)
+								: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg1, arg2));
+						if (dst == nullptr)
+							return (hol_term*) nullptr;
+						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
+						arg1->reference_count++;
+						arg2->reference_count++;
+					} else {
+						unsigned int value_variable = ++max_variable;
+						hol_term* value_var = hol_term::new_variable(value_variable);
+						if (value_var == nullptr)
+							return (hol_term*) nullptr;
+
+						unsigned int function_variable = ++max_variable;
+						hol_term* function_var = hol_term::new_variable(function_variable);
+						if (function_var == nullptr) {
+							free(*value_var); free(value_var);
+							return (hol_term*) nullptr;
+						}
+
+						dst = hol_term::new_exists(value_variable, hol_term::new_and(
+									hol_term::new_exists(function_variable, hol_term::new_and(
+										hol_term::new_apply(function, function_var),
+										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, function_var), arg1),
+										hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, function_var), value_var)
+									)),
+									(negated
+										? hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, arg2, value_var)
+										: hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value, value_var, arg2)
+									)
+								));
+						if (function_var == nullptr) {
+							free(*value_var); free(value_var);
+							free(*function_var); free(function_var);
+							return (hol_term*) nullptr;
+						}
+						value_var->reference_count += 3 - 1;
+						function_var->reference_count += 3 - 1;
+						function->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
+						arg1->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::GREATER_THAN_OR_EQUAL>::value.reference_count++;
+						arg2->reference_count++;
+					}
+				}
+			}
+		}
+	}
+
+	if (dst == nullptr) {
+		if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+			hol_term* operand = src->quantifier.operand;
+			array<hol_term*> new_operands(operand->type == hol_term_type::AND ? operand->array.length : 1);
+			bool is_same = true;
+			if (operand->type == hol_term_type::AND) {
+				for (unsigned int i = 0; i < operand->array.length; i++) {
+					new_operands[i] = apply(operand->array.operands[i], normalizer);
+					if (new_operands[i] == nullptr) {
+						free_all(new_operands);
+						return nullptr;
+					} else if (new_operands[i] == operand->array.operands[i]) {
+						new_operands[i]->reference_count++;
+					} else {
+						is_same = false;
+					}
+					new_operands.length++;
+				}
+			} else {
+				new_operands[0] = apply(operand, normalizer);
+				if (new_operands[0] == nullptr) {
+					return nullptr;
+				} else if (new_operands[0] == operand) {
+					new_operands[0]->reference_count++;
+				} else {
+					is_same = false;
+				}
+				new_operands.length = 1;
+			}
+
+			unsigned int index = normalizer.remove_scopes.index_of(src->quantifier.variable);
+			if (index != normalizer.remove_scopes.length) {
+				normalizer.remove_scopes.remove(index);
+
+				for (unsigned int i = 0; i < new_operands.length; i++) {
+					if (is_variable_free(*new_operands[i], src->quantifier.variable)) {
+						free(*new_operands[i]); if (new_operands[i]->reference_count == 0) free(new_operands[i]);
+						new_operands.remove(i--);
+					}
+				}
+
+				if (new_operands.length == 1) {
+					dst = new_operands[0];
+				} else {
+					dst = hol_term::new_and(make_array_view(new_operands.data, new_operands.length));
+				}
+				if (dst == nullptr) {
+					free_all(new_operands);
+					return nullptr;
+				}
+
+			} else {
+				if (is_same) {
+					for (hol_term* new_operand : new_operands)
+						new_operand->reference_count--;
+					dst = src;
+				} else {
+					if (Type == hol_term_type::EXISTS)
+						dst = hol_term::new_exists(src->quantifier.variable,
+								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+					else if (Type == hol_term_type::FOR_ALL)
+						dst = hol_term::new_for_all(src->quantifier.variable,
+								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+					else if (Type == hol_term_type::LAMBDA)
+						dst = hol_term::new_lambda(src->quantifier.variable,
+								(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+					if (dst == nullptr) {
+						free_all(new_operands);
+						return nullptr;
+					}
+				}
+			}
+		} else {
+			dst = default_apply<Type>(src, normalizer);
+		}
+	}
+
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+		normalizer.scopes.size--;
+
+	return dst;
+}
+
+inline hol_term* normalize_comparatives(hol_term* src)
+{
+	comparative_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct variable_name_universalizer {
+	unsigned int max_variable;
+	array_map<char, hol_term*> new_variables;
+	array_map<unsigned int, hol_term*> variable_map;
+
+	variable_name_universalizer(unsigned int max_variable) : max_variable(max_variable), new_variables(4), variable_map(4) { }
+
+	~variable_name_universalizer() {
+		for (auto entry : new_variables) {
+			free(*entry.value);
+			if (entry.value->reference_count == 0)
+				free(entry.value);
+		} for (auto entry : variable_map) {
+			free(*entry.value);
+			if (entry.value->reference_count == 0)
+				free(entry.value);
+		}
+	}
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::IF_THEN || Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, variable_name_universalizer& normalizer)
+{
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+		hol_term* operand = src->quantifier.operand;
+		if (Type == hol_term_type::EXISTS && operand->type == hol_term_type::AND && operand->array.length == 3) {
+			hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+			hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+			hol_term* predicate = nullptr;
+			for (unsigned int i = 0; i < operand->array.length; i++) {
+				if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+					predicate = nullptr;
+					break;
+				}
+			}
+
+			if (predicate != nullptr && arg1_of != nullptr && arg2 != nullptr
+			 && predicate->type == hol_term_type::CONSTANT
+			 && predicate->constant == (unsigned int) built_in_predicates::NAME
+			 && arg1_of->type == hol_term_type::VARIABLE
+			 && arg2->type == hol_term_type::STRING
+			 && arg2->str.length == 1 && isupper(arg2->str[0]))
+			{
+				if (!normalizer.new_variables.ensure_capacity(normalizer.new_variables.size + 1))
+					return nullptr;
+				unsigned int index = normalizer.new_variables.index_of(arg2->str[0]);
+				hol_term* new_variable;
+				if (index != normalizer.new_variables.size) {
+					new_variable = normalizer.new_variables.values[index];
+				} else {
+					/* we found a new "variable name" */
+					new_variable = hol_term::new_variable(++normalizer.max_variable);
+					if (new_variable == nullptr)
+						return nullptr;
+					normalizer.new_variables.keys[normalizer.new_variables.size] = arg2->str[0];
+					normalizer.new_variables.values[normalizer.new_variables.size++] = new_variable;
+				}
+
+				if (!normalizer.variable_map.ensure_capacity(normalizer.variable_map.size + 1))
+					return nullptr;
+				index = normalizer.variable_map.index_of(arg1_of->variable);
+				if (index == normalizer.variable_map.size) {
+					normalizer.variable_map.keys[normalizer.variable_map.size] = arg1_of->variable;
+					normalizer.variable_map.values[normalizer.variable_map.size++] = new_variable;
+					new_variable->reference_count++;
+				}
+
+				HOL_TRUE.reference_count++;
+				return &HOL_TRUE;
+			}
+		}
+
+		/* check if we need to remove this quantifier */
+		hol_term* new_operand = apply(src->quantifier.operand, normalizer);
+		if (new_operand == nullptr)
+			return nullptr;
+
+		unsigned int index = normalizer.variable_map.index_of(src->quantifier.variable);
+		if (index != normalizer.variable_map.size) {
+			hol_term* src_var = hol_term::new_variable(src->quantifier.variable);
+			if (src_var == nullptr) {
+				if (new_operand != src->quantifier.operand) { free(*new_operand); free(new_operand); }
+				return nullptr;
+			}
+			hol_term* new_variable = normalizer.variable_map.values[index];
+			hol_term* substituted = substitute<hol_term_type::VARIABLE>(new_operand, src_var, new_variable);
+			free(*src_var); free(src_var);
+			if (new_operand != src->quantifier.operand) {
+				free(*new_operand); if (new_operand->reference_count == 0) free(new_operand);
+			}
+			normalizer.variable_map.remove_at(index);
+			free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
+			return substituted;
+		} else {
+			if (new_operand == src->quantifier.operand)
+				return src;
+			hol_term* dst = nullptr;
+			if (Type == hol_term_type::EXISTS)
+				dst = hol_term::new_exists(src->quantifier.variable, new_operand);
+			else if (Type == hol_term_type::FOR_ALL)
+				dst = hol_term::new_for_all(src->quantifier.variable, new_operand);
+			else if (Type == hol_term_type::LAMBDA)
+				dst = hol_term::new_lambda(src->quantifier.variable, new_operand);
+			if (dst == nullptr) {
+				if (new_operand != src->quantifier.operand) { free(*new_operand); free(new_operand); }
+				return nullptr;
+			}
+			if (new_operand == src->quantifier.operand) new_operand->reference_count++;
+			return dst;
+		}
+
+	} else if (Type == hol_term_type::IF_THEN) {
+		hol_term* left = apply(src->binary.left, normalizer);
+		if (left == nullptr) return nullptr;
+		hol_term* right = apply(src->binary.right, normalizer);
+		if (right == nullptr) {
+			if (left != src->binary.left) { free(*left); free(left); }
+			return nullptr;
+		}
+
+		if (normalizer.new_variables.size == 0) {
+			if (left == src->binary.left && right == src->binary.right)
+				return src;
+			hol_term* dst = hol_term::new_if_then(left, right);
+			if (dst == nullptr) {
+				if (left != src->binary.left) { free(*left); free(left); }
+				if (right != src->binary.right) { free(*right); free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+			return dst;
+		} else {
+			hol_term* operand = hol_term::new_if_then(left, right);
+			if (operand == nullptr) {
+				if (left != src->binary.left) { free(*left); free(left); }
+				if (right != src->binary.right) { free(*right); free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+
+			for (unsigned int i = 0; i < normalizer.new_variables.size; i++) {
+				hol_term* new_operand = hol_term::new_for_all(normalizer.new_variables.values[i]->variable, operand);
+				if (new_operand == nullptr) {
+					free(*operand); free(operand);
+					return nullptr;
+				}
+				operand = new_operand;
+
+				free(*normalizer.new_variables.values[i]);
+				if (normalizer.new_variables.values[i]->reference_count == 0)
+					free(normalizer.new_variables.values[i]);
+			}
+			normalizer.new_variables.size = 0;
+			return operand;
+		}
+	}
+
+	/* unreachable */
+	return nullptr;
+}
+
+inline hol_term* universalize_variable_names(hol_term* src)
+{
+	unsigned int max_variable = 0;
+	if (!max_bound_variable(*src, max_variable))
+		return nullptr;
+
+	variable_name_universalizer normalizer(max_variable);
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+bool add_flattened_conjuncts(array<hol_term*>& conjuncts, hol_term* new_conjunct) {
+	if (new_conjunct->type == hol_term_type::AND) {
+		for (unsigned int i = 0; i < new_conjunct->array.length; i++) {
+			if (!add_flattened_conjuncts(conjuncts, new_conjunct->array.operands[i]))
+				return false;
+		}
+		return true;
+	} else {
+		return conjuncts.add(new_conjunct);
+	}
+}
+
+struct property_simplifier {
+	array_map<unsigned int, hol_term*> scopes;
+
+	property_simplifier() : scopes(8) { }
+};
+
+bool is_event(hol_term* scope, const array_map<unsigned int, hol_term*>& scopes)
+{
+	/* check if `variable` has any arguments */
+	hol_term* any_arg_term = hol_term::new_any(hol_term::new_equals(hol_term::new_apply(
+			hol_term::new_any_constant(
+				(unsigned int) built_in_predicates::ARG1,
+				(unsigned int) built_in_predicates::ARG2,
+				(unsigned int) built_in_predicates::ARG3),
+			hol_term::new_variable(scope->quantifier.variable)), &HOL_ANY));
+	if (any_arg_term == nullptr)
+		return false;
+	HOL_ANY.reference_count++;
+
+	bool has_arg_term = has_intersection<built_in_predicates>(scope, any_arg_term);
+	free(*any_arg_term); free(any_arg_term);
+	if (has_arg_term) return true;
+
+	/* check if `scope->quantifier.variable` is an element of a set of events */
+	hol_term* operand = scope->quantifier.operand;
+	unsigned int set_variable = 0;
+	if (operand->type == hol_term_type::AND) {
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			hol_term* conjunct = operand->array.operands[i];
+			if (conjunct->type == hol_term_type::UNARY_APPLICATION
+			 && conjunct->binary.left->type == hol_term_type::VARIABLE
+			 && conjunct->binary.left->variable != scope->quantifier.variable
+			 && conjunct->binary.right->type == hol_term_type::VARIABLE
+			 && conjunct->binary.right->variable == scope->quantifier.variable)
+			{
+				set_variable = conjunct->binary.left->variable;
+				break;
+			}
+		}
+	} else if (operand->type == hol_term_type::UNARY_APPLICATION
+			&& operand->binary.left->type == hol_term_type::VARIABLE
+			&& operand->binary.left->variable != scope->quantifier.variable
+			&& operand->binary.right->type == hol_term_type::VARIABLE
+			&& operand->binary.right->variable == scope->quantifier.variable)
+	{
+		set_variable = operand->binary.left->variable;
+	}
+
+	if (set_variable == 0)
+		return false;
+	hol_term* set_scope = scopes.get(set_variable);
+	hol_term* set_operand = set_scope->quantifier.operand;
+	hol_term* set_definition = nullptr;
+	if (set_operand->type == hol_term_type::AND) {
+		for (unsigned int i = 0; i < set_operand->array.length; i++) {
+			hol_term* conjunct = set_operand->array.operands[i];
+			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
+			 && conjunct->binary.left->variable == set_variable && conjunct->binary.right->type == hol_term_type::LAMBDA
+			 && conjunct->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
+			{
+				set_definition = conjunct->binary.right;
+				break;
+			}
+		}
+	} else if (set_operand->type == hol_term_type::EQUALS && set_operand->binary.left->type == hol_term_type::VARIABLE
+			&& set_operand->binary.left->variable == set_variable && set_operand->binary.right->type == hol_term_type::LAMBDA
+			&& set_operand->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
+	{
+		set_definition = set_operand->binary.right;
+	}
+
+	if (set_definition == nullptr)
+		return false;
+
+	return is_event(set_definition, scopes);
+}
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, property_simplifier& normalizer)
+{
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+		if (!normalizer.scopes.put(src->quantifier.variable, src))
+			return nullptr;
+	}
+
+	if (Type == hol_term_type::EXISTS && src->quantifier.operand->type == hol_term_type::AND) {
+		hol_term* operand = src->quantifier.operand;
+		hol_term* arg1 = nullptr; hol_term* arg1_of = nullptr;
+		hol_term* arg2 = nullptr; hol_term* arg2_of = nullptr;
+		hol_term* predicate = nullptr;
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			if (!process_event_conjunct(src->quantifier.variable, operand->array.operands[i], arg1, arg2, arg1_of, arg2_of, predicate)) {
+				predicate = nullptr;
+				break;
+			}
+		}
+
+		if (predicate != nullptr && arg1 != nullptr && arg2 != nullptr) {
+			if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::CARDINALITY) {
+				hol_term* dst = hol_term::new_equals(
+							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value, arg1), arg2);
+				if (dst == nullptr)
+					return nullptr;
+				hol_term::constants<(unsigned int) built_in_predicates::SIZE>::value.reference_count++;
+				arg1->reference_count++;
+				arg2->reference_count++;
+				if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+					normalizer.scopes.size--;
+				return dst;
+			} else if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::VALUE) {
+				hol_term* dst = hol_term::new_equals(
+							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value, arg1), arg2);
+				if (dst == nullptr)
+					return nullptr;
+				hol_term::constants<(unsigned int) built_in_predicates::ARG2>::value.reference_count++;
+				arg1->reference_count++;
+				arg2->reference_count++;
+				if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+					normalizer.scopes.size--;
+				return dst;
+			} else if (predicate->type == hol_term_type::CONSTANT && predicate->constant == (unsigned int) built_in_predicates::HAS
+					&& arg2->type == hol_term_type::VARIABLE && is_event(normalizer.scopes.get(arg2->variable), normalizer.scopes))
+			{
+				hol_term* dst = hol_term::new_equals(
+							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, arg2), arg1);
+				if (dst == nullptr)
+					return nullptr;
+				hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
+				arg1->reference_count++;
+				arg2->reference_count++;
+				if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+					normalizer.scopes.size--;
+				return dst;
+			}
+		}
+
+		/* check if this scope declares a set of function values */
+		array<hol_term*> new_operands(operand->array.length);
+		bool is_same = true;
+		for (unsigned int i = 0; i < operand->array.length; i++) {
+			hol_term* new_operand = apply(operand->array.operands[i], normalizer);
+			if (new_operand == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			} else if (new_operand == operand->array.operands[i]) {
+				new_operand->reference_count++;
+			} else {
+				is_same = false;
+			}
+
+			if (!add_flattened_conjuncts(new_operands, new_operand)) {
+				free_all(new_operands);
+				return nullptr;
+			}
+		}
+
+		hol_term* function = nullptr;
+		hol_term* argument = nullptr;
+		for (hol_term* conjunct : new_operands) {
+			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
+			 && conjunct->binary.left->variable == src->quantifier.variable
+			 && conjunct->binary.right->type == hol_term_type::LAMBDA
+			 && conjunct->binary.right->quantifier.operand->type == hol_term_type::EQUALS
+			 && conjunct->binary.right->quantifier.operand->binary.left->type == hol_term_type::UNARY_APPLICATION
+			 && conjunct->binary.right->quantifier.operand->binary.right->type == hol_term_type::VARIABLE
+			 && conjunct->binary.right->quantifier.operand->binary.right->variable == conjunct->binary.right->quantifier.variable)
+			{
+				function = conjunct->binary.right->quantifier.operand->binary.left;
+			} else if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::UNARY_APPLICATION
+					&& conjunct->binary.left->binary.left->type == hol_term_type::CONSTANT
+					&& conjunct->binary.left->binary.left->constant == (unsigned int) built_in_predicates::SIZE
+					&& conjunct->binary.left->binary.right->type == hol_term_type::VARIABLE
+					&& conjunct->binary.left->binary.right->variable == src->quantifier.variable
+					&& conjunct->binary.right->type == hol_term_type::NUMBER)
+			{
+				if (conjunct->binary.right->number.integer != 1 || conjunct->binary.right->number.decimal != 0) {
+					free_all(new_operands);
+					HOL_FALSE.reference_count++;
+					if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+						normalizer.scopes.size--;
+					return &HOL_FALSE;
+				}
+			} else if (conjunct->type == hol_term_type::UNARY_APPLICATION
+					&& conjunct->binary.left->type == hol_term_type::VARIABLE
+					&& conjunct->binary.left->variable == src->quantifier.variable)
+			{
+				argument = conjunct->binary.right;
+			} else if (conjunct->type == hol_term_type::TRUE) {
+				continue;
+			} else {
+				function = nullptr;
+				break;
+			}
+		}
+
+		if (function != nullptr && argument != nullptr) {
+			hol_term* dst = hol_term::new_equals(function, argument);
+			if (dst == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			}
+			function->reference_count++;
+			argument->reference_count++;
+			free_all(new_operands);
+			if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+				normalizer.scopes.size--;
+			return dst;
+		}
+
+		hol_term* dst;
+		if (is_same) {
+			for (hol_term* new_operand : new_operands)
+				new_operand->reference_count--;
+			dst = src;
+		} else {
+			if (Type == hol_term_type::EXISTS)
+				dst = hol_term::new_exists(src->quantifier.variable,
+						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+			else if (Type == hol_term_type::FOR_ALL)
+				dst = hol_term::new_for_all(src->quantifier.variable,
+						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+			else if (Type == hol_term_type::LAMBDA)
+				dst = hol_term::new_lambda(src->quantifier.variable,
+						(new_operands.length == 1 ? new_operands[0] : hol_term::new_and(make_array_view(new_operands.data, new_operands.length))));
+			if (dst == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			}
+		}
+		if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+			normalizer.scopes.size--;
+		return dst;
+	}
+
+	hol_term* dst = default_apply<Type>(src, normalizer);
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA)
+		normalizer.scopes.size--;
+	return dst;
+}
+
+inline hol_term* simplify_properties(hol_term* src)
+{
+	property_simplifier normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct function_normalizer { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::LAMBDA>::type* = nullptr>
+inline hol_term* apply(hol_term* src, function_normalizer& normalizer)
+{
+	hol_term* dst = nullptr;
+	if (src->quantifier.operand->type == hol_term_type::LAMBDA && src->quantifier.operand->quantifier.operand->type == hol_term_type::EXISTS
+	 && src->quantifier.operand->quantifier.operand->quantifier.operand->type == hol_term_type::AND)
+	{
+		hol_term* function_definition = src->quantifier.operand->quantifier.operand;
+		hol_term* function_operand = function_definition->quantifier.operand;
+		hol_term* set_definition = nullptr;
+		hol_term* inner_function = nullptr;
+		for (unsigned int i = 0; i < function_operand->array.length; i++) {
+			hol_term* conjunct = function_operand->array.operands[i];
+			if (conjunct->type == hol_term_type::EQUALS && conjunct->binary.left->type == hol_term_type::VARIABLE
+			 && conjunct->binary.left->variable == function_definition->quantifier.variable
+			 && conjunct->binary.right->type == hol_term_type::LAMBDA
+			 && conjunct->binary.right->quantifier.operand->type != hol_term_type::LAMBDA)
+			{
+				set_definition = conjunct->binary.right;
+			} else if (conjunct->type == hol_term_type::EXISTS && conjunct->quantifier.operand->type == hol_term_type::AND
+					&& conjunct->quantifier.operand->array.operands[0]->type == hol_term_type::UNARY_APPLICATION
+					&& conjunct->quantifier.operand->array.operands[0]->binary.left->type == hol_term_type::VARIABLE
+					&& conjunct->quantifier.operand->array.operands[0]->binary.left->variable == function_definition->quantifier.variable
+					&& conjunct->quantifier.operand->array.operands[0]->binary.right->type == hol_term_type::VARIABLE
+					&& conjunct->quantifier.operand->array.operands[0]->binary.right->variable == conjunct->quantifier.variable)
+			{
+				inner_function = conjunct;
+			}
+		}
+
+		if (set_definition != nullptr && inner_function != nullptr) {
+			hol_term* dst_var = hol_term::new_variable(function_definition->quantifier.variable);
+			if (dst_var == nullptr)
+				return nullptr;
+
+			hol_term* src_var = hol_term::new_variable(set_definition->quantifier.variable);
+			if (src_var == nullptr) {
+				free(*dst_var); free(dst_var);
+				return nullptr;
+			}
+
+			hol_term* new_set_definition = substitute<hol_term_type::VARIABLE>(set_definition->quantifier.operand, src_var, dst_var);
+			free(*src_var); free(src_var);
+			if (new_set_definition == nullptr) {
+				free(*dst_var); free(dst_var);
+				return nullptr;
+			}
+
+			array<hol_term*> new_operands((new_set_definition->type == hol_term_type::AND ? new_set_definition->array.length : 1) + inner_function->quantifier.operand->array.length - 1);
+			if (new_set_definition->type == hol_term_type::AND) {
+				for (unsigned int i = 0; i < new_set_definition->array.length; i++) {
+					new_operands[i] = new_set_definition->array.operands[i];
+					new_operands[i]->reference_count++;
+				}
+				new_operands.length = new_set_definition->array.length;
+				free(*new_set_definition); if (new_set_definition->reference_count == 0) free(new_set_definition);
+			} else {
+				new_operands[0] = new_set_definition;
+				new_operands.length++;
+			}
+
+			src_var = hol_term::new_variable(inner_function->quantifier.variable);
+			if (src_var == nullptr) {
+				free_all(new_operands);
+				free(*dst_var); free(dst_var);
+				return nullptr;
+			}
+
+			for (unsigned int i = 1; i < inner_function->quantifier.operand->array.length; i++) {
+				hol_term* new_operand = substitute<hol_term_type::VARIABLE>(inner_function->quantifier.operand->array.operands[i], src_var, dst_var);
+				if (new_operand == nullptr) {
+					free_all(new_operands);
+					free(*src_var); free(src_var);
+					free(*dst_var); free(dst_var);
+					return nullptr;
+				}
+				new_operands[new_operands.length++] = new_operand;
+			}
+			free(*src_var); free(src_var);
+			free(*dst_var); if (dst_var->reference_count == 0) free(dst_var);
+
+			dst = hol_term::new_lambda(src->quantifier.variable, hol_term::new_lambda(src->quantifier.operand->quantifier.variable,
+					hol_term::new_exists(function_definition->quantifier.variable, hol_term::new_and(make_array_view(new_operands.data, new_operands.length)))));
+			if (dst == nullptr) {
+				free_all(new_operands);
+				return nullptr;
+			}
+		}
+	}
+
+	if (dst == nullptr)
+		dst = default_apply<Type>(src, normalizer);
+	return dst;
+}
+
+inline hol_term* normalize_functions(hol_term* src)
+{
+	function_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct multiple_universal_quantifier_normalizer { };
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::FOR_ALL>::type* = nullptr>
+inline hol_term* apply(hol_term* src, multiple_universal_quantifier_normalizer& normalizer)
+{
+	array<hol_term*> quantifiers(4);
+	quantifiers[0] = src;
+	quantifiers.length++;
+	hol_term* operand = src->quantifier.operand;
+	while (operand->type == hol_term_type::FOR_ALL) {
+		if (!quantifiers.add(operand))
+			return nullptr;
+		operand = operand->quantifier.operand;
+	}
+
+	if (operand->type == hol_term_type::IF_THEN) {
+		hol_term* left = apply(operand->binary.left, normalizer);
+		if (left == nullptr)
+			return nullptr;
+		hol_term* right = apply(operand->binary.right, normalizer);
+		if (right == nullptr) {
+			if (left != operand->binary.left) { free(*left); free(left); }
+			return nullptr;
+		}
+
+		array<unsigned int> left_free_variables(8);
+		array<unsigned int> right_free_variables(8);
+		if (!get_free_variables(*left, left_free_variables)
+		 || !get_free_variables(*right, right_free_variables))
+		{
+			if (left != operand->binary.left) { free(*left); free(left); }
+			if (right != operand->binary.left) { free(*right); free(right); }
+			return nullptr;
+		}
+
+		/* check if there are any univerally-quantified variables used in `left` but not `right` */
+		array<hol_term*> new_outer_quantifiers(4);
+		array<hol_term*> new_left_quantifiers(4);
+		array<hol_term*> new_right_quantifiers(4);
+		for (hol_term* quantifier : quantifiers) {
+			bool in_left = left_free_variables.contains(quantifier->quantifier.variable);
+			bool in_right = right_free_variables.contains(quantifier->quantifier.variable);
+			if (in_left && !in_right) {
+				if (!new_left_quantifiers.add(quantifier)) {
+					if (left != operand->binary.left) { free(*left); free(left); }
+					if (right != operand->binary.left) { free(*right); free(right); }
+					return nullptr;
+				}
+			} else if (!in_left && in_right) {
+				if (!new_right_quantifiers.add(quantifier)) {
+					if (left != operand->binary.left) { free(*left); free(left); }
+					if (right != operand->binary.left) { free(*right); free(right); }
+					return nullptr;
+				}
+			} else {
+				if (!new_outer_quantifiers.add(quantifier)) {
+					if (left != operand->binary.left) { free(*left); free(left); }
+					if (right != operand->binary.left) { free(*right); free(right); }
+					return nullptr;
+				}
+			}
+		}
+
+		if (new_outer_quantifiers.length == quantifiers.length) {
+			if (left == operand->binary.left && right == operand->binary.right)
+				return src;
+			hol_term* dst = hol_term::new_if_then(left, right);
+			if (dst == nullptr) {
+				if (left != operand->binary.left) { free(*left); free(left); }
+				if (right != operand->binary.left) { free(*right); free(right); }
+				return nullptr;
+			}
+			if (left == operand->binary.left) left->reference_count++;
+			if (right == operand->binary.right) right->reference_count++;
+			for (unsigned int i = quantifiers.length; i > 0; i--) {
+				hol_term* quantifier = quantifiers[i - 1];
+				hol_term* temp = hol_term::new_for_all(quantifier->quantifier.variable, dst);
+				if (temp == nullptr) {
+					free(*dst); if (dst->reference_count == 0) free(dst);
+					return nullptr;
+				}
+				dst = temp;
+			}
+			return dst;
+		}
+		if (left == operand->binary.left) left->reference_count++;
+		if (right == operand->binary.right) right->reference_count++;
+
+		hol_term* new_left = left;
+		for (unsigned int i = new_left_quantifiers.length; i > 0; i--) {
+			hol_term* quantifier = new_left_quantifiers[i - 1];
+			hol_term* temp = hol_term::new_exists(quantifier->quantifier.variable, new_left);
+			if (temp == nullptr) {
+				free(*new_left); if (new_left->reference_count == 0) free(new_left);
+				free(*right); if (right->reference_count == 0) free(right);
+				return nullptr;
+			}
+			new_left = temp;
+		}
+
+		hol_term* new_right = right;
+		for (unsigned int i = new_right_quantifiers.length; i > 0; i--) {
+			hol_term* quantifier = new_right_quantifiers[i - 1];
+			hol_term* temp = hol_term::new_exists(quantifier->quantifier.variable, new_right);
+			if (temp == nullptr) {
+				free(*new_left); if (new_left->reference_count == 0) free(new_left);
+				free(*new_right); if (new_right->reference_count == 0) free(new_right);
+				return nullptr;
+			}
+			new_right = temp;
+		}
+
+		hol_term* dst = hol_term::new_if_then(new_left, new_right);
+		if (dst == nullptr) {
+			free(*new_left); if (new_left->reference_count == 0) free(new_left);
+			free(*new_right); if (new_right->reference_count == 0) free(new_right);
+			return nullptr;
+		}
+		for (unsigned int i = new_outer_quantifiers.length; i > 0; i--) {
+			hol_term* quantifier = new_outer_quantifiers[i - 1];
+			hol_term* temp = hol_term::new_for_all(quantifier->quantifier.variable, dst);
+			if (temp == nullptr) {
+				free(*dst); if (dst->reference_count == 0) free(dst);
+				return nullptr;
+			}
+			dst = temp;
+		}
+		return dst;
+
+	} else {
+		return default_apply<Type>(src, normalizer);
+	}
+}
+
+inline hol_term* normalize_multiple_universal_quantifiers(hol_term* src)
+{
+	multiple_universal_quantifier_normalizer normalizer;
+	hol_term* dst = apply(src, normalizer);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+template<typename Semantics>
+inline bool populate_inflected_terminals(
+		rule<Semantics>& terminal,
+		const unsigned int* sentence,
+		unsigned int& position)
+{
+	if (terminal.t.inflected != nullptr)
+		return true;
+
+	terminal.t.inflected = (unsigned int*) malloc(sizeof(unsigned int) * terminal.t.length);
+	if (terminal.t.inflected == nullptr) {
+		fprintf(stderr, "populate_inflected_terminals ERROR: Out of memory.\n");
+		return false;
+	}
+	for (unsigned int i = 0; i < terminal.t.length; i++)
+		terminal.t.inflected[i] = sentence[position + i];
+	terminal.t.inflected_length = terminal.t.length;
+	position += terminal.t.length;
+	return true;
+}
+
+template<typename Semantics>
+bool populate_inflected_terminals(
+		syntax_node<Semantics>& node,
+		const unsigned int* sentence,
+		unsigned int nonterminal,
+		unsigned int& position)
+{
+	if (node.is_terminal())
+		return populate_inflected_terminals(node.right, sentence, position);
+
+	for (unsigned int i = 0; i < node.right.nt.length; i++) {
+		if (!populate_inflected_terminals(*node.children[i], sentence, node.right.nt.nonterminals[i], position))
+			return false;
+	}
+	return true;
+}
+
+template<typename Semantics>
+inline bool populate_inflected_terminals(
+		syntax_node<Semantics>& node,
+		const unsigned int* sentence,
+		unsigned int nonterminal = 1)
+{
+	unsigned int position = 0;
+	return populate_inflected_terminals(node, sentence, nonterminal, position);
+}
+
+inline bool preprocess_sentence(
+		sequence& seq, unsigned int LPAREN_ID, unsigned int RPAREN_ID,
+		unsigned int COMMA_ID, unsigned int A_ID, unsigned int AN_ID,
+		unsigned int* forbidden_tokens, unsigned int forbidden_token_count,
+		hash_map<string, unsigned int>& names, string_map_scribe& terminal_printer)
+{
+	/* make sure there aren't any forbidden tokens */
+	for (unsigned int i = 0; i < seq.length; i++) {
+		if (index_of(seq[i], forbidden_tokens, forbidden_token_count) < forbidden_token_count)
+			return false;
+	}
+
+	/* remove any comma that follows a number, and is succeeded by a three digit number */
+	unsigned int curr = 0;
+	for (unsigned int i = 0; i < seq.length; i++) {
+		bool is_number = true;
+		const string* str = terminal_printer.map[seq[i]];
+		if (str->length > 3) { seq[curr++] = seq[i]; continue; }
+		for (unsigned int j = 0; is_number && j < str->length; j++)
+			if (!isdigit(str->data[j])) is_number = false;
+		if (!is_number) { seq[curr++] = seq[i]; continue; }
+
+		if (i + 1 == seq.length || seq[i + 1] != COMMA_ID) {
+			seq[curr++] = seq[i];
+			continue;
+		}
+
+		unsigned int next = i + 2;
+		while (is_number) {
+			const string* str = terminal_printer.map[seq[next]];
+			if (str->length != 3) { is_number = false; break; }
+			for (unsigned int j = 0; is_number && j < str->length; j++)
+				if (!isdigit(str->data[j])) is_number = false;
+			if (!is_number) break;
+
+			next++;
+			if (next == seq.length || seq[next] != COMMA_ID)
+				/* we've found a valid comma-separated number */
+				break;
+			next++;
+		}
+		if (!is_number) { seq[curr++] = seq[i]; continue; }
+
+		/* get the token of the non-comma separated number */
+		string new_number(3 * ((next - i + 1) / 2));
+		new_number.length = 0;
+		for (unsigned int j = i; j < next; j += 2) {
+			const string* str = terminal_printer.map[seq[j]];
+			for (unsigned int k = 0; k < str->length; k++)
+				new_number[new_number.length++] = str->data[k];
+		}
+		const string* old_keys = names.table.keys;
+		unsigned int old_size = names.table.size;
+		if (!get_token(new_number, seq[curr], names))
+			return false;
+		if (old_keys != names.table.keys || old_size != names.table.size) {
+			free(terminal_printer.map);
+			terminal_printer.map = invert(names);
+			terminal_printer.length = names.table.size + 1;
+			if (terminal_printer.map == nullptr)
+				return false;
+		}
+		curr++;
+		i = next - 1;
+	}
+	seq.length = curr;
+
+	/* remove parentheses, and any comma that succeeds a right parenthesis */
+	curr = 0;
+	unsigned int parens = 0;
+	for (unsigned int i = 0; i < seq.length; i++) {
+		if (seq[i] == LPAREN_ID) {
+			parens++;
+		} else if (seq[i] == RPAREN_ID) {
+			parens--;
+		} else {
+			if (parens == 0 && !(i > 0 && seq[i] == COMMA_ID && seq[i - 1] == RPAREN_ID))
+				seq[curr++] = (seq[i] == AN_ID) ? A_ID : seq[i];
+		}
+	}
+	seq.length = curr;
+	return true;
+}
+
+
+/* forward declarations for `yield` */
+
+template<bool First, typename Formula, typename PartOfSpeechType>
+bool morphology_inflect(
+		const morphology_en&, const sequence&, PartOfSpeechType,
+		const flagged_logical_form<Formula>&, array<sequence>&);
+
+
+struct generated_utterance {
+	unsigned int*& tokens;
+	unsigned int& length;
+	unsigned int capacity;
+
+	generated_utterance(sequence& seq) : tokens(seq.tokens), length(seq.length), capacity(16) {
+		tokens = (unsigned int*) malloc(sizeof(unsigned int) * capacity);
+		if (tokens == nullptr) {
+			fprintf(stderr, "generated_utterance ERROR: Out of memory.\n");
+			exit(EXIT_FAILURE);
+		}
+		length = 0;
+	}
+
+	static inline void free(generated_utterance& utterance) {
+		core::free(utterance.tokens);
+	}
+};
+
+template<typename Semantics, typename Distribution>
+inline bool yield(
+		const rule<Semantics>& terminal,
+		const Distribution& rule_distribution,
+		const Semantics& logical_form,
+		generated_utterance& utterance,
+		const morphology_en& morph)
+{
+	array<sequence> inflections(8);
+	sequence root(terminal.t.terminals, terminal.t.length);
+	if ((utterance.length == 0 && !morphology_inflect<true>(morph, root, rule_distribution.get_part_of_speech(), logical_form, inflections))
+	 || (utterance.length != 0 && !morphology_inflect<false>(morph, root, rule_distribution.get_part_of_speech(), logical_form, inflections))
+	 || inflections.length == 0)
+		return false;
+
+	if (!ensure_capacity(utterance.tokens, utterance.capacity, utterance.length + inflections.last().length)) {
+		for (sequence& inflection : inflections) free(inflection);
+		return false;
+	}
+	memcpy(utterance.tokens + utterance.length, inflections.last().tokens, sizeof(inflections.last().tokens[0]) * inflections.last().length);
+	utterance.length += inflections.last().length;
+	for (sequence& inflection : inflections) free(inflection);
+	return true;
+}
+
+enum class binding_state : uint_fast8_t {
+	NOT_BOUND = 0,
+	EXISTENTIAL,
+	UNIVERSAL
+};
+
+struct anaphora_binder {
+	const array_map<const hol_term*, const hol_term*>& assignments;
+	array_map<unsigned int, hol_term*> variable_map;
+	unsigned int variable_offset;
+
+	pair<binding_state, bool>* binding_states;
+	bool polarity;
+
+	anaphora_binder(const array_map<const hol_term*, const hol_term*>& assignments, unsigned int variable_offset) :
+			assignments(assignments), variable_map(8), variable_offset(variable_offset), polarity(true)
+	{
+		binding_states = (pair<binding_state, bool>*) calloc(assignments.size, sizeof(pair<binding_state, bool>));
+		if (binding_states == nullptr)
+			throw std::bad_alloc();
+	}
+
+	~anaphora_binder() {
+		free(binding_states);
+	}
+};
+
+template<hol_term_type Type>
+inline hol_term* apply(hol_term* src, anaphora_binder& binder)
+{
+	pair<bool, bool>* old_binding_states = (pair<bool, bool>*) malloc(sizeof(pair<bool, bool>) * binder.assignments.size);
+	if (old_binding_states == nullptr)
+		return nullptr;
+	for (unsigned int i = 0; i < binder.assignments.size; i++) {
+		old_binding_states[i].key = (binder.binding_states[i].key != binding_state::NOT_BOUND);
+		old_binding_states[i].value = binder.binding_states[i].value;
+	}
+
+	hol_term* result = nullptr;
+	if (Type == hol_term_type::EXISTS || Type == hol_term_type::FOR_ALL || Type == hol_term_type::LAMBDA) {
+		unsigned int index = index_of(src, binder.assignments.keys, binder.assignments.size);
+		if (index < binder.assignments.size) {
+			/* this is an anaphora scope */
+			hol_term* new_variable = hol_term::new_variable(binder.variable_offset + index);
+			if (new_variable == nullptr) {
+				free(old_binding_states);
+				return nullptr;
+			} else if (!binder.variable_map.put(src->quantifier.variable, new_variable)) {
+				free(old_binding_states);
+				free(*new_variable); free(new_variable);
+				return nullptr;
+			}
+
+			if (src->quantifier.operand->type != hol_term_type::AND) {
+				fprintf(stderr, "apply ERROR: Expected anaphora scope operand to be a conjunction.\n");
+				free(old_binding_states);
+				return nullptr;
+			}
+
+			hol_term** new_operands = (hol_term**) malloc(sizeof(hol_term*) * src->quantifier.operand->array.length);
+			unsigned int new_operand_count = 0;
+			for (unsigned int i = 0; i < src->quantifier.operand->array.length; i++) {
+				hol_term* operand = src->quantifier.operand->array.operands[i];
+				if (operand->type == hol_term_type::UNARY_APPLICATION
+				 && operand->binary.left->type == hol_term_type::CONSTANT
+				 && (operand->binary.left->constant == (unsigned int) built_in_predicates::PLURAL_REF
+				  || operand->binary.left->constant == (unsigned int) built_in_predicates::REF))
+				{
+					continue;
+				}
+
+				new_operands[new_operand_count] = apply(src->quantifier.operand->array.operands[i], binder);
+				if (new_operands[new_operand_count] == nullptr) {
+					for (unsigned int i = 0; i < new_operand_count; i++) {
+						free(*new_operands[i]);
+						if (new_operands[i]->reference_count == 0)
+							free(new_operands[i]);
+					}
+					free(old_binding_states);
+					return nullptr;
+				}
+				if (new_operands[new_operand_count] == src->quantifier.operand->array.operands[i])
+					new_operands[new_operand_count]->reference_count++;
+				new_operand_count++;
+			}
+
+			if (new_operand_count == 1) {
+				result = new_operands[0];
+				free(new_operands);
+			} else {
+				if (!new_hol_term(result)) {
+					for (unsigned int i = 0; i < new_operand_count; i++) {
+						free(*new_operands[i]);
+						if (new_operands[i]->reference_count == 0)
+							free(new_operands[i]);
+					}
+					free(old_binding_states);
+					return nullptr;
+				}
+				result->type = hol_term_type::AND;
+				result->reference_count = 1;
+				result->array.operands = new_operands;
+				result->array.length = new_operand_count;
+			}
+
+			binder.variable_map.size--;
+			free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
+			binder.binding_states[index].value = true;
+		} else {
+			index = index_of(src, binder.assignments.values, binder.assignments.size);
+			if (index < binder.assignments.size) {
+				/* this is a referent scope */
+				hol_term* new_variable = hol_term::new_variable(binder.variable_offset + index);
+				if (new_variable == nullptr) {
+					free(old_binding_states);
+					return nullptr;
+				} else if (!binder.variable_map.put(src->quantifier.variable, new_variable)) {
+					free(old_binding_states);
+					free(*new_variable); free(new_variable);
+					return nullptr;
+				}
+
+				result = apply(src->quantifier.operand, binder);
+				if (result == nullptr) {
+					free(old_binding_states);
+					return nullptr;
+				}
+
+				binder.variable_map.size--;
+				free(*new_variable); if (new_variable->reference_count == 0) free(new_variable);
+				if (Type == hol_term_type::EXISTS) {
+					binder.binding_states[index].key = (binder.polarity ? binding_state::EXISTENTIAL : binding_state::UNIVERSAL);
+				} else {
+					binder.binding_states[index].key = (binder.polarity ? binding_state::UNIVERSAL : binding_state::EXISTENTIAL);
+				}
+			}
+		}
+	} else if (Type == hol_term_type::VARIABLE) {
+		bool contains;
+		hol_term* new_variable = binder.variable_map.get(src->variable, contains);
+		if (contains) {
+			result = new_variable;
+			new_variable->reference_count++;
+		}
+	} else if (Type == hol_term_type::NOT) {
+		binder.polarity = !binder.polarity;
+		result = default_apply<Type>(src, binder);
+		if (result == nullptr) {
+			free(old_binding_states);
+			return nullptr;
+		}
+		binder.polarity = !binder.polarity;
+	} else if (Type == hol_term_type::IF_THEN) {
+		binder.polarity = !binder.polarity;
+		hol_term* left = apply(src->binary.left, binder);
+		if (left == nullptr) {
+			free(old_binding_states);
+			return nullptr;
+		}
+		binder.polarity = !binder.polarity;
+
+		hol_term* right = apply(src->binary.right, binder);
+		if (right == nullptr) {
+			free(old_binding_states);
+			if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
+			return nullptr;
+		}
+
+		if (left == src->binary.left && right == src->binary.right) {
+			result = src;
+		} else {
+			result = hol_term::new_if_then(left, right);
+			if (result == nullptr) {
+				free(old_binding_states);
+				if (left != src->binary.left) { free(*left); if (left->reference_count == 0) free(left); }
+				if (right != src->binary.right) { free(*right); if (right->reference_count == 0) free(right); }
+				return nullptr;
+			}
+			if (left == src->binary.left) left->reference_count++;
+			if (right == src->binary.right) right->reference_count++;
+		}
+	}
+
+	if (result == nullptr) {
+		result = default_apply<Type>(src, binder);
+		if (result == nullptr) {
+			free(old_binding_states);
+			return nullptr;
+		}
+	}
+
+	/* check if this is the most recent common ancestor scope of an anaphora and its referent */
+	for (unsigned int i = 0; i < binder.assignments.size; i++) {
+		if (!old_binding_states[i].key && !old_binding_states[i].value
+		 && binder.binding_states[i].key != binding_state::NOT_BOUND
+		 && binder.binding_states[i].value)
+		{
+			hol_term* new_scope;
+			if (binder.binding_states[i].key == binding_state::EXISTENTIAL) {
+				new_scope = hol_term::new_exists(binder.variable_offset + i, result);
+			} else {
+				new_scope = hol_term::new_for_all(binder.variable_offset + i, result);
+			}
+			if (new_scope == nullptr) {
+				free(old_binding_states);
+				if (result != src) { free(*result); if (result->reference_count == 0) free(result); }
+				return nullptr;
+			}
+			if (result == src) result->reference_count++;
+			result = new_scope;
+
+			binder.binding_states[i].key = binding_state::NOT_BOUND;
+			binder.binding_states[i].value = false;
+		}
+	}
+	free(old_binding_states);
+	return result;
+}
+
+inline hol_term* bind_anaphora(hol_term* src,
+		const array_map<const hol_term*, const hol_term*>& anaphora_assignments,
+		unsigned int new_variable_offset)
+{
+	anaphora_binder binder(anaphora_assignments, new_variable_offset);
+	hol_term* dst = apply(src, binder);
+	if (dst == nullptr) {
+		for (auto entry : binder.variable_map) {
+			free(*entry.value);
+			if (entry.value->reference_count == 0)
+				free(entry.value);
+		}
+	}
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
+struct referent_iterator
+{
+	hol_term* logical_form;
+	unsigned int max_variable;
+
+	/* an array map of referents and their parent scopes */
+	array_map<const hol_term*, const hol_term*> referents;
+
+	array_map<const hol_term*, unsigned int> anaphora;
+
+	static inline void free(referent_iterator& iterator) {
+		core::free(iterator.anaphora);
+		core::free(iterator.referents);
+	}
+};
+
+inline bool init(referent_iterator& iterator, hol_term* logical_form) {
+	iterator.max_variable = 0;
+	if (!array_map_init(iterator.referents, 16)) {
+		return false;
+	} else if (!array_map_init(iterator.anaphora, 8)) {
+		free(iterator.referents);
+		return false;
+	} else if (!max_bound_variable(*logical_form, iterator.max_variable)) {
+		free(iterator.anaphora);
+		free(iterator.referents);
+		return false;
+	}
+	iterator.logical_form = logical_form;
+	return true;
+}
+
+struct referent_iterator_state {
+	const referent_iterator* iterator;
+	unsigned int* indices;
+	double log_probability;
+
+	referent_iterator_state(const referent_iterator* iterator, double log_probability) :
+			iterator(iterator), log_probability(log_probability)
+	{
+		indices = (unsigned int*) malloc(sizeof(unsigned int) * iterator->anaphora.size);
+		if (indices == nullptr)
+			throw std::bad_alloc();
+	}
+
+	referent_iterator_state(const referent_iterator_state& other) :
+			iterator(other.iterator), log_probability(other.log_probability)
+	{
+		indices = (unsigned int*) malloc(sizeof(unsigned int) * iterator->anaphora.size);
+		if (indices == nullptr)
+			throw std::bad_alloc();
+		for (unsigned int i = 0; i < iterator->anaphora.size; i++)
+			indices[i] = other.indices[i];
+	}
+
+	~referent_iterator_state() {
+		free(indices);
+	}
+
+	referent_iterator_state& operator = (referent_iterator_state const& other) = delete;
+};
+
+inline bool operator == (const referent_iterator_state& first, const referent_iterator_state& second) {
+	if (first.iterator != second.iterator)
+		return false;
+	for (unsigned int i = 0; i < first.iterator->anaphora.size; i++) {
+		if (first.indices[i] != second.indices[i])
+			return false;
+	}
+	return true;
+}
+
+inline bool operator < (const referent_iterator_state& first, const referent_iterator_state& second) {
+	return first.log_probability < second.log_probability;
+}
+
+bool process_referent_iterator(
+		const referent_iterator_state& state,
+		std::set<referent_iterator_state>& queue,
+		hol_term** resolved_logical_forms,
+		double* resolved_log_probabilities,
+		unsigned int& resolved_logical_form_count)
+{
+	/* check that the anaphora don't point referents that share the same parent */
+	bool has_illegal_anaphora = false;
+	for (unsigned int i = 0; !has_illegal_anaphora && i < state.iterator->anaphora.size; i++) {
+		bool contains;
+		const hol_term* anaphora = state.iterator->anaphora.keys[i];
+		unsigned int anaphora_start = state.iterator->anaphora.values[i];
+		const hol_term* anaphora_parent = state.iterator->referents.get(anaphora, contains);
+		if (!contains) continue;
+
+		const hol_term* referent_parent = state.iterator->referents.values[anaphora_start - state.indices[i] - 1];
+		if (anaphora_parent == referent_parent)
+			has_illegal_anaphora = true;
+	}
+
+	/* check that no anaphora refers to another anaphora */
+	for (unsigned int i = 0; !has_illegal_anaphora && i < state.iterator->anaphora.size; i++) {
+		unsigned int anaphora_start = state.iterator->anaphora.values[i];
+		const hol_term* referent = state.iterator->referents.keys[anaphora_start - state.indices[i] - 1];
+		if (state.iterator->anaphora.contains(referent))
+			has_illegal_anaphora = true;
+	}
+
+	if (!has_illegal_anaphora) {
+		/* consider the case where there are no anaphora */
+		if (state.iterator->anaphora.size == 0) {
+			resolved_logical_forms[resolved_logical_form_count] = state.iterator->logical_form;
+			resolved_log_probabilities[resolved_logical_form_count++] = state.log_probability;
+			state.iterator->logical_form->reference_count++;
+			return true;
+		}
+
+		/* resolve the logical form with the current anaphora assignment */
+		array_map<const hol_term*, const hol_term*> assignment(state.iterator->anaphora.size);
+		for (unsigned int i = 0; i < state.iterator->anaphora.size; i++) {
+			unsigned int anaphora_start = state.iterator->anaphora.values[i];
+			assignment.keys[i] = state.iterator->anaphora.keys[i];
+			assignment.values[i] = state.iterator->referents.keys[anaphora_start - state.indices[i] - 1];
+		}
+		assignment.size = state.iterator->anaphora.size;
+
+		hol_term* resolved_logical_form = bind_anaphora(state.iterator->logical_form, assignment, state.iterator->max_variable + 1);
+		if (resolved_logical_form != nullptr) {
+			resolved_logical_forms[resolved_logical_form_count] = resolved_logical_form;
+			resolved_log_probabilities[resolved_logical_form_count++] = state.log_probability;
+		}
+	}
+
+	for (unsigned int i = 0; i < state.iterator->anaphora.size; i++) {
+		unsigned int anaphora_start = state.iterator->anaphora.values[i];
+		if (state.indices[i] + 1 >= anaphora_start)
+			/* there are no more referents for this anaphora to bind to */
+			continue;
+
+		referent_iterator_state new_state(state.iterator, state.log_probability - 1.0);
+		for (unsigned int j = 0; j < state.iterator->anaphora.size; j++)
+			new_state.indices[j] = state.indices[i];
+		new_state.indices[i]++;
+
+		queue.insert(new_state);
+	}
+	return true;
+}
+
+bool get_referents(const hol_term* logical_form,
+		referent_iterator& iterator,
+		array_map<unsigned int, const hol_term*>& bound_variables)
+{
+	if (logical_form->type == hol_term_type::EXISTS) {
+		if (!iterator.referents.put(logical_form, nullptr))
+			return false;
+	}
+
+	switch (logical_form->type) {
+	case hol_term_type::VARIABLE:
+	case hol_term_type::CONSTANT:
+	case hol_term_type::PARAMETER:
+	case hol_term_type::NUMBER:
+	case hol_term_type::STRING:
+	case hol_term_type::UINT_LIST:
+	case hol_term_type::TRUE:
+	case hol_term_type::FALSE:
+		return true;
+	case hol_term_type::EQUALS:
+		if (logical_form->binary.left->type == hol_term_type::UNARY_APPLICATION
+		 && logical_form->binary.left->binary.left->type == hol_term_type::CONSTANT
+		 && (logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+		  || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2
+		  || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG3)
+		 && logical_form->binary.left->binary.right->type == hol_term_type::VARIABLE)
+		{
+			const hol_term* scope = bound_variables.get(logical_form->binary.left->binary.right->variable);
+			unsigned int index = iterator.referents.index_of(scope);
+			if (index < iterator.referents.size) {
+				shift_left(iterator.referents.keys + index, iterator.referents.size - index - 1);
+				shift_left(iterator.referents.values + index, iterator.referents.size - index - 1);
+				iterator.referents.size--;
+				for (unsigned int i = 0; i < iterator.anaphora.size; i++) {
+					if (iterator.anaphora.values[i] > index) {
+						iterator.anaphora.values[i]--;
+						if (iterator.anaphora.values[i] == 0)
+							iterator.anaphora.remove_at(i--);
+					}
+				}
+			}
+
+			if (logical_form->binary.right->type == hol_term_type::VARIABLE) {
+				/* `logical_form->binary.left->binary.right->variable` is the parent scope of `logical_form->binary.right->variable` */
+				const hol_term* child_scope = bound_variables.get(logical_form->binary.right->variable);
+				index = iterator.referents.index_of(child_scope);
+				if (index < iterator.referents.size)
+					iterator.referents.values[index] = scope;
+			}
+		} else if (logical_form->binary.left->type == hol_term_type::UNARY_APPLICATION
+				&& logical_form->binary.left->binary.left->type == hol_term_type::CONSTANT
+				&& (logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG1_OF
+				 || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG2_OF
+				 || logical_form->binary.left->binary.left->constant == (unsigned int) built_in_predicates::ARG3_OF)
+				&& logical_form->binary.right->type == hol_term_type::VARIABLE)
+		{
+			const hol_term* scope = bound_variables.get(logical_form->binary.right->variable);
+			unsigned int index = iterator.referents.index_of(scope);
+			if (index < iterator.referents.size) {
+				shift_left(iterator.referents.keys + index, iterator.referents.size - index - 1);
+				shift_left(iterator.referents.values + index, iterator.referents.size - index - 1);
+				iterator.referents.size--;
+				for (unsigned int i = 0; i < iterator.anaphora.size; i++) {
+					if (iterator.anaphora.values[i] > index) {
+						iterator.anaphora.values[i]--;
+						if (iterator.anaphora.values[i] == 0)
+							iterator.anaphora.remove_at(i--);
+					}
+				}
+			}
+
+			if (logical_form->binary.left->binary.right->type == hol_term_type::VARIABLE) {
+				/* `logical_form->binary.right->variable` is the parent scope of `logical_form->binary.left->binary.right->variable` */
+				const hol_term* child_scope = bound_variables.get(logical_form->binary.left->binary.right->variable);
+				index = iterator.referents.index_of(child_scope);
+				if (index < iterator.referents.size)
+					iterator.referents.values[index] = scope;
+			}
+		} else {
+			return get_referents(logical_form->binary.left, iterator, bound_variables)
+				&& get_referents(logical_form->binary.right, iterator, bound_variables);
+		}
+		return true;
+	case hol_term_type::NOT:
+		if (!get_referents(logical_form->unary.operand, iterator, bound_variables))
+			return false;
+		return true;
+	case hol_term_type::AND:
+	case hol_term_type::OR:
+	case hol_term_type::IFF:
+		for (unsigned int i = 0; i < logical_form->array.length; i++) {
+			if (!get_referents(logical_form->array.operands[i], iterator, bound_variables))
+				return false;
+		}
+		return true;
+	case hol_term_type::FOR_ALL:
+	case hol_term_type::EXISTS:
+	case hol_term_type::LAMBDA:
+		if (!bound_variables.put(logical_form->quantifier.variable, logical_form)
+		 || !get_referents(logical_form->quantifier.operand, iterator, bound_variables))
+			return false;
+		bound_variables.size--;
+		return true;
+	case hol_term_type::IF_THEN:
+	case hol_term_type::UNARY_APPLICATION:
+		if (logical_form->type == hol_term_type::UNARY_APPLICATION
+		 && logical_form->binary.left->type == hol_term_type::CONSTANT
+		 && (logical_form->binary.left->constant == (unsigned int) built_in_predicates::REF
+		  || logical_form->binary.left->constant == (unsigned int) built_in_predicates::PLURAL_REF)
+		 && logical_form->binary.right->type == hol_term_type::VARIABLE)
+		{
+			if (iterator.referents.size > 1
+			 && !iterator.anaphora.put(bound_variables.get(logical_form->binary.right->variable), iterator.referents.size - 1))
+				return false;
+		} else {
+			return get_referents(logical_form->binary.left, iterator, bound_variables)
+				&& get_referents(logical_form->binary.right, iterator, bound_variables);
+		}
+		return true;
+	case hol_term_type::BINARY_APPLICATION:
+		if (!get_referents(logical_form->ternary.first, iterator, bound_variables)
+		 || !get_referents(logical_form->ternary.second, iterator, bound_variables)
+		 || !get_referents(logical_form->ternary.third, iterator, bound_variables))
+			return false;
+		return true;
+	case hol_term_type::VARIABLE_PREIMAGE:
+	case hol_term_type::ANY:
+	case hol_term_type::ANY_RIGHT:
+	case hol_term_type::ANY_ARRAY:
+	case hol_term_type::ANY_QUANTIFIER:
+	case hol_term_type::ANY_CONSTANT:
+	case hol_term_type::ANY_CONSTANT_EXCEPT:
+	case hol_term_type::ANY_RIGHT_ONLY:
+		return true;
+	}
+	fprintf(stderr, "get_referents ERROR: Unrecognized hol_term_type.\n");
+	return false;
+}
+
+template<typename Formula>
+struct hdp_parser
+{
+	typedef flagged_logical_form<Formula> logical_form_type;
+	typedef rooted_syntax_node<flagged_logical_form<Formula>> DerivationType;
+	typedef sentence<rooted_syntax_node<flagged_logical_form<Formula>>> SentenceType;
+
+	morphology_en morph;
+	hdp_grammar_type<Formula> G;
+	string_map_scribe terminal_printer;
+
+	unsigned int LPAREN_ID;
+	unsigned int RPAREN_ID;
+	unsigned int COMMA_ID;
+	unsigned int A_ID;
+	unsigned int AN_ID;
+	unsigned int ASTERISK_ID;
+	unsigned int HOW_ID;
+	unsigned int CAPITAL_HOW_ID;
+	unsigned int MANY_ID;
+	unsigned int NONTERMINAL_NP_ID;
+	unsigned int NONTERMINAL_V_ID;
+
+	static constexpr const char* FORBIDDEN_TOKEN_STRS[] = { "{", "}", "[", "]", "<", ">", ":" };
+	static constexpr unsigned int FORBIDDEN_TOKEN_COUNT = array_length(FORBIDDEN_TOKEN_STRS);
+
+	unsigned int forbidden_token_ids[FORBIDDEN_TOKEN_COUNT];
+
+	number_parser_en number_parser;
+
+	hdp_parser(unsigned int unknown_id,
+			hash_map<string, unsigned int>& names,
+			const char* morphology_filepath,
+			const char* grammar_filepath) : number_parser(names)
+	{
+		terminal_printer.map = nullptr;
+		terminal_printer.length = 0;
+
+		if (!get_token("(", LPAREN_ID, names) || !get_token(")", RPAREN_ID, names)
+		 || !get_token(",", COMMA_ID, names) || !get_token("a", A_ID, names)
+		 || !get_token("an", AN_ID, names) || !get_token("*", ASTERISK_ID, names)
+		 || !get_token("how", HOW_ID, names) || !get_token("How", CAPITAL_HOW_ID, names)
+		 || !get_token("many", MANY_ID, names))
+			throw std::runtime_error("`get_token` failed.");
+
+		for (unsigned int i = 0; i < FORBIDDEN_TOKEN_COUNT; i++)
+			if (!get_token(FORBIDDEN_TOKEN_STRS[i], forbidden_token_ids[i], names))
+				throw std::runtime_error("`get_token` failed.");
+
+		printf("Loading morphology data...\n"); fflush(stdout);
+		if (!morph.initialize(names)
+		 || !morphology_read(morph, names, morphology_filepath))
+		{
+			fflush(stdout); fprintf(stderr, "\nERROR: Unable to initialize morphology model.\n");
+			throw std::runtime_error("Unable to initialize morphology model.");
+		}
+		printf("Done loading morphology data.\n");
+
+		printf("Loading grammar...\n"); fflush(stdout);
+		if (!read_grammar(G, names, grammar_filepath)) {
+			fflush(stdout); fprintf(stderr, "\nERROR: Unable to read grammar at '%s'.\n", grammar_filepath);
+			throw std::runtime_error("Unable to read grammar file.");
+		}
+		printf("Done loading grammar.\n");
+
+		bool contains;
+		NONTERMINAL_NP_ID = G.nonterminal_names.get("NP", contains);
+		if (!contains) {
+			fflush(stdout); fprintf(stderr, "\nERROR: Grammar is missing nonterminal `NP`.\n");
+			throw std::runtime_error("Grammar is missing nonterminal `NP`.");
+		}
+
+		NONTERMINAL_V_ID = G.nonterminal_names.get("V", contains);
+		if (!contains) NONTERMINAL_V_ID = 0;
+	}
+
+	~hdp_parser() { free_helper(); }
+
+	static inline void free(hdp_parser<Formula>& p) {
+		p.free_helper();
+		core::free(p.morph);
+		core::free(p.G);
+	}
+
+	bool invert_name_map(hash_map<string, unsigned int>& names) {
+		if (!init_capitalization_map(morph, names))
+			return false;
+		if (terminal_printer.map != NULL) core::free(terminal_printer.map);
+		terminal_printer.map = invert(names);
+		if (terminal_printer.map == NULL) return false;
+		terminal_printer.length = names.table.size + 1;
+		return true;
+	}
+
+	inline const string& map_to_string(unsigned int id) const {
+		return *terminal_printer.map[id];
+	}
+
+	bool train(
+			const array<array_map<SentenceType, flagged_logical_form<Formula>>>& data,
+			hash_map<string, unsigned int>& names,
+			unsigned int iteration_count)
+	{
+		if (!init_capitalization_map(morph, names))
+			return false;
+		terminal_printer.map = invert(names);
+		terminal_printer.length = names.table.size + 1;
+		const string** nonterminal_name_map = invert(G.nonterminal_names);
+		if (terminal_printer.map == NULL || nonterminal_name_map == NULL) {
+			if (terminal_printer.map != NULL) core::free(terminal_printer.map);
+			terminal_printer.map = NULL;
+			return false;
+		}
+		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
+/* TODO: for debugging; remove this */
+debug_terminal_printer = &terminal_printer;
+debug_nonterminal_printer = &nonterminal_printer;
+detect_duplicate_logical_forms = true;
+		/* construct the initial derivation trees (running the parser with an empty grammar) */
+		rooted_syntax_node<logical_form_type>** syntax = (rooted_syntax_node<logical_form_type>**)
+				calloc(data.length, sizeof(rooted_syntax_node<logical_form_type>*));
+		unsigned int* order = (unsigned int*) malloc(sizeof(unsigned int) * data.length);
+		if (syntax == NULL || order == NULL) {
+			fprintf(stderr, "hdp_parser.train ERROR: Out of memory.\n");
+			cleanup(data, nonterminal_name_map, syntax, order);
+			return false;
+		}
+		for (unsigned int i = 0; i < data.length; i++) {
+			syntax[i] = (rooted_syntax_node<logical_form_type>*) calloc(data[i].size, sizeof(rooted_syntax_node<logical_form_type>));
+			if (syntax[i] == NULL) {
+				fprintf(stderr, "hdp_parser.train ERROR: Out of memory.\n");
+				cleanup(data, nonterminal_name_map, syntax, order);
+				return false;
+			}
+		}
+		for (unsigned int i = 0; i < data.length; i++) order[i] = i;
+#if defined(SHUFFLE_TRAINING_EXAMPLES)
+		shuffle(order, (unsigned int) data.length);
+#else
+		reverse(order, (unsigned int) data.length);
+#endif
+		for (unsigned int i = 0; i < data.length; i++) {
+			unsigned int id = order[i];
+			for (unsigned int j = 0; j < data[id].size; j++) {
+				/* TODO: add a discourse model instead of treating each sentence in each passage as independent */
+				const logical_form_type& logical_form = data[id].values[j];
+				if (!is_empty(data[id].keys[j].derivation)) {
+					/* this sentence has a fully specified derivation tree */
+					logical_form_type any(HOL_ANY);
+					initialize_any(any.flags);
+					bool test_equivalence = (data[id].keys[j].derivation.root != NONTERMINAL_V_ID);
+					if (!is_parseable(*data[id].keys[j].derivation.tree, logical_form, G, morph, any, nonterminal_printer, terminal_printer, *this, data[id].keys[j].derivation.root, test_equivalence))
+					{
+						fprintf(stderr, "hdp_parser.train ERROR: Derivation for example %u, sentence %u is not parseable: '", id, j);
+						print(data[id].keys[j], stderr, terminal_printer); print("'\n", stderr);
+						print(logical_form, stderr, terminal_printer); print("\n", stderr);
+						cleanup(data, nonterminal_name_map, syntax, order);
+						return false;
+					}
+					syntax[id][j] = data[id].keys[j].derivation;
+				} else {
+					sequence& seq = *((sequence*) alloca(sizeof(sequence)));
+					if (!init(seq, data[id].keys[j])) {
+						cleanup(data, nonterminal_name_map, syntax, order);
+						return false;
+					} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
+						cleanup(data, nonterminal_name_map, syntax, order);
+						core::free(seq); return false;
+					}
+					auto sentence = tokenized_sentence<logical_form_type>(seq);
+					core::free(seq);
+					syntax[id][j].tree = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>));
+					/* NOTE: sample can set syntax[id] to null */
+					if (syntax[id][j].tree == NULL || !sample(syntax[id][j].tree, G, logical_form, sentence, morph, *this, syntax[id][j].root) || syntax[id][j].tree == NULL)
+					{
+						fprintf(stderr, "hdp_parser.train ERROR: Unable to sample derivation for example %u, sentence %u: '", id, j);
+						print(data[id].keys[j], stderr, terminal_printer); print("'\n", stderr);
+						print(logical_form, stderr, terminal_printer); print("\n", stderr);
+						cleanup(data, nonterminal_name_map, syntax, order);
+						return false;
+					}
+
+					print(logical_form, stdout, terminal_printer); print('\n', stdout);
+					print(*syntax[id][j].tree, stdout, nonterminal_printer, terminal_printer, syntax[id][j].root); print("\n\n", stdout);
+					fflush(stdout);
+				}
+
+				if (!add_tree(syntax[id][j].root, *syntax[id][j].tree, logical_form, G)) {
+					cleanup(data, nonterminal_name_map, syntax, order);
+					return false;
+				}
+			}
+		}
+
+		/* perform MCMC */
+		for (unsigned int t = 0; t < iteration_count; t++) {
+			shuffle(order, (unsigned int) data.length);
+			for (unsigned int i = 0; i < data.length; i++) {
+				unsigned int id = order[i];
+				for (unsigned int j = 0; j < data[id].size; j++) {
+					if (!is_empty(data[id].keys[j].derivation))
+						/* do not resample training examples labeled with derivation trees */
+						continue;
+					const logical_form_type& logical_form = data[id].values[j];
+					sequence& seq = *((sequence*) alloca(sizeof(sequence)));
+					unsigned int old_names_size = names.table.size;
+					if (!init(seq, data[id].keys[j])) {
+						cleanup(data, nonterminal_name_map, syntax, order);
+						return false;
+					} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
+						cleanup(data, nonterminal_name_map, syntax, order);
+						core::free(seq); return false;
+					} if (names.table.size != old_names_size) {
+						core::free(terminal_printer.map);
+						terminal_printer.map = invert(names);
+						terminal_printer.length = names.table.size + 1;
+						if (terminal_printer.map == nullptr) {
+							cleanup(data, nonterminal_name_map, syntax, order);
+							core::free(seq); return false;
+						}
+						terminal_printer = { terminal_printer.map, names.table.size + 1 };
+					}
+					auto sentence = tokenized_sentence<logical_form_type>(seq);
+					core::free(seq);
+					resample(syntax[id][j].tree, G, logical_form, sentence, morph, *this, syntax[id][j].root);
+				}
+			}
+			sample_grammar(G);
+			/*fprintf(stdout, "Unnormalized log posterior probability: %lf\n",
+					log_probability(G, syntax, data, *this));
+
+			if (t % 1 == 0) {
+				fprintf(stdout, "[iteration %u]\n", t);
+				print_nonterminal_hdps(G, stdout, terminal_printer, nonterminal_printer);
+				fflush(stdout);
+			}*/
+		}
+
+		/* cleanup */
+		cleanup(data, nonterminal_name_map, syntax, order);
+		return true;
+	}
+
+	template<unsigned int K>
+	inline bool resolve_coreference(Formula** logical_forms, double* log_probabilities, unsigned int& parse_count)
+	{
+		if (parse_count == 0)
+			return true;
+		referent_iterator* iterators = (referent_iterator*) malloc(sizeof(referent_iterator) * parse_count);
+		if (iterators == nullptr)
+			return false;
+		for (unsigned int i = 0; i < parse_count; i++) {
+			if (!init(iterators[i], logical_forms[i])) {
+				for (unsigned int j = 0; j < i; j++)
+					core::free(iterators[j]);
+				core::free(iterators);
+				return false;
+			}
+
+			array_map<unsigned int, const hol_term*> bound_variables(8);
+			if (!get_referents(logical_forms[i], iterators[i], bound_variables)) {
+				for (unsigned int j = 0; j < i + 1; j++)
+					core::free(iterators[j]);
+				core::free(iterators);
+				return false;
+			}
+		}
+
+		std::set<referent_iterator_state> queue;
+		for (unsigned int i = 0; i < parse_count; i++) {
+			referent_iterator_state initial_state(&iterators[i], log_probabilities[i]);
+			for (unsigned int j = 0; j < iterators[i].anaphora.size; j++)
+				initial_state.indices[j] = 0;
+			queue.insert(initial_state);
+		}
+
+		Formula* resolved_formulas[K];
+		double resolved_log_probabilities[K];
+		unsigned int resolved_formula_count = 0;
+		while (!queue.empty()) {
+			auto last = queue.cend(); last--;
+			referent_iterator_state state = *last;
+			queue.erase(last);
+
+			process_referent_iterator(state, queue, resolved_formulas, resolved_log_probabilities, resolved_formula_count);
+			if (resolved_formula_count == K)
+				break;
+		}
+
+/* TODO: for debugging; delete this */
+bool has_anaphora = false;
+for (unsigned int i = 0; !has_anaphora && i < parse_count; i++)
+	has_anaphora = (iterators[i].anaphora.size != 0);
+if (has_anaphora) {
+	if (resolved_formula_count == 0) {
+		print(CONSOLE_BOLD "\nCoreference resolution failed.\n" CONSOLE_RESET, stdout);
+	} else {
+		print(CONSOLE_BOLD "\nCoreference resolution results:\n" CONSOLE_RESET, stdout);
+		for (unsigned int i = 0; i < resolved_formula_count; i++) {
+			print(CONSOLE_BOLD "[", stdout); print(i, stdout); print("] " CONSOLE_RESET, stdout);
+			print(*resolved_formulas[i], stdout, terminal_printer); print('\n', stdout);
+		}
+	}
+}
+
+		for (unsigned int i = 0; i < parse_count; i++) {
+			core::free(iterators[i]);
+			core::free(*logical_forms[i]); if (logical_forms[i]->reference_count == 0) core::free(logical_forms[i]);
+		} for (unsigned int i = 0; i < resolved_formula_count; i++) {
+			logical_forms[i] = resolved_formulas[i];
+			log_probabilities[i] = resolved_log_probabilities[i];
+		}
+		core::free(iterators);
+		parse_count = resolved_formula_count;
+		return true;
+	}
+
+	template<unsigned int K, typename TheoryType>
+	bool parse(const SentenceType& s,
+			Formula** logical_forms, double* log_probabilities,
+			unsigned int& parse_count, const TheoryType& T,
+			array<array<sentence_token>>& unrecognized,
+			hash_map<string, unsigned int>& names)
+	{
+		static_assert(K > 0, "`K` must be at least 1.");
+#if !defined(NDEBUG)
+		if (terminal_printer.map == NULL) {
+			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.parse`.\n");
+			return false;
+		}
+#endif
+
+		logical_form_type logical_form(HOL_ANY);
+		syntax_node<logical_form_type>* parsed_syntax =
+				(syntax_node<logical_form_type>*) alloca(K * sizeof(syntax_node<logical_form_type>));
+		logical_form_type* logical_form_output =
+				(logical_form_type*) alloca(K * sizeof(logical_form_type));
+		sequence& seq = *((sequence*) alloca(sizeof(sequence)));
+		if (!init(seq, s)) {
+			return false;
+		} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
+			core::free(seq);
+			return false;
+		}
+		auto sentence = tokenized_sentence<logical_form_type>(seq);
+
+/* TODO: for debugging; remove this */
+const string** nonterminal_name_map = invert(G.nonterminal_names);
+string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
+debug_terminal_printer = &terminal_printer;
+debug_nonterminal_printer = &nonterminal_printer;
+		if (!::parse<false, false, K>(parsed_syntax, parse_count,
+				logical_form, logical_form_output, G, sentence, morph, *this))
+		{
+/* TODO: for debugging; remove this */
+core::free(nonterminal_name_map);
+			core::free(seq);
+			return false;
+		}
+
+		array<pair<unsigned int, unsigned int>> ambiguous_terminal_indices(8);
+		for (unsigned int i = 0; i < parse_count; i++) {
+/* TODO: for debugging; remove this */
+print(CONSOLE_BOLD "Parse result ", stdout); print(i, stdout); print(":\n" CONSOLE_RESET, stdout);
+print(logical_form_output[i], stdout, terminal_printer); print('\n', stdout);
+print(parsed_syntax[i], stdout, nonterminal_printer, terminal_printer, logical_form_output[i]);
+			double log_likelihood = log_probability(G, parsed_syntax[i], logical_form_output[i], *this);
+print("\nLog likelihood: ", stdout); print(log_likelihood, stdout); print("\n\n", stdout); fflush(stdout);
+			/* TODO: compute this prior */
+			double log_prior = 0.0; //log_probability<true>(T, logical_form_output[i]);
+			log_probabilities[i] = log_likelihood + log_prior;
+
+			if (i == 0) {
+				unsigned int left = 0;
+				if (!get_unrecognized_terminals(ambiguous_terminal_indices, parsed_syntax[i], logical_form_output[i], left)
+				 || !unrecognized.ensure_capacity(ambiguous_terminal_indices.length))
+				{
+					fprintf(stderr, "hdp_parser.parse ERROR: Unable to retrieve unrecognized terminals. This"
+							" is likely due to a bug in a transformation function in the derivation tree.\n");
+					for (unsigned int j = 0; j < i; j++) {
+						core::free(*logical_forms[j]); core::free(logical_forms[j]);
+					} for (unsigned int j = 0; j < parse_count; j++) {
+						core::free(parsed_syntax[j]);
+						core::free(logical_form_output[j]);
+					}
+/* TODO: for debugging; remove this */
+core::free(nonterminal_name_map);
+					core::free(seq);
+					return false;
+				}
+
+#if !defined(NDEBUG)
+				logical_form_type copy(logical_form_output[i]);
+				if (!populate_inflected_terminals(parsed_syntax[i], seq.tokens)
+				 || !is_parseable(parsed_syntax[i], logical_form_output[i], G, morph, copy, nonterminal_printer, terminal_printer, *this))
+					fprintf(stderr, "hdp_parser.parse WARNING: Top logical form output is not parseable. This"
+							" is likely due to a bug in a transformation function in the derivation tree.\n");
+#endif
+			}
+
+			logical_forms[i] = ambiguous_to_unknown(logical_form_output[i].root);
+			if (logical_forms[i] == NULL) {
+				fprintf(stderr, "hdp_parser.parse ERROR: Out of memory.\n");
+				for (unsigned int j = 0; j < i; j++) {
+					core::free(*logical_forms[j]); core::free(logical_forms[j]);
+				} for (unsigned int j = 0; j < parse_count; j++) {
+					core::free(parsed_syntax[j]);
+					core::free(logical_form_output[j]);
+				}
+/* TODO: for debugging; remove this */
+core::free(nonterminal_name_map);
+				core::free(seq);
+				return false;
+			}
+		}
+		core::free(seq);
+/* TODO: for debugging; remove this */
+core::free(nonterminal_name_map);
+
+		for (pair<unsigned int, unsigned int> index : ambiguous_terminal_indices) {
+			array<sentence_token>& next_unknown_string = unrecognized[unrecognized.length];
+			if (!array_init(next_unknown_string, index.value)) {
+				for (array<sentence_token>& str : unrecognized) core::free(str);
+				unrecognized.clear();
+				for (unsigned int j = 0; j < parse_count; j++) {
+					core::free(*logical_forms[j]); core::free(logical_forms[j]);
+					core::free(parsed_syntax[j]);
+					core::free(logical_form_output[j]);
+				}
+				return false;
+			}
+			unrecognized.length++;
+
+			for (unsigned int i = 0; i < index.value; i++)
+				next_unknown_string[i] = { s.tokens[index.key + i] };
+			next_unknown_string.length = index.value;
+		}
+
+		for (unsigned int j = 0; j < parse_count; j++) {
+			core::free(parsed_syntax[j]);
+			core::free(logical_form_output[j]);
+		}
+
+		/* resolve variable names like "X" as implicit universal quantification */
+bool has_variable_names = false;
+		for (unsigned int j = 0; j < parse_count; j++) {
+			hol_term* new_logical_form = universalize_variable_names(logical_forms[j]);
+			if (new_logical_form == nullptr) {
+				for (array<sentence_token>& str : unrecognized) core::free(str);
+				unrecognized.clear();
+				for (unsigned int j = 0; j < parse_count; j++) {
+					core::free(*logical_forms[j]); core::free(logical_forms[j]);
+				}
+				return false;
+			}
+has_variable_names |= (new_logical_form != logical_forms[j]);
+			core::free(*logical_forms[j]); if (logical_forms[j]->reference_count == 0) core::free(logical_forms[j]);
+			logical_forms[j] = new_logical_form;
+		}
+
+if (has_variable_names) {
+	print(CONSOLE_BOLD "\nVariable name resolution results:\n" CONSOLE_RESET, stdout);
+	for (unsigned int j = 0; j < parse_count; j++) {
+		print(CONSOLE_BOLD "[", stdout); print(j, stdout); print("] " CONSOLE_RESET, stdout);
+		print(*logical_forms[j], stdout, terminal_printer); print('\n', stdout);
+	}
+}
+
+		/* perform coreference resolution */
+		if (!resolve_coreference<K>(logical_forms, log_probabilities, parse_count)) {
+			for (array<sentence_token>& str : unrecognized) core::free(str);
+			unrecognized.clear();
+			for (unsigned int j = 0; j < parse_count; j++) {
+				core::free(*logical_forms[j]); core::free(logical_forms[j]);
+			}
+			return false;
+		}
+
+		return (parse_count != 0);
+	}
+
+	bool add_definition(const SentenceType& s, Formula* definition,
+			unsigned int new_constant, hash_map<string, unsigned int>& names)
+	{
+#if !defined(NDEBUG)
+		if (terminal_printer.map == NULL) {
+			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
+			return false;
+		}
+#endif
+
+		/* first replace `unknown` in `definition` with `new_constant` */
+		hol_term* constant = hol_term::new_constant(new_constant);
+		if (constant == nullptr)
+			return false;
+		hol_term* new_definition = substitute(definition, &HOL_UNKNOWN, constant);
+		core::free(*constant); if (constant->reference_count == 0) core::free(constant);
+		if (new_definition == nullptr)
+			return false;
+
+		const logical_form_type logical_form(*new_definition);
+		core::free(*new_definition); if (new_definition->reference_count == 0) core::free(new_definition);
+		sequence& seq = *((sequence*) alloca(sizeof(sequence)));
+		if (!init(seq, s)) {
+			return false;
+		} else if (!preprocess_sentence(seq, LPAREN_ID, RPAREN_ID, COMMA_ID, A_ID, AN_ID, forbidden_token_ids, FORBIDDEN_TOKEN_COUNT, names, terminal_printer)) {
+			core::free(seq);
+			return false;
+		}
+		auto sentence = tokenized_sentence<logical_form_type>(seq);
+		core::free(seq);
+
+		const string** nonterminal_name_map = invert(G.nonterminal_names);
+		if (nonterminal_name_map == nullptr)
+			return false;
+		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
+		auto printer = get_printer(terminal_printer);
+debug_terminal_printer = &printer;
+debug_nonterminal_printer = &nonterminal_printer;
+
+		syntax_node<logical_form_type>* syntax = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>));
+		/* NOTE: sample can set syntax.tree to null */
+		print("Training with new labeled sentence:\n", stdout);
+		print("  Sentence: '", stdout); print(s, stdout, printer); print("'\n", stdout);
+		print("  Logical form: ", stdout); print(logical_form, stdout, printer); print("\n", stdout);
+		if (syntax == NULL || !sample(syntax, G, logical_form, sentence, morph, *this) || syntax == NULL)
+		{
+			fprintf(stderr, "hdp_parser.add_definition ERROR: Unable to sample derivation for new sentence.\n");
+			core::free(nonterminal_name_map); return false;
+		}
+		print(*syntax, stdout, nonterminal_printer, printer, 1); print("\n\n", stdout);
+		fflush(stdout);
+		core::free(nonterminal_name_map);
+
+		if (!add_tree(1, *syntax, logical_form, G)) {
+			core::free(*syntax); core::free(syntax);
+			return false;
+		}
+		core::free(*syntax); core::free(syntax);
+
+		/* TODO: do some MCMC iterations */
+		return true;
+	}
+
+	template<unsigned int K>
+	inline bool generate(
+			syntax_node<logical_form_type>* generated_derivations,
+			double* log_likelihoods,
+			unsigned int& generated_derivation_count,
+			Formula* logical_form,
+			hash_map<string, unsigned int>& names)
+	{
+#if !defined(NDEBUG)
+		if (terminal_printer.map == NULL) {
+			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
+			return false;
+		}
+#endif
+
+const string** nonterminal_name_map = invert(G.nonterminal_names);
+string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
+debug_terminal_printer = &terminal_printer;
+debug_nonterminal_printer = &nonterminal_printer;
+		const logical_form_type root_logical_form(*logical_form);
+		bool result = ::generate<K>(generated_derivations, generated_derivation_count, root_logical_form, G, morph, names);
+core::free(nonterminal_name_map);
+		if (names.table.size >= terminal_printer.length) {
+			core::free(terminal_printer.map);
+			terminal_printer.map = invert(names);
+			if (terminal_printer.map == nullptr) {
+				for (unsigned int i = 0; i < generated_derivation_count; i++)
+					core::free(generated_derivations[i]);
+				return false;
+			}
+			terminal_printer.length = names.table.size + 1;
+		}
+		for (unsigned int i = 0; i < generated_derivation_count; i++) {
+			double log_likelihood = log_probability(G, generated_derivations[i], root_logical_form, *this);
+			log_likelihoods[i] = log_likelihood;
+		}
+		return result;
+	}
+
+	inline bool yield(
+			const syntax_node<logical_form_type>& derivation,
+			Formula* logical_form, sequence& output_sentence,
+			unsigned int nonterminal = 1)
+	{
+		generated_utterance utterance(output_sentence);
+		const logical_form_type root_logical_form(*logical_form);
+		return ::yield(G, derivation, nonterminal, root_logical_form, get_printer(terminal_printer), utterance, morph);
+	}
+
+	inline bool yield_search_query(
+			const syntax_node<logical_form_type>& derivation,
+			Formula* logical_form, sequence& output_sentence) const
+	{
+		if (logical_form->type != hol_term_type::LAMBDA) {
+			fprintf(stderr, "hdp_parser.yield_search_query ERROR: `logical_form` is not a lambda expression.");
+			return false;
+		}
+
+		const logical_form_type root_logical_form(*logical_form);
+		generated_utterance utterance(output_sentence);
+		bool is_interrogative;
+		return yield_search_query(derivation, 1, root_logical_form, terminal_printer, utterance, morph, logical_form->quantifier.variable, is_interrogative);
+	}
+
+	template<typename Printer>
+	constexpr Printer& get_printer(Printer& constant_printer) const {
+		return constant_printer;
+	}
+
+	const string_map_scribe& get_printer() const {
+		return terminal_printer;
+	}
+
+	const string** reverse_string_map() const {
+		return terminal_printer.map;
+	}
+
+	template<typename Stream>
+	inline bool print_hdp(const char* nonterminal_name, Stream& out) {
+		bool contains;
+		unsigned int nonterminal = G.nonterminal_names.get(nonterminal_name, contains);
+		if (!contains) {
+			fprintf(stderr, "hdp_parser.print_hdp ERROR: No such nonterminal '%s' in the grammar.\n", nonterminal_name);
+			return false;
+		}
+
+		const string** nonterminal_name_map = invert(G.nonterminal_names);
+		if (nonterminal_name_map == nullptr)
+			return false;
+		string_map_scribe nonterminal_printer = { nonterminal_name_map, G.nonterminal_names.table.size + 1 };
+
+		auto printers = make_pair<const string_map_scribe&, const string_map_scribe&>(terminal_printer, nonterminal_printer);
+		bool success = print(G.nonterminals[nonterminal - 1].rule_distribution.type, out); success &= print(' ', out);
+		success &= print(G.nonterminals[nonterminal - 1].name, out); success &= (fprintf(out, " (%u) HDP: ", G.nonterminals[nonterminal - 1].id) >= 0);
+		success &= print(G.nonterminals[nonterminal - 1].rule_distribution.sampler, out, terminal_printer, printers); success &= print('\n', out);
+		success &= print(G.nonterminals[nonterminal - 1].rule_distribution.h.alpha, G.nonterminals[nonterminal - 1].rule_distribution.feature_count + 1, out); success &= print('\n', out);
+		core::free(nonterminal_name_map);
+		return success;
+	}
+
+private:
+	template<typename Semantics, typename Printer>
+	bool yield_search_query(
+			const syntax_node<Semantics>& node,
+			unsigned int nonterminal,
+			const Semantics& logical_form,
+			Printer& printer,
+			generated_utterance& utterance,
+			const morphology_en& morph,
+			unsigned int query_variable,
+			bool& is_interrogative) const
+	{
+		if (node.is_terminal()) {
+			is_interrogative = false;
+			hol_term* term = logical_form.root;
+			while (term->type == hol_term_type::LAMBDA) {
+				if (term->quantifier.variable == query_variable) {
+					is_interrogative = true;
+					break;
+				}
+				term = term->quantifier.operand;
+			}
+
+			return ::yield(node.right, G.nonterminals[nonterminal - 1].rule_distribution, logical_form, utterance, morph);
+		}
+
+		for (unsigned int i = 0; i < node.right.nt.length; i++) {
+			Semantics transformed;
+			if (!apply(node.right.nt.transformations[i], logical_form, transformed)) {
+				print("yield ERROR: Unable to apply semantic transformation '", stderr);
+				print(node.right.nt.transformations[i], stderr); print("' to logical form:\n", stderr);
+				print(logical_form, stderr, printer); print('\n', stderr); return false;
+			}
+
+			/* check if the interrogative phrase is in this child subtree */
+			bool could_child_be_interrogative = false;
+			hol_term* term = transformed.root;
+			while (term->type == hol_term_type::LAMBDA) {
+				if (term->quantifier.variable == query_variable) {
+					could_child_be_interrogative = true;
+					break;
+				}
+				term = term->quantifier.operand;
+			}
+
+			if (could_child_be_interrogative) {
+				bool is_child_interrogative = false;
+				unsigned int old_length = utterance.length;
+				if (!yield_search_query(*node.children[i], node.right.nt.nonterminals[i], transformed, printer, utterance, morph, query_variable, is_child_interrogative))
+					return false;
+				/* check if "how many" was generated, and if so, replace with an asterisk */
+				for (unsigned int j = old_length; j + 2 < utterance.length; j++) {
+					if ((utterance.tokens[j] == HOW_ID || (j == 0 && utterance.tokens[j] == CAPITAL_HOW_ID)) && utterance.tokens[j + 1] == MANY_ID) {
+						utterance.tokens[j] = ASTERISK_ID;
+						shift_left(utterance.tokens + j + 1, utterance.length - j - 2);
+						utterance.length--;
+						is_child_interrogative = false;
+						is_interrogative = false;
+						break;
+					}
+				}
+				if (node.right.nt.nonterminals[i] == NONTERMINAL_NP_ID && is_child_interrogative) {
+					/* we found the interrogative noun phrase, so replace it with `*` */
+					utterance.tokens[old_length] = ASTERISK_ID;
+					utterance.length = old_length + 1;
+					is_interrogative = false;
+				} else if (is_child_interrogative) {
+					is_interrogative = true;
+				}
+			} else {
+				if (!::yield(G, *node.children[i], node.right.nt.nonterminals[i], transformed, printer, utterance, morph))
+					return false;
+			}
+		}
+		return true;
+	}
+
+	void cleanup(
+			const array<array_map<SentenceType, flagged_logical_form<Formula>>>& data,
+			const string** nonterminal_name_map, rooted_syntax_node<logical_form_type>** syntax, unsigned int* order)
+	{
+		if (syntax != NULL) {
+			for (unsigned int k = 0; k < data.length; k++) {
+				if (syntax[k] == NULL) continue;
+				for (unsigned int l = 0; l < data[k].size; l++)
+					if (!is_empty(syntax[k][l])) core::free(syntax[k][l]);
+				core::free(syntax[k]);
+			}
+			core::free(syntax);
+		}
+		if (order != NULL) core::free(order);
+		if (terminal_printer.map != NULL) core::free(terminal_printer.map);
+		if (nonterminal_name_map != NULL) core::free(nonterminal_name_map);
+		terminal_printer.map = NULL;
+	}
+
+	inline void free_helper() {
+		if (terminal_printer.map != nullptr)
+			core::free(terminal_printer.map);
+	}
+};
+
+template<typename Formula>
+constexpr const char* hdp_parser<Formula>::FORBIDDEN_TOKEN_STRS[];
+
+template<typename Formula>
+bool init(hdp_parser<Formula>& dst, const hdp_parser<Formula>& src)
+{
+	dst.LPAREN_ID = src.LPAREN_ID;
+	dst.RPAREN_ID = src.RPAREN_ID;
+	dst.COMMA_ID = src.COMMA_ID;
+	dst.A_ID = src.A_ID;
+	dst.AN_ID = src.AN_ID;
+	dst.ASTERISK_ID = src.ASTERISK_ID;
+	dst.NONTERMINAL_NP_ID = src.NONTERMINAL_NP_ID;
+	dst.NONTERMINAL_V_ID = src.NONTERMINAL_V_ID;
+	for (unsigned int i = 0; i < array_length(src.forbidden_token_ids); i++)
+		dst.forbidden_token_ids[i] = src.forbidden_token_ids[i];
+	dst.number_parser = src.number_parser;
+
+	dst.terminal_printer.map = nullptr;
+	dst.terminal_printer.length = 0;
+
+	if (!init(dst.morph, src.morph)) {
+		return false;
+	} else if (!copy(src.G, dst.G)) {
+		free(dst.morph);
+		return false;
+	}
+	return true;
+}
+
+/* Computes the log joint probability of the grammar and given derivations */
+template<typename Formula>
+double log_probability(
+	hdp_grammar_type<Formula>& G,
+	const rooted_syntax_node<flagged_logical_form<Formula>>* const* syntax,
+	const array<array_map<typename hdp_parser<Formula>::SentenceType, flagged_logical_form<Formula>>>& data,
+	const hdp_parser<Formula>& parser)
+{
+	typedef flagged_logical_form<Formula> logical_form_type;
+
+	double score = 0.0;
+	for (unsigned int i = 0; i < G.nonterminals.length; i++)
+		score += log_probability(G.nonterminals[i].rule_distribution);
+	for (unsigned int i = 0; i < data.length; i++) {
+		for (unsigned int j = 0; j < data[i].size; j++) {
+			const logical_form_type& logical_form = data[i].values[j];
+			score += log_probability(G, *syntax[i][j].tree, logical_form, parser, syntax[i][j].root);
+		}
+	}
+	return score;
+}
+
+template<typename Formula>
+inline bool is_ambiguous(const flagged_logical_form<Formula>& exp) {
+	return is_ambiguous(*exp.root);
 }
 
 inline hol_term* swap_query_args(hol_term* src)
@@ -14675,19 +14884,37 @@ inline bool select_arg_without_head(
 					}
 					HOL_ANY.reference_count++;
 
+					hol_term* nested_arg = hol_term::new_any_right(hol_term::new_equals(
+							hol_term::new_apply(hol_term::new_any_constant(
+								(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
+								(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF
+							), &HOL_ANY),
+							hol_term::new_any(hol_term::new_any_constant(
+								(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
+								(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF
+							))));
+					if (nested_arg == nullptr) {
+						free(*excluded); free(excluded);
+						free(*any_quantifier); free(any_quantifier);
+						return (hol_term*) nullptr;
+					}
+					HOL_ANY.reference_count++;
+
 					hol_term* expected_conjunct;
 					if (InvertArg) {
 						expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
-								hol_term::new_apply(hol_term::new_constant(ArgConstant), head_var),
-								hol_term::new_any(nullptr, &any_quantifier, 1)));
+									hol_term::new_apply(hol_term::new_constant(ArgConstant), head_var),
+									hol_term::new_any(nullptr, &any_quantifier, 1)),
+								&nested_arg, 1);
 					} else {
 						expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
-								hol_term::new_apply(hol_term::new_constant(ArgConstant), hol_term::new_any(nullptr, &any_quantifier, 1)),
-								head_var));
+									hol_term::new_apply(hol_term::new_constant(ArgConstant), hol_term::new_any(nullptr, &any_quantifier, 1)), head_var),
+								&nested_arg, 1);
 					}
 					if (expected_conjunct == nullptr) {
 						free(*excluded); free(excluded);
 						free(*any_quantifier); free(any_quantifier);
+						free(*nested_arg); free(nested_arg);
 						return (hol_term*) nullptr;
 					}
 					head_var->reference_count++;
@@ -25279,6 +25506,21 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	case function_type::REQUIRE_LEFT_ARG1:
 		dst.flags = src.flags;
 		return set_arg<0>(src.root, dst.root, (unsigned int) built_in_predicates::ARG1);
+	case function_type::REQUIRE_LEFT_ARG2:
+		dst.flags = src.flags;
+		return set_arg<0>(src.root, dst.root, (unsigned int) built_in_predicates::ARG2);
+	case function_type::REQUIRE_LEFT_ARG3:
+		dst.flags = src.flags;
+		return set_arg<0>(src.root, dst.root, (unsigned int) built_in_predicates::ARG3);
+	case function_type::REQUIRE_RIGHT_ARG1:
+		dst.flags = src.flags;
+		return set_arg<-1>(src.root, dst.root, (unsigned int) built_in_predicates::ARG1);
+	case function_type::REQUIRE_RIGHT_ARG2:
+		dst.flags = src.flags;
+		return set_arg<-1>(src.root, dst.root, (unsigned int) built_in_predicates::ARG2);
+	case function_type::REQUIRE_RIGHT_ARG3:
+		dst.flags = src.flags;
+		return set_arg<-1>(src.root, dst.root, (unsigned int) built_in_predicates::ARG3);
 	case function_type::REQUIRE_LAMBDA:
 		dst.flags = src.flags;
 		return require_lambda(src.root, dst.root);
@@ -37910,6 +38152,29 @@ inline bool invert_factor(
 		return copy(inverse, inverse_count, flags, second);
 	}
 
+	/* check if `first` excludes arrays */
+	if (first_head->type == hol_term_type::ANY || first_head->type == hol_term_type::ANY_RIGHT) {
+		for (unsigned int i = 0; i < first_head->any.excluded_tree_count; i++) {
+			hol_term* excluded = first_head->any.excluded_trees[i];
+			if (excluded->type == hol_term_type::ANY_ARRAY && excluded->any_array.oper == hol_term_type::ANY_ARRAY && *excluded->any_array.all == HOL_ANY
+			 && (excluded->any_array.left.length > 1 || excluded->any_array.any.length > 1 || excluded->any_array.right.length > 1))
+			{
+				/* make sure all array elements are `HOL_ANY` */
+				bool elements_are_any = true;
+				for (unsigned int j = 0; elements_are_any && j < excluded->any_array.left.length; j++)
+					if (*excluded->any_array.left.operands[j] != HOL_ANY) elements_are_any = false;
+				for (unsigned int j = 0; elements_are_any && j < excluded->any_array.right.length; j++)
+					if (*excluded->any_array.right.operands[j] != HOL_ANY) elements_are_any = false;
+				for (unsigned int j = 0; elements_are_any && j < excluded->any_array.any.length; j++)
+					if (*excluded->any_array.any.operands[j] != HOL_ANY) elements_are_any = false;
+				if (elements_are_any) {
+					/* `first` excludes arrays, so just copy `second` */
+					return copy(inverse, inverse_count, flags, second);
+				}
+			}
+		}
+	}
+
 	hol_term* new_second_head = hol_term::new_any_array(hol_term_type::ANY_ARRAY, second_head,
 			make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0), make_array_view((hol_term**) nullptr, 0));
 	if (new_second_head == nullptr)
@@ -40799,6 +41064,11 @@ bool invert(
 	case function_type::REQUIRE_SINGLETON:
 	case function_type::REQUIRE_NO_STRING_OR_NUMBER_OR_NAME_IN_SET:
 	case function_type::REQUIRE_LEFT_ARG1:
+	case function_type::REQUIRE_LEFT_ARG2:
+	case function_type::REQUIRE_LEFT_ARG3:
+	case function_type::REQUIRE_RIGHT_ARG1:
+	case function_type::REQUIRE_RIGHT_ARG2:
+	case function_type::REQUIRE_RIGHT_ARG3:
 	case function_type::REQUIRE_NO_LAMBDA:
 	case function_type::REQUIRE_PREDICATE_OF_LAMBDA:
 	case function_type::REQUIRE_LOCATE_OF_LAMBDA:
@@ -44306,20 +44576,38 @@ bool set_arg(hol_term* src, hol_term*& dst, unsigned int value)
 		return (hol_term*) nullptr;
 	}
 
+	hol_term* nested_arg = hol_term::new_any_right(hol_term::new_equals(
+			hol_term::new_apply(hol_term::new_any_constant(
+				(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
+				(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF
+			), &HOL_ANY),
+			hol_term::new_any(hol_term::new_any_constant(
+				(unsigned int) built_in_predicates::ARG1, (unsigned int) built_in_predicates::ARG2, (unsigned int) built_in_predicates::ARG3,
+				(unsigned int) built_in_predicates::ARG1_OF, (unsigned int) built_in_predicates::ARG2_OF, (unsigned int) built_in_predicates::ARG3_OF
+			))));
+	if (nested_arg == nullptr) {
+		free(*excluded_tree); free(excluded_tree);
+		return (hol_term*) nullptr;
+	}
+	HOL_ANY.reference_count++;
+
 	hol_term* expected_conjunct;
 	if (value == (unsigned int) built_in_predicates::UNKNOWN) {
 		expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
-				hol_term::new_apply(hol_term::new_any_constant(
-					(unsigned int) built_in_predicates::ARG1,
-					(unsigned int) built_in_predicates::ARG2,
-					(unsigned int) built_in_predicates::ARG3),
-				hol_term::new_variable(head_variable)), excluded_tree));
+					hol_term::new_apply(hol_term::new_any_constant(
+						(unsigned int) built_in_predicates::ARG1,
+						(unsigned int) built_in_predicates::ARG2,
+						(unsigned int) built_in_predicates::ARG3),
+					hol_term::new_variable(head_variable)), excluded_tree),
+				&nested_arg, 1);
 	} else {
 		expected_conjunct = hol_term::new_any_right(hol_term::new_equals(
-				hol_term::new_apply(hol_term::new_constant(value),
-				hol_term::new_variable(head_variable)), excluded_tree));
+					hol_term::new_apply(hol_term::new_constant(value),
+					hol_term::new_variable(head_variable)), excluded_tree),
+				&nested_arg, 1);
 	}
 	if (expected_conjunct == nullptr) {
+		free(*nested_arg); free(nested_arg);
 		free(*excluded_tree); free(excluded_tree);
 		return false;
 	}

@@ -13276,7 +13276,9 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		if (second->type == hol_term_type::ANY_QUANTIFIER) {
 			second_operand = second->any_quantifier.operand;
 			second_quantifier = second->any_quantifier.quantifier;
-		} else if (second->type == hol_term_type::FOR_ALL || second->type == hol_term_type::EXISTS || second->type == hol_term_type::LAMBDA) {
+		} else if ((second->type == hol_term_type::FOR_ALL || second->type == hol_term_type::EXISTS || second->type == hol_term_type::LAMBDA)
+				&& has_intersection(first->any_quantifier.quantifier, (hol_quantifier_type) second->type))
+		{
 			fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
 			return false;
 		} else {

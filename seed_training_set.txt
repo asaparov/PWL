@@ -388,7 +388,7 @@
 						(Q:try_remove_genitive,select_second_left_set_conjunct_root,size
 							(NUMBER:identity "one")
 						)
-						(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_subset_with_equality
+						(NOMINAL_R:try_remove_correlated,remove_second_left_set_conjunct,replace_predicative_maximal_subset_with_equality
 							(NOMINAL_L:identity
 								(N:require_no_correlator,select_predicate_in_set "planet"/"planet")
 							)
@@ -418,7 +418,7 @@
 	)
 	(PERIOD ".")
 )}
-	{?[P]:(subset(P,^[p]:planet(p)) & (size(P)=1) & ?[x]:(P(x) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=e)))))};
+	{?[P]:(maximal_subset(P,^[p]:planet(p)) & (size(P)=1) & ?[x]:(P(x) & ?[e]:(?[n]:(name(n) & (arg1_of(e)=n) & (arg2(n)="Earth")) & ?[s]:((arg1(s)=x) & same(s) & present(s) & (arg2(s)=e)))))};
 
 : # Jupiter is gaseous.
 {(S
@@ -1849,7 +1849,7 @@
 
 : # shortest
 {(ADJ "short"/"shortest")}
-	{?[g]:negative(height)(g)[sup]};
+	{?[g]:negative(length)(g)[sup]};
 
 : # Galileo observed Jupiter with a telescope.
 {(S
@@ -3563,7 +3563,7 @@
 					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,add_aux,add_be
 						(V_ADJUNCT:remove_be,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number,add_empty_verb
 							(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
-								(ADJP_R:try_remove_is_adjunct,add_comparative,remove_right_conjunct,remove_greater
+								(ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove_right_conjunct,remove_greater
 									(ADJP_L:try_remove_is_adjunct
 										(ADJ:require_no_correlator,remove_wide_scope "little"/"less")
 									)
@@ -3598,6 +3598,10 @@
 	(PERIOD ".")
 )}
 	{?[d]:(?[n]:(name(n) & (arg1_of(d)=n) & (arg2(n)="Phobos")) & ?[X]:((X=^[x]:?[v]:(volume(v) & (arg1(v)=d) & (arg2_of(x)=v))) & (size(X)=1) & ?[x]:(X(x) & ?[k]:(?[l]:(cubic(l) & (arg1_of(k)=l)) & kilometer(k) & ?[q]:(measure(q) & (arg1(q)=6000) & (arg2(q)=k) & ?[g]:((arg1(g)=x) & greater(negative(value))(g) & present(g) & (arg2(g)=q)))))))};
+
+: # province
+{(N "province"/"province")}
+	{province[index:sg]};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

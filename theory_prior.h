@@ -1962,26 +1962,29 @@ double log_probability_atom(
 	constants.add_predicate(function->constant);
 	if (arg1->type == hol_term_type::VARIABLE) {
 		if (arg2->type == hol_term_type::VARIABLE) {
-			return prior.log_binary_probability - log_cache<double>::instance().get(5);
+			return prior.log_binary_probability - log_cache<double>::instance().get(6);
 		} else if (arg2->type == hol_term_type::CONSTANT) {
 			constants.add_constant(arg2->constant);
-			return prior.log_binary_probability - log_cache<double>::instance().get(5);
+			return prior.log_binary_probability - log_cache<double>::instance().get(6);
 		} else if (arg2->type == hol_term_type::NUMBER) {
 			/* TODO: add a proper prior distribution for this case */
-			return prior.log_binary_probability - log_cache<double>::instance().get(5);
+			return prior.log_binary_probability - log_cache<double>::instance().get(6);
 		} else {
 			return -std::numeric_limits<double>::infinity();
 		}
 	} else if (arg1->type == hol_term_type::CONSTANT) {
 		constants.add_constant(arg1->constant);
 		if (arg2->type == hol_term_type::VARIABLE) {
-			return prior.log_binary_probability - log_cache<double>::instance().get(5);
+			return prior.log_binary_probability - log_cache<double>::instance().get(6);
 		} else if (arg2->type == hol_term_type::NUMBER) {
 			/* TODO: add a proper prior distribution for this case */
-			return prior.log_binary_probability - log_cache<double>::instance().get(5);
+			return prior.log_binary_probability - log_cache<double>::instance().get(6);
 		} else { /* both `arg1` and `arg2` can't be constants */
 			return -std::numeric_limits<double>::infinity();
 		}
+	} else if (arg1->type == hol_term_type::NUMBER) {
+		/* TODO: add a proper prior distribution for this case */
+		return prior.log_binary_probability - log_cache<double>::instance().get(6);
 	} else {
 		return -std::numeric_limits<double>::infinity();
 	}

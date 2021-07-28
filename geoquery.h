@@ -94,7 +94,20 @@ inline bool get_answer(string& out, const array<string>& answers) {
 	if (answers.length == 0) {
 		return init(out, "");
 	} else if (answers.length == 1) {
-		return init(out, answers[0]);
+		unsigned int start = 0;
+		unsigned int length = answers[0].length;
+		if (answers[0][0] == '{' && answers[0][answers[0].length - 1] == '}') {
+			start = 1;
+			length -= 2;
+			if (length >= 4 && answers[0][answers[0].length - 2] == '.'
+			 && answers[0][answers[0].length - 3] == '.'
+			 && answers[0][answers[0].length - 4] == '.'
+			 && answers[0][answers[0].length - 5] == ',')
+			{
+				length -= 4;
+			}
+		}
+		return init(out, answers[0].data + start, length);
 	} else {
 		unsigned int length = answers[0].length;
 		for (unsigned int i = 1; i < answers.length; i++)
@@ -200,13 +213,18 @@ void do_geoquery_experiments(bool& status,
 			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
 			{
 				/* try to answer the question */
-				array<string> answers(4);
+				array<string> best_answers(4);
+				double best_answer_probability = -std::numeric_limits<double>::infinity();
 #if defined(SANITIZE_ADDRESS)
 /* TODO: for memory debugging; delete this */
 __lsan_do_leak_check();
 #endif
-				for (unsigned int i = 0; i < parse_count; i++) {
-					if (!answer_question<true>(answers, logical_forms[0], 20, parser, job.T, proof_prior, job.proof_axioms) || answers.length == 0)
+
+				double first_question_probability = -std::numeric_limits<double>::infinity();
+				for (unsigned int i = 0; i < parse_count && log_probabilities[i] + 1.0 > first_question_probability; i++) {
+					array<string> answers(4);
+					double answer_probability = -std::numeric_limits<double>::infinity();
+					if (!answer_question<true>(answers, logical_forms[i], 20, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
 						continue;
 					bool confident = true;
 					for (unsigned int j = 0; j < answers.length; j++) {
@@ -216,15 +234,20 @@ __lsan_do_leak_check();
 						}
 					}
 					if (confident) {
-						break;
-					} else {
-						for (string& str : answers) free(str);
-						answers.clear();
+						first_question_probability = max(first_question_probability, log_probabilities[i]);
+						if (answer_probability > best_answer_probability) {
+							for (string& str : best_answers) free(str);
+							best_answers.clear();
+							for (const string& answer : answers)
+								best_answers.add(answer);
+							best_answer_probability = answer_probability;
+						}
 					}
+					for (string& str : answers) free(str);
 				}
-				if (answers.length == 0) {
-					answers[0] = "<failed to answer question>";
-					answers.length = 1;
+				if (best_answers.length == 0) {
+					best_answers[0] = "<failed to answer question>";
+					best_answers.length = 1;
 				}
 #if defined(SANITIZE_ADDRESS)
 /* TODO: for memory debugging; delete this */
@@ -235,8 +258,8 @@ __lsan_do_leak_check();
 				results.ensure_capacity(results.length + 1);
 				results[results.length].context_id = job.context_id;
 				results[results.length].question_id = job.question_id;
-				if (!get_answer(results[results.length].answer, answers)) {
-					for (string& str : answers) free(str);
+				if (!get_answer(results[results.length].answer, best_answers)) {
+					for (string& str : best_answers) free(str);
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
 					num_threads_running--;
@@ -245,7 +268,7 @@ __lsan_do_leak_check();
 					for (auto entry : names) free(entry.key);
 					free(parser); return;
 				} else if (!init(results[results.length].label, job.label)) {
-					for (string& str : answers) free(str);
+					for (string& str : best_answers) free(str);
 					free(results[results.length].answer);
 					free_logical_forms(logical_forms, parse_count);
 					status = false;
@@ -259,7 +282,7 @@ __lsan_do_leak_check();
 				print(results[results.length].answer, stdout); printf("\n");
 				results.length++;
 				results_lock.unlock();
-				for (string& str : answers) free(str);
+				for (string& str : best_answers) free(str);
 
 				total++;
 				free_logical_forms(logical_forms, parse_count);
@@ -286,7 +309,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id < 6 - 1) {
+if (job.context_id < 41 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -381,7 +404,7 @@ continue;
 				fclose(theory_stream);*/
 				unsigned int sentence_counter = 0;
 				for (unsigned int i = 0; i < context_sentences.length; i++) {
-//if (sentence_counter < context_sentences.length) { sentence_counter++; continue; }
+//if (sentence_counter < 6) { sentence_counter++; continue; }
 					// TODO: this is kind of a hacky way to get the new proof
 					hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
 					old_proofs.add_all(job.T.observations);
@@ -424,7 +447,7 @@ __lsan_do_leak_check();
 					auto collector = make_log_probability_collector(job.T, proof_prior, new_proof);
 					double max_log_probability = collector.current_log_probability;
 					for (unsigned int j = 0; j < 4; j++) {
-						for (unsigned int t = 0; t < 100; t++) {
+						for (unsigned int t = 0; t < 150; t++) {
 							fprintf(stderr, "j = %u, t = %u\n", j, t);
 							bool print_debug = false;
 							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
@@ -460,7 +483,6 @@ __lsan_do_leak_check();
 __lsan_do_leak_check();
 #endif
 				}
-				if (error) break;
 			}
 
 			if (!error) {

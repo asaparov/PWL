@@ -39,6 +39,11 @@ inline bool concatenate(
 	return true;
 }
 
+#if defined(SANITIZE_ADDRESS)
+/* TODO: for memory debugging; delete this */
+#include <sanitizer/lsan_interface.h>
+#endif
+
 template<typename ArticleSource, typename Parser,
 	typename Formula, bool Intuitionistic,
 	typename Canonicalizer, typename TheoryPrior, typename... Args>
@@ -63,6 +68,11 @@ bool read_sentence(
 			print("read_sentence ERROR: Unable to parse sentence '", stderr); print(s, stderr, parser.get_printer()); print("'.\n", stderr);
 			return false;
 		}
+
+#if defined(SANITIZE_ADDRESS)
+// TODO: for memory debugging; delete this
+__lsan_do_leak_check();
+#endif
 
 		/* concatenate the unrecognized tokens */
 		array<unsigned int> unrecognized_concatenated(max((size_t) 1, unrecognized.length));
@@ -1547,13 +1557,14 @@ inline bool less_than(
 
 inline bool get_most_probable_answers(
 		const array_map<string, double>& input_answers,
-		array<string>& answers)
+		array<string>& answers,
+		double& max_probability)
 {
 	/* keep only the answers with highest probability */
 	if (input_answers.size == 0)
 		return true;
 
-	double max_probability = input_answers.values[0];
+	max_probability = input_answers.values[0];
 	for (unsigned int i = 1; i < input_answers.size; i++)
 		max_probability = max(max_probability, input_answers.values[i]);
 
@@ -1589,7 +1600,7 @@ inline bool answer_question(
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
-	auto on_new_proof_sample = [&T, &answers, &parser](const Term* term, double log_probability)
+	auto on_new_proof_sample = [&answers, &parser](const theory<ProofCalculus, Canonicalizer>& T, const Term* term, double log_probability)
 	{
 		/* get the name of the term */
 		if (term->type == TermType::STRING) {
@@ -1969,13 +1980,14 @@ inline bool answer_question(array<string>& answers,
 		theory<ProofCalculus, Canonicalizer>& T,
 		TheoryPrior& theory_prior,
 		typename TheoryPrior::PriorState& proof_axioms,
+		double& log_probability_answer,
 		Args&&... add_formula_args)
 {
 	array_map<string, double> temp_answers(8);
 	if (!answer_question<LinearSearch>(temp_answers, logical_form, num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
 		return false;
 
-	if (!get_most_probable_answers(temp_answers, answers)) {
+	if (!get_most_probable_answers(temp_answers, answers, log_probability_answer)) {
 		for (auto pair : temp_answers) free(pair.key);
 		return false;
 	}
@@ -2238,7 +2250,8 @@ inline bool answer_question(array<string>& answers,
 		free_logical_forms(logical_forms, parse_count);
 	}
 
-	if (!get_most_probable_answers(temp_answers, answers)) {
+	double max_probability;
+	if (!get_most_probable_answers(temp_answers, answers, max_probability)) {
 		for (auto pair : temp_answers) free(pair.key);
 		return false;
 	}
