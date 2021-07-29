@@ -5357,17 +5357,18 @@ inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer)
 				free_all(new_operands); return nullptr;
 			}
 
-			hol_term* temp = substitute<hol_term_type::CONSTANT>(outer, &HOL_ZERO, dst);
-			free(*outer); if (outer->reference_count == 0) free(outer);
+			hol_term* temp = substitute_head<any_node_position::NONE>(dst_inner_operand, inner_operand_head, dst);
+			free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
 			free(*dst); if (dst->reference_count == 0) free(dst);
 			if (temp == nullptr) {
-				free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
+				free(*outer); if (outer->reference_count == 0) free(outer);
 				return nullptr;
 			}
 			dst = temp;
 
-			temp = substitute_head<any_node_position::NONE>(dst_inner_operand, inner_operand_head, dst);
-			free(*dst_inner_operand); if (dst_inner_operand->reference_count == 0) free(dst_inner_operand);
+			temp = substitute<hol_term_type::CONSTANT>(outer, &HOL_ZERO, dst);
+			free(*outer); if (outer->reference_count == 0) free(outer);
+			free(*dst); if (dst->reference_count == 0) free(dst);
 			if (temp == nullptr)
 				return nullptr;
 			dst = temp;
