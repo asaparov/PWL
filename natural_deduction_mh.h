@@ -1351,12 +1351,12 @@ inline bool filter_operands(const Formula* formula, array<unsigned int>& indices
 
 inline double* compute_constant_probabilities(const array<instance>& constants, double& sum)
 {
+	sum = 0.0;
 	double* probabilities = (double*) malloc(sizeof(double) * constants.length);
 	if (probabilities == nullptr) {
 		fprintf(stderr, "compute_constant_probabilities ERROR: Out of memory.\n");
 		return nullptr;
 	}
-	sum = 0.0;
 	for (unsigned int i = 0; i < constants.length; i++) {
 		probabilities[i] = exp(constants[i].matching_types * max(2.0, constants.length / 40.0) - constants[i].mismatching_types * max(2.0, constants.length / 40.0));
 		sum += probabilities[i];

@@ -128,7 +128,7 @@ inline bool get_answer(string& out, const array<string>& answers) {
 	}
 }
 
-constexpr unsigned int MAX_GEOQUERY_QUESTION_COUNT = 280;
+constexpr unsigned int MAX_GEOQUERY_QUESTION_COUNT = 2000;
 
 #if defined(SANITIZE_ADDRESS)
 /* TODO: for memory debugging; delete this */
@@ -309,7 +309,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id < 41 - 1) {
+if (job.context_id < 61 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);

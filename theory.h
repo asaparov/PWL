@@ -3556,7 +3556,8 @@ struct theory
 					right = operand->binary.right;
 				}
 
-				bool is_antecedent_new, is_consequent_new;
+				bool is_antecedent_new = false;
+				bool is_consequent_new = false;
 				unsigned int antecedent_set, consequent_set;
 				built_in_axioms[built_in_axioms.length] = get_subset_axiom<true>(left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new);
 				if (built_in_axioms[built_in_axioms.length] == NULL || !built_in_sets.add(antecedent_set) || !built_in_sets.add(consequent_set))
@@ -5051,7 +5052,6 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		if (atom.binary.right->type != TermType::CONSTANT && atom.binary.right->type != TermType::NUMBER)
 			fprintf(stderr, "remove_unary_atom WARNING: The operand of this application is not a constant or number.\n");
 #endif
-		unsigned int arg = atom.binary.right->constant;
 
 		Formula* lifted_atom = Term::new_apply(atom.binary.left, &Variables<1>::value);
 		if (lifted_atom == nullptr)
@@ -5074,8 +5074,18 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 
 		unsigned int index = (atom.binary.right->type == TermType::CONSTANT ? index_of_constant(instances, atom.binary.right->constant) : index_of_number(instances, atom.binary.right->number));
 #if !defined(NDEBUG)
-		if (index == instances.length)
-			fprintf(stderr, "theory.remove_unary_atom WARNING: `instances` does not contain %u.\n", arg);
+		if (index == instances.length) {
+			fprintf(stderr, "theory.remove_unary_atom WARNING: `instances` does not contain ");
+			if (atom.binary.right->type == TermType::CONSTANT) {
+				fprintf(stderr, "constant %u.\n", atom.binary.right->constant);
+			} else {
+				print("number ", stderr);
+				print(atom.binary.right->number.integer, stderr);
+				print(',', stderr);
+				print(atom.binary.right->number.decimal, stderr);
+				print(".\n", stderr);
+			}
+		}
 #endif
 		shift_left(instances.data + index, instances.length - index - 1);
 		instances.length--;
@@ -18658,7 +18668,7 @@ struct log_probability_collector
 	log_probability_collector(const theory<ProofCalculus, Canonicalizer>& T, ProofPrior& proof_prior, Proof* test_proof = nullptr) : test_proof(test_proof)
 	{
 		/* initialize `current_log_probability` */
-		compute_current_log_probability = [&]() {
+		auto compute_log_probability = [&]() {
 			null_collector collector;
 			array<Formula*> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
@@ -18669,7 +18679,10 @@ struct log_probability_collector
 //T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			return value;
 		};
-		current_log_probability = compute_current_log_probability();
+#if !defined(NDEBUG)
+		compute_current_log_probability = compute_log_probability;
+#endif
+		current_log_probability = compute_log_probability();
 	}
 
 	constexpr inline bool has_prior(const Proof* proof) const {
@@ -19557,7 +19570,7 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		PriorStateType::clone(proof_axioms, proof_axioms_copy, formula_map);
 
 		Term* constant = nullptr;
-		unsigned int constant_id;
+		unsigned int constant_id = 0;
 		if (constants[i].type == instance_type::ANY) {
 			constant_id = T_copy.get_free_concept_id();
 			constant_id = T_copy.get_free_concept_id(constant_id + 100);

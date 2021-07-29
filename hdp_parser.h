@@ -8480,8 +8480,10 @@ inline hol_term* swap_query_args(hol_term* src)
 	hol_term* operand = head->quantifier.operand;
 	if (operand->type != hol_term_type::AND)
 		return nullptr;
-	unsigned int arg1_index, arg2_index;
-	hol_term* arg1; hol_term* arg2;
+	unsigned int arg1_index = 0;
+	unsigned int arg2_index = 0;
+	hol_term* arg1 = nullptr;
+	hol_term* arg2 = nullptr;
 	for (unsigned int i = 0; i < operand->array.length; i++) {
 		hol_term* conjunct = operand->array.operands[i];
 		if (conjunct->type == hol_term_type::EQUALS
@@ -39627,7 +39629,7 @@ inline bool invert_select_function(
 
 			hol_term* arg1_set = nullptr;
 			hol_term* common_ancestor_scope;
-			unsigned int last_common_ancestor_scope;
+			unsigned int last_common_ancestor_scope = 0;
 			if (found_conjunct == nullptr) {
 				if (SubstitutionSetting == substitution_setting::EMPTY)
 					return false;
