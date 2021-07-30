@@ -17674,7 +17674,10 @@ bool filter_constants_helper(
 			}
 
 			/* check to make sure the args are type-correct */
-			if (!Hypothetical && !negated && right->type == TermType::CONSTANT) {
+			if (!Hypothetical && !negated && right->type == TermType::CONSTANT
+			 && right->constant >= T.new_constant_offset
+			 && T.ground_concepts[right->constant - T.new_constant_offset].types.keys != nullptr)
+			{
 				/* if arg1 is a `name` constant, `left` cannot be `name` */
 				Term* arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(right->constant);
 				if (arg1 != nullptr && arg1->type == TermType::CONSTANT && is_name_event(arg1->constant, T, new_name_events)) {
@@ -17703,17 +17706,15 @@ bool filter_constants_helper(
 				}
 
 				/* if this event is the arg1 of a name event, this event cannot be a name event */
-				if (T.ground_concepts[right->constant - T.new_constant_offset].types.keys != nullptr) {
-					for (const Proof* definition : T.ground_concepts[right->constant - T.new_constant_offset].definitions) {
-						Formula* right = definition->formula->binary.right;
-						if (right->type == TermType::UNARY_APPLICATION
-						 && right->binary.left->type == TermType::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
-						 && right->binary.right->type == TermType::CONSTANT && is_name_event(right->binary.right->constant, T, new_name_events))
-						{
-							unsigned int index = index_of_constant(constants, (unsigned int) built_in_predicates::NAME);
-							if (index < constants.length) constants.remove(index);
-							break;
-						}
+				for (const Proof* definition : T.ground_concepts[right->constant - T.new_constant_offset].definitions) {
+					Formula* right = definition->formula->binary.right;
+					if (right->type == TermType::UNARY_APPLICATION
+					 && right->binary.left->type == TermType::CONSTANT && right->binary.left->constant == (unsigned int) built_in_predicates::ARG1
+					 && right->binary.right->type == TermType::CONSTANT && is_name_event(right->binary.right->constant, T, new_name_events))
+					{
+						unsigned int index = index_of_constant(constants, (unsigned int) built_in_predicates::NAME);
+						if (index < constants.length) constants.remove(index);
+						break;
 					}
 				}
 			}
