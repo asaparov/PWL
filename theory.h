@@ -19622,7 +19622,7 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		else log_joint_probability_of_lambda_by_linear_search_helper<true>(T_copy, proof_prior, proof_axioms_copy, substituted, num_samples, prev_proof, new_proof_sample_delegate);
 		free(*constant); if (constant->reference_count == 0) free(constant);
 		free(*substituted); if (substituted->reference_count == 0) free(substituted);
-		if (constants[i].type == instance_type::ANY && T.ground_concepts[constant_id - T_copy.new_constant_offset].types.keys != nullptr)
+		if (constants[i].type == instance_type::ANY && T_copy.ground_concepts[constant_id - T_copy.new_constant_offset].types.keys != nullptr)
 			T_copy.try_free_concept_id(constant_id);
 
 		free(T_copy); free(proof_axioms_copy);
