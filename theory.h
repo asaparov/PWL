@@ -19363,7 +19363,8 @@ inline bool get_constants(const theory<ProofCalculus, Canonicalizer>& T,
 		const instance& key = sampler.prev_proof.expected_constants[sampler.prev_proof.constant_position];
 		for (index = 0; index < constants.length; index++) {
 			if (key.type == instance_type::CONSTANT && key.constant >= T.new_constant_offset
-			 && T.ground_concepts[key.constant - T.new_constant_offset].types.keys == nullptr
+			 && (T.ground_concepts[key.constant - T.new_constant_offset].types.keys == nullptr
+			  || key.constant - T.new_constant_offset >= T.ground_concept_capacity)
 			 && constants[index].type == instance_type::ANY)
 			{
 				break;
@@ -19491,6 +19492,11 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 	}
 	set_diff.clear();
 
+	if (!InitWithPrevProof) {
+		sampler.clear();
+		get_proof_disjunction_nodes(collector.internal_collector.test_proof, sampler.prev_proof);
+	}
+
 	auto collector = make_provability_collector(T, proof_prior, new_proof, on_new_proof_sample);
 	for (unsigned int t = 0; t < num_samples; t++) {
 		extern thread_local bool debug_flag;
@@ -19499,8 +19505,6 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 		if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 1.0);
 	}
-	sampler.clear();
-	get_proof_disjunction_nodes(collector.internal_collector.test_proof, sampler.prev_proof);
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.internal_collector.test_proof);
