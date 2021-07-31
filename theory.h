@@ -10059,8 +10059,8 @@ private:
 							return false;
 						}
 						if (right->type == TermType::VARIABLE) {
-							if ((!Contradiction && !new_values.unify_value(right->variable - 1, sets.sets[i].size_axioms[0]->formula->binary.right))
-							 || (Contradiction && !new_values.antiunify_value(right->variable - 1, sets.sets[i].size_axioms[0]->formula->binary.right)))
+							if ((!Contradiction && !new_values.unify_value(right->variable - 1, sets.sets[set_id].size_axioms[0]->formula->binary.right))
+							 || (Contradiction && !new_values.antiunify_value(right->variable - 1, sets.sets[set_id].size_axioms[0]->formula->binary.right)))
 							{
 								core::free(new_values);
 								for (auto& element : possible_values) core::free(element);
