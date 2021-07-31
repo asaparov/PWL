@@ -9539,6 +9539,7 @@ inline bool require_cardinality_conjunct(
 					free(*set_size_var); free(set_size_var);
 					return (hol_term*) nullptr;
 				}
+				if (Negative) hol_term::constants<(unsigned int) built_in_predicates::NEGATIVE>::value.reference_count++;
 				hol_term::constants<(unsigned int) built_in_predicates::CARDINALITY>::value.reference_count++;
 				hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value.reference_count++;
 				hol_term::constants<(unsigned int) built_in_predicates::TRACE>::value.reference_count++;
