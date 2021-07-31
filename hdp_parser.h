@@ -800,6 +800,7 @@ struct flagged_logical_form
 		SELECT_SECOND_LEFT_SET_CONJUNCT_ROOT,
 		REMOVE_SECOND_LEFT_SET_CONJUNCT,
 		REQUIRE_SECOND_LEFT_CARDINALITY,
+		REQUIRE_SECOND_LEFT_NEGATIVE_CARDINALITY,
 		REQUIRE_SECOND_LEFT_LAMBDA_EQUALITY,
 		SIZE,
 		RIGHT_ARG1,
@@ -1225,6 +1226,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::SELECT_SECOND_LEFT_SET_CONJUNCT_ROOT, "select_second_left_set_conjunct_root"},
 	{function_type::REMOVE_SECOND_LEFT_SET_CONJUNCT, "remove_second_left_set_conjunct"},
 	{function_type::REQUIRE_SECOND_LEFT_CARDINALITY, "require_second_left_cardinality"},
+	{function_type::REQUIRE_SECOND_LEFT_NEGATIVE_CARDINALITY, "require_second_left_negative_cardinality"},
 	{function_type::REQUIRE_SECOND_LEFT_LAMBDA_EQUALITY, "require_second_left_lambda_equality"},
 	{function_type::SIZE, "size"},
 	{function_type::RIGHT_ARG1, "right_arg1"},
@@ -9459,7 +9461,7 @@ inline bool remove_set_conjunct(
 			}, no_op()) && dst != nullptr;
 }
 
-template<int_fast8_t ConjunctIndex>
+template<int_fast8_t ConjunctIndex, bool Negative>
 inline bool require_cardinality_conjunct(
 		hol_term* src, hol_term*& dst)
 {
@@ -9526,7 +9528,10 @@ inline bool require_cardinality_conjunct(
 					return (hol_term*) nullptr;
 
 				hol_term* expected_conjunct = hol_term::new_exists(set_size_variable, hol_term::new_and(
-							hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::CARDINALITY>::value, set_size_var),
+							hol_term::new_apply(Negative ?
+								hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::NEGATIVE>::value, &hol_term::constants<(unsigned int) built_in_predicates::CARDINALITY>::value) :
+								&hol_term::constants<(unsigned int) built_in_predicates::CARDINALITY>::value,
+							set_size_var),
 							hol_term::new_equals(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::ARG1>::value, set_size_var), hol_term::new_variable(head_variable)),
 							&hol_term::constants<(unsigned int) built_in_predicates::TRACE>::value
 						));
@@ -25214,7 +25219,10 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		return remove_set_conjunct<1>(src.root, dst.root);
 	case function_type::REQUIRE_SECOND_LEFT_CARDINALITY:
 		dst.flags = src.flags;
-		return require_cardinality_conjunct<1>(src.root, dst.root);
+		return require_cardinality_conjunct<1, false>(src.root, dst.root);
+	case function_type::REQUIRE_SECOND_LEFT_NEGATIVE_CARDINALITY:
+		dst.flags = src.flags;
+		return require_cardinality_conjunct<1, true>(src.root, dst.root);
 	case function_type::REQUIRE_SECOND_LEFT_LAMBDA_EQUALITY:
 		dst.flags = src.flags;
 		return require_lambda_equality_conjunct<1>(src.root, dst.root);
@@ -41090,6 +41098,7 @@ bool invert(
 	case function_type::REQUIRE_NO_EMPTY_REF:
 	case function_type::REQUIRE_NO_SUBJUNCTIVE:
 	case function_type::REQUIRE_SECOND_LEFT_CARDINALITY:
+	case function_type::REQUIRE_SECOND_LEFT_NEGATIVE_CARDINALITY:
 	case function_type::REQUIRE_SECOND_LEFT_LAMBDA_EQUALITY:
 	case function_type::REQUIRE_NO_INVERSE:
 	case function_type::REQUIRE_LEFT_PREDICATE_SAME:
