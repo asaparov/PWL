@@ -19494,7 +19494,7 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 
 	if (!InitWithPrevProof) {
 		sampler.clear();
-		get_proof_disjunction_nodes(collector.internal_collector.test_proof, sampler.prev_proof);
+		get_proof_disjunction_nodes(new_proof, sampler.prev_proof);
 	}
 
 	auto collector = make_provability_collector(T, proof_prior, new_proof, on_new_proof_sample);
