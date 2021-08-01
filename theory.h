@@ -19320,6 +19320,7 @@ struct cached_proof_sampler {
 
 	inline void reset() {
 		prev_proof.reset();
+		is_prev_proof = true;
 	}
 
 	inline void clear() {
