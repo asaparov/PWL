@@ -19199,11 +19199,15 @@ struct proof_disjunction_nodes {
 
 	proof_disjunction_nodes() : expected_constants(8), expected_operand_indices(4), constant_position(0), operand_position(0) { }
 
+	inline void reset() {
+		constant_position = 0;
+		operand_position = 0;
+	}
+
 	inline void clear() {
 		expected_constants.clear();
 		expected_operand_indices.clear();
-		constant_position = 0;
-		operand_position = 0;
+		reset();
 	}
 
 	static inline void free(proof_disjunction_nodes& initializer) {
@@ -19313,6 +19317,10 @@ struct cached_proof_sampler {
 	bool is_prev_proof;
 
 	cached_proof_sampler() : is_prev_proof(true) { }
+
+	inline void reset() {
+		prev_proof.reset();
+	}
 
 	inline void clear() {
 		prev_proof.clear();
@@ -19484,6 +19492,7 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 	if (InitWithPrevProof)
 		new_proof = T.add_formula(logical_form, set_diff, new_constant, sampler);
 	else new_proof = T.add_formula(logical_form, set_diff, new_constant);
+	sampler.reset();
 	if (new_proof == nullptr) {
 		return false;
 	} else if (!proof_axioms.template add<false>(new_proof, set_diff.new_set_axioms, proof_prior)) {

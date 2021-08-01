@@ -3645,6 +3645,14 @@
 )}
 	{?[M]:(maximal_subset(M,^[m]:moon(m)) & (size(M)=2) & ![m]:(M(m) => ?[p]:(?[n]:(name(n) & (arg1_of(p)=n) & (arg2(n)="Mars")) & ?[o]:((arg1(o)=m) & orbit(o) & present(o) & (arg2(o)=p)))))};
 
+: # metropolis
+{(N "metropolis"/"metropolis")}
+	{metropolis[index:sg]};
+
+: # tributary
+{(N "tributary"/"tributary")}
+	{tributary[index:sg]};
+
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
 
