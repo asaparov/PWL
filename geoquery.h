@@ -105,6 +105,11 @@ inline bool get_answer(string& out, const array<string>& answers) {
 			 && answers[0][answers[0].length - 5] == ',')
 			{
 				length -= 4;
+			} else if (length == 3 && answers[0][answers[0].length - 2] == '.'
+					&& answers[0][answers[0].length - 3] == '.'
+					&& answers[0][answers[0].length - 4] == '.')
+			{
+				length -= 3;
 			}
 		}
 		return init(out, answers[0].data + start, length);
@@ -224,7 +229,7 @@ __lsan_do_leak_check();
 				for (unsigned int i = 0; i < parse_count && log_probabilities[i] + 1.0 > first_question_probability; i++) {
 					array<string> answers(4);
 					double answer_probability = -std::numeric_limits<double>::infinity();
-					if (!answer_question<true>(answers, logical_forms[i], 20, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
+					if (!answer_question<true>(answers, logical_forms[i], 40, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
 						continue;
 					bool confident = true;
 					for (unsigned int j = 0; j < answers.length; j++) {
