@@ -2439,7 +2439,7 @@ struct set_reasoning
 					unsigned int index = children.index_of(member);
 					core::free(children.values[index]);
 					children.remove_at(index);
-					children.values[children.size++] = contracted_set;
+					children.keys[children.size++] = contracted_set;
 					if (!parents.ensure_capacity(parents.size + 1)) {
 						uncontract_component(contracted_set, connected_component, old_disjoint_cache_items);
 						return false;
