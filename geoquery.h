@@ -461,7 +461,10 @@ __lsan_do_leak_check();
 							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
 							do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 40 ? 1.0 : 0.01));
 
+printf("collector.current_log_probability: %lf\n", collector.current_log_probability);
 							if (collector.current_log_probability > max_log_probability) {
+printf("found new MAP theory:\n");
+job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
 								free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
 								Theory::clone(job.T, T_MAP, formula_map);
 								PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
