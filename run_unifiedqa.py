@@ -13,13 +13,13 @@ def run_model(input_string, **generator_args):
 test_file = open('georeasoning.jsonl')
 line_number = 1
 for line in test_file:
-	if line_number < 191 or line_number > 210:
-		line_number += 1
-		continue
+	#if line_number < 191 or line_number > 210:
+	#	line_number += 1
+	#	continue
 	example = json.loads(line)
 	theory = example["theory"]
 	for question in example["questions"].values():
 		predicted = run_model(question["question"] + " \\\\n " + theory)[0]
-		print(predicted + " (correct answer: " + question["answer"] + ")")
+		print(predicted)
 	line_number += 1
 test_file.close()

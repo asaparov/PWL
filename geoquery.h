@@ -314,7 +314,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id < 61 - 1) {
+if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -574,7 +574,8 @@ inline void print_geoquery_results(
 		array<pair<unsigned int, string>>& unparseable_questions,
 		array<pair<unsigned int, string>>& unparseable_context,
 		std::mutex& results_lock,
-		const char* output_filepath)
+		const char* output_filepath,
+		unsigned int total_question_count)
 {
 	std::unique_lock<std::mutex> lock(results_lock);
 	insertion_sort(results);
@@ -583,29 +584,14 @@ inline void print_geoquery_results(
 		fprintf(stderr, "ERROR: Unable to open `%s` for writing.\n", output_filepath);
 		return;
 	}
-	for (const geoquery_question_result& result : results) {
-		fprintf(out, "[%u]\n", result.context_id + 1);
-		fprintf(out, "Predicted: "); print(result.answer, out); print('\n', out);
-		fprintf(out, "    Label: "); print(result.label, out); print("\n\n", out);
-	}
-	fprintf(out,
-			"Results so far:\n"
-			"  Total questions: %u\n"
-			"  Answered questions: %lu\n",
-			total.load(), results.length);
-	if (unparseable_context.length != 0) {
-		fprintf(out, "Failed to parse following context sentences:\n");
-		insertion_sort(unparseable_context, pair_sorter());
-		for (const auto& entry : unparseable_context) {
-			fprintf(out, "  Context ID %u: \"", entry.key + 1);
-			print(entry.value, out); print("\"\n", out);
-		}
-	} if (unparseable_questions.length != 0) {
-		fprintf(out, "Failed to parse query sentences:\n");
-		insertion_sort(unparseable_questions, pair_sorter());
-		for (const auto& entry : unparseable_questions) {
-			fprintf(out, "  Context ID %u: \"", entry.key + 1);
-			print(entry.value, out); print("\"\n", out);
+	unsigned int i = 0;
+	for (unsigned int j = 0; j < total_question_count; j++) {
+		if (i < results.length && results[i].context_id == j) {
+			print(results[i].answer, out);
+			print('\n', out);
+			i++;
+		} else {
+			print("<failed to answer question>\n", out);
 		}
 	}
 	fclose(out);
@@ -687,7 +673,8 @@ bool run_geoquery_experiments(
 	}
 
 	unsigned int context_id = 0;
-	auto process_geoquery_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, string>>& questions)
+	unsigned int total_question_count = 0;
+	auto process_geoquery_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms,&total_question_count](char* context, array<pair<string, string>>& questions)
 	{
 		if (context_queue_length + 1 > MAX_GEOQUERY_QUESTION_COUNT) {
 			fprintf(stderr, "run_geoquery_experiments ERROR: Requested context queue length exceeds `MAX_GEOQUERY_QUESTION_COUNT`.\n");
@@ -730,6 +717,7 @@ bool run_geoquery_experiments(
 			free(new_context); return false;
 		}
 		context_queue_length++;
+		total_question_count++;
 		work_queue_cv.notify_one();
 		return true;
 	};
@@ -745,7 +733,7 @@ bool run_geoquery_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath);
+			print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 			stopwatch.start();
 		}
 	}
@@ -757,7 +745,7 @@ bool run_geoquery_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath);
+			print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 			stopwatch.start();
 		}
 	}
@@ -767,7 +755,7 @@ bool run_geoquery_experiments(
 			workers[i].join();
 		} catch (...) { }
 	}
-	print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath);
+	print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 	delete[] workers;
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
@@ -813,7 +801,8 @@ bool run_geoquery_experiments_single_threaded(
 	std::atomic_uint num_threads_running(0);
 
 	unsigned int context_id = 0;
-	auto process_geoquery_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms](char* context, array<pair<string, string>>& questions)
+	unsigned int total_question_count = 0;
+	auto process_geoquery_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms,&total_question_count](char* context, array<pair<string, string>>& questions)
 	{
 		if (context_queue_length + 1 > MAX_GEOQUERY_QUESTION_COUNT) {
 			fprintf(stderr, "run_geoquery_experiments_single_threaded ERROR: Requested context queue length exceeds `MAX_GEOQUERY_QUESTION_COUNT`.\n");
@@ -856,6 +845,7 @@ bool run_geoquery_experiments_single_threaded(
 			free(new_context); return false;
 		}
 		context_queue_length++;
+		total_question_count++;
 		work_queue_cv.notify_one();
 		return true;
 	};
@@ -870,7 +860,7 @@ bool run_geoquery_experiments_single_threaded(
 			results_lock, results, unparseable_questions, unparseable_context,
 			total, num_threads_reading_context, num_threads_running);
 
-	print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath);
+	print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
 	for (unsigned int i = question_queue_start; i < question_queue_length; i++)
