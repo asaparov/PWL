@@ -17,6 +17,9 @@
 using namespace core;
 
 
+/* TODO: for debugging; delete this */
+thread_local bool debug_flag3 = false;
+
 template<typename Proof>
 inline void visit_node(const Proof& proof) { }
 
@@ -18693,7 +18696,10 @@ struct log_probability_collector
 	bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
 	{
+if (debug_flag3) { printf("after accepting proposal, current_log_probability = %.17g\n", current_log_probability); }
+if (debug_flag3) { printf("after accepting proposal, proof_prior_diff = %.17g\n", proof_prior_diff); }
 		current_log_probability += proof_prior_diff;
+if (debug_flag3) { printf("after accepting proposal, current_log_probability becomes %.17g\n", current_log_probability); }
 
 #if !defined(NDEBUG)
 		double expected_log_probability = compute_current_log_probability();

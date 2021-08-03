@@ -456,14 +456,18 @@ __lsan_do_leak_check();
 					for (unsigned int j = 0; j < 4; j++) {
 						for (unsigned int t = 0; t < 150; t++) {
 							fprintf(stderr, "j = %u, t = %u\n", j, t);
+if (j == 0 && t == 5)
+debug_flag3 = true;
 							bool print_debug = false;
 							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
 							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
 							do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 40 ? 1.0 : 0.01));
+if (j == 0 && t == 5)
+debug_flag3 = false;
 
-printf("collector.current_log_probability: %lf\n", collector.current_log_probability);
+printf("collector.current_log_probability: %.17g\n", collector.current_log_probability);
 							if (collector.current_log_probability > max_log_probability) {
-printf("found new MAP theory:\n");
+printf("found new MAP theory: (max_log_probability was %.17f)\n", max_log_probability);
 job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
 								free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
 								Theory::clone(job.T, T_MAP, formula_map);
