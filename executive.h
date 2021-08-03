@@ -494,6 +494,7 @@ debug_terminal_printer = &parser.get_printer();
 
 #include "network.h"
 #include <fcntl.h>
+#if !defined(DISABLE_SSL)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/conf.h>
@@ -501,6 +502,7 @@ debug_terminal_printer = &parser.get_printer();
 inline ssize_t read(SSL* ssl, void* buf, size_t nbytes) {
 	return SSL_read(ssl, buf, nbytes);
 }
+#endif /* DISABLE_SSL */
 
 template<unsigned int BufferSize, typename Stream>
 struct buffered_stream {
@@ -778,6 +780,7 @@ bool parse_http_response(Stream& in, array<char>& payload,
 	return true;
 }
 
+#if !defined(DISABLE_SSL)
 struct ssl_context_provider {
 	SSL_CTX* ctx;
 	SSL_CONF_CTX* conf;
@@ -831,6 +834,7 @@ void print_openssl_error(SSL* ssl, int ret, bool& can_shutdown)
 	default: fprintf(stderr, "Unknown error.\n"); break;
 	}
 }
+#endif /* DISABLE_SSL */
 
 template<bool UseSSL, typename FilterResponseHeader>
 bool get_http_page(
@@ -838,6 +842,10 @@ bool get_http_page(
 		unsigned long long timeout_ms, array<char>& response,
 		FilterResponseHeader filter_response_header)
 {
+#if defined(DISABLE_SSL)
+	static_assert(!UseSSL, "SSL support is disabled");
+#endif
+
 	static constexpr int MAX_REQUEST_LEN = 1024;
 	static char REQUEST_TEMPLATE[] =
 			"GET %s HTTP/1.1\r\n"
@@ -861,7 +869,11 @@ bool get_http_page(
 	snprintf(request, request_length + 1, REQUEST_TEMPLATE, query, hostname);
 
 	bool success = true;
-	auto process_connection = [&response,&success,hostname,request,request_length,filter_response_header,timeout_ms](socket_type& connection)
+#if defined(DISABLE_SSL)
+	auto process_connection = [&response,&success,request,request_length,filter_response_header,timeout_ms](socket_type& connection)
+#else
+	auto process_connection = [&response,&success,request,request_length,filter_response_header,timeout_ms,hostname](socket_type& connection)
+#endif
 	{
 		/* make the underlying socket non-blocking */
 		int flags;
@@ -880,6 +892,7 @@ bool get_http_page(
 			success = false; return false;
 		}
 
+#if !defined(DISABLE_SSL)
 		SSL* ssl;
 		if (UseSSL) {
 			ssl = SSL_new(GLOBAL_SSL_PROVIDER.ctx);
@@ -923,28 +936,39 @@ bool get_http_page(
 				}
 			}
 		}
+#endif /* DISABLE_SSL */
 
 		/* send HTTP request */
 		unsigned int total_written = 0;
 		while (total_written < (unsigned int) request_length) {
 			int written;
-			if (UseSSL)
+#if !defined(DISABLE_SSL)
+			if (UseSSL) {
 				written = SSL_write(ssl, request + total_written, request_length - total_written);
-			else written = write(connection.handle, request + total_written, request_length - total_written);
+			} else
+#endif
+			{
+				written = write(connection.handle, request + total_written, request_length - total_written);
+			}
 			if (written == -1) {
 				fprintf(stderr, "get_http_page ERROR: Failed to send HTTP request.\n");
+#if !defined(DISABLE_SSL)
 				if (UseSSL) { SSL_shutdown(ssl); SSL_free(ssl); }
+#endif
 				shutdown(connection.handle, 2); success = false; return false;
 			}
 			total_written += written;
 		}
 
 		/* read the response */
+#if !defined(DISABLE_SSL)
 		if (UseSSL) {
 			buffered_stream<BUFSIZ, SSL*> in(ssl, timeout_ms);
 			success = parse_http_response(in, response, filter_response_header);
 			SSL_shutdown(ssl); SSL_free(ssl);
-		} else {
+		} else
+#endif
+		{
 			buffered_stream<BUFSIZ, decltype(connection.handle)> in(connection.handle, timeout_ms);
 			success = parse_http_response(in, response, filter_response_header);
 		}
@@ -987,7 +1011,12 @@ bool search_google(
 		return false;
 
 	array<char> response(4096);
-	if (!get_http_page<true>("www.google.com", query_stream.buffer, "443", timeout_ms, response, [](unsigned int status, const array_map<string, string>& headers) { return true; })) {
+#if defined(DISABLE_SSL)
+	if (!get_http_page<false>("www.google.com", query_stream.buffer, "80", timeout_ms, response, [](unsigned int status, const array_map<string, string>& headers) { return true; }))
+#else
+	if (!get_http_page<true>("www.google.com", query_stream.buffer, "443", timeout_ms, response, [](unsigned int status, const array_map<string, string>& headers) { return true; }))
+#endif
+	{
 		print("search_google ERROR: Unable to retrieve webpage at '", stderr);
 		print(query_stream.buffer, stderr); print("'.\n", stderr);
 		return false;
@@ -1205,7 +1234,12 @@ bool get_website(const string& address, array<char>& response, unsigned long lon
 		free(scheme); free(userinfo); free(hostname);
 		free(port); free(path); return true;
 	}
+
+#if defined(DISABLE_SSL)
+	bool use_ssl = false;
+#else
 	bool use_ssl = (scheme == "https");
+#endif
 
 	if (port.length == 0) {
 		free(port);
@@ -1242,8 +1276,12 @@ bool get_website(const string& address, array<char>& response, unsigned long lon
 			|| compare_strings(TEXT_PLAIN, content_type.data, end);
 	};
 
+#if defined(DISABLE_SSL)
+	if (!get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
+#else
 	if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
 	 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header)))
+#endif
 	{
 		print("find_answer_in_website ERROR: Unable to retrieve webpage at '", stderr);
 		print(address, stderr); print("'.\n", stderr);
@@ -1265,8 +1303,12 @@ bool get_website(const string& address, array<char>& response, unsigned long lon
 
 			path += " "; path[--path.length] = '\0';
 
+#if defined(DISABLE_SSL)
+			if (!get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
+#else
 			if ((use_ssl && !get_http_page<true>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header))
 			 || (!use_ssl && !get_http_page<false>(hostname.data, path.data, port.data, timeout_ms, response, filter_response_header)))
+#endif
 			{
 				print("find_answer_in_website ERROR: Unable to retrieve webpage at '", stderr);
 				print(address, stderr); print("'.\n", stderr);

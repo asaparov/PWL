@@ -541,7 +541,7 @@ for (unsigned int counter = 0; ; counter++) {
 fclose(in);
 
 /* run GeoQuery experiments */
-run_geoquery_experiments(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "georeasoning.jsonl", "georeasoning_results.txt", 16);
+run_geoquery_experiments_single_threaded(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "georeasoning.jsonl", "georeasoning_results.txt");
 free(T_copy); free(proof_axioms_copy);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code

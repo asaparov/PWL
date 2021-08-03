@@ -314,7 +314,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
+if (job.context_id != 192 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -406,7 +406,9 @@ continue;
 				FILE* theory_stream = (FILE*) fopen(filename, "rb");
 				read_random_state(theory_stream);
 				read(job.T, theory_stream, job.proof_axioms);
-				fclose(theory_stream);*/
+				fclose(theory_stream);
+debug_terminal_printer = &parser.terminal_printer;
+job.T.template print_axioms<true>(stdout, *debug_terminal_printer);*/
 				unsigned int sentence_counter = 0;
 				for (unsigned int i = 0; i < context_sentences.length; i++) {
 //if (sentence_counter < 6) { sentence_counter++; continue; }
@@ -466,6 +468,12 @@ __lsan_do_leak_check();
 								max_log_probability = collector.current_log_probability;
 							}
 						}
+job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
+printf("Press enter to continue: "); fflush(stdout);
+while (true) {
+int next = fgetc(stdin);
+if (next == '\n') break;
+}
 
 						if (j + 1 < 4) {
 							for (unsigned int t = 0; t < 20; t++)
@@ -591,7 +599,7 @@ inline void print_geoquery_results(
 			print('\n', out);
 			i++;
 		} else {
-			print("<failed to answer question>\n", out);
+			print("<no answer>\n", out);
 		}
 	}
 	fclose(out);

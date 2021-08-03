@@ -14168,7 +14168,7 @@ inline bool intersect_any_with_any(array<LogicalFormSet>& dst,
 	}
 
 	unsigned int excluded_tree_count = 0;
-	hol_term** excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * (first->any.excluded_tree_count + second->any.excluded_tree_count + additional_excluded_count));
+	hol_term** excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * max(1, first->any.excluded_tree_count + second->any.excluded_tree_count + additional_excluded_count));
 	for (unsigned int i = 0; i < first->any.excluded_tree_count; i++) {
 		bool irreducible = true;
 		for (unsigned int j = 0; j < second->any.excluded_tree_count; j++) {
