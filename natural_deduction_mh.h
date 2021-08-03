@@ -2117,8 +2117,9 @@ if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_pr
 	log_proposal_probability_ratio -= sampler.set_size_log_probability;
 if (debug_flag3) printf("sampler.set_size_log_probability = %.17g\n", sampler.set_size_log_probability);
 if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
-	log_proposal_probability_ratio += proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
-if (debug_flag3) printf("proof_sample_log_probability returns %.17g\n", proof_sample_log_probability(inverse_sampler, T, sampler.new_proof));
+double temp_proof_sample_log_probability = proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
+	log_proposal_probability_ratio += temp_proof_sample_log_probability; // proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
+if (debug_flag3) printf("proof_sample_log_probability returns %.17g\n", temp_proof_sample_log_probability);
 if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
 	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
 if (debug_flag3) printf("inverse_sampler.set_size_log_probability = %.17g\n", inverse_sampler.set_size_log_probability);
