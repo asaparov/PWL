@@ -2112,18 +2112,9 @@ T.print_axioms(stderr);
 }
 
 	log_proposal_probability_ratio -= sampler.log_probability;
-if (debug_flag3) printf("sampler.log_probability = %.17g\n", sampler.log_probability);
-if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
 	log_proposal_probability_ratio -= sampler.set_size_log_probability;
-if (debug_flag3) printf("sampler.set_size_log_probability = %.17g\n", sampler.set_size_log_probability);
-if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
-double temp_proof_sample_log_probability = proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
-	log_proposal_probability_ratio += temp_proof_sample_log_probability; // proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
-if (debug_flag3) printf("proof_sample_log_probability returns %.17g\n", temp_proof_sample_log_probability);
-if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
+	log_proposal_probability_ratio += proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
 	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
-if (debug_flag3) printf("inverse_sampler.set_size_log_probability = %.17g\n", inverse_sampler.set_size_log_probability);
-if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
 
 	typename Theory::changes& new_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
 	if (!Theory::init(new_proof_changes)) {
@@ -2179,8 +2170,6 @@ if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_pr
 			set_diff.old_set_axioms, set_diff.new_set_axioms,
 			proof_prior, proof_axioms, old_axioms, new_axioms, sample_collector);
 	log_proposal_probability_ratio += proof_prior_diff;
-if (debug_flag3) printf("proof_prior_diff = %.17g\n", proof_prior_diff);
-if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
 
 	if (!transform_proofs<ProofCalculus>(proposed_proofs)) {
 		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
@@ -2214,7 +2203,6 @@ if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_pr
 	get_splittable_events(T, splittable_events);
 
 	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_proof_step);
-if (debug_flag3) printf("after adding proposal probability, log_proposal_probability_ratio becomes %.17g\n", log_proposal_probability_ratio);
 
 	return do_mh_disjunction_intro(T, selected_proof_step, new_proof, proposed_proofs, observation_changes,
 			old_proof_changes, new_proof_changes, proof_axioms, old_axioms, new_axioms, log_proposal_probability_ratio,
@@ -3790,18 +3778,14 @@ inline unsigned int sample(
 			+ eliminable_extensional_edges.length + unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length;
-if (debug_flag3) { printf("sample: offset = %u\n", offset); }
 
 	array<const nd_step<Formula>*> proof_steps(4);
 	get_proof_steps<nd_step_type::EXISTENTIAL_INTRODUCTION>(proposal_distribution.query_proof, proof_steps);
-if (debug_flag3) { printf("sample: proof_steps.length = %lu\n", proof_steps.length); }
 	proposal_distribution.query_step_count = proof_steps.length;
 
 	if (proof_steps.length != 0 && sample_uniform<double>() < proposal_distribution.sample_query_probability) {
 		log_cache<double>::instance().ensure_size(proof_steps.length + 1);
 		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proof_steps.length);
-if (debug_flag3) { printf("sample: proposal_distribution.log_sample_query_probability = %.17g\n", proposal_distribution.log_sample_query_probability); }
-if (debug_flag3) { printf("sample: log_proposal_probability_ratio = %.17g\n", log_proposal_probability_ratio); }
 		proposal_distribution.selected_query = true;
 		const nd_step<Formula>* selected_step = sample_uniform(proof_steps);
 
@@ -3905,14 +3889,7 @@ bool do_mh_step(
 	double log_proposal_probability_ratio = 0.0;
 
 	/* select an axiom from `T` uniformly at random */
-if (debug_flag3) {
-printf("unfixed_sets.length: %lu\n", unfixed_sets.length);
-printf("eliminable_extensional_edges.length: %lu\n", eliminable_extensional_edges.length);
-printf("mergeable_events.length: %lu\n", mergeable_events.length);
-printf("splittable_events.length: %lu\n", splittable_events.length);
-}
 	unsigned int random = sample(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, log_proposal_probability_ratio);
-if (debug_flag3) printf("sample returns random = %u\n", random);
 	if (random < T.ground_axiom_count) {
 		/* we've selected a grounded axiom */
 		for (unsigned int i = 0; i < T.ground_concept_capacity; i++) {
@@ -3976,7 +3953,6 @@ if (debug_flag3) printf("sample returns random = %u\n", random);
 	}
 	random -= T.implication_intro_nodes.length;
 	if (random < T.existential_intro_nodes.length) {
-if (debug_flag3) { printf("T.existential_intro_nodes[%u] selected for resampling\n", random); }
 		return propose_disjunction_intro(T, T.existential_intro_nodes[random], log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 	}
 	random -= T.existential_intro_nodes.length;

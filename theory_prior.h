@@ -4,9 +4,6 @@
 #include <core/random.h>
 #include <math/log.h>
 
-/* TODO: for debugging; delete this */
-thread_local bool debug_flag3 = false;
-
 struct poisson_distribution {
 	typedef unsigned int ObservationType;
 
@@ -572,7 +569,6 @@ double log_probability_ratio(
 			j++;
 		}
 	}
-if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: value = %.17g\n", value);
 
 	while (i < size(old_observations)) {
 		value += log_probability_ratio_old_cluster(tables,
@@ -583,7 +579,6 @@ if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: va
 				get_key(new_observations, j), get_value(new_observations, j), prior, new_clusters, new_cluster_count);
 		j++;
 	}
-if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: value = %.17g\n", value);
 
 	if (prior.alpha + tables.sum <= 1.0e11) {
 		value += lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
@@ -601,7 +596,6 @@ if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: va
 			else value += ((double) new_cluster_count - old_cluster_count) * log(prior.alpha/prior.d + (tables.counts.table.size - old_cluster_count + new_cluster_count));
 		}
 	}
-if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: value = %.17g\n", value);
 	return value;
 }
 
@@ -808,7 +802,6 @@ double log_probability_ratio(
 
 	Clusters old_clusters, new_clusters;
 	double value = log_probability_ratio(restaurant_tables, old_observations, new_observations, prior.restaurant, old_clusters, new_clusters);
-if (debug_flag3) printf("log_probability_ratio of dirichlet_process: value = %.17g\n", value);
 	for (const T& extra_observation : old_extra_observations) {
 		bool contains = false;
 		for (const T& existing_observation : old_clusters) {
@@ -831,7 +824,6 @@ if (debug_flag3) printf("log_probability_ratio of dirichlet_process: value = %.1
 			new_clusters.add(extra_observation);
 	}
 bool debug_flag = false;
-if (debug_flag3) debug_flag = true;
 if (debug_flag) {
 	print("new_clusters:\n", stderr);
 	for (hol_term* formula : new_clusters) {
@@ -1281,7 +1273,6 @@ inline double log_probability_ratio(const ObservationCollection& existing_consta
 {
 	double value = log_probability_ratio(existing_constants.constants, old_constants.constants, new_constants.constants, prior.constant_distribution)
 				 + log_probability_ratio(existing_constants.predicates, old_constants.predicates, new_constants.predicates, prior.predicate_distribution);
-if (debug_flag3) printf("log_probability_ratio of simple_constant_distribution: value = %.17g\n", value);
 
 	static typename TypeDistribution::PriorState type_prior_state;
 	static hash_multiset<hol_term> empty_type_prior_state(1);
@@ -1333,11 +1324,9 @@ if (debug_flag3) printf("log_probability_ratio of simple_constant_distribution: 
 		}
 		j++;
 	}
-if (debug_flag3) printf("log_probability_ratio of simple_constant_distribution: value = %.17g\n", value);
 
 	default_array<hol_term> old_prior_changes, new_prior_changes;
 	value += log_probability_ratio(existing_constants.root_types, old_clusters, new_clusters, prior.type_distribution.base_distribution, type_prior_state.base_prior_state, old_prior_changes, new_prior_changes);
-if (debug_flag3) printf("log_probability_ratio of simple_constant_distribution: value = %.17g\n", value);
 	free_all(old_prior_changes);
 	free_all(new_prior_changes);
 	return value;
@@ -2320,7 +2309,6 @@ double log_probability_ratio(
 	for (hol_term* formula : old_clusters)
 		value -= log_probability_helper(formula, prior, old_prior_changes);
 
-if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: value = %.17g\n", value);
 	/* get the name events */
 	array_map<unsigned int, array<const hol_term*>> old_name_map(max(1, old_prior_changes.arg2_string_map.size));
 	for (const auto& entry : old_prior_changes.arg2_string_map) {
@@ -2479,7 +2467,6 @@ if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: 
 	for (auto entry : new_name_map) free(entry.value);
 	for (auto entry : name_map) free(entry.value);
 	value += name_prior;
-if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: value = %.17g\n", value);
 
 	double definition_prior = 0.0;
 	for (const auto& entry : new_prior_changes.definitions) {
@@ -2500,7 +2487,6 @@ if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: 
 						  - log_probability(old_count, prior.definition_count_distribution);
 	}
 	value += definition_prior;
-if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: value = %.17g\n", value);
 
 	return value + log_probability_ratio(prior_state.constant_prior_state, old_prior_changes.constants, new_prior_changes.constants, prior.constant_distribution);
 }

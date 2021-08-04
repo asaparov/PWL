@@ -3344,13 +3344,9 @@ double log_probability_ratio(
 					prior.log_negated_antecedent_probability, prior.log_consequent_probability, entry.value);
 
 			value += log_probability_ratio(old_conjunction_introductions, new_conjunction_introductions, prior.conjunction_introduction_prior);
-if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: value = %.17g\n", value);
 			value += log_probability_ratio(old_conjunction_eliminations, new_conjunction_eliminations, prior.conjunction_elimination_prior);
-if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: value = %.17g\n", value);
 			value += log_probability_ratio(old_universal_introductions, new_universal_introductions, prior.universal_introduction_prior);
-if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: value = %.17g\n", value);
 			value += log_probability_ratio(old_term_indices, new_term_indices, prior.term_indices_prior);
-if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: value = %.17g\n", value);
 		} else {
 			if (!count_axioms(*entry.key, old_axioms.proof_axioms)
 			 || !count_axioms(*entry.key, new_axioms.proof_axioms, entry.value))
@@ -3359,22 +3355,11 @@ if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: val
 	}
 
 	value += log_probability_ratio(prior_state.universal_eliminations, old_axioms.universal_eliminations, new_axioms.universal_eliminations, prior.universal_elimination_prior);
-if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: value = %.17g\n", value);
 
 	if (old_axioms.proof_axioms.counts.size > 1)
 		sort(old_axioms.proof_axioms.counts.keys, old_axioms.proof_axioms.counts.values, old_axioms.proof_axioms.counts.size);
 	if (new_axioms.proof_axioms.counts.size > 1)
 		sort(new_axioms.proof_axioms.counts.keys, new_axioms.proof_axioms.counts.values, new_axioms.proof_axioms.counts.size);
-if (debug_flag3) {
-printf("old_axioms.proof_axioms:\n");
-for (unsigned int i = 0; i < old_axioms.proof_axioms.counts.size; i++) {
-	printf("  [0x%lx] ", (size_t) old_axioms.proof_axioms.counts.keys[i]); print(*old_axioms.proof_axioms.counts.keys[i], stdout); printf(" : %u\n", old_axioms.proof_axioms.counts.values[i]);
-}
-printf("new_axioms.proof_axioms:\n");
-for (unsigned int i = 0; i < new_axioms.proof_axioms.counts.size; i++) {
-	printf("  [0x%lx] ", (size_t) new_axioms.proof_axioms.counts.keys[i]); print(*new_axioms.proof_axioms.counts.keys[i], stdout); printf(" : %u\n", new_axioms.proof_axioms.counts.values[i]);
-}
-}
 	return value + log_probability_ratio(prior_state.proof_axioms,
 			old_axioms.proof_axioms, new_axioms.proof_axioms,
 			old_extra_axioms, new_extra_axioms,
