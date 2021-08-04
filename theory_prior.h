@@ -587,12 +587,21 @@ if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: va
 
 	if (prior.alpha + tables.sum <= 1.0e11) {
 		value += lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: value = %.17g (case: prior.alpha + tables.sum <= 1.0e11)\n", value);
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)) = %.17g\n", prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations))) = %.17g\n", lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations))));
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: prior.alpha + tables.sum = %.17g\n", prior.alpha + tables.sum);
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: lgamma(prior.alpha + tables.sum) = %.17g\n", lgamma(prior.alpha + tables.sum));
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations))) = %.17g\n", lgamma(prior.alpha + tables.sum) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations))));
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: (value + lgamma(prior.alpha + tables.sum)) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations))) = %.17g\n", (value + lgamma(prior.alpha + tables.sum)) - lgamma(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations))));
 	} else {
 		if (sum(new_observations) < sum(old_observations))
 			value += -((double) sum(new_observations) - sum(old_observations)) * log(prior.alpha + tables.sum);
 		else value += -((double) sum(new_observations) - sum(old_observations)) * log(prior.alpha + (tables.sum - sum(old_observations) + sum(new_observations)));
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: value = %.17g (case: prior.alpha + tables.sum > 1.0e11)\n", value);
 	}
 	if (prior.d != 0.0) {
+if (debug_flag3) printf("log_probability_ratio of chinese_restaurant_process: (case: prior.d != 0.0)\n");
 		if (prior.alpha/prior.d + tables.counts.table.size <= 1.0e11) {
 			value += -lgamma(prior.alpha/prior.d + tables.counts.table.size) + lgamma(prior.alpha/prior.d + (tables.counts.table.size - old_cluster_count + new_cluster_count));
 		} else {
