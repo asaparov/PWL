@@ -17,9 +17,6 @@
 using namespace core;
 
 
-/* TODO: for debugging; delete this */
-thread_local bool debug_flag3 = false;
-
 template<typename Proof>
 inline void visit_node(const Proof& proof) { }
 
