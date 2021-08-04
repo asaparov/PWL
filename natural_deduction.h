@@ -3368,11 +3368,11 @@ if (debug_flag3) printf("log_probability_ratio of canonicalized_proof_prior: val
 if (debug_flag3) {
 printf("old_axioms.proof_axioms:\n");
 for (unsigned int i = 0; i < old_axioms.proof_axioms.counts.size; i++) {
-	printf("  "); print(*old_axioms.proof_axioms.counts.keys[i], stdout); printf(" : %u\n", old_axioms.proof_axioms.counts.values[i]);
+	printf("  [0x%lx] ", (size_t) old_axioms.proof_axioms.counts.keys[i]); print(*old_axioms.proof_axioms.counts.keys[i], stdout); printf(" : %u\n", old_axioms.proof_axioms.counts.values[i]);
 }
 printf("new_axioms.proof_axioms:\n");
-for (unsigned int i = 0; i < old_axioms.proof_axioms.counts.size; i++) {
-	printf("  "); print(*old_axioms.proof_axioms.counts.keys[i], stdout); printf(" : %u\n", old_axioms.proof_axioms.counts.values[i]);
+for (unsigned int i = 0; i < new_axioms.proof_axioms.counts.size; i++) {
+	printf("  [0x%lx] ", (size_t) new_axioms.proof_axioms.counts.keys[i]); print(*new_axioms.proof_axioms.counts.keys[i], stdout); printf(" : %u\n", new_axioms.proof_axioms.counts.values[i]);
 }
 }
 	return value + log_probability_ratio(prior_state.proof_axioms,
