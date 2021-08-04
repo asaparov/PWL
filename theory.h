@@ -3302,29 +3302,23 @@ inline void on_old_size_axiom(
 
 template<typename Formula>
 struct set_changes {
-	array<Formula*> old_set_axioms;
-	array<Formula*> new_set_axioms;
+	array<Formula> old_set_axioms;
+	array<Formula> new_set_axioms;
 
 	set_changes() : old_set_axioms(4), new_set_axioms(4) { }
 	~set_changes() { free_helper(); }
 
-	inline bool new_set(Formula* axiom) {
-		if (!new_set_axioms.add(axiom))
-			return false;
-		axiom->reference_count++;
-		return true;
+	inline bool new_set(const Formula& axiom) {
+		return new_set_axioms.add(axiom);
 	}
 
-	inline bool old_set(Formula* axiom) {
-		if (!old_set_axioms.add(axiom))
-			return false;
-		axiom->reference_count++;
-		return true;
+	inline bool old_set(const Formula& axiom) {
+		return old_set_axioms.add(axiom);
 	}
 
 	inline void clear() {
-		free_all(old_set_axioms);
-		free_all(new_set_axioms);
+		for (Formula& formula : old_set_axioms) core::free(formula);
+		for (Formula& formula : new_set_axioms) core::free(formula);
 		old_set_axioms.clear();
 		new_set_axioms.clear();
 	}
@@ -3337,8 +3331,8 @@ struct set_changes {
 
 private:
 	inline void free_helper() {
-		free_all(old_set_axioms);
-		free_all(new_set_axioms);
+		for (Formula& formula : old_set_axioms) core::free(formula);
+		for (Formula& formula : new_set_axioms) core::free(formula);
 	}
 };
 
@@ -3384,7 +3378,7 @@ inline bool on_new_size_axiom(
 		Args&&... visitor)
 {
 	return on_new_size_axiom(new_size_axiom, std::forward<Args>(visitor)...)
-		&& set_diff.new_set(new_size_axiom->formula);
+		&& set_diff.new_set(*new_size_axiom->formula);
 }
 
 template<typename Proof, typename... Args>
@@ -3394,7 +3388,7 @@ inline void on_old_size_axiom(
 		Args&&... visitor)
 {
 	on_old_size_axiom(old_size_axiom, std::forward<Args>(visitor)...);
-	set_diff.old_set(old_size_axiom->formula);
+	set_diff.old_set(*old_size_axiom->formula);
 }
 
 template<typename Formula, typename... Args>
@@ -4093,14 +4087,14 @@ struct theory
 		return false;
 	}
 
-	inline bool get_extra_axioms(array<Formula*>& extra_axioms) const
+	inline bool get_extra_axioms(array<Formula>& extra_axioms) const
 	{
 		for (unsigned int i = 2; i < sets.set_count + 1; i++) {
 			if (built_in_sets.contains(i) || sets.sets[i].size_axioms.data == nullptr)
 				continue;
 			for (Proof* size_axiom : sets.sets[i].size_axioms) {
-				if (!extra_axioms.contains(size_axiom->formula)
-				 && !extra_axioms.add(size_axiom->formula))
+				if (!extra_axioms.contains(*size_axiom->formula)
+				 && !extra_axioms.add(*size_axiom->formula))
 					return false;
 			}
 		}
@@ -18495,7 +18489,7 @@ struct theory_sample {
 
 	Proof** proofs;
 	unsigned int proof_count;
-	Formula** extra_axioms;
+	Formula* extra_axioms;
 	unsigned int extra_axiom_count;
 	double log_probability;
 #if !defined(NDEBUG)
@@ -18508,7 +18502,7 @@ struct theory_sample {
 		for (unsigned int i = 0; i < key.proof_count; i++)
 			hash_value ^= Proof::hash(*key.proofs[i]);
 		for (unsigned int i = 0; i < key.extra_axiom_count; i++)
-			hash_value ^= Formula::hash(*key.extra_axioms[i]);
+			hash_value ^= Formula::hash(key.extra_axioms[i]);
 		return hash_value;
 	}
 
@@ -18532,14 +18526,14 @@ struct theory_sample {
 private:
 	inline void free() {
 		for (unsigned int i = 0; i < proof_count; i++) { core::free(*proofs[i]); if (proofs[i]->reference_count == 0) core::free(proofs[i]); }
-		for (unsigned int i = 0; i < extra_axiom_count; i++) { core::free(*extra_axioms[i]); if (extra_axioms[i]->reference_count == 0) core::free(extra_axioms[i]); }
+		for (unsigned int i = 0; i < extra_axiom_count; i++) { core::free(extra_axioms[i]); }
 		core::free(proofs); core::free(extra_axioms);
 	}
 };
 
 template<typename Proof>
 bool init(theory_sample<Proof>& sample, const hash_set<Proof*>& proofs,
-		const array<typename Proof::FormulaType*>& extra_axioms, double log_probability)
+		const array<typename Proof::FormulaType>& extra_axioms, double log_probability)
 {
 	typedef typename Proof::FormulaType Formula;
 
@@ -18549,7 +18543,7 @@ bool init(theory_sample<Proof>& sample, const hash_set<Proof*>& proofs,
 		fprintf(stderr, "init ERROR: Insufficient memory for `theory_sample.proofs`.\n");
 		return false;
 	}
-	sample.extra_axioms = (Formula**) malloc(max((size_t) 1, sizeof(Proof*) * extra_axioms.length));
+	sample.extra_axioms = (Formula*) malloc(max((size_t) 1, sizeof(Formula) * extra_axioms.length));
 	if (sample.extra_axioms == nullptr) {
 		fprintf(stderr, "init ERROR: Insufficient memory for `theory_sample.extra_axioms`.\n");
 		free(sample.proofs); return false;
@@ -18568,12 +18562,10 @@ bool init(theory_sample<Proof>& sample, const hash_set<Proof*>& proofs,
 	}
 
 	sample.extra_axiom_count = 0;
-	for (Formula* extra_axiom : extra_axioms) {
+	for (const Formula& extra_axiom : extra_axioms) {
 		if (!clone(extra_axiom, sample.extra_axioms[sample.extra_axiom_count], formula_map)) {
 			for (unsigned int j = 0; j < sample.proof_count; j++) { free(*sample.proofs[j]); free(sample.proofs[j]); }
-			for (unsigned int j = 0; j < sample.extra_axiom_count; j++) {
-				free(*sample.extra_axioms[j]); if (sample.extra_axioms[j]->reference_count == 0) free(sample.extra_axioms[j]);
-			}
+			for (unsigned int j = 0; j < sample.extra_axiom_count; j++) free(sample.extra_axioms[j]);
 			free(sample.proofs); free(sample.extra_axioms);
 			return false;
 		}
@@ -18584,7 +18576,7 @@ bool init(theory_sample<Proof>& sample, const hash_set<Proof*>& proofs,
 	if (sample.proof_count > 1)
 		sort(sample.proofs, sample.proof_count, pointer_sorter());
 	if (sample.extra_axiom_count > 1)
-		sort(sample.extra_axioms, sample.extra_axiom_count, pointer_sorter());
+		sort(sample.extra_axioms, sample.extra_axiom_count, default_sorter());
 	return true;
 }
 
@@ -18599,7 +18591,7 @@ inline bool operator == (const theory_sample<Proof>& first, const theory_sample<
 		if (*first.proofs[i] != *second.proofs[i])
 			return false;
 	} for (unsigned int i = 0; i < first.extra_axiom_count; i++) {
-		if (*first.extra_axioms[i] != *second.extra_axioms[i])
+		if (first.extra_axioms[i] != second.extra_axioms[i])
 			return false;
 	}
 	return true;
@@ -18616,7 +18608,7 @@ inline bool operator != (const theory_sample<Proof>& first, const theory_sample<
 		if (*first.proofs[i] != *second.proofs[i])
 			return true;
 	} for (unsigned int i = 0; i < first.extra_axiom_count; i++) {
-		if (*first.extra_axioms[i] != *second.extra_axioms[i])
+		if (first.extra_axioms[i] != second.extra_axioms[i])
 			return true;
 	}
 	return false;
@@ -18635,7 +18627,7 @@ struct null_collector {
 
 	template<typename Proof>
 	constexpr inline bool accept(const hash_set<Proof*>& sample,
-			const array<typename Proof::FormulaType*>& extra_axioms,
+			const array<typename Proof::FormulaType>& extra_axioms,
 			double proof_prior_diff) const
 	{
 		return true;
@@ -18643,7 +18635,7 @@ struct null_collector {
 
 	template<typename Proof>
 	constexpr inline bool accept_with_observation_changes(const hash_set<Proof*>& sample,
-			const array<typename Proof::FormulaType*>& extra_axioms, double proof_prior_diff,
+			const array<typename Proof::FormulaType>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes) const
 	{
 		return true;
@@ -18671,9 +18663,10 @@ struct log_probability_collector
 		/* initialize `current_log_probability` */
 		auto compute_log_probability = [&]() {
 			null_collector collector;
-			array<Formula*> extra_axioms(16);
+			array<Formula> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
+			for (Formula& formula : extra_axioms) free(formula);
 //fprintf(stderr, "log probability of theory: %lf\n", value);
 //extern thread_local const string_map_scribe* debug_terminal_printer;
 //T.print_axioms(stderr, *debug_terminal_printer);
@@ -18691,7 +18684,7 @@ struct log_probability_collector
 	}
 
 	bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
-			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
+			const array<typename ProofCalculus::Language>& extra_axioms, double proof_prior_diff)
 	{
 if (debug_flag3) { printf("after accepting proposal, current_log_probability = %.17g\n", current_log_probability); }
 if (debug_flag3) { printf("after accepting proposal, proof_prior_diff = %.17g\n", proof_prior_diff); }
@@ -18710,7 +18703,7 @@ if (debug_flag3) { printf("after accepting proposal, current_log_probability bec
 	}
 
 	inline bool accept_with_observation_changes(const hash_set<typename ProofCalculus::Proof*>& sample,
-			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff,
+			const array<typename ProofCalculus::Language>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes)
 	{
 		if (test_proof != nullptr) {
@@ -18765,13 +18758,14 @@ struct model_evidence_collector
 		T(T_src), samples(1024), observation_count(T.observations.size), test_proof(test_proof), on_new_proof_sample(on_new_proof_sample)
 	{
 		/* initialize `current_log_probability` */
-		array<Formula*> extra_axioms(16);
+		array<Formula> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
 #if !defined(NDEBUG)
 		compute_current_log_probability = [&]() {
-			array<Formula*> extra_axioms(16);
+			array<Formula> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
+			for (Formula& formula : extra_axioms) core::free(formula);
 /*fprintf(stderr, "log probability of theory: %lf\n", value);
 extern thread_local const string_map_scribe* debug_terminal_printer;
 T.print_axioms(stderr, *debug_terminal_printer);
@@ -18782,6 +18776,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 #else
 		current_log_probability = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
 #endif
+		for (Formula& formula : extra_axioms) core::free(formula);
 
 		/* add the first sample */
 		theory_sample<Proof>& new_sample = *((theory_sample<Proof>*) alloca(sizeof(theory_sample<Proof>)));
@@ -18804,7 +18799,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 	}
 
 	bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
-			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
+			const array<typename ProofCalculus::Language>& extra_axioms, double proof_prior_diff)
 	{
 		typedef typename ProofCalculus::Proof Proof;
 
@@ -18847,7 +18842,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 	}
 
 	inline bool accept_with_observation_changes(const hash_set<typename ProofCalculus::Proof*>& sample,
-			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff,
+			const array<typename ProofCalculus::Language>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes)
 	{
 		if (test_proof != nullptr) {
@@ -18892,13 +18887,13 @@ struct provability_collector
 	}
 
 	inline bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
-			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
+			const array<typename ProofCalculus::Language>& extra_axioms, double proof_prior_diff)
 	{
 		return internal_collector.accept(sample, extra_axioms, proof_prior_diff);
 	}
 
 	bool accept_with_observation_changes(const hash_set<typename ProofCalculus::Proof*>& sample,
-			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff,
+			const array<typename ProofCalculus::Language>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes)
 	{
 		return internal_collector.accept_with_observation_changes(sample, extra_axioms, proof_prior_diff, observation_changes);

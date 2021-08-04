@@ -759,7 +759,7 @@ double log_probability(
 	for (const typename BaseDistribution::ObservationType& extra_observation : extra_observations) {
 		bool contains = false;
 		for (const typename BaseDistribution::ObservationType& existing_observation : clusters) {
-			if (existing_observation == extra_observation || *existing_observation == *extra_observation) {
+			if (existing_observation == extra_observation) {
 				contains = true;
 				break;
 			}
@@ -812,7 +812,7 @@ if (debug_flag3) printf("log_probability_ratio of dirichlet_process: value = %.1
 	for (const T& extra_observation : old_extra_observations) {
 		bool contains = false;
 		for (const T& existing_observation : old_clusters) {
-			if (existing_observation == extra_observation || *existing_observation == *extra_observation) {
+			if (existing_observation == extra_observation) {
 				contains = true;
 				break;
 			}
@@ -822,7 +822,7 @@ if (debug_flag3) printf("log_probability_ratio of dirichlet_process: value = %.1
 	} for (const T& extra_observation : new_extra_observations) {
 		bool contains = false;
 		for (const T& existing_observation : new_clusters) {
-			if (existing_observation == extra_observation || *existing_observation == *extra_observation) {
+			if (existing_observation == extra_observation) {
 				contains = true;
 				break;
 			}
@@ -834,12 +834,12 @@ bool debug_flag = false;
 if (debug_flag3) debug_flag = true;
 if (debug_flag) {
 	print("new_clusters:\n", stderr);
-	for (hol_term* formula : new_clusters) {
-		print("  ", stderr); print(*formula, stderr); print('\n', stderr);
+	for (const hol_term& formula : new_clusters) {
+		print("  ", stderr); print(formula, stderr); print('\n', stderr);
 	}
 	print("old_clusters:\n", stderr);
-	for (hol_term* formula : old_clusters) {
-		print("  ", stderr); print(*formula, stderr); print('\n', stderr);
+	for (const hol_term& formula : old_clusters) {
+		print("  ", stderr); print(formula, stderr); print('\n', stderr);
 	}
 }
 	value += log_probability_ratio(prior_state.base_prior_state, old_clusters, new_clusters, prior.base_distribution, old_prior_changes, new_prior_changes);
@@ -1462,11 +1462,11 @@ struct simple_hol_term_distribution
 			return constant_prior_state.add(changes.constants);
 		}
 
-		inline bool add(const hol_term* observation,
+		inline bool add(const hol_term& observation,
 				const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior)
 		{
 			prior_state_changes changes;
-			log_probability_helper(observation, prior, changes);
+			log_probability_helper(&observation, prior, changes);
 			return add(changes);
 		}
 
@@ -1508,11 +1508,11 @@ struct simple_hol_term_distribution
 			}
 		}
 
-		inline void subtract(const hol_term* observation,
+		inline void subtract(const hol_term& observation,
 				const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior)
 		{
 			prior_state_changes changes;
-			log_probability_helper(observation, prior, changes);
+			log_probability_helper(&observation, prior, changes);
 			return subtract(changes);
 		}
 
@@ -1715,8 +1715,8 @@ struct simple_hol_term_distribution
 		}
 	};
 
-	typedef hol_term* ObservationType;
-	typedef default_array<hol_term*> ObservationCollection;
+	typedef hol_term ObservationType;
+	typedef default_array<hol_term> ObservationCollection;
 	typedef prior_state PriorState;
 	typedef prior_state_changes PriorStateChanges;
 
@@ -2219,7 +2219,7 @@ template<typename BuiltInPredicates,
 	typename SetSizeDistribution,
 	typename DefinitionCountDistribution,
 	template<typename> class Collection>
-double log_probability(const Collection<hol_term*>& clusters,
+double log_probability(const Collection<hol_term>& clusters,
 		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior)
 {
 #if defined(DEBUG_LOG_PROBABILITY)
@@ -2227,11 +2227,11 @@ double log_probability(const Collection<hol_term*>& clusters,
 #endif
 	double value = 0.0;
 	typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes changes;
-	for (hol_term* formula : clusters) {
-		double current_value = log_probability_helper(formula, prior, changes);
+	for (const hol_term& formula : clusters) {
+		double current_value = log_probability_helper(&formula, prior, changes);
 #if defined(DEBUG_LOG_PROBABILITY)
 		fprintf(stderr, "  Log probability of ");
-		print(*formula, stderr);
+		print(formula, stderr);
 		fprintf(stderr, " is %lf.\n", current_value);
 #endif
 		value += current_value;
@@ -2308,21 +2308,21 @@ template<typename BuiltInPredicates,
 	template<typename> class Collection>
 double log_probability_ratio(
 		const typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state& prior_state,
-		const Collection<hol_term*>& old_clusters,
-		const Collection<hol_term*>& new_clusters,
+		const Collection<hol_term>& old_clusters,
+		const Collection<hol_term>& new_clusters,
 		const simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>& prior,
 		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes& old_prior_changes,
 		typename simple_hol_term_distribution<BuiltInPredicates, ConstantDistribution, SetSizeDistribution, DefinitionCountDistribution>::prior_state_changes& new_prior_changes)
 {
 	double value = 0.0;
-	for (hol_term* formula : new_clusters)
-		value += log_probability_helper(formula, prior, new_prior_changes);
-	for (hol_term* formula : old_clusters)
-		value -= log_probability_helper(formula, prior, old_prior_changes);
+	for (const hol_term& formula : new_clusters)
+		value += log_probability_helper(&formula, prior, new_prior_changes);
+	for (const hol_term& formula : old_clusters)
+		value -= log_probability_helper(&formula, prior, old_prior_changes);
 
 if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: value = %.17g\n", value);
 	/* get the name events */
-	array_map<unsigned int, array<const hol_term*>> old_name_map(max(1, old_prior_changes.arg2_string_map.size));
+	array_map<unsigned int, array<const hol_term*>> old_name_map(max(1, old_prior_changes.arg2_string_map.size + old_prior_changes.arg1_map.size));
 	for (const auto& entry : old_prior_changes.arg2_string_map) {
 		bool contains;
 		unsigned int named_entity = prior_state.arg1_map.get(entry.key, contains);
@@ -2362,7 +2362,7 @@ if (debug_flag3) printf("log_probability_ratio of simple_hol_term_distribution: 
 		}
 	}
 
-	array_map<unsigned int, array<const hol_term*>> new_name_map(max(1, new_prior_changes.arg2_string_map.size));
+	array_map<unsigned int, array<const hol_term*>> new_name_map(max(1, new_prior_changes.arg2_string_map.size + new_prior_changes.arg1_map.size));
 	for (const auto& entry : new_prior_changes.arg2_string_map) {
 		bool contains;
 		unsigned int named_entity = new_prior_changes.arg1_map.get(entry.key, contains);
