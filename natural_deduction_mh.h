@@ -1257,13 +1257,12 @@ bool propose_change_set_size(
 			T.sets.sets[selected_set].change_size(old_size);
 		} else {
 			/* TODO: we could keep track of the extra axioms within `theory` */
-			array<hol_term> extra_axioms(16);
+			array<hol_term*> extra_axioms(16);
 			T.get_extra_axioms(extra_axioms);
 			bool is_axiom = (T.sets.sets[selected_set].size_axioms[0]->children.length != 0
-						  || extra_axioms.contains(*T.sets.sets[selected_set].size_axioms[0]->formula));
-			bool result = sample_collector.accept(T.observations, extra_axioms, is_axiom ? proof_prior_diff : 0.0);
-			for (hol_term& term : extra_axioms) free(term);
-			return result;
+						  || extra_axioms.contains(T.sets.sets[selected_set].size_axioms[0]->formula));
+			if (!sample_collector.accept(T.observations, extra_axioms, is_axiom ? proof_prior_diff : 0.0))
+				return false;
 		}
 	}
 	return true;
@@ -2068,14 +2067,14 @@ bool propose_disjunction_intro(
 	for (const typename Theory::change& change : old_proof_changes.list) {
 		if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 			bool was_removed = false;
-			for (const Formula& old_axiom : set_diff.old_set_axioms) {
-				if (old_axiom == *change.axiom->formula) {
+			for (Formula* old_axiom : set_diff.old_set_axioms) {
+				if (old_axiom == change.axiom->formula) {
 					was_removed = true;
 					break;
 				}
 			}
 			if (!was_removed)
-				set_diff.new_set(*change.axiom->formula);
+				set_diff.new_set(change.axiom->formula);
 		}
 	}
 
@@ -2148,19 +2147,19 @@ if (debug_flag3) printf("log_proposal_probability_ratio becomes %.17g\n", log_pr
 	for (const typename Theory::change& change : new_proof_changes.list) {
 		if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 			bool is_new = false;
-			for (const Formula& new_axiom : new_set_diff.new_set_axioms) {
-				if (new_axiom == *change.axiom->formula) {
+			for (Formula* new_axiom : new_set_diff.new_set_axioms) {
+				if (new_axiom == change.axiom->formula) {
 					is_new = true;
 					break;
 				}
 			}
 			if (!is_new)
-				new_set_diff.old_set(*change.axiom->formula);
+				new_set_diff.old_set(change.axiom->formula);
 		}
 	}
-	for (const Formula& old_axiom : new_set_diff.old_set_axioms)
+	for (Formula* old_axiom : new_set_diff.old_set_axioms)
 		set_diff.old_set(old_axiom);
-	for (const Formula& new_axiom : new_set_diff.new_set_axioms)
+	for (Formula* new_axiom : new_set_diff.new_set_axioms)
 		set_diff.new_set(new_axiom);
 
 	/* propose `new_proof` to substitute `selected_proof_step.proof` */
@@ -2578,14 +2577,14 @@ inline bool do_split_merge(
 		for (const typename Theory::change& change : old_proof_changes[i].list) {
 			if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 				bool was_removed = false;
-				for (const Formula& old_axiom : set_diff.old_set_axioms) {
-					if (old_axiom == *change.axiom->formula) {
+				for (Formula* old_axiom : set_diff.old_set_axioms) {
+					if (old_axiom == change.axiom->formula) {
 						was_removed = true;
 						break;
 					}
 				}
 				if (!was_removed)
-					set_diff.new_set(*change.axiom->formula);
+					set_diff.new_set(change.axiom->formula);
 			}
 		}
 	}
@@ -2655,14 +2654,14 @@ inline bool do_split_merge(
 		for (const typename Theory::change& change : new_proof_changes[i].list) {
 			if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
 				bool is_new = false;
-				for (const Formula& new_axiom : new_set_diff.new_set_axioms) {
-					if (new_axiom == *change.axiom->formula) {
+				for (Formula* new_axiom : new_set_diff.new_set_axioms) {
+					if (new_axiom == change.axiom->formula) {
 						is_new = true;
 						break;
 					}
 				}
 				if (!is_new)
-					new_set_diff.old_set(*change.axiom->formula);
+					new_set_diff.old_set(change.axiom->formula);
 			}
 		}
 
@@ -2685,9 +2684,9 @@ inline bool do_split_merge(
 			free(initializers); free(new_proofs); return true;
 		}
 
-		for (const Formula& old_axiom : new_set_diff.old_set_axioms)
+		for (Formula* old_axiom : new_set_diff.old_set_axioms)
 			set_diff.old_set(old_axiom);
-		for (const Formula& new_axiom : new_set_diff.new_set_axioms)
+		for (Formula* new_axiom : new_set_diff.new_set_axioms)
 			set_diff.new_set(new_axiom);
 	}
 
@@ -2799,14 +2798,12 @@ inline bool do_split_merge(
 			return false;
 		}
 		/* TODO: we could keep track of the extra axioms within `theory` */
-		array<hol_term> extra_axioms(16);
+		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
 		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes)) {
-			for (hol_term& term : extra_axioms) free(term);
 			for (ProofNode& node : old_proofs) node.~ProofNode();
 			return false;
 		}
-		for (hol_term& term : extra_axioms) free(term);
 	} else {
 		return undo_proof_changes();
 	}
@@ -3003,17 +3000,15 @@ bool do_mh_universal_intro(
 {
 	/* compute the proof portion of the prior for both current and proposed theories */
 	typename ProofPrior::PriorStateChanges old_axioms, new_axioms;
-	array<Formula> old_extra_observations(1);
-	array<Formula> new_extra_observations(2);
+	array<Formula*> old_extra_observations(1);
+	array<Formula*> new_extra_observations(2);
 	if (proposal.new_antecedent_set_size_axiom != nullptr)
-		new_extra_observations[new_extra_observations.length++] = *proposal.new_antecedent_set_size_axiom;
+		new_extra_observations[new_extra_observations.length++] = proposal.new_antecedent_set_size_axiom;
 	if (proposal.new_consequent_set_size_axiom != nullptr)
-		new_extra_observations[new_extra_observations.length++] = *proposal.new_consequent_set_size_axiom;
+		new_extra_observations[new_extra_observations.length++] = proposal.new_consequent_set_size_axiom;
 	double proof_prior_diff = log_probability_ratio(proposed_proofs.transformed_proofs,
 			old_extra_observations, new_extra_observations,
 			proof_prior, proof_axioms, old_axioms, new_axioms, sample_collector);
-	for (Formula& formula : old_extra_observations) free(formula);
-	for (Formula& formula : new_extra_observations) free(formula);
 	log_proposal_probability_ratio += proof_prior_diff;
 
 #if !defined(NDEBUG)
@@ -3039,11 +3034,10 @@ bool do_mh_universal_intro(
 		if (!proof_axioms.add(new_axioms))
 			return false;
 		/* TODO: we could keep track of the extra axioms within `theory` */
-		array<hol_term> extra_axioms(16);
+		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		bool result = sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes);
-		for (hol_term& term : extra_axioms) free(term);
-		return result;
+		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
+			return false;
 	}
 	return true;
 }
@@ -3064,12 +3058,12 @@ bool do_mh_universal_elim(
 
 	/* compute the proof portion of the prior for both current and proposed theories */
 	typename ProofPrior::PriorStateChanges old_axioms, new_axioms;
-	array<Formula> old_extra_observations(4);
-	array<Formula> new_extra_observations(1);
+	array<Formula*> old_extra_observations(4);
+	array<Formula*> new_extra_observations(1);
 	if (proposal.old_antecedent_set_size_axiom != nullptr)
-		old_extra_observations[old_extra_observations.length++] = *proposal.old_antecedent_set_size_axiom;
+		old_extra_observations[old_extra_observations.length++] = proposal.old_antecedent_set_size_axiom;
 	if (proposal.old_consequent_set_size_axiom != nullptr)
-		old_extra_observations[old_extra_observations.length++] = *proposal.old_consequent_set_size_axiom;
+		old_extra_observations[old_extra_observations.length++] = proposal.old_consequent_set_size_axiom;
 
 	if (proposal.edge.axiom->reference_count == 2) {
 		/* removing this universal quantifier could also remove axioms from the proof of the antecedent */
@@ -3080,7 +3074,7 @@ bool do_mh_universal_elim(
 				 && conjunct->formula->binary.right->type == FormulaType::CONSTANT
 				 && conjunct->formula->binary.right->constant >= T.new_constant_offset)
 				{
-					old_extra_observations.add(*conjunct->formula);
+					old_extra_observations.add(conjunct->formula);
 				}
 			}
 		} else {
@@ -3090,7 +3084,7 @@ bool do_mh_universal_elim(
 			 && conjunct->formula->binary.right->type == FormulaType::CONSTANT
 			 && conjunct->formula->binary.right->constant >= T.new_constant_offset)
 			{
-				old_extra_observations.add(*conjunct->formula);
+				old_extra_observations.add(conjunct->formula);
 			}
 		}
 	}
@@ -3110,8 +3104,6 @@ bool do_mh_universal_elim(
 		if (!add_ground_axiom<Negated>(T, proposal.consequent_atom, proposal.constant, proposal.new_axiom)
 		 || !transform_proofs<natural_deduction<Formula, Intuitionistic>>(proposed_proofs))
 		{
-			for (Formula& formula : old_extra_observations) free(formula);
-			for (Formula& formula : new_extra_observations) free(formula);
 			free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
 			free(proposed_proofs);
 			if (proposal.edge.axiom->reference_count == 1)
@@ -3119,15 +3111,17 @@ bool do_mh_universal_elim(
 			return false;
 		}
 
-		for (Formula& old_formula : old_extra_observations) {
-			if (old_formula.type == FormulaType::UNARY_APPLICATION) {
-				T.template remove_unary_atom<false>(old_formula);
-			} else if (old_formula.type == FormulaType::NOT && old_formula.unary.operand->type == FormulaType::UNARY_APPLICATION) {
-				T.template remove_unary_atom<true>(*old_formula.unary.operand);
+		for (Formula* old_formula : old_extra_observations) {
+			if (old_formula->type == FormulaType::UNARY_APPLICATION) {
+				old_formula->reference_count++;
+				T.template remove_unary_atom<false>(*old_formula);
+				free(*old_formula); if (old_formula->reference_count == 0) free(old_formula);
+			} else if (old_formula->type == FormulaType::NOT && old_formula->unary.operand->type == FormulaType::UNARY_APPLICATION) {
+				old_formula->reference_count++;
+				T.template remove_unary_atom<true>(*old_formula->unary.operand);
+				free(*old_formula); if (old_formula->reference_count == 0) free(old_formula);
 			}
 		}
-		for (Formula& formula : old_extra_observations) free(formula);
-		for (Formula& formula : new_extra_observations) free(formula);
 
 		for (auto& entry : observation_changes) {
 			T.observations.remove(entry.key);
@@ -3149,14 +3143,10 @@ bool do_mh_universal_elim(
 			T.sets.free_subset_axiom(proposal.edge.axiom);
 
 		/* TODO: we could keep track of the extra axioms within `theory` */
-		array<hol_term> extra_axioms(16);
+		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		bool result = sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes);
-		for (hol_term& term : extra_axioms) free(term);
-		return result;
+		return sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes);
 	} else {
-		for (Formula& formula : old_extra_observations) free(formula);
-		for (Formula& formula : new_extra_observations) free(formula);
 		free(*proposal.new_axiom); if (proposal.new_axiom->reference_count == 0) free(proposal.new_axiom);
 		free(proposed_proofs);
 		if (proposal.edge.axiom->reference_count == 1)
@@ -3203,11 +3193,10 @@ inline bool do_mh_disjunction_intro(
 		free(*proposed_proof); if (proposed_proof->reference_count == 0) free(proposed_proof);
 		free(old_proof_changes);
 		/* TODO: we could keep track of the extra axioms within `theory` */
-		array<hol_term> extra_axioms(16);
+		array<hol_term*> extra_axioms(16);
 		T.get_extra_axioms(extra_axioms);
-		bool result = sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes);
-		for (hol_term& term : extra_axioms) free(term);
-		return result;
+		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
+			return false;
 	} else {
 		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.proof, proposed_proof, proposed_proofs, old_sets, new_sets);
 	}
