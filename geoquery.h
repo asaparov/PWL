@@ -314,7 +314,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 192 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
+if (job.context_id < 261 - 1 || job.context_id > 270 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -411,7 +411,7 @@ debug_terminal_printer = &parser.terminal_printer;
 job.T.template print_axioms<true>(stdout, *debug_terminal_printer);*/
 				unsigned int sentence_counter = 0;
 				for (unsigned int i = 0; i < context_sentences.length; i++) {
-//if (sentence_counter < 6) { sentence_counter++; continue; }
+//if (sentence_counter < 7) { sentence_counter++; continue; }
 					// TODO: this is kind of a hacky way to get the new proof
 					hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
 					old_proofs.add_all(job.T.observations);
@@ -461,22 +461,13 @@ __lsan_do_leak_check();
 							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
 							do_mh_step(job.T, proof_prior, job.proof_axioms, collector, collector.test_proof, (t < 40 ? 1.0 : 0.01));
 
-printf("collector.current_log_probability: %.17g\n", collector.current_log_probability);
-							if (collector.current_log_probability > max_log_probability + 1.0e-12) {
-printf("found new MAP theory: (max_log_probability was %.17f)\n", max_log_probability);
-job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
+							if (collector.current_log_probability > max_log_probability + 1.0e-8) {
 								free(T_MAP); free(proof_axioms_MAP); formula_map.clear();
 								Theory::clone(job.T, T_MAP, formula_map);
 								PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
 								max_log_probability = collector.current_log_probability;
 							}
 						}
-job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
-printf("Press enter to continue: "); fflush(stdout);
-while (true) {
-int next = fgetc(stdin);
-if (next == '\n') break;
-}
 
 						if (j + 1 < 4) {
 							for (unsigned int t = 0; t < 20; t++)

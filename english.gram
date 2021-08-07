@@ -2676,7 +2676,7 @@ ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 #    or h(r) = ?[x]:(arg1/arg2(x)=r & ...) and h' = ?[x]:(...)
 # NOTE: The predicate could also be a simple `p` rather than `p(f)`.
 # e.g. "more powerful than my car", "brighter than Vega"
-ADJP_R -> ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove_right_conjunct,remove_greater COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
+ADJP_R -> ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove_right_conjunct,remove_greater,add_high_degree COMP V_ADJUNCT:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct,remove_greater
 
 # ADJP_R {^[x]:?[r]:(... & arg2(r)=x)}
 #  -> HOW ADJP_R {?[r]:(...)}
@@ -2758,8 +2758,8 @@ ADJP_L nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # ADJP_L {?[g]:(U(0,g) & p(g))} -> ADJ {?[g]:(U(0,g) & p(g))}
 ADJP_L -> ADJ:require_no_correlator,remove_wide_scope
 
-# ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJ {?[g]:(U(0,g) & p(g))}
-ADJP_L -> ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace
+# ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJ {?[g]:(U(0,g) & high_degree(p)(g))}
+ADJP_L -> ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace
 
 # ADJP_L {?[g]:(U(0,g) & p(g) & <TRACE>)} -> ADJP_L {?[g]:(U(0,g) & p(g))}
 ADJP_L -> MOST ADJP_L:try_remove_correlated,remove_superlative,add_high_degree,remove_right_trace # for `greatest` only

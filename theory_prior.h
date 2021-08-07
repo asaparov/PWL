@@ -4,6 +4,8 @@
 #include <core/random.h>
 #include <math/log.h>
 
+//#define DEBUG_LOG_PROBABILITY
+
 struct poisson_distribution {
 	typedef unsigned int ObservationType;
 

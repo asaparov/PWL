@@ -8326,7 +8326,7 @@ private:
 					quantifiers[inner_set_formula->quantifier.variable - 1] = inner_set_formula;
 					inner_set_formula = inner_set_formula->quantifier.operand;
 				}
-				
+
 				array<variable_assignment> temp_possible_values(possible_values.length);
 				for (const variable_assignment& assignment : possible_values) {
 					variable_assignment& new_value = temp_possible_values[temp_possible_values.length];
@@ -8475,6 +8475,76 @@ private:
 					swap(temp, new_possible_values);
 					for (auto& element : sub_possible_values) core::free(element);
 					for (auto& element : temp) core::free(element);
+				}
+
+				/* check if the internal set unifies with an existing set */
+				for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+					if (sets.sets[i].size_axioms.data == nullptr || prover.is_set_removed(i)) continue;
+
+					array<Formula*> second_quantifiers(sets.sets[i].arity);
+					Formula* set_formula = sets.sets[i].size_axioms[0]->formula->binary.left->binary.right;
+
+					array_map<Formula*, Term*> first_unifications(4);
+					array_map<Formula*, Term*> second_unifications(4);
+					if (!unify(set_definition->binary.right, set_formula, quantifiers, first_unifications, second_quantifiers, second_unifications))
+						continue;
+
+					array<variable_assignment> temp_possible_values(possible_values.length);
+					for (unsigned int j = 0; j < possible_values.length; j++) {
+						const variable_assignment& values = possible_values[j];
+						variable_assignment& new_values = temp_possible_values[temp_possible_values.length];
+						if (!::init(new_values, values)) {
+							quantifiers.length = old_quantifier_length;
+							core::free(*new_operand); if (new_operand->reference_count == 0) core::free(new_operand);
+							for (auto& element : temp_possible_values) core::free(element);
+							return false;
+						}
+
+						bool unifies = true;
+						for (const auto& unification : first_unifications) {
+							if (unification.key->quantifier.variable <= old_quantifier_length
+							 && !new_values.unify_value(unification.key->quantifier.variable - 1, unification.value))
+							{
+								unifies = false;
+								break;
+							}
+						}
+						if (!unifies) {
+							core::free(new_values);
+							continue;
+						}
+
+						if (set_size->binary.right->type == TermType::NUMBER) {
+							if (sets.sets[i].set_size == set_size->binary.right->number.integer) {
+								core::free(new_values);
+								continue;
+							}
+						} else if (set_size->binary.right->type == TermType::VARIABLE) {
+							Term* num = Term::new_number(sets.sets[i].set_size, 0);
+							if (num == nullptr) {
+								core::free(new_values);
+								quantifiers.length = old_quantifier_length;
+								core::free(*new_operand); if (new_operand->reference_count == 0) core::free(new_operand);
+								for (auto& element : temp_possible_values) core::free(element);
+								return false;
+							}
+							if (!new_values.antiunify_value(set_size->binary.right->variable - 1, num)) {
+								core::free(new_values);
+								continue;
+							}
+							core::free(*num); core::free(num);
+						}
+
+						temp_possible_values.length++;
+					}
+
+					if (temp_possible_values.length != 0) {
+						array<variable_assignment> temp(new_possible_values.length + temp_possible_values.length);
+						set_union(temp, new_possible_values, temp_possible_values);
+						swap(temp, new_possible_values);
+						for (auto& element : temp_possible_values) core::free(element);
+						for (auto& element : temp) core::free(element);
+					}
 				}
 			}
 		}
@@ -19507,14 +19577,16 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 		get_proof_disjunction_nodes(new_proof, sampler.prev_proof);
 	}
 
+	extern thread_local bool debug_flag;
+	extern thread_local const string_map_scribe* debug_terminal_printer;
 	auto collector = make_provability_collector(T, proof_prior, new_proof, on_new_proof_sample);
 	for (unsigned int t = 0; t < num_samples; t++) {
-		extern thread_local bool debug_flag;
-		extern thread_local const string_map_scribe* debug_terminal_printer;
 		if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
 		if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 1.0);
 	}
+	if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
+	if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.internal_collector.test_proof);

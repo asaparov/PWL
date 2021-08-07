@@ -92,6 +92,18 @@ while True:
 				start = next_index
 				continue
 
+			if "answer_templates" in question:
+				answer_templates = question["answer_templates"]
+				found_matching_template = False
+				for answer_template in answer_templates:
+					ans_index = answer_template.find('{0}')
+					if candidate.startswith(answer_template[:ans_index].lower()) and candidate.endswith(answer_template[(ans_index + 3):].lower()) and test_candidate(candidate[ans_index:-(len(answer_template) - ans_index - 3)].lower(), actual_answers):
+						found_matching_template = True
+						break
+				if found_matching_template:
+					start = next_index
+					continue
+
 		if len(actual_answers) != 0:
 			# not all correct answers were predicted
 			print("[" + str(total + 1) + "] Predicted: '" + predicted_line.strip() + "', Actual: '" + actual_answer + "' INCORRECT")

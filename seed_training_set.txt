@@ -1601,7 +1601,7 @@
 											(NOMINAL_L:identity
 												(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 													(ADJP_L:try_remove_is_adjunct
-														(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "bright"/"brightest")
+														(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "bright"/"brightest")
 													)
 												)
 												(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
@@ -1674,7 +1674,7 @@
 											(NOMINAL_L:identity
 												(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 													(ADJP_L:try_remove_is_adjunct
-														(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "bright"/"brightest")
+														(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "bright"/"brightest")
 													)
 												)
 												(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
@@ -1750,7 +1750,7 @@
 											(NOMINAL_L:identity
 												(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 													(ADJP_L:try_remove_is_adjunct
-														(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "bright"/"brightest")
+														(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "bright"/"brightest")
 													)
 												)
 												(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
@@ -1801,55 +1801,55 @@
 
 : # largest
 {(ADJ "large"/"largest")}
-	{?[g]:area(g)[sup]};
+	{?[g]:high_degree(area)(g)[sup]};
 
 : # largest
 {(ADJ "large"/"largest")}
-	{?[g]:area(g)[sup]};
+	{?[g]:high_degree(area)(g)[sup]};
 
 : # largest
 {(ADJ "large"/"largest")}
-	{?[g]:population(g)[sup]};
+	{?[g]:high_degree(population)(g)[sup]};
 
 : # biggest
 {(ADJ "big"/"biggest")}
-	{?[g]:area(g)[sup]};
+	{?[g]:high_degree(area)(g)[sup]};
 
 : # biggest
 {(ADJ "big"/"biggest")}
-	{?[g]:population(g)[sup]};
+	{?[g]:high_degree(population)(g)[sup]};
 
 : # smallest
 {(ADJ "small"/"smallest")}
-	{?[g]:negative(area)(g)[sup]};
+	{?[g]:low_degree(area)(g)[sup]};
 
 : # smallest
 {(ADJ "small"/"smallest")}
-	{?[g]:negative(area)(g)[sup]};
+	{?[g]:low_degree(area)(g)[sup]};
 
 : # smallest
 {(ADJ "small"/"smallest")}
-	{?[g]:negative(population)(g)[sup]};
+	{?[g]:low_degree(population)(g)[sup]};
 
 : # longest
 {(ADJ "long"/"longest")}
-	{?[g]:length(g)[sup]};
+	{?[g]:high_degree(length)(g)[sup]};
 
 : # highest
 {(ADJ "high"/"highest")}
-	{?[g]:height(g)[sup]};
+	{?[g]:high_degree(height)(g)[sup]};
 
 : # tallest
 {(ADJ "tall"/"tallest")}
-	{?[g]:height(g)[sup]};
+	{?[g]:high_degree(height)(g)[sup]};
 
 : # lowest
 {(ADJ "low"/"lowest")}
-	{?[g]:negative(height)(g)[sup]};
+	{?[g]:low_degree(height)(g)[sup]};
 
 : # shortest
 {(ADJ "short"/"shortest")}
-	{?[g]:negative(length)(g)[sup]};
+	{?[g]:low_degree(length)(g)[sup]};
 
 : # Galileo observed Jupiter with a telescope.
 {(S
@@ -2129,7 +2129,7 @@
 																		(NOMINAL_L:identity
 																			(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
 																				(ADJP_L:try_remove_is_adjunct
-																					(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "bright"/"brightest")
+																					(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "bright"/"brightest")
 																				)
 																			)
 																			(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set,try_remove_superlative
@@ -2193,7 +2193,7 @@
 									(NOMINAL_L:identity
 										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
 											(ADJP_L:try_remove_is_adjunct
-												(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "bright"/"brightest")
+												(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "bright"/"brightest")
 											)
 										)
 										(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set,try_remove_superlative
@@ -2862,7 +2862,7 @@
 											(NOMINAL_L:identity
 												(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 													(ADJP_L:try_remove_is_adjunct
-														(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "cold"/"coldest")
+														(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "cold"/"coldest")
 													)
 												)
 												(NOMINAL_R:try_add_plural,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
@@ -3055,7 +3055,7 @@
 																				(NOMINAL_L:identity
 																					(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 																						(ADJP_L:try_remove_is_adjunct
-																							(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "heavy"/"heaviest")
+																							(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "heavy"/"heaviest")
 																						)
 																					)
 																					(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
@@ -3128,7 +3128,7 @@
 									(NOMINAL_L:identity
 										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,select_left_conjunct_in_set,select_right_arg1_of_without_head
 											(ADJP_L:try_remove_is_adjunct
-												(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "high"/"highest")
+												(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "high"/"highest")
 											)
 										)
 										(NOMINAL_L:try_remove_correlated,remove_left_conjunct_in_set,try_remove_superlative
@@ -3149,19 +3149,19 @@
 
 : # greatest
 {(ADJ "great"/"greatest")}
-	{?[g]:value(g)[sup]};
+	{?[g]:high_degree(value)(g)[sup]};
 
 : # most
 {(ADJ "many"/"most")}
-	{?[g]:value(g)[sup]};
+	{?[g]:high_degree(value)(g)[sup]};
 
 : # lowest
 {(ADJ "low"/"lowest")}
-	{?[g]:negative(value)(g)[sup]};
+	{?[g]:low_degree(value)(g)[sup]};
 
 : # smallest
 {(ADJ "small"/"smallest")}
-	{?[g]:negative(value)(g)[sup]};
+	{?[g]:low_degree(value)(g)[sup]};
 
 : # population density
 {(N "population density"/"population density")}
@@ -3215,7 +3215,7 @@
 									(NOMINAL_L:identity
 										(ADJP_R:try_remove_genitive,try_remove_wh_minus,try_remove_measure,add_superlative,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,remove_right_conjunct_in_set_without_predicative,require_left_greatest,select_function_without_substitution
 											(ADJP_L:try_remove_is_adjunct
-												(ADJ:require_no_correlator,require_superlative,remove_wide_scope,remove_right_trace "heavy"/"heaviest")
+												(ADJ:require_no_correlator,require_superlative,add_high_degree,remove_wide_scope,remove_right_trace "heavy"/"heaviest")
 											)
 										)
 										(NOMINAL_R:try_add_singular,try_remove_correlated,select_singleton_arg2_of_in_set_without_head_outer_scope_predicative,select_right_conjunct_in_set,select_right_set_arg1_without_head_predicative,factor_predicative,replace_predicative_universal_with_existential,has_arg2_in_set
@@ -3563,7 +3563,7 @@
 					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,add_aux,add_be
 						(V_ADJUNCT:remove_be,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number,add_empty_verb
 							(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb
-								(ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove_right_conjunct,remove_greater
+								(ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove_right_conjunct,remove_greater,add_high_degree
 									(ADJP_L:try_remove_is_adjunct
 										(ADJ:require_no_correlator,remove_wide_scope "little"/"less")
 									)
@@ -3652,6 +3652,10 @@
 : # tributary
 {(N "tributary"/"tributary")}
 	{tributary[index:sg]};
+
+: # meter
+{(N "meter"/"meter")}
+	{meter[index:sg,measure]};
 
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};

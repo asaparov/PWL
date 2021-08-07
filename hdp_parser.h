@@ -5183,6 +5183,15 @@ struct dependent_scope_finder {
 			hol_term* operand = src->quantifier.operand;
 			while (true) {
 				if (operand->type == hol_term_type::AND || operand->type == hol_term_type::OR || operand->type == hol_term_type::IFF) {
+					if (operand->array.operands[operand->array.length - 1]->type == hol_term_type::EQUALS
+					 || operand->array.operands[operand->array.length - 1]->type == hol_term_type::UNARY_APPLICATION
+					 || operand->array.operands[operand->array.length - 1]->type == hol_term_type::BINARY_APPLICATION
+					 || operand->array.operands[operand->array.length - 1]->type == hol_term_type::CONSTANT
+					 || operand->array.operands[operand->array.length - 1]->type == hol_term_type::VARIABLE)
+					{
+						head = src;
+						return;
+					}
 					for (unsigned int i = 0; i + 1 < operand->array.length; i++) {
 						if (is_variable_free(*operand->array.operands[i], variable)) {
 							head = src;
@@ -5191,6 +5200,15 @@ struct dependent_scope_finder {
 					}
 					operand = operand->array.operands[operand->array.length - 1];
 				} else if (operand->type == hol_term_type::IF_THEN) {
+					if (operand->binary.right->type == hol_term_type::EQUALS
+					 || operand->binary.right->type == hol_term_type::UNARY_APPLICATION
+					 || operand->binary.right->type == hol_term_type::BINARY_APPLICATION
+					 || operand->binary.right->type == hol_term_type::CONSTANT
+					 || operand->binary.right->type == hol_term_type::VARIABLE)
+					{
+						head = src;
+						return;
+					}
 					if (is_variable_free(*operand->binary.left, variable)) {
 						head = src;
 						return;
@@ -5276,7 +5294,8 @@ inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer)
 				free(*dst_variable); free(dst_variable);
 				free_all(new_operands); return nullptr;
 			}
-			hol_term* new_inner_operand = substitute<hol_term_type::VARIABLE>(inner_operand->quantifier.operand->binary.right, src_variable, dst_variable);
+			hol_term* relativized = (inner_operand->type == hol_term_type::EXISTS ? inner_operand->quantifier.operand->array.operands[1] : inner_operand->quantifier.operand->binary.right);
+			hol_term* new_inner_operand = substitute<hol_term_type::VARIABLE>(relativized, src_variable, dst_variable);
 			free(*src_variable); free(src_variable);
 			free(*dst_variable); if (dst_variable->reference_count == 0) free(dst_variable);
 			if (new_inner_operand == nullptr) {
@@ -5374,6 +5393,18 @@ inline hol_term* apply(hol_term* src, set_operation_normalizer& normalizer)
 			if (temp == nullptr)
 				return nullptr;
 			dst = temp;
+		} else if (src->quantifier.operand->array.length == 2
+				&& src->quantifier.operand->array.operands[0]->type == hol_term_type::UNARY_APPLICATION
+				&& src->quantifier.operand->array.operands[0]->binary.left->type == hol_term_type::VARIABLE
+				&& src->quantifier.operand->array.operands[0]->binary.right->type == hol_term_type::VARIABLE
+				&& src->quantifier.operand->array.operands[0]->binary.right->variable == src->quantifier.variable)
+		{
+			unsigned int index = normalizer.maximal_subsets.index_of(src->quantifier.operand->array.operands[0]->binary.left->variable);
+			if (index != normalizer.maximal_subsets.size) {
+				normalizer.maximal_subsets.values[index] = src;
+				dst = &HOL_ZERO;
+				HOL_ZERO.reference_count++;
+			}
 		}
 	} else if (Type == hol_term_type::FOR_ALL && src->quantifier.operand->type == hol_term_type::IF_THEN
 			&& src->quantifier.operand->binary.left->type == hol_term_type::UNARY_APPLICATION
@@ -12664,14 +12695,57 @@ inline bool apply_higher_order_predicate(
 						inner_predicate->reference_count++;
 						expected_predicate->binary.right->reference_count++;
 					} else if (DstPredicate != UINT_MAX) {
-						new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<DstPredicate>::value, inner_predicate), expected_predicate->binary.right);
-						if (new_predicate == nullptr) {
-							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
-							return (hol_term*) nullptr;
+						if (SrcPredicate == 0 && DstPredicate == (unsigned int) built_in_predicates::HIGH_DEGREE) {
+							hol_term* negative = hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::NEGATIVE>::value, &HOL_ANY);
+							if (negative == nullptr) {
+								free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+								return (hol_term*) nullptr;
+							}
+							hol_term::constants<(unsigned int) built_in_predicates::NEGATIVE>::value.reference_count++;
+							HOL_ANY.reference_count++;
+							if (is_subset<built_in_predicates>(inner_predicate, negative)) {
+								free(*negative); free(negative);
+								/* `inner_predicate` must have the form `negative(*)` */
+								new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::LOW_DEGREE>::value, inner_predicate->binary.right), expected_predicate->binary.right);
+								if (new_predicate == nullptr) {
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return (hol_term*) nullptr;
+								}
+								hol_term::constants<(unsigned int) built_in_predicates::LOW_DEGREE>::value.reference_count++;
+								inner_predicate->binary.right->reference_count++;
+								expected_predicate->binary.right->reference_count++;
+							} else if (has_intersection<built_in_predicates>(negative, inner_predicate)) {
+								free(*negative); free(negative);
+								/* `inner_predicate` may or may not have the form `negative(*)` */
+								new_predicate = hol_term::new_apply(hol_term::new_apply(hol_term::new_any_constant((unsigned int) built_in_predicates::HIGH_DEGREE, (unsigned int) built_in_predicates::LOW_DEGREE), inner_predicate), expected_predicate->binary.right);
+								if (new_predicate == nullptr) {
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return (hol_term*) nullptr;
+								}
+								inner_predicate->reference_count++;
+								expected_predicate->binary.right->reference_count++;
+							} else {
+								free(*negative); free(negative);
+								/* `inner_predicate` cannot have the form `negative(*)` */
+								new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::HIGH_DEGREE>::value, inner_predicate), expected_predicate->binary.right);
+								if (new_predicate == nullptr) {
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return (hol_term*) nullptr;
+								}
+								hol_term::constants<(unsigned int) built_in_predicates::HIGH_DEGREE>::value.reference_count++;
+								inner_predicate->reference_count++;
+								expected_predicate->binary.right->reference_count++;
+							}
+						} else {
+							new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<DstPredicate>::value, inner_predicate), expected_predicate->binary.right);
+							if (new_predicate == nullptr) {
+								free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+								return (hol_term*) nullptr;
+							}
+							hol_term::constants<DstPredicate>::value.reference_count++;
+							inner_predicate->reference_count++;
+							expected_predicate->binary.right->reference_count++;
 						}
-						hol_term::constants<DstPredicate>::value.reference_count++;
-						inner_predicate->reference_count++;
-						expected_predicate->binary.right->reference_count++;
 					} else if (expected_dst_higher_order_predicate != nullptr) {
 						new_predicate = hol_term::new_apply(
 								hol_term::new_apply(
@@ -12851,14 +12925,57 @@ inline bool apply_higher_order_predicate(
 						inner_predicate->reference_count++;
 						expected_predicate->binary.right->reference_count++;
 					} else if (DstPredicate != UINT_MAX) {
-						new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<DstPredicate>::value, inner_predicate), expected_predicate->binary.right);
-						if (new_predicate == nullptr) {
-							free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
-							return (hol_term*) nullptr;
+						if (SrcPredicate == 0 && DstPredicate == (unsigned int) built_in_predicates::HIGH_DEGREE) {
+							hol_term* negative = hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::NEGATIVE>::value, &HOL_ANY);
+							if (negative == nullptr) {
+								free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+								return (hol_term*) nullptr;
+							}
+							hol_term::constants<(unsigned int) built_in_predicates::NEGATIVE>::value.reference_count++;
+							HOL_ANY.reference_count++;
+							if (is_subset<built_in_predicates>(inner_predicate, negative)) {
+								free(*negative); free(negative);
+								/* `inner_predicate` must have the form `negative(*)` */
+								new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::LOW_DEGREE>::value, inner_predicate->binary.right), expected_predicate->binary.right);
+								if (new_predicate == nullptr) {
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return (hol_term*) nullptr;
+								}
+								hol_term::constants<(unsigned int) built_in_predicates::LOW_DEGREE>::value.reference_count++;
+								inner_predicate->binary.right->reference_count++;
+								expected_predicate->binary.right->reference_count++;
+							} else if (has_intersection<built_in_predicates>(negative, inner_predicate)) {
+								free(*negative); free(negative);
+								/* `inner_predicate` may or may not have the form `negative(*)` */
+								new_predicate = hol_term::new_apply(hol_term::new_apply(hol_term::new_any_constant((unsigned int) built_in_predicates::HIGH_DEGREE, (unsigned int) built_in_predicates::LOW_DEGREE), inner_predicate), expected_predicate->binary.right);
+								if (new_predicate == nullptr) {
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return (hol_term*) nullptr;
+								}
+								inner_predicate->reference_count++;
+								expected_predicate->binary.right->reference_count++;
+							} else {
+								free(*negative); free(negative);
+								/* `inner_predicate` cannot have the form `negative(*)` */
+								new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::HIGH_DEGREE>::value, inner_predicate), expected_predicate->binary.right);
+								if (new_predicate == nullptr) {
+									free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+									return (hol_term*) nullptr;
+								}
+								hol_term::constants<(unsigned int) built_in_predicates::HIGH_DEGREE>::value.reference_count++;
+								inner_predicate->reference_count++;
+								expected_predicate->binary.right->reference_count++;
+							}
+						} else {
+							new_predicate = hol_term::new_apply(hol_term::new_apply(&hol_term::constants<DstPredicate>::value, inner_predicate), expected_predicate->binary.right);
+							if (new_predicate == nullptr) {
+								free(*expected_predicate); if (expected_predicate->reference_count == 0) free(expected_predicate);
+								return (hol_term*) nullptr;
+							}
+							hol_term::constants<DstPredicate>::value.reference_count++;
+							inner_predicate->reference_count++;
+							expected_predicate->binary.right->reference_count++;
 						}
-						hol_term::constants<DstPredicate>::value.reference_count++;
-						inner_predicate->reference_count++;
-						expected_predicate->binary.right->reference_count++;
 					} else if (expected_dst_higher_order_predicate != nullptr) {
 						new_predicate = hol_term::new_apply(
 								hol_term::new_apply(
@@ -31643,19 +31760,52 @@ inline bool invert_apply_higher_order_predicate(
 			expected_predicate = predicate->binary.left->binary.left;
 	}
 
-	hol_term* dst;
-	if (!apply_higher_order_predicate<DstPredicate, SrcPredicate>(second, dst, expected_predicate))
-		return false;
+	if (SrcPredicate == 0 && DstPredicate == (unsigned int) built_in_predicates::HIGH_DEGREE) {
+		hol_term* dst;
+		unsigned int dst_count = 0;
+		if (!apply_higher_order_predicate<DstPredicate, SrcPredicate>(second, dst, expected_predicate))
+			dst = nullptr;
+		else dst_count++;
 
-	inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>));
-	if (inverse == nullptr) {
-		free(*dst); if (dst->reference_count == 0) free(dst);
-		return false;
+		hol_term* other_dst;
+		if (!apply_higher_order_predicate<(unsigned int) built_in_predicates::LOW_DEGREE, (unsigned int) built_in_predicates::NEGATIVE>(second, other_dst, expected_predicate))
+			other_dst = nullptr;
+		else dst_count++;
+
+		if (dst_count == 0)
+			return false;
+
+		inverse = (flagged_logical_form<hol_term>*) malloc(dst_count * sizeof(flagged_logical_form<hol_term>));
+		if (inverse == nullptr) {
+			if (dst != nullptr) { free(*dst); if (dst->reference_count == 0) free(dst); }
+			if (other_dst != nullptr) { free(*other_dst); if (other_dst->reference_count == 0) free(other_dst); }
+			return false;
+		}
+		inverse_count = 0;
+		if (dst != nullptr) {
+			inverse[inverse_count].flags = flags;
+			inverse[inverse_count++].root = dst;
+		} if (other_dst != nullptr) {
+			inverse[inverse_count].flags = flags;
+			inverse[inverse_count++].root = other_dst;
+		}
+		return true;
+
+	} else {
+		hol_term* dst;
+		if (!apply_higher_order_predicate<DstPredicate, SrcPredicate>(second, dst, expected_predicate))
+			return false;
+
+		inverse = (flagged_logical_form<hol_term>*) malloc(sizeof(flagged_logical_form<hol_term>));
+		if (inverse == nullptr) {
+			free(*dst); if (dst->reference_count == 0) free(dst);
+			return false;
+		}
+		inverse[0].flags = flags;
+		inverse[0].root = dst;
+		inverse_count = 1;
+		return true;
 	}
-	inverse[0].flags = flags;
-	inverse[0].root = dst;
-	inverse_count = 1;
-	return true;
 }
 
 template<int_fast8_t ConjunctIndex>

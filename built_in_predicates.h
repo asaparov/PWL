@@ -39,6 +39,7 @@ enum class built_in_predicates : unsigned int {
 	LOCATE,
 	NEGATIVE,
 	HIGH_DEGREE,
+	LOW_DEGREE,
 	CARDINALITY,
 	VALUE,
 
@@ -227,6 +228,7 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("locate", (unsigned int) built_in_predicates::LOCATE)
 		&& names.put("negative", (unsigned int) built_in_predicates::NEGATIVE)
 		&& names.put("high_degree", (unsigned int) built_in_predicates::HIGH_DEGREE)
+		&& names.put("low_degree", (unsigned int) built_in_predicates::LOW_DEGREE)
 		&& names.put("cardinality", (unsigned int) built_in_predicates::CARDINALITY)
 		&& names.put("value", (unsigned int) built_in_predicates::VALUE)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)

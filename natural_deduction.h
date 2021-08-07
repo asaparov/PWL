@@ -7,8 +7,6 @@
 
 #include "array_view.h"
 
-//#define DEBUG_LOG_PROBABILITY
-
 using namespace core;
 
 typedef uint_fast16_t nd_step_type_specifier;
