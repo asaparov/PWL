@@ -117,4 +117,4 @@ while True:
 			correct += 1
 		total += 1
 
-print("Accuracy: " + str(correct) + "/" + str(total) + " = " + str(correct/total))
+print("Accuracy: " + str(correct) + "/" + str(total) + " = " + str(float(correct)/total))
