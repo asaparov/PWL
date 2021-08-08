@@ -6531,10 +6531,13 @@ private:
 		case FormulaType::NUMBER:
 		case FormulaType::STRING:
 		case FormulaType::UINT_LIST:
-		case FormulaType::EQUALS:
 		case FormulaType::UNARY_APPLICATION:
 		case FormulaType::BINARY_APPLICATION:
 			return true;
+		case FormulaType::EQUALS:
+			if (second->binary.right->type == hol_term_type::LAMBDA)
+				return unify_subformula_helper<Polarity>(first, second->binary.right, quantifiers, unifications);
+			else return true;
 		case FormulaType::IF_THEN:
 			return unify_subformula_helper<!Polarity>(first, second->binary.left, quantifiers, unifications)
 				&& unify_subformula_helper<Polarity>(first, second->binary.right, quantifiers, unifications);
