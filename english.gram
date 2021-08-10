@@ -2680,7 +2680,7 @@ ADJP_R -> ADJP_R:try_remove_is_adjunct,add_comparative,require_right_arg2,remove
 
 # ADJP_R {^[x]:?[r]:(... & arg2(r)=x)}
 #  -> HOW ADJP_R {?[r]:(...)}
-ADJP_R -> HOW:require_no_wh_minus ADJP_R:try_remove_is_adjunct,require_right_arg2_lambda,remove_right_conjunct
+ADJP_R -> HOW:require_no_wh_minus ADJP_R:try_remove_is_adjunct,require_right_arg2_lambda,remove_right_conjunct,add_high_degree
 
 # ADJP_R {A} -> ADJP_L {A}
 ADJP_R -> ADJP_L:try_remove_is_adjunct

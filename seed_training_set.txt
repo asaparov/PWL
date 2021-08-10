@@ -536,6 +536,10 @@
 {(ADJ "major"/"major")}
 	{?[x]:major(x)};
 
+: # minor
+{(ADJ "minor"/"minor")}
+	{?[x]:minor(x)};
+
 : # north
 {(ADJ "north"/"north")}
 	{?[x]:north(x)};
@@ -1456,7 +1460,7 @@
 						(V_ADJUNCT:remove_be,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number,add_empty_verb	# ^[x]:?[m]:(mass(m) & (arg2(m)=x))
 							(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb		# ^[x]:?[m]:(mass(m) & (arg2(m)=x))
 								(HOW:require_no_wh_minus "how")
-								(ADJP_R:try_remove_is_adjunct,require_right_arg2_lambda,remove_right_conjunct	# ?[m]:mass(m)
+								(ADJP_R:try_remove_is_adjunct,require_right_arg2_lambda,remove_right_conjunct,add_high_degree	# ?[m]:mass(m)
 									(ADJP_L:try_remove_is_adjunct
 										(ADJ:require_no_correlator,remove_wide_scope "heavy"/"heavy")
 									)
