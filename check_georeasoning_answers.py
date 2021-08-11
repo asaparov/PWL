@@ -23,8 +23,8 @@ total = 0
 correct = 0
 correct_per_flag = {}
 total_per_flag = {}
-no_flag_correct = 0
-no_flag_total = 0
+correct_per_flag_count = {}
+total_per_flag_count = {}
 while True:
 	actual_line = actual_file.readline()
 	predicted_line = predicted_file.readline()
@@ -122,7 +122,9 @@ while True:
 			correct += 1
 		total += 1
 
+		flag_count = 0
 		if "flags" in example:
+			flag_count = len(example["flags"])
 			for flag in example["flags"]:
 				if flag not in correct_per_flag:
 					correct_per_flag[flag] = 0
@@ -130,15 +132,18 @@ while True:
 				if is_correct:
 					correct_per_flag[flag] += 1
 				total_per_flag[flag] += 1
-		else:
-			if is_correct:
-				no_flag_correct += 1
-			no_flag_total += 1
+		if flag_count not in correct_per_flag_count:
+			correct_per_flag_count[flag_count] = 0
+			total_per_flag_count[flag_count] = 0
+		if is_correct:
+			correct_per_flag_count[flag_count] += 1
+		total_per_flag_count[flag_count] += 1
 
 print("Accuracy: " + str(correct) + "/" + str(total) + " = " + str(float(correct)/total))
 for (flag, total_flag) in total_per_flag.items():
 	correct_flag = correct_per_flag[flag]
 	print("[" + flag + "] " + str(correct_flag) + "/" + str(total_flag) + " = " + str(float(correct_flag)/total_flag))
 	print("[all except " + flag + "] " + str(correct - correct_flag) + "/" + str(total - total_flag) + " = " + str(float(correct - correct_flag)/(total - total_flag)))
-print("[any flags] " + str(correct - no_flag_correct) + "/" + str(total - no_flag_total) + " = " + str(float(correct - no_flag_correct)/(total - no_flag_total)))
-print("[no flags] " + str(no_flag_correct) + "/" + str(no_flag_total) + " = " + str(float(no_flag_correct)/no_flag_total))
+for (flag_count, total_flag) in sorted(total_per_flag_count.items()):
+	correct_flag = correct_per_flag_count[flag_count]
+	print("[" + str(flag_count) + " flags] " + str(correct_flag) + "/" + str(total_flag) + " = " + str(float(correct_flag)/(total_flag)))
