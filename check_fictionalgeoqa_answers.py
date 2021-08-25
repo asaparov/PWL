@@ -2,18 +2,24 @@ import json
 import sys
 
 def test_candidate(candidate, actual_answers):
-	try:
-		actual_answers.remove(candidate)
-		return True
-	except ValueError:
-		return False
+	candidates = [candidate]
+	if not candidate.startswith('river') and not candidate.endswith('river'):
+		candidates.append(candidate + ' river')
+		candidates.append('river ' + candidate)
+	for c in candidates:
+		try:
+			actual_answers.remove(c)
+			return True
+		except ValueError:
+			pass
+	return False
 
 if len(sys.argv) < 2:
-	print("check_georeasoning_answers [answers file]")
+	print("check_fictionalgeoqa_answers [answers file]")
 	sys.exit(1)
 
 try:
-	actual_file = open('georeasoning.jsonl')
+	actual_file = open('fictionalgeoqa.jsonl')
 	predicted_file = open(sys.argv[1])
 except IOError as e:
 	print(e)

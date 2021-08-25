@@ -1,12 +1,12 @@
 /**
- * geoquery.h - Code to read GeoQuery data and attempt to answer the questions.
+ * fictionalgeoqa.h - Code to read FictionalGeoQA data and attempt to answer the questions.
  *
  *  Created on: Mar 22, 2021
  *      Author: asaparov
  */
 
-#ifndef GEOQUERY_H_
-#define GEOQUERY_H_
+#ifndef FICTIONALGEOQA_H_
+#define FICTIONALGEOQA_H_
 
 #include <core/utility.h>
 #include <stdio.h>
@@ -16,13 +16,13 @@ using namespace core;
 
 #include <atomic>
 
-enum class geoquery_work_item_type {
+enum class fictionalgeo_work_item_type {
 	READ_CONTEXT,
 	ANSWER_QUESTION
 };
 
 template<typename Theory, typename PriorStateType>
-struct geoquery_context_item
+struct fictionalgeo_context_item
 {
 	Theory T;
 	PriorStateType proof_axioms;
@@ -31,7 +31,7 @@ struct geoquery_context_item
 	char* context;
 	array<pair<string, string>> questions;
 
-	static inline void free(geoquery_context_item<Theory, PriorStateType>& item) {
+	static inline void free(fictionalgeo_context_item<Theory, PriorStateType>& item) {
 		core::free(item.context);
 		for (auto& entry : item.questions) {
 			core::free(entry.key);
@@ -46,7 +46,7 @@ struct geoquery_context_item
 };
 
 template<typename Theory, typename PriorStateType>
-struct geoquery_question_item
+struct fictionalgeo_question_item
 {
 	Theory T;
 	PriorStateType proof_axioms;
@@ -55,7 +55,7 @@ struct geoquery_question_item
 	string question;
 	string label;
 
-	static inline void free(geoquery_question_item& item) {
+	static inline void free(fictionalgeo_question_item& item) {
 		core::free(item.question);
 		core::free(item.label);
 		if (!core::is_empty(item.T)) {
@@ -65,13 +65,13 @@ struct geoquery_question_item
 	}
 };
 
-struct geoquery_question_result {
+struct fictionalgeo_question_result {
 	unsigned int context_id;
 	unsigned int question_id;
 	string answer;
 	string label;
 
-	static inline void swap(geoquery_question_result& first, geoquery_question_result& second) {
+	static inline void swap(fictionalgeo_question_result& first, fictionalgeo_question_result& second) {
 		core::swap(first.context_id, second.context_id);
 		core::swap(first.question_id, second.question_id);
 		core::swap(first.answer, second.answer);
@@ -79,13 +79,13 @@ struct geoquery_question_result {
 	}
 };
 
-inline bool operator < (const geoquery_question_result& first, const geoquery_question_result& second) {
+inline bool operator < (const fictionalgeo_question_result& first, const fictionalgeo_question_result& second) {
 	if (first.context_id < second.context_id) return true;
 	else if (first.context_id > second.context_id) return false;
 	else return first.question_id < second.question_id;
 }
 
-inline bool operator == (const geoquery_question_result& first, const geoquery_question_result& second) {
+inline bool operator == (const fictionalgeo_question_result& first, const fictionalgeo_question_result& second) {
 	return first.context_id == second.context_id
 		&& first.question_id == second.question_id;
 }
@@ -133,7 +133,7 @@ inline bool get_answer(string& out, const array<string>& answers) {
 	}
 }
 
-constexpr unsigned int MAX_GEOQUERY_QUESTION_COUNT = 2000;
+constexpr unsigned int MAX_FICTIONALGEO_QUESTION_COUNT = 2000;
 
 #if defined(SANITIZE_ADDRESS)
 /* TODO: for memory debugging; delete this */
@@ -141,9 +141,9 @@ constexpr unsigned int MAX_GEOQUERY_QUESTION_COUNT = 2000;
 #endif
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
-void do_geoquery_experiments(bool& status,
-		geoquery_context_item<Theory, PriorStateType>* context_queue,
-		geoquery_question_item<Theory, PriorStateType>* question_queue,
+void do_fictionalgeo_experiments(bool& status,
+		fictionalgeo_context_item<Theory, PriorStateType>* context_queue,
+		fictionalgeo_question_item<Theory, PriorStateType>* question_queue,
 		unsigned int& context_queue_start,
 		unsigned int& question_queue_start,
 		unsigned int& context_queue_length,
@@ -157,7 +157,7 @@ void do_geoquery_experiments(bool& status,
 		hash_set<unsigned int>& seed_entities,
 		const array<string>& geobase,
 		std::mutex& results_lock,
-		array<geoquery_question_result>& results,
+		array<fictionalgeo_question_result>& results,
 		array<pair<unsigned int, string>>& unparseable_questions,
 		array<pair<unsigned int, string>>& unparseable_context,
 		std::atomic_uint& total,
@@ -205,7 +205,7 @@ void do_geoquery_experiments(bool& status,
 		}
 
 		if (question_queue_start < question_queue_length) {
-			geoquery_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
+			fictionalgeo_question_item<Theory, PriorStateType>& job = question_queue[question_queue_start++];
 			lock.unlock();
 
 			/* for reproducibility, reset the PRNG state */
@@ -312,9 +312,9 @@ __lsan_do_leak_check();
 
 		} else {
 			num_threads_reading_context++;
-			geoquery_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
+			fictionalgeo_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id < 261 - 1 || job.context_id > 270 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
+if (job.context_id < 191 - 1 || job.context_id > 191 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -399,7 +399,7 @@ continue;
 
 			if (!error) {
 				char filename[256];
-				snprintf(filename, 256, "geoquery_theories/%u.th", job.context_id);
+				snprintf(filename, 256, "fictionalgeo_theories/%u.th", job.context_id);
 
 				/* read the context sentences */
 				/*free(job.T); free(job.proof_axioms);
@@ -456,6 +456,17 @@ __lsan_do_leak_check();
 					for (unsigned int j = 0; j < 4; j++) {
 						for (unsigned int t = 0; t < 150; t++) {
 							fprintf(stderr, "j = %u, t = %u\n", j, t);
+/*job.proof_axioms.check_proof_axioms(job.T);
+job.proof_axioms.check_universal_eliminations(job.T, collector);
+job.T.check_concept_axioms();
+job.T.check_disjunction_introductions();
+job.T.are_elements_provable();
+job.T.sets.check_freeable_sets();
+job.T.sets.are_descendants_valid();
+job.T.sets.are_set_sizes_valid();
+job.T.sets.check_set_ids();
+if (!job.T.observations.contains(collector.test_proof))
+fprintf(stderr, "WARNING: `log_probability_collector.test_proof` is not an observation in the theory.\n");*/
 							bool print_debug = false;
 							if (print_debug) job.T.template print_axioms<true>(stdout, *debug_terminal_printer);
 							if (print_debug) { job.T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout); }
@@ -496,8 +507,8 @@ __lsan_do_leak_check();
 				/* if we successfully read the context, enqueue the jobs for reading/answering the associated questions */
 				job.prng_engine = core::engine;
 				std::unique_lock<std::mutex> lock(work_queue_lock);
-				if (question_queue_length + job.questions.length > MAX_GEOQUERY_QUESTION_COUNT) {
-					fprintf(stderr, "do_geoquery_experiments ERROR: Requested question queue length exceeds `MAX_GEOQUERY_QUESTION_COUNT`.\n");
+				if (question_queue_length + job.questions.length > MAX_FICTIONALGEO_QUESTION_COUNT) {
+					fprintf(stderr, "do_fictionalgeo_experiments ERROR: Requested question queue length exceeds `MAX_FICTIONALGEO_QUESTION_COUNT`.\n");
 					status = false;
 					num_threads_running--;
 					num_threads_reading_context--;
@@ -507,7 +518,7 @@ __lsan_do_leak_check();
 					free(parser); return;
 				}
 				for (unsigned int j = 0; j < job.questions.length; j++) {
-					geoquery_question_item<Theory, PriorStateType>& new_question = question_queue[question_queue_length];
+					fictionalgeo_question_item<Theory, PriorStateType>& new_question = question_queue[question_queue_length];
 					set_empty(new_question.T);
 					new_question.context_id = job.context_id;
 					new_question.question_id = j;
@@ -570,9 +581,9 @@ __lsan_do_leak_check();
 	free(parser);
 }
 
-inline void print_geoquery_results(
+inline void print_fictionalgeo_results(
 		const std::atomic_uint& total,
-		array<geoquery_question_result>& results,
+		array<fictionalgeo_question_result>& results,
 		array<pair<unsigned int, string>>& unparseable_questions,
 		array<pair<unsigned int, string>>& unparseable_context,
 		std::mutex& results_lock,
@@ -622,7 +633,7 @@ inline void print_geoquery_results(
 }
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
-bool run_geoquery_experiments(
+bool run_fictionalgeoqa_experiments(
 		ArticleSource& corpus, Parser& parser,
 		Theory& T, PriorStateType& proof_axioms,
 		ProofPrior& proof_prior,
@@ -634,9 +645,9 @@ bool run_geoquery_experiments(
 		unsigned int thread_count)
 {
 	bool status = true;
-	geoquery_context_item<Theory, PriorStateType>* context_queue = (geoquery_context_item<Theory, PriorStateType>*) malloc(sizeof(geoquery_context_item<Theory, PriorStateType>) * MAX_GEOQUERY_QUESTION_COUNT);
+	fictionalgeo_context_item<Theory, PriorStateType>* context_queue = (fictionalgeo_context_item<Theory, PriorStateType>*) malloc(sizeof(fictionalgeo_context_item<Theory, PriorStateType>) * MAX_FICTIONALGEO_QUESTION_COUNT);
 	if (context_queue == nullptr) return false;
-	geoquery_question_item<Theory, PriorStateType>* question_queue = (geoquery_question_item<Theory, PriorStateType>*) malloc(sizeof(geoquery_question_item<Theory, PriorStateType>) * MAX_GEOQUERY_QUESTION_COUNT);
+	fictionalgeo_question_item<Theory, PriorStateType>* question_queue = (fictionalgeo_question_item<Theory, PriorStateType>*) malloc(sizeof(fictionalgeo_question_item<Theory, PriorStateType>) * MAX_FICTIONALGEO_QUESTION_COUNT);
 	if (question_queue == nullptr) {
 		free(context_queue);
 		return false;
@@ -649,7 +660,7 @@ bool run_geoquery_experiments(
 	std::condition_variable work_queue_cv;
 	std::minstd_rand prng_engine = core::engine;
 	std::mutex results_lock;
-	array<geoquery_question_result> results(64);
+	array<fictionalgeo_question_result> results(64);
 	array<pair<unsigned int, string>> unparseable_questions(4);
 	array<pair<unsigned int, string>> unparseable_context(4);
 	std::atomic_uint total(0);
@@ -659,7 +670,7 @@ bool run_geoquery_experiments(
 	std::thread* workers = new std::thread[thread_count];
 	for (unsigned int i = 0; i < thread_count; i++) {
 		workers[i] = std::thread(
-				do_geoquery_experiments<ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
+				do_fictionalgeo_experiments<ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
 				std::ref(status), context_queue, question_queue,
 				std::ref(context_queue_start), std::ref(question_queue_start),
 				std::ref(context_queue_length), std::ref(question_queue_length),
@@ -676,20 +687,20 @@ bool run_geoquery_experiments(
 
 	unsigned int context_id = 0;
 	unsigned int total_question_count = 0;
-	auto process_geoquery_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms,&total_question_count](char* context, array<pair<string, string>>& questions)
+	auto process_fictionalgeo_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms,&total_question_count](char* context, array<pair<string, string>>& questions)
 	{
-		if (context_queue_length + 1 > MAX_GEOQUERY_QUESTION_COUNT) {
-			fprintf(stderr, "run_geoquery_experiments ERROR: Requested context queue length exceeds `MAX_GEOQUERY_QUESTION_COUNT`.\n");
+		if (context_queue_length + 1 > MAX_FICTIONALGEO_QUESTION_COUNT) {
+			fprintf(stderr, "run_fictionalgeoqa_experiments ERROR: Requested context queue length exceeds `MAX_FICTIONALGEO_QUESTION_COUNT`.\n");
 			return false;
 		}
 
 		std::unique_lock<std::mutex> lock(work_queue_lock);
-		geoquery_context_item<Theory, PriorStateType>& new_context = context_queue[context_queue_length];
+		fictionalgeo_context_item<Theory, PriorStateType>& new_context = context_queue[context_queue_length];
 		set_empty(new_context.T);
 		new_context.context_id = context_id++;
 		new_context.context = (char*) malloc(sizeof(char) * (strlen(context) + 1));
 		if (new_context.context == nullptr) {
-			fprintf(stderr, "run_geoquery_experiments ERROR: Out of memory.\n");
+			fprintf(stderr, "run_fictionalgeoqa_experiments ERROR: Out of memory.\n");
 			return false;
 		} else if (!array_init(new_context.questions, questions.length)) {
 			free(new_context.context);
@@ -724,7 +735,7 @@ bool run_geoquery_experiments(
 		return true;
 	};
 
-	if (!read_ruletaker_data<string>(data_filepath, process_geoquery_questions))
+	if (!read_ruletaker_data<string>(data_filepath, process_fictionalgeo_questions))
 		status = false;
 	num_threads_reading_context--;
 
@@ -735,7 +746,7 @@ bool run_geoquery_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
+			print_fictionalgeo_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 			stopwatch.start();
 		}
 	}
@@ -747,7 +758,7 @@ bool run_geoquery_experiments(
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		if (stopwatch.milliseconds() > 1000) {
-			print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
+			print_fictionalgeo_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 			stopwatch.start();
 		}
 	}
@@ -757,7 +768,7 @@ bool run_geoquery_experiments(
 			workers[i].join();
 		} catch (...) { }
 	}
-	print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
+	print_fictionalgeo_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 	delete[] workers;
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
@@ -769,7 +780,7 @@ bool run_geoquery_experiments(
 }
 
 template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
-bool run_geoquery_experiments_single_threaded(
+bool run_fictionalgeoqa_experiments_single_threaded(
 		ArticleSource& corpus, Parser& parser,
 		Theory& T, PriorStateType& proof_axioms,
 		ProofPrior& proof_prior,
@@ -780,9 +791,9 @@ bool run_geoquery_experiments_single_threaded(
 		const char* results_filepath)
 {
 	bool status = true;
-	geoquery_context_item<Theory, PriorStateType>* context_queue = (geoquery_context_item<Theory, PriorStateType>*) malloc(sizeof(geoquery_context_item<Theory, PriorStateType>) * MAX_GEOQUERY_QUESTION_COUNT);
+	fictionalgeo_context_item<Theory, PriorStateType>* context_queue = (fictionalgeo_context_item<Theory, PriorStateType>*) malloc(sizeof(fictionalgeo_context_item<Theory, PriorStateType>) * MAX_FICTIONALGEO_QUESTION_COUNT);
 	if (context_queue == nullptr) return false;
-	geoquery_question_item<Theory, PriorStateType>* question_queue = (geoquery_question_item<Theory, PriorStateType>*) malloc(sizeof(geoquery_question_item<Theory, PriorStateType>) * MAX_GEOQUERY_QUESTION_COUNT);
+	fictionalgeo_question_item<Theory, PriorStateType>* question_queue = (fictionalgeo_question_item<Theory, PriorStateType>*) malloc(sizeof(fictionalgeo_question_item<Theory, PriorStateType>) * MAX_FICTIONALGEO_QUESTION_COUNT);
 	if (question_queue == nullptr) {
 		free(context_queue);
 		return false;
@@ -795,7 +806,7 @@ bool run_geoquery_experiments_single_threaded(
 	std::condition_variable work_queue_cv;
 	std::minstd_rand prng_engine = core::engine;
 	std::mutex results_lock;
-	array<geoquery_question_result> results(64);
+	array<fictionalgeo_question_result> results(64);
 	array<pair<unsigned int, string>> unparseable_questions(4);
 	array<pair<unsigned int, string>> unparseable_context(4);
 	std::atomic_uint total(0);
@@ -804,20 +815,20 @@ bool run_geoquery_experiments_single_threaded(
 
 	unsigned int context_id = 0;
 	unsigned int total_question_count = 0;
-	auto process_geoquery_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms,&total_question_count](char* context, array<pair<string, string>>& questions)
+	auto process_fictionalgeo_questions = [context_queue,&context_queue_length,&work_queue_lock,&work_queue_cv,&context_id,&T,&proof_axioms,&total_question_count](char* context, array<pair<string, string>>& questions)
 	{
-		if (context_queue_length + 1 > MAX_GEOQUERY_QUESTION_COUNT) {
-			fprintf(stderr, "run_geoquery_experiments_single_threaded ERROR: Requested context queue length exceeds `MAX_GEOQUERY_QUESTION_COUNT`.\n");
+		if (context_queue_length + 1 > MAX_FICTIONALGEO_QUESTION_COUNT) {
+			fprintf(stderr, "run_fictionalgeoqa_experiments_single_threaded ERROR: Requested context queue length exceeds `MAX_FICTIONALGEO_QUESTION_COUNT`.\n");
 			return false;
 		}
 
 		std::unique_lock<std::mutex> lock(work_queue_lock);
-		geoquery_context_item<Theory, PriorStateType>& new_context = context_queue[context_queue_length];
+		fictionalgeo_context_item<Theory, PriorStateType>& new_context = context_queue[context_queue_length];
 		set_empty(new_context.T);
 		new_context.context_id = context_id++;
 		new_context.context = (char*) malloc(sizeof(char) * (strlen(context) + 1));
 		if (new_context.context == nullptr) {
-			fprintf(stderr, "run_geoquery_experiments_single_threaded ERROR: Out of memory.\n");
+			fprintf(stderr, "run_fictionalgeoqa_experiments_single_threaded ERROR: Out of memory.\n");
 			return false;
 		} else if (!array_init(new_context.questions, questions.length)) {
 			free(new_context.context);
@@ -852,17 +863,17 @@ bool run_geoquery_experiments_single_threaded(
 		return true;
 	};
 
-	if (!read_ruletaker_data<string>(data_filepath, process_geoquery_questions))
+	if (!read_ruletaker_data<string>(data_filepath, process_fictionalgeo_questions))
 		status = false;
 
-	do_geoquery_experiments(status, context_queue, question_queue,
+	do_fictionalgeo_experiments(status, context_queue, question_queue,
 			context_queue_start, question_queue_start, context_queue_length,
 			question_queue_length, work_queue_lock, work_queue_cv, prng_engine,
 			corpus, parser, proof_prior, names, seed_entities, geobase,
 			results_lock, results, unparseable_questions, unparseable_context,
 			total, num_threads_reading_context, num_threads_running);
 
-	print_geoquery_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
+	print_fictionalgeo_results(total, results, unparseable_questions, unparseable_context, results_lock, results_filepath, total_question_count);
 	for (unsigned int i = context_queue_start; i < context_queue_length; i++)
 		free(context_queue[i]);
 	for (unsigned int i = question_queue_start; i < question_queue_length; i++)
@@ -872,4 +883,4 @@ bool run_geoquery_experiments_single_threaded(
 	return status;
 }
 
-#endif /* GEOQUERY_H_ */
+#endif /* FICTIONALGEOQA_H_ */

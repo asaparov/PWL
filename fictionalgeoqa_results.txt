@@ -1,0 +1,500 @@
+Kolufori River
+Merasardu River
+Kolufori River
+Merasardu River
+Kolufori River
+Kolufori River
+Merasardu River
+Kolufori River
+Merasardu River
+Kolufori River
+River Giffeleney,River Wulstershire
+
+River Wulstershire
+River Wulstershire
+River Elsuir,River Giffeleney,River Wulstershire
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+189202
+1322
+189202
+1322
+60211
+189202
+1322
+189202
+1322
+60211
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Baritolloti
+Emprizia
+Ballaterma
+Ballaterma
+Ballaterma
+Veronizzia
+Ballaterma
+Veronizzia
+Veronizzia
+Veronizzia
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+Regnobenoa, Grappulia
+Regnobenoa, Bascilitina, Grappulia
+Grappulia
+Regnobenoa
+Regnobenoa, Bascilitina
+Grappulia, Regnobenoa
+Grappulia, Estmolise, Lordanidia, Umbriazzo, Bascilitina, Regnobenoa
+Grappulia
+Regnobenoa
+Regnobenoa, Lordanidia, Umbriazzo, Estmolise, Bascilitina
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+189202
+1322
+189202
+1322
+60211
+189202
+1322
+189202
+1322
+60211
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Bripetrsk, Puotorsk, Galininograd, Voronolga
+Bripetrsk, Getarovo, Puotorsk
+Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Galininograd, Fordgorod, Abdorostan, Voronolga
+Puotorsk
+Bripetrsk, Puotorsk, Galininograd, Voronolga
+Bripetrsk, Getarovo, Puotorsk
+Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Galininograd, Fordgorod, Abdorostan, Voronolga
+Puotorsk
+Getarovo
+Voronolga
+Getarovo
+Voronolga
+Fordgorod
+Puotorsk
+Puotorsk
+Bripetrsk
+Bripetrsk
+Bripetrsk
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<failed to answer question>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Geoturin, Albucapua, Messinitina, Baritolloti
+Kagenegawa, Agarikoshi, Kyoukashino, Dogayashi, Koruhashi
+Kagenegawa, Agarikoshi, Kyoukashino, Dogayashi, Koruhashi
+Kagenegawa, Agarikoshi, Kyoukashino, Dogayashi, Koruhashi
+Kagenegawa, Agarikoshi, Kyoukashino, Dogayashi, Koruhashi
+Kagenegawa, Agarikoshi, Kyoukashino, Dogayashi, Koruhashi
+Agarikoshi
+Agarikoshi
+Agarikoshi
+Agarikoshi
+Agarikoshi
+River Giffeleney,River Wulstershire
+
+River Wulstershire
+River Wulstershire
+River Elsuir,River Giffeleney,River Wulstershire
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+210392
+210392
+210390
+21
+21
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Timbuqt
+Bolurofi
+Efanangole
+Timbuqt
+Bolurofi
+Kolufori
+Kolufori
+Kolufori
+Kolufori
+Kolufori
+Dogayashi,Kagenegawa,Kyoukashino
+Dogayashi,Kagenegawa
+Dogayashi
+Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
+Agarikoshi,Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Voronolga, Getarovo
+Galininograd
+Voronolga, Getarovo
+Bripetrsk, Abdorostan
+Puotorsk, Voronolga, Bripetrsk, Getarovo, Galininograd, Abdorostan
+Getarovo, Voronolga
+Galininograd
+Getarovo, Voronolga
+Bripetrsk, Abdorostan
+Puotorsk, Getarovo, Voronolga, Bripetrsk, Galininograd, Abdorostan
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir
+River Elsuir,River Giffeleney,River Wulstershire
+River Elsuir,River Giffeleney
+River Elsuir,River Giffeleney
+
+Voronolga, Bripetrsk
+Galininograd, Abdorostan
+Bripetrsk, Abdorostan
+Galininograd
+Puotorsk, Voronolga, Bripetrsk, Galininograd, Getarovo, Abdorostan
+Voronolga, Bripetrsk
+Galininograd, Abdorostan
+Abdorostan
+Galininograd
+Getarovo, Puotorsk, Voronolga, Bripetrsk, Galininograd, Abdorostan
+Marba Adama
+Sharhamane
+Marba Adama
+Sharhamane
+Marba Adama
+Gondarbawa
+Marba Adama
+Gondarbawa
+Marba Adama
+Gondarbawa
+3, 1, 890, 174, 28699, 2431, 33500, 32864, 0
+1
+3, 1
+1, 7, 613
+3, 1
+3, 1, 890, 174, 28699, 2431, 33500, 32864, 0
+3, 1, 890, 174, 28699, 2431, 33500, 32864, 0
+3, 1, 890, 174, 28699, 2431, 33500, 32864, 0
+3, 1, 890, 174, 28699, 2431, 33500, 32864, 0, 8, 419, 7, 39, 613, 17
+3, 1, 890, 174, 28699, 2431, 33500, 32864, 0, 8611, 419, 718, 398, 613, 17
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir, River Wulstershire, River Giffeleney
+River Elsuir
+River Elsuir,River Giffeleney,River Wulstershire
+River Elsuir,River Giffeleney
+River Elsuir,River Giffeleney
+
+Dogayashi,Kagenegawa,Kyoukashino
+Dogayashi,Kagenegawa
+Dogayashi
+Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
+Agarikoshi,Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Kyoukashino, Kagenegawa, Dogayashi, Agarikoshi, Koruhashi
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+Senkuoka, Kangoyaken
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Bascilitina, Regnobenoa, Cartabitan, Grappulia
+Bascilitina, Regnobenoa, Cartabitan, Grappulia
+Bascilitina, Regnobenoa, Cartabitan, Grappulia
+Bascilitina, Regnobenoa, Cartabitan, Grappulia
+Bascilitina, Regnobenoa, Cartabitan, Grappulia
+Bascilitina, Cartabitan, Regnobenoa, Grappulia
+Bascilitina, Cartabitan, Regnobenoa
+Bascilitina, Cartabitan, Regnobenoa, Grappulia
+Bascilitina, Cartabitan, Regnobenoa, Grappulia
+Bascilitina, Cartabitan, Regnobenoa
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Bascilitina, Regnobenoa
+Bascilitina, Regnobenoa
+Bascilitina
+Bascilitina, Grappulia, Regnobenoa, Cartabitan
+Regnobenoa, Bascilitina
+Regnobenoa, Bascilitina, Cartabitan
+Regnobenoa, Bascilitina, Cartabitan
+Bascilitina, Cartabitan
+Cartabitan
+Bascilitina, Regnobenoa
+Bascilitina,Cartabitan,Regnobenoa
+Bascilitina,Cartabitan,Regnobenoa
+Bascilitina,Cartabitan
+Cartabitan
+Bascilitina,Regnobenoa
+Bascilitina,Cartabitan,Regnobenoa
+Bascilitina,Cartabitan,Regnobenoa
+Bascilitina,Cartabitan
+Cartabitan
+Bascilitina,Regnobenoa
+1023900
+671300
+912300
+428100
+314900
+1023900
+671300
+912300, Fordgorod
+428100
+314900
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+
+
+
+
+
+
+
+
+
+
+Begliomento,Pernatisone,Terravipacco
+Begliomento,Terravipacco
+Cartabitan
+Begliomento,Pernatisone,Terravipacco
+Begliomento,Terravipacco
+Begliomento,Pernatisone,Terravipacco
+Begliomento,Terravipacco
+Cartabitan
+Begliomento,Pernatisone,Terravipacco
+Begliomento,Terravipacco
+Kangoyaken
+Kangoyaken
+East Senkuoka, Kangoyaken
+East Senkuoka
+East Senkuoka
+North Senkuoka, Kangoyaken
+Kangoyaken
+East Senkuoka, Kangoyaken
+East Senkuoka
+East Senkuoka, Kangoyaken
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+Bripetrsk, Getarovo, Puotorsk, Fordgorod, Galininograd, Abdorostan, Voronolga
+
+
+
+
+
+
+
+
+
+
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Marba Adama
+Marba Adama
+Marba Adama
+Marba Adama
+Marba Adama
+Gondarbawa
+Marba Adama
+Gondarbawa
+Marba Adama
+Gondarbawa
+Pernatisone, Terravipacco, Begliomento
+Terravipacco
+Pernatisone, Terravipacco, Begliomento
+Terravipacco, Begliomento
+Pernatisone, Terravipacco, Begliomento
+Begliomento, Terravipacco, Pernatisone
+Terravipacco
+Begliomento, Terravipacco, Pernatisone
+Begliomento, Terravipacco
+Begliomento, Terravipacco, Pernatisone
+Pernatisone
+Terravipacco, Begliomento, Pernatisone
+Terravipacco, Begliomento, Pernatisone
+Begliomento, Pernatisone
+Terravipacco, Begliomento, Pernatisone
+Pernatisone
+Terravipacco, Begliomento, Pernatisone
+Terravipacco, Begliomento, Pernatisone
+Begliomento, Pernatisone
+Terravipacco, Begliomento, Pernatisone
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+1, 7, 0
+1, 7, 0
+1, 7, 0, 4
+1, 7, 0, 4
+1, 7, 0, 4
+Bripetrsk, Voronolga
+Galininograd, Abdorostan
+Bripetrsk, Abdorostan
+Galininograd
+Bripetrsk, Puotorsk, Galininograd, Getarovo, Abdorostan, Voronolga
+Bripetrsk, Voronolga
+Galininograd, Abdorostan
+Bripetrsk, Abdorostan
+Galininograd
+Getarovo, Bripetrsk, Puotorsk, Galininograd, Abdorostan, Voronolga
+Getarovo
+Voronolga
+Getarovo
+Voronolga
+Fordgorod
+Puotorsk
+Puotorsk
+Bripetrsk
+Bripetrsk
+Bripetrsk
+587
+61
+<failed to answer question>
+3049, Efanangole
+91
+587
+61, Efanangole
+9587
+3049
+91, Efanangole
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>

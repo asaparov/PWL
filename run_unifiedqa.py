@@ -1,5 +1,8 @@
 from transformers import AutoTokenizer, T5ForConditionalGeneration
 import json
+import torch
+
+torch.set_num_threads(8)
 
 model_name = "allenai/unifiedqa-t5-large" # you can specify the model size here
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -10,10 +13,10 @@ def run_model(input_string, **generator_args):
     res = model.generate(input_ids, **generator_args)
     return tokenizer.batch_decode(res, skip_special_tokens=True)
 
-test_file = open('georeasoning.jsonl')
+test_file = open('fictionalgeoqa.jsonl')
 line_number = 1
 for line in test_file:
-	#if line_number < 191 or line_number > 210:
+	#if line_number < 301 or line_number > 500:
 	#	line_number += 1
 	#	continue
 	example = json.loads(line)
