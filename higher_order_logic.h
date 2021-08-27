@@ -1667,7 +1667,7 @@ inline const char* get_any_symbol(hol_term_type type) {
 	}
 }
 
-template<hol_term_syntax Syntax,
+template<hol_term_syntax Syntax, bool PrintParens,
 	const char* LeftBracket = default_left_bracket,
 	const char* RightBracket = default_right_bracket,
 	char const* Separator = default_array_separator,
@@ -1676,10 +1676,20 @@ bool print_array(const hol_array_term& term, Stream& out, Printer&&... printer) 
 	if (!print(LeftBracket, out)) return false;
 	if (term.length == 0)
 		return print(RightBracket, out);
-	if (!print<Syntax>(*term.operands[0], out, std::forward<Printer>(printer)...)) return false;
+	if (PrintParens && (term.operands[i]->type == hol_term_type::AND || term.operands[i]->type == hol_term_type::OR || term.operands[i]->type == hol_term_type::IFF)) {
+		if (!print('(', out) || !print<Syntax>(*term.operands[0], out, std::forward<Printer>(printer)...) || !print(')', out)) return false;
+	} else {
+		if (!print<Syntax>(*term.operands[0], out, std::forward<Printer>(printer)...)) return false;
+	}
 	for (unsigned int i = 1; i < term.length; i++) {
-		if (!print(Separator, out) || !print<Syntax>(*term.operands[i], out, std::forward<Printer>(printer)...))
-			return false;
+		if (!print(Separator, out)) return false;
+		if (PrintParens && (term.operands[i]->type == hol_term_type::AND || term.operands[i]->type == hol_term_type::OR || term.operands[i]->type == hol_term_type::IFF)) {
+			if (!print('(', out) || !print<Syntax>(*term.operands[i], out, std::forward<Printer>(printer)...) || !print(')', out))
+				return false;
+		} else {
+			if (!print<Syntax>(*term.operands[i], out, std::forward<Printer>(printer)...))
+				return false;
+		}
 	}
 	return print(RightBracket, out);
 }
@@ -1799,10 +1809,10 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		}
 
 	case hol_term_type::AND:
-		return print_array<Syntax, empty_string, empty_string, and_symbol<Syntax>::symbol>(term.array, out, std::forward<Printer>(printer)...);
+		return print_array<Syntax, true, empty_string, empty_string, and_symbol<Syntax>::symbol>(term.array, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::OR:
-		return print_array<Syntax, empty_string, empty_string, or_symbol<Syntax>::symbol>(term.array, out, std::forward<Printer>(printer)...);
+		return print_array<Syntax, true, empty_string, empty_string, or_symbol<Syntax>::symbol>(term.array, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::IFF:
 		return print_iff<Syntax>(term.array, out, std::forward<Printer>(printer)...);
@@ -1929,11 +1939,11 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		}
 		if (!print(", all: ", out) || !print<Syntax>(*term.any_array.all, out, std::forward<Printer>(printer)...)) return false;
 		if (term.any_array.any.length > 0) {
-			if (!print(", any: ", out) || !print_array<Syntax>(term.any_array.any, out, std::forward<Printer>(printer)...)) return false;
+			if (!print(", any: ", out) || !print_array<Syntax, false>(term.any_array.any, out, std::forward<Printer>(printer)...)) return false;
 		} if (term.any_array.left.length > 0) {
-			if (!print(", left: ", out) || !print_array<Syntax>(term.any_array.left, out, std::forward<Printer>(printer)...)) return false;
+			if (!print(", left: ", out) || !print_array<Syntax, false>(term.any_array.left, out, std::forward<Printer>(printer)...)) return false;
 		} if (term.any_array.right.length > 0) {
-			if (!print(", right: ", out) || !print_array<Syntax>(term.any_array.right, out, std::forward<Printer>(printer)...)) return false;
+			if (!print(", right: ", out) || !print_array<Syntax, false>(term.any_array.right, out, std::forward<Printer>(printer)...)) return false;
 		}
 		return true;
 

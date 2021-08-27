@@ -427,7 +427,7 @@ def parse_fol_term_from_tptp(string, pos, var_map):
 	if string[end] == '$':
 		must_be_var = True
 		end += 1
-	while string[end].isdigit() or string[end].isalpha():
+	while string[end].isdigit() or string[end].isalpha() or string[end] == '≥' or string[end] == '.':
 		end += 1
 	if string[pos:end] in var_map:
 		term = FOLVariable(var_map[string[pos:end]])
@@ -465,7 +465,7 @@ def parse_fol_quantifier_from_tptp(string, pos, var_map):
 		variable = len(var_map) + 1
 		var_map[var_name] = variable
 		variables.append(variable)
-	(formula, pos) = parse_fol_from_tptp(string, index + len(']:'), var_map)
+	(formula, pos) = parse_fol_literal_from_tptp(string, index + len(']:'), var_map)
 	for var_name in var_names:
 		del var_map[var_name]
 	return variables, formula, pos
@@ -483,7 +483,9 @@ def parse_fol_literal_from_tptp(string, pos, var_map):
 		(operand, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
 		formula = FOLNot(operand)
 	elif string.startswith('(', pos):
+		print(f'FOUND OPEN PAREN at {pos}: {string[pos:]}')
 		(formula, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
+		print(f'FINISHED READING OPEN PAREN at {pos}: {string[pos:]}')
 		if string[pos] != ')':
 			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Expected a closing parenthesis.")
 		pos += 1
@@ -498,7 +500,9 @@ def parse_fol_from_tptp(string, pos, var_map):
 	while string[pos].isspace():
 		pos += 1
 	if string.startswith('(', pos):
+		print(f'FOUND OPEN PAREN at {pos}: {string[pos:]}')
 		(formula, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
+		print(f'FINISHED READING OPEN PAREN at {pos}: {string[pos:]}')
 		if string[pos] != ')':
 			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Expected a closing parenthesis.")
 		return formula, pos + 1
@@ -506,22 +510,17 @@ def parse_fol_from_tptp(string, pos, var_map):
 
 	while pos < len(string) and string[pos].isspace():
 		pos += 1
-	if string.startswith('=>', pos):
-		pos += len('=>')
-		while string[pos].isspace():
-			pos += 1
-		other, pos = parse_fol_from_tptp(string, pos, var_map)
-		return FOLIfThen(formula, other), pos
-	elif pos < len(string) and (string[pos] == '&' or string[pos] == '|'):
+	if pos < len(string) and (string[pos] == '&' or string[pos] == '|'):
 		operands = [formula]
 		operator = string[pos]
 		pos += 1
+		print(f'FOUND ARRAY OPERATOR {operator} at {pos}: {string[pos:]}')
 		while True:
 			while string[pos].isspace():
 				pos += 1
-			print(f'PARSING CONJUNCT at {pos}: {string[pos:]}')
+			print(f'PARSING {operator}-ARRAY OPERAND at {pos}: {string[pos:]}')
 			other, pos = parse_fol_literal_from_tptp(string, pos, var_map)
-			print(f'PARSED CONJUNCT at {pos}: {string[pos:]}')
+			print(f'FINISHED PARSING {operator}-ARRAY OPERAND at {pos}: {string[pos:]}')
 			if type(other) == FOLConstant:
 				raise Exception('FOUND CONSTANT CONJUNCT')
 			operands.append(other)
@@ -534,9 +533,15 @@ def parse_fol_from_tptp(string, pos, var_map):
 			else:
 				break
 		if operator == '&':
-			return FOLAnd(operands), pos
+			formula = FOLAnd(operands)
 		else:
-			return FOLOr(operands), pos
+			formula = FOLOr(operands)
+	if string.startswith('=>', pos):
+		pos += len('=>')
+		while string[pos].isspace():
+			pos += 1
+		other, pos = parse_fol_from_tptp(string, pos, var_map)
+		return FOLIfThen(formula, other), pos
 	else:
 		return formula, pos
 

@@ -42,10 +42,13 @@ for line in test_file:
 		line_number += 1
 		continue
 	example = json.loads('[' + line + ']')[0]
+	print(f"LINE NUMBER IS {line_number}")
 	for sentence in example:
 		for logical_form in sentence:
 			print(logical_form)
-			formula = do_parse_fol_from_tptp(logical_form.replace('^','!'))
+			if logical_form[0] == '^':
+				logical_form[0] = '?'
+			formula = do_parse_fol_from_tptp(logical_form.replace('^','!').replace(')(',','))
 			print(fol_to_tptp(first_orderize(formula)))
 	line_number += 1
 
