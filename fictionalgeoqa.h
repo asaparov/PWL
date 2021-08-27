@@ -140,7 +140,7 @@ constexpr unsigned int MAX_FICTIONALGEO_QUESTION_COUNT = 2000;
 #include <sanitizer/lsan_interface.h>
 #endif
 
-template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+template<bool ParseOnly, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_fictionalgeo_experiments(bool& status,
 		fictionalgeo_context_item<Theory, PriorStateType>* context_queue,
 		fictionalgeo_question_item<Theory, PriorStateType>* question_queue,
@@ -215,8 +215,80 @@ void do_fictionalgeo_experiments(bool& status,
 			constexpr unsigned int max_parse_count = 3;
 			hol_term* logical_forms[max_parse_count];
 			double log_probabilities[max_parse_count];
-			if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
-			{
+			if (ParseOnly) {
+				if (!parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count))
+					parse_count = 0;
+				results_lock.lock();
+				results.ensure_capacity(results.length + 1);
+				unsigned int index;
+				for (index = 0; index < results.length; index++)
+					if (results[index].context_id == job.context_id) break;
+				if (index == results.length) {
+					results[index].context_id = job.context_id;
+					results[index].question_id = 0;
+					if (!init(results[index].answer, "[]")) {
+						free_logical_forms(logical_forms, parse_count);
+						status = false;
+						num_threads_running--;
+						work_queue_cv.notify_all();
+						free(job);
+						for (auto entry : names) free(entry.key);
+						free(parser); return;
+					} else if (!init(results[index].label, 1)) {
+						free(results[index].answer);
+						free_logical_forms(logical_forms, parse_count);
+						status = false;
+						num_threads_running--;
+						work_queue_cv.notify_all();
+						free(job);
+						for (auto entry : names) free(entry.key);
+						free(parser); return;
+					}
+					results.length++;
+				}
+
+				memory_stream stream(results[index].answer.length + 1024);
+				write(results[index].answer.data, stream, results[index].answer.length - 1);
+				if (stream.position != 1) {
+					fputc(',', stream);
+					fputc('[', stream);
+				}
+				for (unsigned int i = 0; i < parse_count; i++) {
+					hol_term* preprocessed = preprocess_formula(logical_forms[i]);
+					if (preprocessed == nullptr) {
+						free_logical_forms(logical_forms, parse_count);
+						status = false;
+						num_threads_running--;
+						work_queue_cv.notify_all();
+						free(job);
+						for (auto entry : names) free(entry.key);
+						free(parser); return;
+					}
+					if (i != 0) fputc(',', stream);
+					fputc('"', stream);
+					memory_stream temp_stream(1024);
+					print<hol_term_syntax::TPTP>(*preprocessed, temp_stream, parser.terminal_printer);
+					for (unsigned int i = 0; i < temp_stream.position; i++) {
+						if (temp_stream.buffer[i] == '"')
+							fputc('\\', stream);
+						fputc(temp_stream.buffer[i], stream);
+					}
+					fputc('"', stream);
+					free(*preprocessed); if (preprocessed->reference_count == 0) free(preprocessed);
+				}
+				fputc(']', stream);
+				fputc(']', stream);
+				swap(stream.buffer, results[index].answer.data);
+				results[index].answer.length = stream.position;
+
+				printf("Answer for question %u: ", job.context_id + 1);
+				print(results[index].answer, stdout); printf("\n");
+				results_lock.unlock();
+
+				total++;
+				free_logical_forms(logical_forms, parse_count);
+
+			} else if (parse_sentence(parser, job.question.data, names, logical_forms, log_probabilities, parse_count)) {
 				/* try to answer the question */
 				array<string> best_answers(4);
 				double best_answer_probability = -std::numeric_limits<double>::infinity();
@@ -314,7 +386,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			fictionalgeo_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id < 191 - 1 || job.context_id > 191 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
+if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1)) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -401,6 +473,36 @@ continue;
 				char filename[256];
 				snprintf(filename, 256, "fictionalgeo_theories/%u.th", job.context_id);
 
+				unsigned int result_index;
+				if (ParseOnly) {
+					results_lock.lock();
+					results.ensure_capacity(results.length + 1);
+					for (result_index = 0; result_index < results.length; result_index++)
+						if (results[result_index].context_id == job.context_id) break;
+					if (result_index == results.length) {
+						results[result_index].context_id = job.context_id;
+						results[result_index].question_id = 0;
+						if (!init(results[result_index].answer, "[]")) {
+							status = false;
+							num_threads_running--;
+							work_queue_cv.notify_all();
+							free(job);
+							for (auto entry : names) free(entry.key);
+							free(parser); return;
+						} else if (!init(results[result_index].label, 1)) {
+							free(results[result_index].answer);
+							status = false;
+							num_threads_running--;
+							work_queue_cv.notify_all();
+							free(job);
+							for (auto entry : names) free(entry.key);
+							free(parser); return;
+						}
+						results.length++;
+					}
+					results_lock.unlock();
+				}
+
 				/* read the context sentences */
 				/*free(job.T); free(job.proof_axioms);
 				FILE* theory_stream = (FILE*) fopen(filename, "rb");
@@ -412,6 +514,58 @@ job.T.template print_axioms<true>(stdout, *debug_terminal_printer);*/
 				unsigned int sentence_counter = 0;
 				for (unsigned int i = 0; i < context_sentences.length; i++) {
 //if (sentence_counter < 7) { sentence_counter++; continue; }
+
+					unsigned int parse_count;
+					constexpr unsigned int max_parse_count = 2;
+					hol_term* logical_forms[max_parse_count];
+					double log_probabilities[max_parse_count];
+					if (ParseOnly) {
+						if (!parse_sentence(parser, context_sentences[i].data, names, logical_forms, log_probabilities, parse_count))
+							parse_count = 0;
+						results_lock.lock();
+						memory_stream stream(results[result_index].answer.length + 1024);
+						write(results[result_index].answer.data, stream, results[result_index].answer.length - 1);
+						if (stream.position != 1) {
+							fputc(',', stream);
+							fputc('[', stream);
+						}
+						for (unsigned int i = 0; i < parse_count; i++) {
+							hol_term* preprocessed = preprocess_formula(logical_forms[i]);
+							if (preprocessed == nullptr) {
+								free_logical_forms(logical_forms, parse_count);
+								status = false;
+								num_threads_running--;
+								work_queue_cv.notify_all();
+								free(job);
+								for (auto entry : names) free(entry.key);
+								free(parser); return;
+							}
+							if (i != 0) fputc(',', stream);
+							fputc('"', stream);
+							memory_stream temp_stream(1024);
+							print<hol_term_syntax::TPTP>(*preprocessed, temp_stream, parser.terminal_printer);
+							for (unsigned int i = 0; i < temp_stream.position; i++) {
+								if (temp_stream.buffer[i] == '"')
+									fputc('\\', stream);
+								fputc(temp_stream.buffer[i], stream);
+							}
+							fputc('"', stream);
+							free(*preprocessed); if (preprocessed->reference_count == 0) free(preprocessed);
+						}
+						fputc(']', stream);
+						fputc(']', stream);
+						swap(stream.buffer, results[result_index].answer.data);
+						results[result_index].answer.length = stream.position;
+
+						printf("Answer for question %u: ", job.context_id + 1);
+						print(results[result_index].answer, stdout); printf("\n");
+						results_lock.unlock();
+
+						free_logical_forms(logical_forms, parse_count);
+						sentence_counter++;
+						continue;
+					}
+
 					// TODO: this is kind of a hacky way to get the new proof
 					hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
 					old_proofs.add_all(job.T.observations);
@@ -632,7 +786,7 @@ inline void print_fictionalgeo_results(
 	fflush(stdout);
 }
 
-template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+template<bool ParseOnly = false, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 bool run_fictionalgeoqa_experiments(
 		ArticleSource& corpus, Parser& parser,
 		Theory& T, PriorStateType& proof_axioms,
@@ -670,7 +824,7 @@ bool run_fictionalgeoqa_experiments(
 	std::thread* workers = new std::thread[thread_count];
 	for (unsigned int i = 0; i < thread_count; i++) {
 		workers[i] = std::thread(
-				do_fictionalgeo_experiments<ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
+				do_fictionalgeo_experiments<ParseOnly, ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
 				std::ref(status), context_queue, question_queue,
 				std::ref(context_queue_start), std::ref(question_queue_start),
 				std::ref(context_queue_length), std::ref(question_queue_length),
@@ -779,7 +933,7 @@ bool run_fictionalgeoqa_experiments(
 	return status;
 }
 
-template<typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+template<bool ParseOnly = false, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 bool run_fictionalgeoqa_experiments_single_threaded(
 		ArticleSource& corpus, Parser& parser,
 		Theory& T, PriorStateType& proof_axioms,
@@ -866,7 +1020,7 @@ bool run_fictionalgeoqa_experiments_single_threaded(
 	if (!read_ruletaker_data<string>(data_filepath, process_fictionalgeo_questions))
 		status = false;
 
-	do_fictionalgeo_experiments(status, context_queue, question_queue,
+	do_fictionalgeo_experiments<ParseOnly>(status, context_queue, question_queue,
 			context_queue_start, question_queue_start, context_queue_length,
 			question_queue_length, work_queue_lock, work_queue_cv, prng_engine,
 			corpus, parser, proof_prior, names, seed_entities, geobase,

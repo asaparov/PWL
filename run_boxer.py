@@ -30,7 +30,9 @@ def normalize_names_and_numbers(formula, numbers):
 			numbers.append(function[2:])
 			return FOLFuncApplication('value', [f.args[0], FOLConstant('num' + function[2:])])
 		else:
-			if function.startswith('n1') and function.endswith('s'):
+			if function == 'n1cities':
+				function = 'n1city'
+			elif function.startswith('n1') and function.endswith('s'):
 				function = function[:-1]
 			return FOLFuncApplication(function, f.args)
 
@@ -105,7 +107,7 @@ test_file = open('fictionalgeoqa.jsonl', 'r')
 output_file = open(sys.argv[3], 'w')
 line_number = 1
 for line in test_file:
-	#if line_number < 108 or line_number > 108:
+	#if line_number < 446 or line_number > 446:
 	#	line_number += 1
 	#	continue
 	example = json.loads(line)
@@ -173,6 +175,8 @@ for line in test_file:
 		prover_file.write('fof(a13,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1area(L1) & r1of(L1,X1) & n1kilometer(L1) & n1area(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1largest(M) & r1Theme(M,X1)))).\n')
 		prover_file.write('fof(a14,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1area(L1) & r1of(L1,X1) & n1kilometer(L1) & n1area(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1smallest(M) & r1Theme(M,X1)))).\n')
 		prover_file.write('fof(a15,axiom,a1largest=a1biggest).\n')
+		prover_file.write('fof(a16,axiom,![X]:![Y]:(r1in(Y,X) => ?[H]:(v1have(H) & r1Actor(H,X) & r1Theme(H,Y)))).\n')
+		prover_file.write('fof(a17,axiom,v1run=v1flow).\n')
 		axiom_count = 0
 		for a in numbers:
 			for b in numbers:

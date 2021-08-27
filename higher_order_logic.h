@@ -1600,7 +1600,7 @@ template<> struct and_symbol<hol_term_syntax::TPTP> { static const char symbol[]
 template<> struct or_symbol<hol_term_syntax::TPTP> { static const char symbol[]; };
 template<> struct if_then_symbol<hol_term_syntax::TPTP> { static const char symbol[]; };
 template<> struct not_symbol<hol_term_syntax::TPTP> { static const char symbol; };
-template<> struct equals_symbol<hol_term_syntax::TPTP> { static const char symbol[]; };
+template<> struct equals_symbol<hol_term_syntax::TPTP> { static const char symbol; };
 template<> struct for_all_symbol<hol_term_syntax::TPTP> { static const char symbol; };
 template<> struct exists_symbol<hol_term_syntax::TPTP> { static const char symbol; };
 template<> struct lambda_symbol<hol_term_syntax::TPTP> { static const char symbol; };
@@ -1622,7 +1622,7 @@ const char and_symbol<hol_term_syntax::TPTP>::symbol[] = " & ";
 const char or_symbol<hol_term_syntax::TPTP>::symbol[] = " | ";
 const char if_then_symbol<hol_term_syntax::TPTP>::symbol[] = " => ";
 const char not_symbol<hol_term_syntax::TPTP>::symbol = '~';
-const char equals_symbol<hol_term_syntax::TPTP>::symbol[] = " = ";
+const char equals_symbol<hol_term_syntax::TPTP>::symbol = '=';
 const char for_all_symbol<hol_term_syntax::TPTP>::symbol = '!';
 const char exists_symbol<hol_term_syntax::TPTP>::symbol = '?';
 const char lambda_symbol<hol_term_syntax::TPTP>::symbol = '^';
@@ -1665,6 +1665,23 @@ inline const char* get_any_symbol(hol_term_type type) {
 		fprintf(stderr, "get_any_symbol ERROR: Unrecognized hol_term_type.\n");
 		return nullptr;
 	}
+}
+
+template<hol_term_syntax Syntax,
+	const char* LeftBracket = default_left_bracket,
+	const char* RightBracket = default_right_bracket,
+	char const* Separator = default_array_separator,
+	typename Stream, typename... Printer>
+bool print_array(const hol_array_term& term, Stream& out, Printer&&... printer) {
+	if (!print(LeftBracket, out)) return false;
+	if (term.length == 0)
+		return print(RightBracket, out);
+	if (!print<Syntax>(*term.operands[0], out, std::forward<Printer>(printer)...)) return false;
+	for (unsigned int i = 1; i < term.length; i++) {
+		if (!print(Separator, out) || !print<Syntax>(*term.operands[i], out, std::forward<Printer>(printer)...))
+			return false;
+	}
+	return print(RightBracket, out);
 }
 
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
@@ -1776,23 +1793,23 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.unary.operand->type == hol_term_type::OR
 		 || term.unary.operand->type == hol_term_type::IF_THEN)
 		{
-			return print('(', out) && print(*term.unary.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+			return print('(', out) && print<Syntax>(*term.unary.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
-			return print(*term.unary.operand, out, std::forward<Printer>(printer)...);
+			return print<Syntax>(*term.unary.operand, out, std::forward<Printer>(printer)...);
 		}
 
 	case hol_term_type::AND:
-		return print<hol_term*, empty_string, empty_string, and_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print_array<Syntax, empty_string, empty_string, and_symbol<Syntax>::symbol>(term.array, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::OR:
-		return print<hol_term*, empty_string, empty_string, or_symbol<Syntax>::symbol>(term.array.operands, term.array.length, out, pointer_scribe(), std::forward<Printer>(printer)...);
+		return print_array<Syntax, empty_string, empty_string, or_symbol<Syntax>::symbol>(term.array, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::IFF:
 		return print_iff<Syntax>(term.array, out, std::forward<Printer>(printer)...);
 
 	case hol_term_type::IF_THEN:
-		return print('(', out) && print(*term.binary.left, out, std::forward<Printer>(printer)...)
-			&& print(if_then_symbol<Syntax>::symbol, out) && print(*term.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+		return print('(', out) && print<Syntax>(*term.binary.left, out, std::forward<Printer>(printer)...)
+			&& print(if_then_symbol<Syntax>::symbol, out) && print<Syntax>(*term.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case hol_term_type::EQUALS:
 		if (term.binary.left->type == hol_term_type::EQUALS
@@ -1801,10 +1818,10 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.binary.left->type == hol_term_type::OR
 		 || term.binary.left->type == hol_term_type::IF_THEN)
 		{
-			if (!print('(', out) || !print(*term.binary.left, out, std::forward<Printer>(printer)...) || !print(')', out))
+			if (!print('(', out) || !print<Syntax>(*term.binary.left, out, std::forward<Printer>(printer)...) || !print(')', out))
 				return false;
 		} else {
-			if (!print(*term.binary.left, out, std::forward<Printer>(printer)...))
+			if (!print<Syntax>(*term.binary.left, out, std::forward<Printer>(printer)...))
 				return false;
 		}
 		if (!print(equals_symbol<Syntax>::symbol, out))
@@ -1815,22 +1832,22 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.binary.right->type == hol_term_type::OR
 		 || term.binary.right->type == hol_term_type::IF_THEN)
 		{
-			if (!print('(', out) || !print(*term.binary.right, out, std::forward<Printer>(printer)...) || !print(')', out))
+			if (!print('(', out) || !print<Syntax>(*term.binary.right, out, std::forward<Printer>(printer)...) || !print(')', out))
 				return false;
 		} else {
-			if (!print(*term.binary.right, out, std::forward<Printer>(printer)...))
+			if (!print<Syntax>(*term.binary.right, out, std::forward<Printer>(printer)...))
 				return false;
 		}
 		return true;
 
 	case hol_term_type::UNARY_APPLICATION:
-		return print(*term.binary.left, out, std::forward<Printer>(printer)...) && print('(', out)
-			&& print(*term.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
+		return print<Syntax>(*term.binary.left, out, std::forward<Printer>(printer)...) && print('(', out)
+			&& print<Syntax>(*term.binary.right, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case hol_term_type::BINARY_APPLICATION:
-		return print(*term.ternary.first, out, std::forward<Printer>(printer)...) && print('(', out)
-			&& print(*term.ternary.second, out, std::forward<Printer>(printer)...) && print(',', out)
-			&& print(*term.ternary.third, out, std::forward<Printer>(printer)...) && print(')', out);
+		return print<Syntax>(*term.ternary.first, out, std::forward<Printer>(printer)...) && print('(', out)
+			&& print<Syntax>(*term.ternary.second, out, std::forward<Printer>(printer)...) && print(',', out)
+			&& print<Syntax>(*term.ternary.third, out, std::forward<Printer>(printer)...) && print(')', out);
 
 	case hol_term_type::FOR_ALL:
 		if (!print_quantifier<Syntax>(hol_quantifier_type::FOR_ALL, term.quantifier.variable_type, term.quantifier.variable, out)) return false;
@@ -1840,9 +1857,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.quantifier.operand->type == hol_term_type::OR
 		 || term.quantifier.operand->type == hol_term_type::IF_THEN)
 		{
-			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+			return print('(', out) && print<Syntax>(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
-			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+			return print<Syntax>(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
 		}
 
 	case hol_term_type::EXISTS:
@@ -1853,9 +1870,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.quantifier.operand->type == hol_term_type::OR
 		 || term.quantifier.operand->type == hol_term_type::IF_THEN)
 		{
-			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+			return print('(', out) && print<Syntax>(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
-			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+			return print<Syntax>(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
 		}
 
 	case hol_term_type::LAMBDA:
@@ -1866,9 +1883,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.quantifier.operand->type == hol_term_type::OR
 		 || term.quantifier.operand->type == hol_term_type::IF_THEN)
 		{
-			return print('(', out) && print(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+			return print('(', out) && print<Syntax>(*term.quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
-			return print(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
+			return print<Syntax>(*term.quantifier.operand, out, std::forward<Printer>(printer)...);
 		}
 
 	case hol_term_type::ANY:
@@ -1878,7 +1895,7 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 			if (!print('*', out)) return false;
 		} else {
 			const char* any_string = get_any_symbol(term.type);
-			if (!print(any_string, out) || !print('(', out) || !print(*term.any.included, out, std::forward<Printer>(printer)...) || !print(')', out))
+			if (!print(any_string, out) || !print('(', out) || !print<Syntax>(*term.any.included, out, std::forward<Printer>(printer)...) || !print(')', out))
 				return false;
 		} if (term.any.excluded_tree_count != 0) {
 			if (!print("∖", out)) return false;
@@ -1889,7 +1906,7 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		for (unsigned int i = 0; i < term.any.excluded_tree_count; i++) {
 			if (!first && !print(" ⋃ ", out)) return false;
 			if (first) first = false;
-			if (!print(*term.any.excluded_trees[i], out, std::forward<Printer>(printer)...))
+			if (!print<Syntax>(*term.any.excluded_trees[i], out, std::forward<Printer>(printer)...))
 				return false;
 		}
 		if (term.any.excluded_tree_count > 1) {
@@ -1910,13 +1927,13 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 			fprintf(stderr, "print ERROR: Unexpected operator type in ANY_ARRAY.\n");
 			return false;
 		}
-		if (!print(", all: ", out) || !print(*term.any_array.all, out, std::forward<Printer>(printer)...)) return false;
+		if (!print(", all: ", out) || !print<Syntax>(*term.any_array.all, out, std::forward<Printer>(printer)...)) return false;
 		if (term.any_array.any.length > 0) {
-			if (!print(", any: ", out) || !print<hol_term*>(term.any_array.any.operands, term.any_array.any.length, out, pointer_scribe(), std::forward<Printer>(printer)...)) return false;
+			if (!print(", any: ", out) || !print_array<Syntax>(term.any_array.any, out, std::forward<Printer>(printer)...)) return false;
 		} if (term.any_array.left.length > 0) {
-			if (!print(", left: ", out) || !print<hol_term*>(term.any_array.left.operands, term.any_array.left.length, out, pointer_scribe(), std::forward<Printer>(printer)...)) return false;
+			if (!print(", left: ", out) || !print_array<Syntax>(term.any_array.left, out, std::forward<Printer>(printer)...)) return false;
 		} if (term.any_array.right.length > 0) {
-			if (!print(", right: ", out) || !print<hol_term*>(term.any_array.right.operands, term.any_array.right.length, out, pointer_scribe(), std::forward<Printer>(printer)...)) return false;
+			if (!print(", right: ", out) || !print_array<Syntax>(term.any_array.right, out, std::forward<Printer>(printer)...)) return false;
 		}
 		return true;
 
@@ -1938,9 +1955,9 @@ bool print(const hol_term& term, Stream& out, Printer&&... printer)
 		 || term.any_quantifier.operand->type == hol_term_type::OR
 		 || term.any_quantifier.operand->type == hol_term_type::IF_THEN)
 		{
-			return print('(', out) && print(*term.any_quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
+			return print('(', out) && print<Syntax>(*term.any_quantifier.operand, out, std::forward<Printer>(printer)...) && print(')', out);
 		} else {
-			return print(*term.any_quantifier.operand, out, std::forward<Printer>(printer)...);
+			return print<Syntax>(*term.any_quantifier.operand, out, std::forward<Printer>(printer)...);
 		}
 	}
 

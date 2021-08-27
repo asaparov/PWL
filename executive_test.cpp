@@ -401,7 +401,7 @@ set_seed(1356941742);
 //parser.invert_name_map(names);
 //parser.print_hdp("V_ADJUNCT", stderr);
 //parser.print_hdp("VP_R", stderr);
-run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
+//run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
 
 //run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
 /*for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
@@ -541,7 +541,7 @@ for (unsigned int counter = 0; ; counter++) {
 fclose(in);
 
 /* run FictionalGeoQA experiments */
-run_fictionalgeo_experiments_single_threaded(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "fictionalgeoqa.jsonl", "georeasoning_results.txt");
+run_fictionalgeoqa_experiments<true>(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "fictionalgeoqa.jsonl", "fictionalgeoqa_parse_outputs.txt", 8);
 free(T_copy); free(proof_axioms_copy);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
