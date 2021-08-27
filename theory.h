@@ -3420,6 +3420,7 @@ struct theory
 	typedef typename Formula::Type FormulaType;
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
+	typedef Canonicalizer FormulaCanonicalizer;
 
 	template<unsigned int Value> using Constants = typename Term::template constants<Value>;
 	template<unsigned int Value> using Variables = typename Term::template variables<Value>;

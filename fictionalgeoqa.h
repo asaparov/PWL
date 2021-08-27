@@ -249,10 +249,9 @@ void do_fictionalgeo_experiments(bool& status,
 
 				memory_stream stream(results[index].answer.length + 1024);
 				write(results[index].answer.data, stream, results[index].answer.length - 1);
-				if (stream.position != 1) {
+				if (stream.position != 1)
 					fputc(',', stream);
-					fputc('[', stream);
-				}
+				fputc('[', stream);
 				for (unsigned int i = 0; i < parse_count; i++) {
 					hol_term* preprocessed = preprocess_formula(logical_forms[i]);
 					if (preprocessed == nullptr) {
@@ -264,17 +263,29 @@ void do_fictionalgeo_experiments(bool& status,
 						for (auto entry : names) free(entry.key);
 						free(parser); return;
 					}
+					array_map<unsigned int, unsigned int> variable_map(16);
+					hol_term* canonicalized = Theory::FormulaCanonicalizer::canonicalize(*preprocessed, variable_map);
+					core::free(*preprocessed); if (preprocessed->reference_count == 0) core::free(preprocessed);
+					if (canonicalized == nullptr) {
+						free_logical_forms(logical_forms, parse_count);
+						status = false;
+						num_threads_running--;
+						work_queue_cv.notify_all();
+						free(job);
+						for (auto entry : names) free(entry.key);
+						free(parser); return;
+					}
 					if (i != 0) fputc(',', stream);
 					fputc('"', stream);
 					memory_stream temp_stream(1024);
-					print<hol_term_syntax::TPTP>(*preprocessed, temp_stream, parser.terminal_printer);
+					print<hol_term_syntax::TPTP>(*canonicalized, temp_stream, parser.terminal_printer);
 					for (unsigned int i = 0; i < temp_stream.position; i++) {
 						if (temp_stream.buffer[i] == '"')
 							fputc('\\', stream);
 						fputc(temp_stream.buffer[i], stream);
 					}
 					fputc('"', stream);
-					free(*preprocessed); if (preprocessed->reference_count == 0) free(preprocessed);
+					free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 				}
 				fputc(']', stream);
 				fputc(']', stream);
@@ -525,10 +536,9 @@ job.T.template print_axioms<true>(stdout, *debug_terminal_printer);*/
 						results_lock.lock();
 						memory_stream stream(results[result_index].answer.length + 1024);
 						write(results[result_index].answer.data, stream, results[result_index].answer.length - 1);
-						if (stream.position != 1) {
+						if (stream.position != 1)
 							fputc(',', stream);
-							fputc('[', stream);
-						}
+						fputc('[', stream);
 						for (unsigned int i = 0; i < parse_count; i++) {
 							hol_term* preprocessed = preprocess_formula(logical_forms[i]);
 							if (preprocessed == nullptr) {
@@ -540,17 +550,29 @@ job.T.template print_axioms<true>(stdout, *debug_terminal_printer);*/
 								for (auto entry : names) free(entry.key);
 								free(parser); return;
 							}
+							array_map<unsigned int, unsigned int> variable_map(16);
+							hol_term* canonicalized = Theory::FormulaCanonicalizer::canonicalize(*preprocessed, variable_map);
+							core::free(*preprocessed); if (preprocessed->reference_count == 0) core::free(preprocessed);
+							if (canonicalized == nullptr) {
+								free_logical_forms(logical_forms, parse_count);
+								status = false;
+								num_threads_running--;
+								work_queue_cv.notify_all();
+								free(job);
+								for (auto entry : names) free(entry.key);
+								free(parser); return;
+							}
 							if (i != 0) fputc(',', stream);
 							fputc('"', stream);
 							memory_stream temp_stream(1024);
-							print<hol_term_syntax::TPTP>(*preprocessed, temp_stream, parser.terminal_printer);
+							print<hol_term_syntax::TPTP>(*canonicalized, temp_stream, parser.terminal_printer);
 							for (unsigned int i = 0; i < temp_stream.position; i++) {
 								if (temp_stream.buffer[i] == '"')
 									fputc('\\', stream);
 								fputc(temp_stream.buffer[i], stream);
 							}
 							fputc('"', stream);
-							free(*preprocessed); if (preprocessed->reference_count == 0) free(preprocessed);
+							free(*canonicalized); if (canonicalized->reference_count == 0) free(canonicalized);
 						}
 						fputc(']', stream);
 						fputc(']', stream);

@@ -112,6 +112,28 @@ class FOLIfThen(FOLFormula):
 		visit(self.antecedent)
 		visit(self.consequent)
 
+class FOLIff(FOLFormula):
+	def __init__(self, antecedent, consequent):
+		self.antecedent = antecedent
+		self.consequent = consequent
+
+	def __eq__(self, other):
+		if type(other) != FOLIff:
+			return False
+		return self.antecedent == other.antecedent and self.consequent == other.consequent
+
+	def __ne__(self, other):
+		if type(other) != FOLIff:
+			return True
+		return self.antecedent != other.antecedent or self.consequent != other.consequent
+
+	def apply(self, func):
+		return FOLIff(func(self.antecedent), func(self.consequent))
+
+	def visit(self, visit):
+		visit(self.antecedent)
+		visit(self.consequent)
+
 class FOLEquals(FOLFormula):
 	def __init__(self, left, right):
 		self.left = left
@@ -344,12 +366,14 @@ def parse_fol_quantifier_from_prolog(string, pos, var_map):
 	return variable, formula, pos + 1
 
 def parse_fol_from_prolog(string, pos, var_map):
+	while string[pos].isspace():
+		pos += 1
 	if string.startswith('some(', pos):
 		(variable, formula, pos) = parse_fol_quantifier_from_prolog(string, pos + len('some('), var_map)
 		return FOLExists(variable, formula), pos
 	elif string.startswith('all(', pos):
 		(variable, formula, pos) = parse_fol_quantifier_from_prolog(string, pos + len('all('), var_map)
-		return FOLExists(variable, formula), pos
+		return FOLAll(variable, formula), pos
 	elif string.startswith('not(', pos):
 		(formula, pos) = parse_fol_from_prolog(string, pos + len('not('), var_map)
 		if string[pos] != ')':
@@ -388,6 +412,139 @@ def do_parse_fol_from_prolog(string):
 	formula, pos = parse_fol_from_prolog(string, 0, var_map)
 	return formula
 
+def parse_fol_term_from_tptp(string, pos, var_map):
+	end = pos
+	if string[end] == '"':
+		end += 1
+		while True:
+			if string[end] == '"' and string[end - 1] != '\\':
+				break
+			end += 1
+		end += 1
+		return FOLConstant(string[pos:end]), end
+
+	must_be_var = False
+	if string[end] == '$':
+		must_be_var = True
+		end += 1
+	while string[end].isdigit() or string[end].isalpha():
+		end += 1
+	if string[pos:end] in var_map:
+		term = FOLVariable(var_map[string[pos:end]])
+	else:
+		if must_be_var:
+			raise Exception(f"parse_fol_term_from_tptp ERROR at {pos+1}: Variable undeclared.")
+		term = FOLConstant(string[pos:end])
+	if string[end] == '(':
+		end += 1
+		args = []
+		while True:
+			arg, end = parse_fol_term_from_tptp(string, end, var_map)
+			args.append(arg)
+			if string[end] == ',':
+				end += 1
+				continue
+			elif string[end] == ')':
+				end += 1
+				break
+			else:
+				raise Exception(f"parse_fol_term_from_tptp ERROR at {end+1}: Expected a closing parenthesis or comma in argument array.")
+		if type(term) == FOLConstant:
+			term = FOLFuncApplication(term.constant, args)
+		else:
+			term = FOLFuncApplication(term, args)
+	return term, end
+
+def parse_fol_quantifier_from_tptp(string, pos, var_map):
+	index = string.find(']:', pos)
+	var_names = string[pos:index].split(',')
+	variables = []
+	for var_name in var_names:
+		if var_name in var_map:
+			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Variable '{var_name}' already declared in this scope.")
+		variable = len(var_map) + 1
+		var_map[var_name] = variable
+		variables.append(variable)
+	(formula, pos) = parse_fol_from_tptp(string, index + len(']:'), var_map)
+	for var_name in var_names:
+		del var_map[var_name]
+	return variables, formula, pos
+
+def parse_fol_literal_from_tptp(string, pos, var_map):
+	if string.startswith('?[', pos):
+		(variables, formula, pos) = parse_fol_quantifier_from_tptp(string, pos + len('?['), var_map)
+		for variable in reversed(variables):
+			formula = FOLExists(variable, formula)
+	elif string.startswith('![', pos):
+		(variables, formula, pos) = parse_fol_quantifier_from_tptp(string, pos + len('!['), var_map)
+		for variable in reversed(variables):
+			formula = FOLForAll(variable, formula)
+	elif string.startswith('~', pos):
+		(operand, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
+		formula = FOLNot(operand)
+	elif string.startswith('(', pos):
+		(formula, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
+		if string[pos] != ')':
+			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Expected a closing parenthesis.")
+		pos += 1
+	else:
+		formula, pos = parse_fol_term_from_tptp(string, pos, var_map)
+		if string[pos] == '=':
+			other, pos = parse_fol_literal_from_tptp(string, pos + 1, var_map)
+			formula = FOLEquals(formula, other)
+	return formula, pos
+
+def parse_fol_from_tptp(string, pos, var_map):
+	while string[pos].isspace():
+		pos += 1
+	if string.startswith('(', pos):
+		(formula, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
+		if string[pos] != ')':
+			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Expected a closing parenthesis.")
+		return formula, pos + 1
+	formula, pos = parse_fol_literal_from_tptp(string, pos, var_map)
+
+	while pos < len(string) and string[pos].isspace():
+		pos += 1
+	if string.startswith('=>', pos):
+		pos += len('=>')
+		while string[pos].isspace():
+			pos += 1
+		other, pos = parse_fol_from_tptp(string, pos, var_map)
+		return FOLIfThen(formula, other), pos
+	elif pos < len(string) and (string[pos] == '&' or string[pos] == '|'):
+		operands = [formula]
+		operator = string[pos]
+		pos += 1
+		while True:
+			while string[pos].isspace():
+				pos += 1
+			print(f'PARSING CONJUNCT at {pos}: {string[pos:]}')
+			other, pos = parse_fol_literal_from_tptp(string, pos, var_map)
+			print(f'PARSED CONJUNCT at {pos}: {string[pos:]}')
+			if type(other) == FOLConstant:
+				raise Exception('FOUND CONSTANT CONJUNCT')
+			operands.append(other)
+			while string[pos].isspace():
+				pos += 1
+			while string[pos].isspace():
+				pos += 1
+			if string[pos] == operator:
+				pos += 1
+			else:
+				break
+		if operator == '&':
+			return FOLAnd(operands), pos
+		else:
+			return FOLOr(operands), pos
+	else:
+		return formula, pos
+
+def do_parse_fol_from_tptp(string):
+	var_map = {}
+	formula, pos = parse_fol_from_tptp(string, 0, var_map)
+	return formula
+
 def fol_term_to_tptp(term):
 	if type(term) == FOLVariable:
 		return f'X{term.variable}'
@@ -395,6 +552,8 @@ def fol_term_to_tptp(term):
 		return term.constant
 	elif type(term) == FOLNumber:
 		return term.number
+	elif type(term) == FOLFuncApplication:
+		return term.function + '(' + ','.join([fol_term_to_tptp(arg) for arg in term.args]) + ')'
 	else:
 		raise Exception("fol_term_to_tptp ERROR: Unrecognized term type.")
 
@@ -407,6 +566,8 @@ def fol_to_tptp(formula):
 		return '~' + fol_to_tptp(formula.operand)
 	elif type(formula) == FOLIfThen:
 		return '(' + fol_to_tptp(formula.antecedent) + ' => ' + fol_to_tptp(formula.consequent) + ')'
+	elif type(formula) == FOLIff:
+		return '(' + fol_to_tptp(formula.antecedent) + ' <=> ' + fol_to_tptp(formula.consequent) + ')'
 	elif type(formula) == FOLEquals:
 		return '(' + fol_term_to_tptp(formula.left) + '=' + fol_term_to_tptp(formula.right) + ')'
 	elif type(formula) == FOLForAll:
