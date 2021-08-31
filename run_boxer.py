@@ -2,9 +2,17 @@ import sys
 import os
 import json
 import subprocess
+import threading
 from fol import *
 
-def normalize_names_and_numbers(formula, numbers):
+def isfloat(value):
+	try:
+		float(value)
+		return True
+	except ValueError:
+		return False
+
+def normalize_names_and_numbers(formula, numbers, names):
 	def func(f):
 		nonlocal numbers
 		if type(f) != FOLFuncApplication:
@@ -17,17 +25,19 @@ def normalize_names_and_numbers(formula, numbers):
 		if (function.startswith('orgnam') or function.startswith('geonam') or function.startswith('namnam')):
 			if len(f.args) != 1:
 				raise Exception("normalize_names_and_numbers ERROR: Name declaration must be unary.")
+			if function[6:] != 'river':
+				names.add(function[6:])
 			return FOLFuncApplication('value', [f.args[0], FOLConstant(function[6:])])
 		elif function.startswith('c') and function.endswith('number'):
 			if len(f.args) != 1:
 				raise Exception("normalize_names_and_numbers ERROR: Number literal declaration must be unary.")
 			literal = function[len('c'):-len('number')]
-			numbers.append(literal)
+			numbers.add(literal)
 			return FOLFuncApplication('value', [f.args[0], FOLConstant('num' + literal)])
 		elif function.startswith('n1') and function[2:].isdigit():
 			if len(f.args) != 1:
 				raise Exception("normalize_names_and_numbers ERROR: Number literal declaration must be unary.")
-			numbers.append(function[2:])
+			numbers.add(function[2:])
 			return FOLFuncApplication('value', [f.args[0], FOLConstant('num' + function[2:])])
 		else:
 			if function == 'n1cities':
@@ -36,7 +46,7 @@ def normalize_names_and_numbers(formula, numbers):
 				function = function[:-1]
 			return FOLFuncApplication(function, f.args)
 
-	return formula.apply(func)
+	return func(formula)
 
 def remove_lambda_variable(formula):
 	new_variable = max_variable(formula) + 1
@@ -71,7 +81,7 @@ def remove_lambda_variable(formula):
 		else:
 			return result
 
-	new_formula = formula.apply(remove_lambda_var_apply)
+	new_formula = remove_lambda_var_apply(formula)
 	if type(new_formula) == FOLExists and new_formula.variable == remove_quantifier:
 		remove_quantifier = 0
 		new_formula = substitute(new_formula.operand, FOLVariable(new_formula.variable), FOLVariable(new_variable))
@@ -96,22 +106,109 @@ def remove_lambda_variable(formula):
 			)
 		)
 
+def run_thm_prover(formulas, question_count, question_lf, numbers, use_vampire, candidate):
+	if candidate != None:
+		print("attempting proof with candidate " + candidate)
+	filename = f'boxer_sentences.{threading.current_thread().ident}.p'
+	prover_file = open(sys.argv[2] + filename, 'w')
+	prover_file.write('fof(a0,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2)))) => ?[X4]:(a1longer(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
+	prover_file.write('fof(a1,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1)))) => ?[X4]:(a1shorter(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
+	prover_file.write('fof(a2,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2)))) => ?[X4]:(a1longer(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
+	prover_file.write('fof(a3,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1)))) => ?[X4]:(a1shorter(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
+	prover_file.write('fof(a4,axiom,![L1]:![L2]:(?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))) => ?[X4]:(a1greater(X4) & r1than(X4,L2) & r1Theme(X4,L1)))).\n')
+	prover_file.write('fof(a5,axiom,![L1]:![L2]:(?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))) => ?[X4]:(a1smaller(X4) & r1than(X4,L2) & r1Theme(X4,L1)))).\n')
+	prover_file.write('fof(a6,axiom,a1less=a1smaller).\n')
+	prover_file.write('fof(a7,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1length(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1longest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a8,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1length(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1shortest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a9,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1length(L2) & r1of(L2,X2) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1longest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a10,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1length(L2) & r1of(L2,X2) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1shortest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a11,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1population(L1) & r1of(L1,X1) & n1population(L2) & r1of(L2,X2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1largest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a12,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1population(L1) & r1of(L1,X1) & n1population(L2) & r1of(L2,X2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1smallest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a13,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1area(L1) & r1of(L1,X1) & n1kilometer(L1) & n1area(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1largest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a14,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1area(L1) & r1of(L1,X1) & n1kilometer(L1) & n1area(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1smallest(M) & r1Theme(M,X1)))).\n')
+	prover_file.write('fof(a15,axiom,a1largest=a1biggest).\n')
+	prover_file.write('fof(a16,axiom,![X]:![Y]:(r1in(Y,X) => ?[H]:(v1have(H) & r1Actor(H,X) & r1Theme(H,Y)))).\n')
+	prover_file.write('fof(a17,axiom,v1run=v1flow).\n')
+	axiom_count = 0
+	for a in numbers:
+		for b in numbers:
+			if float(a) > float(b):
+				prover_file.write(f'fof(g{axiom_count},axiom,greater(num{a},num{b})).\n')
+				axiom_count += 1
+			elif a != b:
+				prover_file.write(f'fof(g{axiom_count},axiom,~greater(num{a},num{b})).\n')
+				axiom_count += 1
+				prover_file.write(f'fof(g{axiom_count},axiom,~(num{a}=num{b})).\n')
+				axiom_count += 1
+	for j in range(len(formulas) - question_count):
+		prover_file.write(f'fof(c{j},axiom,({fol_to_tptp(formulas[j])})).\n')
+	if candidate != None:
+		if isfloat(candidate):
+			question_lf = substitute(question_lf.operand, FOLVariable(question_lf.variable), FOLConstant('num' + candidate))
+		else:
+			question_lf = substitute(question_lf.operand, FOLVariable(question_lf.variable), FOLConstant(candidate))
+	prover_file.write(f'fof(q,{"question" if candidate == None else "conjecture"},({fol_to_tptp(question_lf)})).\n')
+	prover_file.close()
+
+	if candidate == None:
+		if use_vampire:
+			result = subprocess.run(['./vampire_rel__', '--mode', 'casc', '-t', '300', '-av', 'off', '-qa', 'answer_literal', filename], cwd=sys.argv[2], stdout=subprocess.PIPE, universal_newlines=True)
+		else:
+			result = subprocess.run(['PROVER/eprover', '-s', filename, '--soft-cpu-limit=60', '--answers'], cwd=sys.argv[2], stdout=subprocess.PIPE, universal_newlines=True)
+	else:
+		if use_vampire:
+			result = subprocess.run(['./vampire_rel__', '--mode', 'casc', '-t', '30', filename], cwd=sys.argv[2], stdout=subprocess.PIPE, universal_newlines=True)
+		else:
+			result = subprocess.run(['PROVER/eprover', '-s', filename, '--soft-cpu-limit=10'], cwd=sys.argv[2], stdout=subprocess.PIPE, universal_newlines=True)
+	answers = []
+	found_proof = False
+	for line in result.stdout.split('\n'):
+		if candidate == None and (line.startswith('# SZS answers Tuple [[') or line.startswith('% SZS answers Tuple [[')):
+			index = line.find(']')
+			candidates = line[len('# SZS answers Tuple [['):index].split(',')
+			print(candidates)
+			for candidate in candidates:
+				candidate = candidate.strip()
+				if candidate.startswith('esk') or candidate.startswith('sK'):
+					continue
+				if candidate.startswith('num'):
+					answers.append(candidate[3:])
+				else:
+					answers.append(candidate)
+		elif candidate != None and (line.startswith('# SZS status Theorem') or line.startswith('% SZS status Theorem')):
+			found_proof = True
+			print('found proof')
+			break
+	os.remove(sys.argv[2] + filename)
+	if candidate != None:
+		return found_proof
+	return answers
+
 
 
 if len(sys.argv) < 4:
 	print("Missing arguments")
-	print("Usage: python run_boxer.py [path to C&C/Boxer directory] [path to E theorem prover directory] [output file]")
+	print("Usage: python run_boxer.py [path to C&C/Boxer directory] [path to theorem prover directory] [output file] [--use-vampire] [--conjectures]")
 	sys.exit(1)
+
+use_vampire = False
+conjectures = False
+for i in range(4, len(sys.argv)):
+	if sys.argv[i] == '--use-vampire':
+		use_vampire = True
+	elif sys.argv[i] == '--conjectures':
+		conjectures = True
 
 test_file = open('fictionalgeoqa.jsonl', 'r')
 output_file = open(sys.argv[3], 'w')
 line_number = 1
 for line in test_file:
-	#if line_number < 446 or line_number > 446:
+	#if line_number < 28 or line_number > 28:
 	#	line_number += 1
 	#	continue
 	example = json.loads(line)
-	input_file = open(sys.argv[1] + 'boxer_sentences.txt', 'w')
+	input_filename = f'boxer_sentences.{threading.current_thread().ident}'
+	input_file = open(sys.argv[1] + input_filename + '.txt', 'w')
 	input_file.write(example["theory"])
 
 	for question in example["questions"].values():
@@ -119,14 +216,15 @@ for line in test_file:
 		input_file.write(question['question'].replace('Which','What').replace('which','what'))
 	input_file.close()
 
-	subprocess.call(['bin/t', 'a', '--input', 'boxer_sentences.txt', '--output', 'boxer_sentences.tok'], cwd=sys.argv[1])
-	subprocess.call(['bin/candc', '--input', 'boxer_sentences.tok', '--output', 'boxer_sentences.ccg', '--models', 'models/boxer', '--candc-printer', 'boxer'], cwd=sys.argv[1])
-	subprocess.call(['bin/boxer', 'a', '--input', 'boxer_sentences.ccg', '--output', 'boxer_sentences.out', '--resolve', '--semantics', 'fol'], cwd=sys.argv[1])
+	subprocess.call(['bin/t', 'a', '--input', input_filename + '.txt', '--output', input_filename + '.tok'], cwd=sys.argv[1])
+	subprocess.call(['bin/candc', '--input', input_filename + '.tok', '--output', input_filename + '.ccg', '--models', 'models/boxer', '--candc-printer', 'boxer'], cwd=sys.argv[1])
+	subprocess.call(['bin/boxer', 'a', '--input', input_filename + '.ccg', '--output', input_filename + '.out', '--resolve', '--semantics', 'fol'], cwd=sys.argv[1])
 
 	# parse the first-order logic output from Boxer and convert it into TPTP notation
-	fol_file = open(sys.argv[1] + 'boxer_sentences.out', 'r')
+	fol_file = open(sys.argv[1] + input_filename + '.out', 'r')
 	formulas = []
-	numbers = []
+	numbers = set()
+	names = set()
 	while True:
 		line = fol_file.readline().strip()
 		if line == '':
@@ -134,15 +232,15 @@ for line in test_file:
 		if not line.startswith('fol('):
 			continue
 		index = line.find(',', len('fol('))
-		formulas.append(normalize_names_and_numbers(do_parse_fol_from_prolog(line[(index + 1):-2]), numbers))
+		formulas.append(normalize_names_and_numbers(do_parse_fol_from_prolog(line[(index + 1):-2]), numbers, names))
 	fol_file.close()
 
-	os.remove(sys.argv[1] + 'boxer_sentences.txt')
-	os.remove(sys.argv[1] + 'boxer_sentences.tok')
-	os.remove(sys.argv[1] + 'boxer_sentences.ccg')
-	os.remove(sys.argv[1] + 'boxer_sentences.out')
+	os.remove(sys.argv[1] + input_filename + '.txt')
+	os.remove(sys.argv[1] + input_filename + '.tok')
+	os.remove(sys.argv[1] + input_filename + '.ccg')
+	os.remove(sys.argv[1] + input_filename + '.out')
 
-	# run the E theorem prover to answer the question
+	# run the theorem prover to answer the question
 	question_count = len(example["questions"].values())
 	skip = False
 	for i in range(question_count):
@@ -158,56 +256,18 @@ for line in test_file:
 		line_number += 1
 		continue
 	for i in range(question_count):
-		prover_file = open(sys.argv[2] + 'boxer_sentences.p', 'w')
-		prover_file.write('fof(a0,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2)))) => ?[X4]:(a1longer(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
-		prover_file.write('fof(a1,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1)))) => ?[X4]:(a1shorter(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
-		prover_file.write('fof(a2,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2)))) => ?[X4]:(a1longer(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
-		prover_file.write('fof(a3,axiom,![X1]:![L2]:(?[L1]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1)))) => ?[X4]:(a1shorter(X4) & r1than(X4,L2) & r1Theme(X4,X1)))).\n')
-		prover_file.write('fof(a4,axiom,![L1]:![L2]:(?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))) => ?[X4]:(a1greater(X4) & r1than(X4,L2) & r1Theme(X4,L1)))).\n')
-		prover_file.write('fof(a5,axiom,![L1]:![L2]:(?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))) => ?[X4]:(a1smaller(X4) & r1than(X4,L2) & r1Theme(X4,L1)))).\n')
-		prover_file.write('fof(a6,axiom,a1less=a1smaller).\n')
-		prover_file.write('fof(a7,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1length(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1longest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a8,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1kilometer(L1) & n1length(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1shortest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a9,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1length(L2) & r1of(L2,X2) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1longest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a10,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1length(L1) & r1of(L1,X1) & n1meter(L1) & n1length(L2) & r1of(L2,X2) & n1meter(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1shortest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a11,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1population(L1) & r1of(L1,X1) & n1population(L2) & r1of(L2,X2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1largest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a12,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1population(L1) & r1of(L1,X1) & n1population(L2) & r1of(L2,X2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1smallest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a13,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1area(L1) & r1of(L1,X1) & n1kilometer(L1) & n1area(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V1,V2))))) => ?[M]:(a1largest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a14,axiom,![X1]:(![X2]:(~(X1=X2) => ?[L1]:?[L2]:(n1area(L1) & r1of(L1,X1) & n1kilometer(L1) & n1area(L2) & r1of(L2,X2) & n1kilometer(L2) & ?[C1,C2]:(card(L1,C1) & card(L2,C2) & ?[V1,V2]:(value(C1,V1) & value(C2,V2) & greater(V2,V1))))) => ?[M]:(a1smallest(M) & r1Theme(M,X1)))).\n')
-		prover_file.write('fof(a15,axiom,a1largest=a1biggest).\n')
-		prover_file.write('fof(a16,axiom,![X]:![Y]:(r1in(Y,X) => ?[H]:(v1have(H) & r1Actor(H,X) & r1Theme(H,Y)))).\n')
-		prover_file.write('fof(a17,axiom,v1run=v1flow).\n')
-		axiom_count = 0
-		for a in numbers:
-			for b in numbers:
-				if float(a) > float(b):
-					prover_file.write(f'fof(g{axiom_count},axiom,greater(n{a},n{b})).\n')
-					axiom_count += 1
-				elif a != b:
-					prover_file.write(f'fof(g{axiom_count},axiom,~greater(n{a},n{b})).\n')
-					axiom_count += 1
-		for j in range(len(formulas) - question_count):
-			prover_file.write(f'fof(c{j},axiom,({fol_to_tptp(formulas[j])})).\n')
-		prover_file.write(f'fof(q,question,({fol_to_tptp(formulas[-i-1])})).\n')
-		prover_file.close()
-
-		result = subprocess.run(['PROVER/eprover', '-s', 'boxer_sentences.p', '--soft-cpu-limit=45'], cwd=sys.argv[2], stdout=subprocess.PIPE, universal_newlines=True)
 		answers = []
-		for line in result.stdout.split('\n'):
-			if line.startswith('# SZS answers Tuple [['):
-				index = line.find(']')
-				candidates = line[len('# SZS answers Tuple [['):index].split(',')
-				for candidate in candidates:
-					candidate = candidate.strip()
-					if candidate.startswith('esk'):
-						continue
-					if candidate.startswith('num'):
-						answers.append(candidate[3:])
-					else:
-						answers.append(candidate)
+		if conjectures:
+			for number in numbers:
+				if run_thm_prover(formulas, question_count, formulas[-i-1], numbers, use_vampire, number):
+					answers.append(number)
+			for name in names:
+				if run_thm_prover(formulas, question_count, formulas[-i-1], numbers, use_vampire, name):
+					answers.append(name)
+		else:
+			answers = run_thm_prover(formulas, question_count, formulas[-i-1], numbers, use_vampire, None)
 		output_file.write(', '.join(answers) + '\n')
 		output_file.flush()
-		#os.remove(sys.argv[2] + 'boxer_sentences.p')
 
 	line_number += 1
 

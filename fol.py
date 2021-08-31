@@ -244,12 +244,12 @@ class FOLVariable(FOLTerm):
 
 	def __eq__(self, other):
 		if type(other) != FOLVariable:
-			return True
+			return False
 		return self.variable == other.variable
 
 	def __ne__(self, other):
 		if type(other) != FOLVariable:
-			return False
+			return True
 		return self.variable != other.variable
 
 	def apply(self, func):
@@ -264,12 +264,12 @@ class FOLConstant(FOLTerm):
 
 	def __eq__(self, other):
 		if type(other) != FOLConstant:
-			return True
+			return False
 		return self.constant == other.constant
 
 	def __ne__(self, other):
 		if type(other) != FOLConstant:
-			return False
+			return True
 		return self.constant != other.constant
 
 	def apply(self, func):
@@ -284,12 +284,12 @@ class FOLNumber(FOLTerm):
 
 	def __eq__(self, other):
 		if type(other) != FOLNumber:
-			return True
+			return False
 		return self.number == other.number
 
 	def __ne__(self, other):
 		if type(other) != FOLNumber:
-			return False
+			return True
 		return self.number != other.number
 
 	def apply(self, func):
@@ -304,7 +304,7 @@ def substitute(formula, src, dst):
 			return dst
 		else:
 			return f.apply(apply_substitute)
-	return formula.apply(apply_substitute)
+	return apply_substitute(formula)
 
 def max_variable(formula):
 	max_var = 0
@@ -315,6 +315,19 @@ def max_variable(formula):
 		f.visit(max_variable_visit)
 	formula.visit(max_variable_visit)
 	return max_var
+
+def contains(formula, subtree):
+	found = False
+	def visit(f):
+		nonlocal found
+		if found:
+			return
+		elif f == subtree:
+			found = True
+		else:
+			f.visit(visit)
+	formula.visit(visit)
+	return found
 
 def parse_fol_term_from_prolog(string, pos, var_map):
 	end = pos
@@ -427,7 +440,7 @@ def parse_fol_term_from_tptp(string, pos, var_map):
 	if string[end] == '$':
 		must_be_var = True
 		end += 1
-	while string[end].isdigit() or string[end].isalpha() or string[end] == '≥' or string[end] == '.':
+	while string[end].isdigit() or string[end].isalpha() or string[end] == '≥' or string[end] == '.' or string[end] == '_':
 		end += 1
 	if string[pos:end] in var_map:
 		term = FOLVariable(var_map[string[pos:end]])
@@ -480,12 +493,10 @@ def parse_fol_literal_from_tptp(string, pos, var_map):
 		for variable in reversed(variables):
 			formula = FOLForAll(variable, formula)
 	elif string.startswith('~', pos):
-		(operand, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
+		(operand, pos) = parse_fol_literal_from_tptp(string, pos + 1, var_map)
 		formula = FOLNot(operand)
 	elif string.startswith('(', pos):
-		print(f'FOUND OPEN PAREN at {pos}: {string[pos:]}')
 		(formula, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
-		print(f'FINISHED READING OPEN PAREN at {pos}: {string[pos:]}')
 		if string[pos] != ')':
 			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Expected a closing parenthesis.")
 		pos += 1
@@ -500,9 +511,7 @@ def parse_fol_from_tptp(string, pos, var_map):
 	while string[pos].isspace():
 		pos += 1
 	if string.startswith('(', pos):
-		print(f'FOUND OPEN PAREN at {pos}: {string[pos:]}')
 		(formula, pos) = parse_fol_from_tptp(string, pos + 1, var_map)
-		print(f'FINISHED READING OPEN PAREN at {pos}: {string[pos:]}')
 		if string[pos] != ')':
 			raise Exception(f"parse_fol_from_tptp ERROR at {pos+1}: Expected a closing parenthesis.")
 		return formula, pos + 1
@@ -514,15 +523,10 @@ def parse_fol_from_tptp(string, pos, var_map):
 		operands = [formula]
 		operator = string[pos]
 		pos += 1
-		print(f'FOUND ARRAY OPERATOR {operator} at {pos}: {string[pos:]}')
 		while True:
 			while string[pos].isspace():
 				pos += 1
-			print(f'PARSING {operator}-ARRAY OPERAND at {pos}: {string[pos:]}')
 			other, pos = parse_fol_literal_from_tptp(string, pos, var_map)
-			print(f'FINISHED PARSING {operator}-ARRAY OPERAND at {pos}: {string[pos:]}')
-			if type(other) == FOLConstant:
-				raise Exception('FOUND CONSTANT CONJUNCT')
 			operands.append(other)
 			while string[pos].isspace():
 				pos += 1
