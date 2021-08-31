@@ -1676,7 +1676,7 @@ bool print_array(const hol_array_term& term, Stream& out, Printer&&... printer) 
 	if (!print(LeftBracket, out)) return false;
 	if (term.length == 0)
 		return print(RightBracket, out);
-	if (PrintParens && (term.operands[i]->type == hol_term_type::AND || term.operands[i]->type == hol_term_type::OR || term.operands[i]->type == hol_term_type::IFF)) {
+	if (PrintParens && (term.operands[0]->type == hol_term_type::AND || term.operands[0]->type == hol_term_type::OR || term.operands[0]->type == hol_term_type::IFF)) {
 		if (!print('(', out) || !print<Syntax>(*term.operands[0], out, std::forward<Printer>(printer)...) || !print(')', out)) return false;
 	} else {
 		if (!print<Syntax>(*term.operands[0], out, std::forward<Printer>(printer)...)) return false;
