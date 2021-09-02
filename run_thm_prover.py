@@ -149,10 +149,10 @@ test_file = open('fictionalgeoqa_parse_outputs.txt', 'r')
 output_file = open(sys.argv[2], 'w')
 line_number = 1
 for line in test_file:
-	if line_number < 166 or line_number > 500:
-		output_file.write('\n')
-		line_number += 1
-		continue
+	#if line_number < 371 or line_number > 500:
+	#	output_file.write('\n')
+	#	line_number += 1
+	#	continue
 	if line.startswith('<no answer>'):
 		output_file.write('\n')
 		line_number += 1

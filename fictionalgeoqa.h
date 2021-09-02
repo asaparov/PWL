@@ -140,7 +140,7 @@ constexpr unsigned int MAX_FICTIONALGEO_QUESTION_COUNT = 2000;
 #include <sanitizer/lsan_interface.h>
 #endif
 
-template<bool ParseOnly, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+template<bool LinearSearch, bool ParseOnly, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 void do_fictionalgeo_experiments(bool& status,
 		fictionalgeo_context_item<Theory, PriorStateType>* context_queue,
 		fictionalgeo_question_item<Theory, PriorStateType>* question_queue,
@@ -312,7 +312,7 @@ __lsan_do_leak_check();
 				for (unsigned int i = 0; i < parse_count && log_probabilities[i] + 1.0 > first_question_probability; i++) {
 					array<string> answers(4);
 					double answer_probability = -std::numeric_limits<double>::infinity();
-					if (!answer_question<true>(answers, logical_forms[i], 40, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
+					if (!answer_question<LinearSearch>(answers, logical_forms[i], 40, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
 						continue;
 					bool confident = true;
 					for (unsigned int j = 0; j < answers.length; j++) {
@@ -808,7 +808,7 @@ inline void print_fictionalgeo_results(
 	fflush(stdout);
 }
 
-template<bool ParseOnly = false, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+template<bool LinearSearch, bool ParseOnly = false, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 bool run_fictionalgeoqa_experiments(
 		ArticleSource& corpus, Parser& parser,
 		Theory& T, PriorStateType& proof_axioms,
@@ -846,7 +846,7 @@ bool run_fictionalgeoqa_experiments(
 	std::thread* workers = new std::thread[thread_count];
 	for (unsigned int i = 0; i < thread_count; i++) {
 		workers[i] = std::thread(
-				do_fictionalgeo_experiments<ParseOnly, ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
+				do_fictionalgeo_experiments<LinearSearch, ParseOnly, ArticleSource, Parser, Theory, PriorStateType, ProofPrior>,
 				std::ref(status), context_queue, question_queue,
 				std::ref(context_queue_start), std::ref(question_queue_start),
 				std::ref(context_queue_length), std::ref(question_queue_length),
@@ -955,7 +955,7 @@ bool run_fictionalgeoqa_experiments(
 	return status;
 }
 
-template<bool ParseOnly = false, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
+template<bool LinearSearch, bool ParseOnly = false, typename ArticleSource, typename Parser, typename Theory, typename PriorStateType, typename ProofPrior>
 bool run_fictionalgeoqa_experiments_single_threaded(
 		ArticleSource& corpus, Parser& parser,
 		Theory& T, PriorStateType& proof_axioms,
@@ -1042,7 +1042,7 @@ bool run_fictionalgeoqa_experiments_single_threaded(
 	if (!read_ruletaker_data<string>(data_filepath, process_fictionalgeo_questions))
 		status = false;
 
-	do_fictionalgeo_experiments<ParseOnly>(status, context_queue, question_queue,
+	do_fictionalgeo_experiments<LinearSearch, ParseOnly>(status, context_queue, question_queue,
 			context_queue_start, question_queue_start, context_queue_length,
 			question_queue_length, work_queue_lock, work_queue_cv, prng_engine,
 			corpus, parser, proof_prior, names, seed_entities, geobase,

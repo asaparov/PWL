@@ -541,7 +541,7 @@ for (unsigned int counter = 0; ; counter++) {
 fclose(in);
 
 /* run FictionalGeoQA experiments */
-run_fictionalgeoqa_experiments<true>(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "fictionalgeoqa.jsonl", "fictionalgeoqa_parse_outputs.txt", 8);
+run_fictionalgeoqa_experiments<false>(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "fictionalgeoqa.jsonl", "fictionalgeoqa_results.open_ended.txt", 8);
 free(T_copy); free(proof_axioms_copy);
 for (auto entry : names) free(entry.key);
 // to avoid breakpoints being moved due to eliminated code
