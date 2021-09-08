@@ -312,7 +312,7 @@ __lsan_do_leak_check();
 				for (unsigned int i = 0; i < parse_count && log_probabilities[i] + 1.0 > first_question_probability; i++) {
 					array<string> answers(4);
 					double answer_probability = -std::numeric_limits<double>::infinity();
-					if (!answer_question<LinearSearch>(answers, logical_forms[i], 40, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
+					if (!answer_question<LinearSearch>(answers, logical_forms[i], LinearSearch ? 40 : 400, parser, job.T, proof_prior, job.proof_axioms, answer_probability) || answers.length == 0)
 						continue;
 					bool confident = true;
 					for (unsigned int j = 0; j < answers.length; j++) {

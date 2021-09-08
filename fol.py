@@ -564,7 +564,7 @@ def fol_term_to_tptp(term):
 	elif type(term) == FOLFuncApplication:
 		return term.function + '(' + ','.join([fol_term_to_tptp(arg) for arg in term.args]) + ')'
 	else:
-		raise Exception("fol_term_to_tptp ERROR: Unrecognized term type.")
+		raise Exception(f"fol_term_to_tptp ERROR: Unrecognized term type {type(term)}.")
 
 def fol_to_tptp(formula):
 	if type(formula) == FOLAnd:

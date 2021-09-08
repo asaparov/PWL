@@ -167,14 +167,14 @@ def run_thm_prover(formulas, question_count, question_lf, numbers, use_vampire, 
 			index = line.find(']')
 			candidates = line[len('# SZS answers Tuple [['):index].split(',')
 			print(candidates)
-			for candidate in candidates:
-				candidate = candidate.strip()
-				if candidate.startswith('esk') or candidate.startswith('sK'):
+			for answer_candidate in candidates:
+				answer_candidate = answer_candidate.strip()
+				if answer_candidate.startswith('esk') or answer_candidate.startswith('sK'):
 					continue
-				if candidate.startswith('num'):
-					answers.append(candidate[3:])
+				if answer_candidate.startswith('num'):
+					answers.append(answer_candidate[3:])
 				else:
-					answers.append(candidate)
+					answers.append(answer_candidate)
 		elif candidate != None and (line.startswith('# SZS status Theorem') or line.startswith('% SZS status Theorem')):
 			found_proof = True
 			print('found proof')
@@ -203,9 +203,9 @@ test_file = open('fictionalgeoqa.jsonl', 'r')
 output_file = open(sys.argv[3], 'w')
 line_number = 1
 for line in test_file:
-	#if line_number < 28 or line_number > 28:
-	#	line_number += 1
-	#	continue
+	if line_number < 500 or line_number > 500:
+		line_number += 1
+		continue
 	example = json.loads(line)
 	input_filename = f'boxer_sentences.{threading.current_thread().ident}'
 	input_file = open(sys.argv[1] + input_filename + '.txt', 'w')

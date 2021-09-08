@@ -5426,9 +5426,7 @@ private:
 				}
 				continue;
 			case change_type::DEFINITION:
-				if (!add_definition<false>(c.axiom, c.requested_set_size,
-						(c.axiom->formula->binary.right->type == TermType::CONSTANT && c.axiom->formula->binary.right->constant != (unsigned int) built_in_predicates::UNKNOWN),
-						set_diff, std::forward<Args>(visitor)...))
+				if (!add_definition<false>(c.axiom, c.requested_set_size, set_diff, std::forward<Args>(visitor)...))
 					return false;
 				continue;
 			case change_type::FUNCTION_VALUE:
@@ -12631,6 +12629,16 @@ private:
 		array<Formula*> old_atoms(8);
 		old_atoms[old_atoms.length++] = old_atom;
 		old_atom->reference_count++;
+		if (old_atom->type == FormulaType::EQUALS) {
+			Formula* swapped = Formula::new_equals(old_atom->binary.right, old_atom->binary.left);
+			if (swapped == nullptr) {
+				free_all(old_atoms);
+				return false;
+			}
+			old_atom->binary.left->reference_count++;
+			old_atom->binary.right->reference_count++;
+			old_atoms[old_atoms.length++] = swapped;
+		}
 		bool result = check_set_membership_after_subtraction(old_atoms, removed_set, std::forward<Args>(visitor)...);
 		free_all(old_atoms);
 		return result;
@@ -14248,7 +14256,7 @@ private:
 						requested_set_size.min_set_size = requested_set_sizes.values[index];
 						requested_set_size.max_set_size = requested_set_sizes.values[index];
 					}
-					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, requested_set_size, swap_order, set_diff, std::forward<Args>(args)...);
+					Proof* definition = add_definition<ResolveInconsistencies>(new_proof, requested_set_size, set_diff, std::forward<Args>(args)...);
 					if (definition != new_proof) {
 						core::free(*new_proof);
 						core::free(new_proof);
@@ -14767,7 +14775,7 @@ private:
 
 private:
 	template<bool ResolveInconsistencies, typename... Args>
-	Proof* add_definition(Proof* definition, required_set_size requested_set_size, bool swap_order, Args&&... args)
+	Proof* add_definition(Proof* definition, required_set_size requested_set_size, Args&&... args)
 	{
 		if (!reverse_definitions.check_size())
 			return nullptr;
@@ -14950,25 +14958,23 @@ private:
 		reverse_definitions.values[index] = constant->constant;
 		reverse_definitions.table.size++;
 
-		if (swap_order) {
-			Term* swapped = Term::new_equals(definition->formula->binary.right, definition->formula->binary.left);
+		if (!check_set_membership_after_addition<ResolveInconsistencies>(definition->formula, std::forward<Args>(args)...)) {
+			remove_definition(definition, requested_set_size, std::forward<Args>(args)...);
+			return nullptr;
+		} else if (definition->formula->type == FormulaType::EQUALS) {
+			Formula* swapped = Formula::new_equals(definition->formula->binary.right, definition->formula->binary.left);
 			if (swapped == nullptr) {
 				remove_definition(definition, requested_set_size, std::forward<Args>(args)...);
 				return nullptr;
 			}
-			definition->formula->binary.right->reference_count++;
 			definition->formula->binary.left->reference_count++;
+			definition->formula->binary.right->reference_count++;
 			if (!check_set_membership_after_addition<ResolveInconsistencies>(swapped, std::forward<Args>(args)...)) {
-				remove_definition(definition, requested_set_size, std::forward<Args>(args)...);
 				core::free(*swapped); core::free(swapped);
+				remove_definition(definition, requested_set_size, std::forward<Args>(args)...);
 				return nullptr;
 			}
 			core::free(*swapped); core::free(swapped);
-		} else {
-			if (!check_set_membership_after_addition<ResolveInconsistencies>(definition->formula, std::forward<Args>(args)...)) {
-				remove_definition(definition, requested_set_size, std::forward<Args>(args)...);
-				return nullptr;
-			}
 		}
 		return definition;
 	}
@@ -15030,6 +15036,15 @@ private:
 #endif
 
 		ground_concepts[concept_id - new_constant_offset].definitions.remove(index);
+		if (definition->formula->type == FormulaType::EQUALS) {
+			Formula* swapped = Formula::new_equals(definition->formula->binary.right, definition->formula->binary.left);
+			if (swapped != nullptr) {
+				definition->formula->binary.left->reference_count++;
+				definition->formula->binary.right->reference_count++;
+				check_set_membership_after_subtraction(swapped, 0, std::forward<Args>(args)...);
+				core::free(*swapped); core::free(swapped);
+			}
+		}
 		check_set_membership_after_subtraction(definition->formula, 0, std::forward<Args>(args)...);
 
 		/* remove subset edges from other set definitions for `concept_id` */
