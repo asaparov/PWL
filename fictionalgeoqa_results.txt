@@ -498,3 +498,103 @@ Bripetrsk
 <no answer>
 <no answer>
 <no answer>
+Kolufori River
+Merasardu River
+Kolufori River
+Merasardu River
+Kolufori River
+Kolufori River
+Merasardu River
+Kolufori River
+Merasardu River
+Kolufori River
+Kolufori, Bolurofi, Efanangole
+Efanangole
+Bolurofi
+Efanangole
+Efanangole
+Efanangole
+Efanangole
+Bolurofi
+Efanangole
+<no answer>
+Galininograd, Voronolga, Bripetrsk
+Getarovo, Bripetrsk, Puotorsk
+Voronolga, Abdorostan
+Galininograd, 912300, Fordgorod, Voronolga, Getarovo, Bripetrsk, Abdorostan, Puotorsk
+Puotorsk
+Puotorsk
+Puotorsk, Bripetrsk, Getarovo
+Abdorostan, Voronolga
+Galininograd, Fordgorod, Abdorostan, Puotorsk, Bripetrsk, Getarovo, Voronolga
+Puotorsk
+Kangoyaken, Kyoukashino
+Kangoyaken, Kyoukashino
+Kangoyaken, Kyoukashino
+Kangoyaken, Kyoukashino
+Kangoyaken, Kyoukashino
+Baritolloti
+Baritolloti
+Baritolloti
+Baritolloti
+Baritolloti
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+587, Mofubali
+61
+9587, Mofubali
+3049
+91
+587
+61
+9587
+3049
+91
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+<no answer>
+Dogayashi,Kagenegawa,Kyoukashino
+Dogayashi,Kagenegawa
+Dogayashi
+Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
+Agarikoshi,Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
+Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
+Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
+Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
+Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
+Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
