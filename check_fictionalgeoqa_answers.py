@@ -110,6 +110,11 @@ while True:
 					if candidate.startswith(answer_template[:ans_index].lower()) and candidate.endswith(answer_template[(ans_index + 3):].lower()) and test_candidate(candidate[ans_index:-(len(answer_template) - ans_index - 3)].lower(), actual_answers):
 						found_matching_template = True
 						break
+					if not found_matching_template and answer_template[-1] == '.':
+						answer_template = answer_template[:-1]
+						if candidate.startswith(answer_template[:ans_index].lower()) and candidate.endswith(answer_template[(ans_index + 3):].lower()) and test_candidate(candidate[ans_index:-(len(answer_template) - ans_index - 3)].lower(), actual_answers):
+							found_matching_template = True
+							break
 				if found_matching_template:
 					start = next_index
 					continue
