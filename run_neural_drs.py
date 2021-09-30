@@ -285,9 +285,9 @@ test_file = open('fictionalgeoqa.jsonl', 'r')
 output_file = open(sys.argv[3], 'w')
 line_number = 1
 for line in test_file:
-	if line_number < 141 or line_number > 150:
-		line_number += 1
-		continue
+	#if line_number < 501 or line_number > 600:
+	#	line_number += 1
+	#	continue
 	example = json.loads(line)
 	input_filename = f'input_sentences.{threading.current_thread().ident}'
 	input_file = open(sys.argv[1] + input_filename + '.txt', 'w')

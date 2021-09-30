@@ -63,7 +63,11 @@ while True:
 	if predicted_answer == 'no answer' or predicted_answer == 'none' or predicted_answer == 'nothing' or predicted_answer == 'empty':
 		predicted_answer = ''
 
-	example = json.loads(actual_line)
+	try:
+		example = json.loads(actual_line)
+	except:
+		print('Failed to parse JSON on line ' + str(total + 1))
+		raise
 	for question in example["questions"].values():
 		actual_answer = question["answer"]
 		if actual_answer == "":

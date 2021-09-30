@@ -513,31 +513,31 @@ Efanangole
 Bolurofi
 Efanangole
 Efanangole
-Efanangole
+Kolufori, Bolurofi, Efanangole
 Efanangole
 Bolurofi
 Efanangole
 <no answer>
-Galininograd, Voronolga, Bripetrsk
+Bripetrsk, Puotorsk, Voronolga, Galininograd
 Getarovo, Bripetrsk, Puotorsk
 Voronolga, Abdorostan
-Galininograd, 912300, Fordgorod, Voronolga, Getarovo, Bripetrsk, Abdorostan, Puotorsk
+428100, Fordgorod
 Puotorsk
-Puotorsk
-Puotorsk, Bripetrsk, Getarovo
+Bripetrsk, Puotorsk, Galininograd, Voronolga
+Bripetrsk, Getarovo, Puotorsk
 Abdorostan, Voronolga
-Galininograd, Fordgorod, Abdorostan, Puotorsk, Bripetrsk, Getarovo, Voronolga
+Bripetrsk, Abdorostan, Getarovo, Fordgorod, Galininograd, Voronolga
 Puotorsk
-Kangoyaken, Kyoukashino
-Kangoyaken, Kyoukashino
-Kangoyaken, Kyoukashino
-Kangoyaken, Kyoukashino
-Kangoyaken, Kyoukashino
-Baritolloti
-Baritolloti
-Baritolloti
-Baritolloti
-Baritolloti
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
+Geoturin, Messinitina, Baritolloti, Albucapua
 <no answer>
 <no answer>
 <no answer>
@@ -568,10 +568,10 @@ Baritolloti
 
 
 
-587, Mofubali
-61
-9587, Mofubali
-3049
+587
+61, Kangoyaken
+9587
+3049, Bascilitina
 91
 587
 61
@@ -593,8 +593,8 @@ Dogayashi,Kagenegawa
 Dogayashi
 Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
 Agarikoshi,Dogayashi,Kagenegawa,Koruhashi,Kyoukashino
-Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
-Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
-Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
-Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
-Koruhashi, Agarikoshi, Kyoukashino, Kagenegawa, Dogayashi
+Agarikoshi, Koruhashi, Kagenegawa, Dogayashi, Kyoukashino
+Agarikoshi, Koruhashi, Kagenegawa, Dogayashi, Kyoukashino
+Agarikoshi, Koruhashi, Kagenegawa, Dogayashi, Kyoukashino
+Agarikoshi, Koruhashi, Kagenegawa, Dogayashi, Kyoukashino
+Agarikoshi, Koruhashi, Kagenegawa, Dogayashi, Kyoukashino

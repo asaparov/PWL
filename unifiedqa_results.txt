@@ -500,16 +500,16 @@ no answer>
 no answer>
 the Merasardu River
 the Merasardu River
-the Merasardu River
-the Merasardu River
-the Merasardu River
-the Kolufori River
-the Kolufori River
+the Merafagole River
 the Merasardu River
 the Merasardu River
 the Kolufori River
-Efanangole.
-Efanangole and Bolurofi
+the Kolufori River
+the Merafagole River
+the Merasardu River
+the Kolufori River
+Efanangole. Bolurofi.
+Efanangole
 Bolurofi
 Efanangole and Bolurofi
 Efanangole
@@ -520,48 +520,48 @@ Efanangole and Bolurofi
 Efanangole
 Voronolga runs through Voronolga. The Vorono
 the Kolonolga runs through getarovo.
-Abdorostan
+Voronolga.
 Fordgorod
-Bievorsk.
-Voronolga runs through Galininograd.
+Bievorsk and Puotorsk
+Voronolga runs through Voronolga. The Vorono
 the Kolonolga runs through getarovo.
-Abdorostan
+Voronolga.
 Fordgorod
-Bievorsk.
+Bievorsk and Puotorsk
 Baritolloti is the capital city of Grappulia.
 Regnobenoa
-albucapua
-Albucapua is the capital city of Bascilitina.
+Albucapua
+the capital of Bascilitina
+the capital of the state of Cartabitan.
 no answer>
-no answer>
-no answer>
+geoturin
 Baritolloti is the capital city of Grappulia.
-albucapua
-Geoturin is the capital city of the state of Cartabitan.
+Albucapua
+Geoturin is the capital of the state of Cartabitan.
 218 kilometers
 12 kilometers
 3049 kilometers
 3049 kilometers
 21 kilometers
 the length of the Kolufori River is 587 kilometers.
-12 kilometers
+62 kilometers
 9587 kilometers
 3049 kilometers
 21 kilometers
+smaller than 100000
 no answer>
 no answer>
 no answer>
 no answer>
+the provinces that are not big are the provinces with a population smaller than 100000
+the provinces that are not big are the provinces that border Y.
+the provinces that are not big are the provinces that border Y.
+the provinces that are not big are the provinces that border Y.
+the provinces that are not big are the provinces that border Y.
+the minor provinces are the cities with a population smaller than 100000.
 no answer>
 no answer>
-no answer>
-no answer>
-no answer>
-no answer>
-no answer>
-no answer>
-no answer>
-no answer>
+the minor provinces are the cities with a population smaller than 10000000.
 no answer>
 the provinces that are not big are the provinces with a population smaller than 100000
 the provinces that are not big are the provinces with a population smaller than 500000
