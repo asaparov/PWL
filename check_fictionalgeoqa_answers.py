@@ -138,9 +138,9 @@ while True:
 		total += 1
 
 		flag_count = 0
-		if "flags" in example:
-			flag_count = len(example["flags"])
-			for flag in example["flags"]:
+		if "data_subsets" in example:
+			flag_count = len(example["data_subsets"])
+			for flag in example["data_subsets"]:
 				if flag not in correct_per_flag:
 					correct_per_flag[flag] = 0
 					total_per_flag[flag] = 0
@@ -161,4 +161,4 @@ for (flag, total_flag) in total_per_flag.items():
 	print("[all except " + flag + "] " + str(correct - correct_flag) + "/" + str(total - total_flag) + " = " + str(float(correct - correct_flag)/(total - total_flag)))
 for (flag_count, total_flag) in sorted(total_per_flag_count.items()):
 	correct_flag = correct_per_flag_count[flag_count]
-	print("[" + str(flag_count) + " flags] " + str(correct_flag) + "/" + str(total_flag) + " = " + str(float(correct_flag)/(total_flag)))
+	print("[" + str(flag_count) + " data_subsets] " + str(correct_flag) + "/" + str(total_flag) + " = " + str(float(correct_flag)/(total_flag)))
