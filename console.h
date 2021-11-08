@@ -160,8 +160,20 @@ void run_console(
 			if (compare_strings("print_theory", line.data, index)) {
 				T.print_axioms(stdout, parser.get_printer());
 
+				null_collector collector;
+				array<hol_term*> extra_axioms(16);
+				T.get_extra_axioms(extra_axioms);
+				double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
+				print("Log probability of theory and proofs: ", stdout); print(value, stdout); print('\n', stdout);
+
 			} else if (compare_strings("print_proofs", line.data, index)) {
 				T.print_proofs(stdout, parser.get_printer());
+
+				null_collector collector;
+				array<hol_term*> extra_axioms(16);
+				T.get_extra_axioms(extra_axioms);
+				double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
+				print("Log probability of theory and proofs: ", stdout); print(value, stdout); print('\n', stdout);
 
 			} else if (compare_strings("read", line.data, index)) {
 				while (isspace(line[index])) index++;

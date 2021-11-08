@@ -11211,7 +11211,7 @@ inline bool is_subset_any_array_any(const hol_array_term& first, const hol_array
 }
 
 template<typename BuiltInPredicates>
-bool is_subset(hol_term* first, hol_term* second)
+bool old_is_subset(hol_term* first, hol_term* second)
 {
 	if (first == second) {
 		return true;
@@ -11268,7 +11268,7 @@ bool is_subset(hol_term* first, hol_term* second)
 					free(first_tree_union);
 					return false;
 				}
-			} else if (!is_subset<BuiltInPredicates>(first->any.included, second_tree_union[0])) {
+			} else if (!old_is_subset<BuiltInPredicates>(first->any.included, second_tree_union[0])) {
 				for (unsigned int i = 0; i < first_tree_union_length; i++) {
 					free(*first_tree_union[i]);
 					if (first_tree_union[i]->reference_count == 0)
@@ -11304,44 +11304,44 @@ bool is_subset(hol_term* first, hol_term* second)
 	} else if (second->type == hol_term_type::ANY) {
 		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++)
 			if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) return false;
-		if (second->any.included == nullptr || is_subset<BuiltInPredicates>(first, second->any.included)) return true;
+		if (second->any.included == nullptr || old_is_subset<BuiltInPredicates>(first, second->any.included)) return true;
 
 		hol_term included_any;
 		included_any.any.included = second->any.included;
 		included_any.any.included->reference_count++;
 		switch (first->type) {
 		case hol_term_type::NOT:
-			return is_subset<BuiltInPredicates>(first->unary.operand, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->unary.operand, &included_any);
 		case hol_term_type::UNARY_APPLICATION:
 		case hol_term_type::IF_THEN:
 		case hol_term_type::EQUALS:
-			return is_subset<BuiltInPredicates>(first->binary.left, &included_any)
-				|| is_subset<BuiltInPredicates>(first->binary.right, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->binary.left, &included_any)
+				|| old_is_subset<BuiltInPredicates>(first->binary.right, &included_any);
 		case hol_term_type::BINARY_APPLICATION:
-			return is_subset<BuiltInPredicates>(first->ternary.first, &included_any)
-				|| is_subset<BuiltInPredicates>(first->ternary.second, &included_any)
-				|| is_subset<BuiltInPredicates>(first->ternary.third, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->ternary.first, &included_any)
+				|| old_is_subset<BuiltInPredicates>(first->ternary.second, &included_any)
+				|| old_is_subset<BuiltInPredicates>(first->ternary.third, &included_any);
 		case hol_term_type::IFF:
 		case hol_term_type::AND:
 		case hol_term_type::OR:
 			for (unsigned int i = 0; i < first->array.length; i++)
-				if (is_subset<BuiltInPredicates>(first->array.operands[i], &included_any)) return true;
+				if (old_is_subset<BuiltInPredicates>(first->array.operands[i], &included_any)) return true;
 			return false;
 		case hol_term_type::ANY_ARRAY:
-			if (is_subset<BuiltInPredicates>(first->any_array.all, &included_any)) return true;
+			if (old_is_subset<BuiltInPredicates>(first->any_array.all, &included_any)) return true;
 			for (unsigned int i = 0; i < first->any_array.left.length; i++)
-				if (is_subset<BuiltInPredicates>(first->any_array.left.operands[i], &included_any)) return true;
+				if (old_is_subset<BuiltInPredicates>(first->any_array.left.operands[i], &included_any)) return true;
 			for (unsigned int i = 0; i < first->any_array.right.length; i++)
-				if (is_subset<BuiltInPredicates>(first->any_array.right.operands[i], &included_any)) return true;
+				if (old_is_subset<BuiltInPredicates>(first->any_array.right.operands[i], &included_any)) return true;
 			for (unsigned int i = 0; i < first->any_array.any.length; i++)
-				if (is_subset<BuiltInPredicates>(first->any_array.any.operands[i], &included_any)) return true;
+				if (old_is_subset<BuiltInPredicates>(first->any_array.any.operands[i], &included_any)) return true;
 			return false;
 		case hol_term_type::FOR_ALL:
 		case hol_term_type::EXISTS:
 		case hol_term_type::LAMBDA:
-			return is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
 		case hol_term_type::ANY_QUANTIFIER:
-			return is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
 		case hol_term_type::NUMBER:
 		case hol_term_type::STRING:
 		case hol_term_type::UINT_LIST:
@@ -11365,7 +11365,7 @@ bool is_subset(hol_term* first, hol_term* second)
 	} else if (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
 		for (unsigned int i = 0; i < second->any.excluded_tree_count; i++)
 			if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) return false;
-		if (second->any.included == nullptr || is_subset<BuiltInPredicates>(first, second->any.included)) return true;
+		if (second->any.included == nullptr || old_is_subset<BuiltInPredicates>(first, second->any.included)) return true;
 
 		hol_term included_any;
 		included_any.type = second->type;
@@ -11373,27 +11373,27 @@ bool is_subset(hol_term* first, hol_term* second)
 		included_any.any.included->reference_count++;
 		switch (first->type) {
 		case hol_term_type::NOT:
-			return is_subset<BuiltInPredicates>(first->unary.operand, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->unary.operand, &included_any);
 		case hol_term_type::UNARY_APPLICATION:
 		case hol_term_type::IF_THEN:
 		case hol_term_type::EQUALS:
-			return is_subset<BuiltInPredicates>(first->binary.right, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->binary.right, &included_any);
 		case hol_term_type::BINARY_APPLICATION:
-			return is_subset<BuiltInPredicates>(first->ternary.third, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->ternary.third, &included_any);
 		case hol_term_type::IFF:
 		case hol_term_type::AND:
 		case hol_term_type::OR:
-			return is_subset<BuiltInPredicates>(first->array.operands[first->array.length - 1], &included_any);
+			return old_is_subset<BuiltInPredicates>(first->array.operands[first->array.length - 1], &included_any);
 		case hol_term_type::ANY_ARRAY:
 			if (first->any_array.right.length == 0)
-				return is_subset<BuiltInPredicates>(first->any_array.all, &included_any);
-			else return is_subset<BuiltInPredicates>(first->any_array.right.operands[first->any_array.right.length - 1], &included_any);
+				return old_is_subset<BuiltInPredicates>(first->any_array.all, &included_any);
+			else return old_is_subset<BuiltInPredicates>(first->any_array.right.operands[first->any_array.right.length - 1], &included_any);
 		case hol_term_type::FOR_ALL:
 		case hol_term_type::EXISTS:
 		case hol_term_type::LAMBDA:
-			return is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->quantifier.operand, &included_any);
 		case hol_term_type::ANY_QUANTIFIER:
-			return is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
+			return old_is_subset<BuiltInPredicates>(first->any_quantifier.operand, &included_any);
 		case hol_term_type::NUMBER:
 		case hol_term_type::STRING:
 		case hol_term_type::UINT_LIST:
@@ -11503,14 +11503,14 @@ bool is_subset(hol_term* first, hol_term* second)
 	} else if (first->type == hol_term_type::ANY_QUANTIFIER) {
 		if (second->type == hol_term_type::ANY_QUANTIFIER) {
 			return is_subset(first->any_quantifier.quantifier, second->any_quantifier.quantifier)
-				&& is_subset<BuiltInPredicates>(first->any_quantifier.operand, second->any_quantifier.operand);
+				&& old_is_subset<BuiltInPredicates>(first->any_quantifier.operand, second->any_quantifier.operand);
 		} else {
 			return false;
 		}
 	} else if (second->type == hol_term_type::ANY_QUANTIFIER) {
 		if (first->type == hol_term_type::FOR_ALL || first->type == hol_term_type::EXISTS || first->type == hol_term_type::LAMBDA) {
 			return is_subset((hol_quantifier_type) first->type, second->any_quantifier.quantifier)
-				&& is_subset<BuiltInPredicates>(first->quantifier.operand, second->any_quantifier.operand);
+				&& old_is_subset<BuiltInPredicates>(first->quantifier.operand, second->any_quantifier.operand);
 		} else {
 			return false;
 		}
@@ -11520,29 +11520,29 @@ bool is_subset(hol_term* first, hol_term* second)
 
 	switch (first->type) {
 	case hol_term_type::NOT:
-		return is_subset<BuiltInPredicates>(first->unary.operand, second->unary.operand);
+		return old_is_subset<BuiltInPredicates>(first->unary.operand, second->unary.operand);
 	case hol_term_type::UNARY_APPLICATION:
 	case hol_term_type::IF_THEN:
 	case hol_term_type::EQUALS:
-		return is_subset<BuiltInPredicates>(first->binary.left, second->binary.left)
-			&& is_subset<BuiltInPredicates>(first->binary.right, second->binary.right);
+		return old_is_subset<BuiltInPredicates>(first->binary.left, second->binary.left)
+			&& old_is_subset<BuiltInPredicates>(first->binary.right, second->binary.right);
 	case hol_term_type::BINARY_APPLICATION:
-		return is_subset<BuiltInPredicates>(first->ternary.first, second->ternary.first)
-			&& is_subset<BuiltInPredicates>(first->ternary.second, second->ternary.second)
-			&& is_subset<BuiltInPredicates>(first->ternary.third, second->ternary.third);
+		return old_is_subset<BuiltInPredicates>(first->ternary.first, second->ternary.first)
+			&& old_is_subset<BuiltInPredicates>(first->ternary.second, second->ternary.second)
+			&& old_is_subset<BuiltInPredicates>(first->ternary.third, second->ternary.third);
 	case hol_term_type::IFF:
 	case hol_term_type::AND:
 	case hol_term_type::OR:
 		if (first->array.length != second->array.length) return false;
 		for (unsigned int i = 0; i < first->array.length; i++)
-			if (!is_subset<BuiltInPredicates>(first->array.operands[i], second->array.operands[i])) return false;
+			if (!old_is_subset<BuiltInPredicates>(first->array.operands[i], second->array.operands[i])) return false;
 		return true;
 	case hol_term_type::FOR_ALL:
 	case hol_term_type::EXISTS:
 	case hol_term_type::LAMBDA:
 		return (first->quantifier.variable_type == second->quantifier.variable_type)
 			&& (first->quantifier.variable == second->quantifier.variable)
-			&& is_subset<BuiltInPredicates>(first->quantifier.operand, second->quantifier.operand);
+			&& old_is_subset<BuiltInPredicates>(first->quantifier.operand, second->quantifier.operand);
 	case hol_term_type::NUMBER:
 		return first->number == second->number;
 	case hol_term_type::STRING:
@@ -11571,6 +11571,376 @@ bool is_subset(hol_term* first, hol_term* second)
 	}
 	fprintf(stderr, "is_subset ERROR: Unrecognized hol_term_type.\n");
 	return false;
+}
+
+/* TODO: for debugging; delete this */
+unsigned int debug = 0;
+
+template<typename BuiltInPredicates>
+bool has_subtraction_any_right(hol_term* first, hol_term* second, hol_term* old_first, hol_term* old_second) {
+	if (first->type == hol_term_type::ANY) {
+		if (second->type == hol_term_type::ANY) {
+			if (first->any.included == nullptr) {
+				if (second->any.included == nullptr) return false;
+				else return true;
+			} else {
+				if (second->any.included == nullptr) return false;
+				else {
+					if (*first->any.included == *old_first && *second == *old_second)
+						return false;
+					else return !is_subset<BuiltInPredicates>(first->any.included, second);
+				}
+			}
+		} else return true;
+	} else if (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
+		if (second->type == hol_term_type::ANY || second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
+			if (first->any.included == nullptr) {
+				if (second->any.included == nullptr) return false;
+				else return true;
+			} else {
+				if (second->any.included == nullptr) return false;
+				else {
+					if (*first->any.included == *old_first && *second == *old_second)
+						return false;
+					return !is_subset<BuiltInPredicates>(first->any.included, second);
+				}
+			}
+		} else return true;
+	} else {
+		array<hol_term*> difference(2);
+		subtract_any_right<BuiltInPredicates>(difference, first, second);
+		bool not_empty = (difference.length != 0);
+		free_all(difference);
+		return not_empty;
+	}
+}
+
+template<typename BuiltInPredicates>
+bool has_subtraction_any(hol_term* first, hol_term* second) {
+	if (first->type == hol_term_type::ANY) {
+		if (second->type == hol_term_type::ANY) {
+			if (first->any.included == nullptr) {
+				if (second->any.included == nullptr) return false;
+				else return true;
+			} else {
+				if (second->any.included == nullptr) return false;
+				else return !is_subset<BuiltInPredicates>(first->any.included, second);
+			}
+		} else return true;
+	} else if (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
+		if (second->type == hol_term_type::ANY || second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
+			if (first->any.included == nullptr) {
+				if (second->any.included == nullptr) return false;
+				else return true;
+			} else {
+				if (second->any.included == nullptr) return false;
+				else return !is_subset<BuiltInPredicates>(first->any.included, second);
+			}
+		} else return true;
+	} else {
+		array<hol_term*> difference(2);
+		subtract_any<BuiltInPredicates>(difference, first, second);
+		bool not_empty = (difference.length != 0);
+		free_all(difference);
+		return not_empty;
+	}
+}
+
+template<typename BuiltInPredicates>
+bool is_subset(hol_term* first, hol_term* second) {
+	bool old_value = old_is_subset<BuiltInPredicates>(first, second);
+	bool new_value;
+	if (second->type == hol_term_type::ANY) {
+		if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
+			if (first->any.included == nullptr) {
+				if (second->any.included == nullptr)
+					new_value = true;
+				else new_value = false;
+			} else {
+				bool not_empty = false;
+				for (unsigned int i = 0; !not_empty && i < second->any.excluded_tree_count; i++)
+					if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) not_empty = true;
+
+				if (not_empty) {
+					new_value = false;
+				} else {
+					if (second->any.included == nullptr)
+						new_value = true;
+					else {
+						hol_term* second_any = hol_term::new_any(second->any.included);
+						second->any.included->reference_count++;
+						new_value = is_subset<BuiltInPredicates>(first->any.included, second_any);
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					}
+				}
+			}
+		} else if (first->type == hol_term_type::ANY_QUANTIFIER && second->any.included != nullptr
+				&& (second->any.included->type == hol_term_type::FOR_ALL || second->any.included->type == hol_term_type::EXISTS || second->any.included->type == hol_term_type::LAMBDA)
+				&& has_intersection(first->any_quantifier.quantifier, (hol_quantifier_type) second->any.included->type))
+		{
+			new_value = false;
+		} else {
+			bool not_empty = false;
+			for (unsigned int i = 0; !not_empty && i < second->any.excluded_tree_count; i++)
+				if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) not_empty = true;
+
+			if (!not_empty) {
+				array<hol_term*> difference(2);
+				if (second->any.included != nullptr) {
+					if (first->type == hol_term_type::ANY_ARRAY && second->any.included->type != hol_term_type::ANY
+					 && second->any.included->type != hol_term_type::ANY_RIGHT && second->any.included->type != hol_term_type::ANY_RIGHT_ONLY && second->any.included->type != hol_term_type::ANY_ARRAY)
+					{
+						difference[0] = first;
+						first->reference_count++;
+						difference.length++;
+					} else {
+						subtract<BuiltInPredicates>(difference, first, second->any.included);
+					}
+				}
+				hol_term* second_any = hol_term::new_any(second->any.included);
+				if (second->any.included != nullptr)
+					second->any.included->reference_count++;
+				for (hol_term* root : difference) {
+					array<hol_term*> child_difference(2);
+					switch (root->type) {
+					case hol_term_type::VARIABLE:
+					case hol_term_type::VARIABLE_PREIMAGE:
+					case hol_term_type::CONSTANT:
+					case hol_term_type::PARAMETER:
+					case hol_term_type::NUMBER:
+					case hol_term_type::STRING:
+					case hol_term_type::UINT_LIST:
+					case hol_term_type::ANY_CONSTANT:
+					case hol_term_type::ANY_CONSTANT_EXCEPT:
+					case hol_term_type::TRUE:
+					case hol_term_type::FALSE:
+						not_empty = true;
+						break;
+					case hol_term_type::NOT:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root->unary.operand, second_any);
+						break;
+					case hol_term_type::IF_THEN:
+					case hol_term_type::EQUALS:
+					case hol_term_type::UNARY_APPLICATION:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root->binary.left, second_any)
+								&& has_subtraction_any<BuiltInPredicates>(root->binary.right, second_any);
+						break;
+					case hol_term_type::BINARY_APPLICATION:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root->ternary.first, second_any)
+								&& has_subtraction_any<BuiltInPredicates>(root->ternary.second, second_any)
+								&& has_subtraction_any<BuiltInPredicates>(root->ternary.third, second_any);
+						break;
+					case hol_term_type::AND:
+					case hol_term_type::OR:
+					case hol_term_type::IFF:
+						not_empty = true;
+						for (unsigned int i = 0; not_empty && i < root->array.length; i++)
+							if (!has_subtraction_any<BuiltInPredicates>(root->array.operands[i], second_any)) not_empty = false;
+						break;
+					case hol_term_type::FOR_ALL:
+					case hol_term_type::EXISTS:
+					case hol_term_type::LAMBDA:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root->quantifier.operand, second_any);
+						break;
+					case hol_term_type::ANY:
+					case hol_term_type::ANY_RIGHT:
+					case hol_term_type::ANY_RIGHT_ONLY:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root, second_any);
+						break;
+					case hol_term_type::ANY_ARRAY:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root->any_array.all, second_any);
+						for (unsigned int i = 0; not_empty && i < root->any_array.left.length; i++)
+							if (!has_subtraction_any<BuiltInPredicates>(root->any_array.left.operands[i], second_any)) not_empty = false;
+						for (unsigned int i = 0; not_empty && i < root->any_array.right.length; i++)
+							if (!has_subtraction_any<BuiltInPredicates>(root->any_array.right.operands[i], second_any)) not_empty = false;
+						for (unsigned int i = 0; not_empty && i < root->any_array.any.length; i++)
+							if (!has_subtraction_any<BuiltInPredicates>(root->any_array.any.operands[i], second_any)) not_empty = false;
+						break;
+					case hol_term_type::ANY_QUANTIFIER:
+						not_empty = has_subtraction_any<BuiltInPredicates>(root->any_quantifier.operand, second_any);
+						break;
+					}
+					if (not_empty) break;
+				}
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				free_all(difference);
+			}
+			new_value = !not_empty;
+		}
+	} else if (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY) {
+		if (first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
+			if (first->any.included == nullptr) {
+				if (second->any.included == nullptr)
+					new_value = true;
+				else new_value = false;
+			} else {
+				bool not_empty = false;
+				for (unsigned int i = 0; !not_empty && i < second->any.excluded_tree_count; i++)
+					if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) not_empty = true;
+
+				if (not_empty) {
+					new_value = false;
+				} else {
+					if (second->any.included == nullptr)
+						new_value = true;
+					else {
+						hol_term* second_any = hol_term::new_any_right(second->any.included);
+						second->any.included->reference_count++;
+						new_value = is_subset<BuiltInPredicates>(first->any.included, second_any);
+						free(*second_any); if (second_any->reference_count == 0) free(second_any);
+					}
+				}
+			}
+		} else if (first->type == hol_term_type::ANY_QUANTIFIER && second->any.included != nullptr
+				&& (second->any.included->type == hol_term_type::FOR_ALL || second->any.included->type == hol_term_type::EXISTS || second->any.included->type == hol_term_type::LAMBDA)
+				&& has_intersection(first->any_quantifier.quantifier, (hol_quantifier_type) second->any.included->type))
+		{
+			new_value = false;
+		} else {
+			bool not_empty = false;
+			for (unsigned int i = 0; !not_empty && i < second->any.excluded_tree_count; i++)
+				if (has_intersection<BuiltInPredicates>(first, second->any.excluded_trees[i])) not_empty = true;
+
+			if (!not_empty) {
+				array<hol_term*> difference(2);
+				if (second->any.included != nullptr) {
+					if (first->type == hol_term_type::ANY_ARRAY && second->any.included->type != hol_term_type::ANY
+					 && second->any.included->type != hol_term_type::ANY_RIGHT && second->any.included->type != hol_term_type::ANY_RIGHT_ONLY && second->any.included->type != hol_term_type::ANY_ARRAY)
+					{
+						difference[0] = first;
+						first->reference_count++;
+						difference.length++;
+					} else {
+						subtract<BuiltInPredicates>(difference, first, second->any.included);
+					}
+				}
+				hol_term* second_any = hol_term::new_any_right(second->any.included);
+				if (second->any.included != nullptr)
+					second->any.included->reference_count++;
+				for (hol_term* root : difference) {
+					array<hol_term*> child_difference(2);
+					switch (root->type) {
+					case hol_term_type::VARIABLE:
+					case hol_term_type::VARIABLE_PREIMAGE:
+					case hol_term_type::CONSTANT:
+					case hol_term_type::PARAMETER:
+					case hol_term_type::NUMBER:
+					case hol_term_type::STRING:
+					case hol_term_type::UINT_LIST:
+					case hol_term_type::ANY_CONSTANT:
+					case hol_term_type::ANY_CONSTANT_EXCEPT:
+					case hol_term_type::TRUE:
+					case hol_term_type::FALSE:
+						not_empty = true;
+						break;
+					case hol_term_type::NOT:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root->unary.operand, second_any, first, second);
+						break;
+					case hol_term_type::IF_THEN:
+					case hol_term_type::EQUALS:
+					case hol_term_type::UNARY_APPLICATION:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root->binary.right, second_any, first, second);
+						break;
+					case hol_term_type::BINARY_APPLICATION:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root->ternary.third, second_any, first, second);
+						break;
+					case hol_term_type::AND:
+					case hol_term_type::OR:
+					case hol_term_type::IFF:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root->array.operands[root->array.length - 1], second_any, first, second);
+						break;
+					case hol_term_type::FOR_ALL:
+					case hol_term_type::EXISTS:
+					case hol_term_type::LAMBDA:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root->quantifier.operand, second_any, first, second);
+						break;
+					case hol_term_type::ANY:
+					case hol_term_type::ANY_RIGHT:
+					case hol_term_type::ANY_RIGHT_ONLY:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root, second_any, first, second);
+						break;
+					case hol_term_type::ANY_ARRAY:
+						if (root->any_array.right.length != 0)
+							not_empty = has_subtraction_any_right<BuiltInPredicates>(root->any_array.right.operands[root->any_array.right.length - 1], second_any, first, second);
+						else not_empty = has_subtraction_any_right<BuiltInPredicates>(root->any_array.all, second_any, first, second);
+						break;
+					case hol_term_type::ANY_QUANTIFIER:
+						not_empty = has_subtraction_any_right<BuiltInPredicates>(root->any_quantifier.operand, second_any, first, second);
+						break;
+					}
+					if (not_empty) break;
+				}
+				free(*second_any); if (second_any->reference_count == 0) free(second_any);
+				free_all(difference);
+			}
+			new_value = !not_empty;
+		}
+	} else {
+		array<hol_term*> difference(2);
+		subtract<BuiltInPredicates>(difference, first, second);
+		new_value = (difference.length == 0);
+		free_all(difference);
+	}
+	if (old_value != new_value) {
+/* TODO: for debugging; these are cases where the old subset algorithm is incorrect and the new algorithm is correct */
+bool match = false;
+if (first->type == hol_term_type::UNARY_APPLICATION && first->binary.left->type == hol_term_type::CONSTANT && first->binary.left->constant == 26
+ && first->binary.right->type == hol_term_type::ANY_RIGHT && first->binary.right->any.included != nullptr && first->binary.right->any.included->type == hol_term_type::CONSTANT
+ && first->binary.right->any.included->constant == 0 && first->binary.right->any.excluded_tree_count == 1
+ && first->binary.right->any.excluded_trees[0]->type == hol_term_type::ANY_RIGHT && first->binary.right->any.excluded_trees[0]->any.excluded_tree_count == 0
+ && first->binary.right->any.excluded_trees[0]->any.included != nullptr && first->binary.right->any.excluded_trees[0]->any.included->type == hol_term_type::UNARY_APPLICATION
+ && first->binary.right->any.excluded_trees[0]->any.included->binary.left->type == hol_term_type::CONSTANT && first->binary.right->any.excluded_trees[0]->any.included->binary.left->constant == 26
+ && first->binary.right->any.excluded_trees[0]->any.included->binary.right->type == hol_term_type::ANY_RIGHT && first->binary.right->any.excluded_trees[0]->any.included->binary.right->any.excluded_tree_count == 0
+ && first->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included != nullptr && first->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && first->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included->constant == 0
+ && second->type == hol_term_type::ANY_RIGHT && second->any.excluded_tree_count == 0 && second->any.included != nullptr && second->any.included->type == hol_term_type::UNARY_APPLICATION
+ && second->any.included->binary.left->type == hol_term_type::CONSTANT && second->any.included->binary.left->constant == 26 && second->any.included->binary.right->type == hol_term_type::ANY_RIGHT
+ && second->any.included->binary.right->any.included != nullptr && second->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && second->any.included->binary.right->any.included->constant == 0
+ && second->any.included->binary.right->any.excluded_tree_count == 1 && second->any.included->binary.right->any.excluded_trees[0]->type == hol_term_type::ANY_RIGHT
+ && second->any.included->binary.right->any.excluded_trees[0]->any.excluded_tree_count == 0 && second->any.included->binary.right->any.excluded_trees[0]->any.included != nullptr
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->type == hol_term_type::UNARY_APPLICATION
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.left->type == hol_term_type::CONSTANT
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.left->constant == 26
+ && *second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right == HOL_ANY)
+match = true;
+if (first->type == hol_term_type::UNARY_APPLICATION && first->binary.left->type == hol_term_type::CONSTANT && first->binary.left->constant == 26 && first->binary.right->type == hol_term_type::ANY_RIGHT
+ && first->binary.right->any.excluded_tree_count == 0 && first->binary.right->any.included != nullptr && first->binary.right->any.included->type == hol_term_type::CONSTANT
+ && first->binary.right->any.included->constant == 0
+ && second->type == hol_term_type::ANY_RIGHT && second->any.excluded_tree_count == 0 && second->any.included != nullptr && second->any.included->type == hol_term_type::UNARY_APPLICATION
+ && second->any.included->binary.left->type == hol_term_type::CONSTANT && second->any.included->binary.left->constant == 26 && second->any.included->binary.right->type == hol_term_type::ANY_RIGHT
+ && second->any.included->binary.right->any.included != nullptr && second->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && second->any.included->binary.right->any.included->constant == 0 && second->any.included->binary.right->any.excluded_tree_count == 1
+ && second->any.included->binary.right->any.excluded_trees[0]->type == hol_term_type::ANY_RIGHT && second->any.included->binary.right->any.excluded_trees[0]->any.excluded_tree_count == 0
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included != nullptr && second->any.included->binary.right->any.excluded_trees[0]->any.included->type == hol_term_type::UNARY_APPLICATION
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.left->type == hol_term_type::CONSTANT && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.left->constant == 26
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->type == hol_term_type::ANY_RIGHT && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.excluded_tree_count == 0
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included != nullptr && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included->constant == 0)
+match = true;
+if (first->type == hol_term_type::ANY_RIGHT && first->any.excluded_tree_count == 0 && first->any.included != nullptr
+ && first->any.included->type == hol_term_type::UNARY_APPLICATION && first->any.included->binary.left->type == hol_term_type::CONSTANT && first->any.included->binary.left->constant == 26 && first->any.included->binary.right->type == hol_term_type::ANY_RIGHT
+ && first->any.included->binary.right->any.excluded_tree_count == 0 && first->any.included->binary.right->any.included != nullptr && first->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && first->any.included->binary.right->any.included->constant == 0
+ && second->type == hol_term_type::ANY_RIGHT && second->any.excluded_tree_count == 0 && second->any.included != nullptr && second->any.included->type == hol_term_type::UNARY_APPLICATION
+ && second->any.included->binary.left->type == hol_term_type::CONSTANT && second->any.included->binary.left->constant == 26 && second->any.included->binary.right->type == hol_term_type::ANY_RIGHT
+ && second->any.included->binary.right->any.included != nullptr && second->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && second->any.included->binary.right->any.included->constant == 0 && second->any.included->binary.right->any.excluded_tree_count == 1
+ && second->any.included->binary.right->any.excluded_trees[0]->type == hol_term_type::ANY_RIGHT && second->any.included->binary.right->any.excluded_trees[0]->any.excluded_tree_count == 0
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included != nullptr && second->any.included->binary.right->any.excluded_trees[0]->any.included->type == hol_term_type::UNARY_APPLICATION
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.left->type == hol_term_type::CONSTANT && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.left->constant == 26
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->type == hol_term_type::ANY_RIGHT && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.excluded_tree_count == 0
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included != nullptr && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included->type == hol_term_type::CONSTANT
+ && second->any.included->binary.right->any.excluded_trees[0]->any.included->binary.right->any.included->constant == 0)
+match = true;
+		fprintf(stderr, "is_subset WARNING: `old_is_subset` does not agree with `set_subtract`.\n");
+if (!match) {
+print("first:  ", stderr); print(*first, stderr); print('\n', stderr);
+print("second: ", stderr); print(*second, stderr); print('\n', stderr);
+}
+		//exit(EXIT_FAILURE);
+	}
+	return new_value;
 }
 
 /**
@@ -11820,113 +12190,85 @@ inline bool subtract_any_with_any(array<LogicalFormSet>& dst, hol_term* first, h
 		return false;
 	}
 
+	hol_term* second_any;
+	if (second->any.excluded_tree_count == 0) {
+		second_any = second;
+		second->reference_count++;
+	} else {
+		if (second->type == hol_term_type::ANY)
+			second_any = hol_term::new_any(second->any.included);
+		else if (second->type == hol_term_type::ANY_RIGHT)
+			second_any = hol_term::new_any_right(second->any.included);
+		else second_any = hol_term::new_any_right_only(second->any.included);
+		if (second_any == nullptr)
+			return false;
+		if (second->any.included != nullptr)
+			second->any.included->reference_count++;
+	}
+
+	bool same_as_first = true;
 	unsigned int excluded_tree_count = 0;
 	hol_term** excluded_trees = (hol_term**) malloc(sizeof(hol_term*) * (first->any.excluded_tree_count + 1));
 	for (unsigned int i = 0; i < first->any.excluded_tree_count; i++) {
 		bool irreducible = true;
-		if (is_subset<BuiltInPredicates>(first->any.excluded_trees[i], second))
+		if (is_subset<BuiltInPredicates>(first->any.excluded_trees[i], second_any))
 			irreducible = false;
 		if (irreducible)
 			excluded_trees[excluded_tree_count++] = first->any.excluded_trees[i];
+		else same_as_first = false;
 	}
-	unsigned int old_excluded_tree_count = excluded_tree_count;
 
 	bool irreducible = true;
-	for (unsigned int j = 0; irreducible && j < old_excluded_tree_count; j++) {
-		if (is_subset<BuiltInPredicates>(second, excluded_trees[j])) {
+	for (unsigned int j = 0; irreducible && j < excluded_tree_count; j++) {
+		if (is_subset<BuiltInPredicates>(second_any, excluded_trees[j])) {
 			irreducible = false;
 			break;
 		}
 	}
-	if (irreducible)
-		excluded_trees[excluded_tree_count++] = second;
-
-	bool same_as_first = true;
-	bool same_as_second = true;
-	if (excluded_tree_count != first->any.excluded_tree_count) {
+	if (irreducible) {
+		excluded_trees[excluded_tree_count++] = second_any;
 		same_as_first = false;
-	} else {
-		for (unsigned int i = 0; i < first->any.excluded_tree_count; i++) {
-			bool contains = false;
-			for (unsigned int j = 0; j < excluded_tree_count; j++) {
-				if (first->any.excluded_trees[i] == excluded_trees[j] || *first->any.excluded_trees[i] == *excluded_trees[j]) {
-					contains = true;
-					break;
-				}
-			}
-			if (!contains) {
-				same_as_first = false;
-				break;
-			}
-		}
 	}
-	if (excluded_tree_count != 1) {
-		same_as_second = false;
-	} else {
-		if (second != excluded_trees[0] && *second != *excluded_trees[0])
-			same_as_second = false;
-	}
-
-	/* reduce the `excluded_trees` union */
-	for (unsigned int i = 0; i < excluded_tree_count; i++)
-		excluded_trees[i]->reference_count++;
-	if (!same_as_first && !same_as_second)
-		reduce_union<BuiltInPredicates>(excluded_trees, excluded_tree_count);
 
 	if (same_as_first) {
-		for (unsigned int i = 0; i < excluded_tree_count; i++) {
-			free(*excluded_trees[i]);
-			if (excluded_trees[i]->reference_count == 0)
-				free(excluded_trees[i]);
+		if (!add<false, false>(dst, first)) {
+			free(*second_any); free(second_any);
+			free(excluded_trees); return false;
 		}
-		free(excluded_trees);
-		return add<false, false>(dst, first);
-	}
-
-	/* check if the set difference is empty */
-	for (unsigned int i = 0; i < excluded_tree_count; i++) {
-		if (index_of(excluded_trees[i], first->any.excluded_trees, first->any.excluded_tree_count) < first->any.excluded_tree_count)
-			continue;
-#if !defined(NDEBUG)
-		if (*excluded_trees[i] == HOL_ANY)
-			fprintf(stderr, "subtract_any WARNING: `excluded_trees` contains the set of all logical forms.\n");
-#endif
-		if (first->any.included != nullptr && is_subset<BuiltInPredicates>(first->any.included, excluded_trees[i])) {
-			/* the difference is empty */
-			for (unsigned int i = 0; i < excluded_tree_count; i++) {
-				free(*excluded_trees[i]);
-				if (excluded_trees[i]->reference_count == 0)
-					free(excluded_trees[i]);
-			}
-			free(excluded_trees);
+	} else if ((first->any.included == nullptr && second->any.included != nullptr)
+			|| (first->any.included != nullptr && !is_subset<BuiltInPredicates>(first->any.included, second_any)))
+	{
+		hol_term* new_term;
+		if (!dst.ensure_capacity(dst.length + 1)
+		 || !new_hol_term(new_term))
+		{
+			free(*second_any); free(second_any);
+			free(excluded_trees); return false;
+		}
+		new_term->type = first->type;
+		new_term->reference_count = 1;
+		new_term->any.included = first->any.included;
+		if (first->any.included != nullptr)
+			new_term->any.included->reference_count++;
+		new_term->any.excluded_trees = excluded_trees;
+		new_term->any.excluded_tree_count = excluded_tree_count;
+		for (unsigned int i = 0; i < excluded_tree_count; i++)
+			excluded_trees[i]->reference_count++;
+		if (!emplace<true>(dst, new_term)) {
+			free(*new_term); free(new_term);
+			free(*second_any); free(second_any);
 			return false;
 		}
 	}
+	free(*second_any); if (second_any->reference_count == 0) free(second_any);
 
-	hol_term* new_term;
-	if (!dst.ensure_capacity(dst.length + 1)
-	 || !new_hol_term(new_term))
-	{
-		for (unsigned int i = 0; i < excluded_tree_count; i++) {
-			free(*excluded_trees[i]);
-			if (excluded_trees[i]->reference_count == 0)
-				free(excluded_trees[i]);
-		}
-		free(excluded_trees);
-		return false;
+	for (unsigned int i = 0; i < second->any.excluded_tree_count; i++) {
+		if (first->type == hol_term_type::ANY)
+			intersect_with_any<BuiltInPredicates, true, MapSecondVariablesToFirst>(dst, second->any.excluded_trees[i], first);
+		else intersect_with_any_right<BuiltInPredicates, true, MapSecondVariablesToFirst, false>(dst, second->any.excluded_trees[i], first);
 	}
-	new_term->type = first->type;
-	new_term->reference_count = 1;
-	new_term->any.included = first->any.included;
-	if (first->any.included != nullptr)
-		new_term->any.included->reference_count++;
-	new_term->any.excluded_trees = excluded_trees;
-	new_term->any.excluded_tree_count = excluded_tree_count;
-	if (!emplace<true>(dst, new_term)) {
-		free(*new_term); free(new_term);
-		return false;
-	}
-	return true;
+
+	return (dst.length != 0);
 }
 
 template<typename BuiltInPredicates, bool MapSecondVariablesToFirst, typename LogicalFormSet>
@@ -12964,12 +13306,11 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 
 	} else if (first->type == hol_term_type::ANY_ARRAY) {
 		if (second->type == hol_term_type::ANY_ARRAY) {
-			if (first->any_array.oper != hol_term_type::ANY_ARRAY && first->any_array.oper != second->any_array.oper) {
+			if (first->any_array.oper != hol_term_type::ANY_ARRAY && second->any_array.oper != hol_term_type::ANY_ARRAY && first->any_array.oper != second->any_array.oper)
 				return add<false, MapSecondVariablesToFirst>(dst, first);
-			}
 
 			if (!relabels_variables<LogicalFormSet>::value) {
-				if (is_subset<BuiltInPredicates>(first, second))
+				if (old_is_subset<BuiltInPredicates>(first, second))
 					return false;
 				else if (!has_intersection<BuiltInPredicates>(first, second))
 					return add<false, MapSecondVariablesToFirst>(dst, first);
@@ -12985,7 +13326,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				for (unsigned int i = 0; i < second->any_array.left.length; i++) {
 					if (!is_subset<BuiltInPredicates>(first->any_array.all, second->any_array.left.operands[i])) {
 						fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
-						return false;
+						return add<false, MapSecondVariablesToFirst>(dst, first);
 					}
 				}
 				excluded_length = max(excluded_length, second->any_array.left.length);
@@ -12993,7 +13334,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				for (unsigned int i = 0; i < second->any_array.right.length; i++) {
 					if (!is_subset<BuiltInPredicates>(first->any_array.all, second->any_array.right.operands[i])) {
 						fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
-						return false;
+						return add<false, MapSecondVariablesToFirst>(dst, first);
 					}
 				}
 				excluded_length = max(excluded_length, second->any_array.right.length);
@@ -13001,25 +13342,30 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				for (unsigned int i = 0; i < second->any_array.any.length; i++) {
 					if (!is_subset<BuiltInPredicates>(first->any_array.all, second->any_array.any.operands[i])) {
 						fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
-						return false;
+						return add<false, MapSecondVariablesToFirst>(dst, first);
 					}
 				}
 				excluded_length = max(excluded_length, second->any_array.any.length);
 
 				/* the array in `first` cannot be `excluded_length` or larger */
 				for (unsigned int i = 2; i < excluded_length; i++) {
-					hol_term* new_second = nullptr;
-					if (first->any_array.oper == hol_term_type::AND) {
-						new_second = hol_term::new_and(make_repeated_array_view(first->any_array.all, i));
-					} else if (first->any_array.oper == hol_term_type::OR) {
-						new_second = hol_term::new_or(make_repeated_array_view(first->any_array.all, i));
-					}
-					if (new_second == nullptr)
-						return false;
-					first->any_array.all->reference_count += i;
+					if (first->any_array.oper == hol_term_type::AND || first->any_array.oper == hol_term_type::ANY_ARRAY) {
+						hol_term* new_second = hol_term::new_and(make_repeated_array_view(first->any_array.all, i));
+						if (new_second == nullptr)
+							return false;
+						first->any_array.all->reference_count += i;
 
-					intersect<BuiltInPredicates>(dst, first, new_second);
-					free(*new_second); if (new_second->reference_count == 0) free(new_second);
+						intersect<BuiltInPredicates>(dst, first, new_second);
+						free(*new_second); if (new_second->reference_count == 0) free(new_second);
+					} if (first->any_array.oper == hol_term_type::OR || first->any_array.oper == hol_term_type::ANY_ARRAY) {
+						hol_term* new_second = hol_term::new_or(make_repeated_array_view(first->any_array.all, i));
+						if (new_second == nullptr)
+							return false;
+						first->any_array.all->reference_count += i;
+
+						intersect<BuiltInPredicates>(dst, first, new_second);
+						free(*new_second); if (new_second->reference_count == 0) free(new_second);
+					}
 				}
 
 				/* consider the case where `first` is a singleton */
@@ -13104,7 +13450,7 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 		}
 
 		if (!relabels_variables<LogicalFormSet>::value) {
-			if (is_subset<BuiltInPredicates>(first, second))
+			if (old_is_subset<BuiltInPredicates>(first, second))
 				return false;
 			else if (!has_intersection<BuiltInPredicates>(first, second))
 				return add<false, MapSecondVariablesToFirst>(dst, first);
@@ -13118,6 +13464,85 @@ bool subtract(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 				return false;
 			}
 			free_all(intersection);
+		}
+
+		if (first->type != hol_term_type::AND && first->type != hol_term_type::OR && first->type == hol_term_type::IFF
+		 && second->any_array.left.length <= 1 && second->any_array.right.length <= 1 && first->any_array.any.length <= 1)
+		{
+			/* this can only be excluded when `second` is singleton */
+			array<hol_term*> new_terms(4);
+			if (second->any_array.left.length == 1) {
+				new_terms[new_terms.length] = second->any_array.left.operands[0];
+				new_terms[new_terms.length++]->reference_count++;
+			}
+
+			if (second->any_array.right.length == 1) {
+				if (new_terms.length == 0) {
+					new_terms[new_terms.length] = second->any_array.right.operands[0];
+					new_terms[new_terms.length++]->reference_count++;
+				} else {
+					array<hol_term*> temp(4);
+					for (hol_term* new_term : new_terms)
+						intersect<BuiltInPredicates>(temp, new_term, second->any_array.right.operands[0]);
+					swap(temp, new_terms);
+					free_all(temp);
+					if (new_terms.length == 0)
+						return false;
+				}
+			}
+
+			if (second->any_array.any.length == 1) {
+				if (new_terms.length == 0) {
+					new_terms[new_terms.length] = second->any_array.any.operands[0];
+					new_terms[new_terms.length++]->reference_count++;
+				} else {
+					array<hol_term*> temp(4);
+					for (hol_term* new_term : new_terms)
+						intersect<BuiltInPredicates>(temp, new_term, second->any_array.any.operands[0]);
+					swap(temp, new_terms);
+					free_all(temp);
+					if (new_terms.length == 0)
+						return false;
+				}
+			}
+
+			if (new_terms.length == 0) {
+				new_terms[new_terms.length] = second->any_array.all;
+				new_terms[new_terms.length++]->reference_count++;
+			}
+
+			array<LogicalFormSet> differences(8);
+			if (!add<false, false>(differences, first)) return false;
+			for (unsigned int i = 0; i < new_terms.length; i++) {
+				array<LogicalFormSet> new_differences(8);
+				for (LogicalFormSet& prev : differences) {
+					array<LogicalFormSet> temp(8);
+					subtract<BuiltInPredicates, MapSecondVariablesToFirst>(temp, get_term(prev), new_terms[i]);
+
+					array<pair<hol_term*, array<node_alignment>>> intersection(8);
+					intersect<BuiltInPredicates>(intersection, first, get_term(prev));
+					if (!new_differences.ensure_capacity(new_differences.length + intersection.length * temp.length)) {
+						free_all(temp); free_all(intersection);
+						free_all(new_differences); free_all(differences);
+						free_all(new_terms); return false;
+					}
+					for (LogicalFormSet& new_term : temp) {
+						for (pair<hol_term*, array<node_alignment>>& term : intersection) {
+							if (!emplace<false>(new_differences, get_term(new_term), get_variable_map(prev), make_map_from_second_to_src(term.value), get_variable_map(new_term))) {
+								free_all(temp); free_all(intersection);
+								free_all(new_differences); free_all(differences);
+								free_all(new_terms); return false;
+							}
+						}
+					}
+					free_all(intersection);
+					free_all(temp);
+				}
+				free_all(differences);
+				swap(new_differences, differences);
+			}
+			swap(differences, dst);
+			return (dst.length != 0);
 		}
 
 		fprintf(stderr, "subtract ERROR: Unclosed subtraction.\n");
@@ -14404,40 +14829,44 @@ inline bool intersect_any_with_any(array<LogicalFormSet>& dst, hol_term* first, 
 	} else if ((first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY)
 			&& (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY))
 	{
-		if (!MapSecondVariablesToFirst && AvoidEquivalentIntersection) {
-			first_intersection_count = 0;
+		if (first->any.included == second->any.included || *first->any.included == *second->any.included) {
+			add<true, false>(intersection, MapSecondVariablesToFirst ? second->any.included : first->any.included);
 		} else {
-			if (second->any.excluded_tree_count == 0) {
-				intersect_with_any_right<BuiltInPredicates, true, MapSecondVariablesToFirst, MapSecondVariablesToFirst>(intersection, first->any.included, second);
+			if (!MapSecondVariablesToFirst && AvoidEquivalentIntersection) {
+				first_intersection_count = 0;
 			} else {
-				hol_term* term;
-				if (second->type == hol_term_type::ANY_RIGHT)
-					term = hol_term::new_any_right(second->any.included);
-				else term = hol_term::new_any_right_only(second->any.included);
-				if (term == nullptr) return false;
-				second->any.included->reference_count++;
-				intersect_with_any_right<BuiltInPredicates, true, MapSecondVariablesToFirst, MapSecondVariablesToFirst>(intersection, first->any.included, term);
-				free(*term); if (term->reference_count == 0) free(term);
+				if (second->any.excluded_tree_count == 0) {
+					intersect_with_any_right<BuiltInPredicates, true, MapSecondVariablesToFirst, MapSecondVariablesToFirst>(intersection, first->any.included, second);
+				} else {
+					hol_term* term;
+					if (second->type == hol_term_type::ANY_RIGHT)
+						term = hol_term::new_any_right(second->any.included);
+					else term = hol_term::new_any_right_only(second->any.included);
+					if (term == nullptr) return false;
+					second->any.included->reference_count++;
+					intersect_with_any_right<BuiltInPredicates, true, MapSecondVariablesToFirst, MapSecondVariablesToFirst>(intersection, first->any.included, term);
+					free(*term); if (term->reference_count == 0) free(term);
+				}
+				first_intersection_count = intersection.length;
 			}
-			first_intersection_count = intersection.length;
-		}
 
-		if (!(MapSecondVariablesToFirst && AvoidEquivalentIntersection)) {
-			if (first->any.excluded_tree_count == 0) {
-				intersect_with_any_right<BuiltInPredicates, true, !MapSecondVariablesToFirst, !MapSecondVariablesToFirst>(intersection, second->any.included, first);
-			} else {
-				hol_term* term;
-				if (first->type == hol_term_type::ANY_RIGHT)
-					term = hol_term::new_any_right(first->any.included);
-				else term = hol_term::new_any_right_only(first->any.included);
-				if (term == nullptr) return false;
-				first->any.included->reference_count++;
-				intersect_with_any_right<BuiltInPredicates, true, !MapSecondVariablesToFirst, !MapSecondVariablesToFirst>(intersection, second->any.included, term);
-				free(*term); if (term->reference_count == 0) free(term);
+			if (!(MapSecondVariablesToFirst && AvoidEquivalentIntersection)) {
+				if (first->any.excluded_tree_count == 0) {
+					intersect_with_any_right<BuiltInPredicates, true, !MapSecondVariablesToFirst, !MapSecondVariablesToFirst>(intersection, second->any.included, first);
+				} else {
+					hol_term* term;
+					if (first->type == hol_term_type::ANY_RIGHT)
+						term = hol_term::new_any_right(first->any.included);
+					else term = hol_term::new_any_right_only(first->any.included);
+					if (term == nullptr) return false;
+					first->any.included->reference_count++;
+					intersect_with_any_right<BuiltInPredicates, true, !MapSecondVariablesToFirst, !MapSecondVariablesToFirst>(intersection, second->any.included, term);
+					free(*term); if (term->reference_count == 0) free(term);
+				}
 			}
+			if (intersection.length == 0)
+				return false;
 		}
-		if (intersection.length == 0)
-			return false;
 	} else if (!(first->type == hol_term_type::ANY && (second->type == hol_term_type::ANY_RIGHT || second->type == hol_term_type::ANY_RIGHT_ONLY)) && is_subset<BuiltInPredicates>(first->any.included, second)) {
 		included[0] = first->any.included;
 		included[1] = nullptr;

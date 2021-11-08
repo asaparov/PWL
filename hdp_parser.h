@@ -499,8 +499,7 @@ static inline bool intersect(auxiliary_flag& out, auxiliary_flag first, auxiliar
 }
 
 struct grammatical_flags {
-	grammatical_num index_number;
-	grammatical_num concord_number;
+	grammatical_num number;
 	grammatical_comparison comp;
 	grammatical_conjunction cnj;
 	grammatical_flag_value flags[(uint_fast8_t) grammatical_flag::COUNT] = { grammatical_flag_value::FALSE };
@@ -513,8 +512,7 @@ struct grammatical_flags {
 	bool aux_or_subjunctive_or_inf_or_to_inf;
 	bool is_first_token_capital;
 
-	grammatical_flags() :
-			index_number(grammatical_num::NONE), concord_number(grammatical_num::NONE),
+	grammatical_flags() : number(grammatical_num::NONE),
 			comp(grammatical_comparison::NONE), cnj(grammatical_conjunction::NONE),
 			corr(correlator::NONE), correlated_by(correlator::NONE), coord(coordination::NONE),
 			be(be_flag::FALSE), aux(auxiliary_flag::NONE), mood(grammatical_mood::INDICATIVE),
@@ -529,24 +527,22 @@ struct grammatical_flags {
 	}
 
 	static inline unsigned int hash(const grammatical_flags& key) {
-		return default_hash(key.index_number)
-			 ^ (3 * default_hash(key.concord_number))
-			 ^ (7 * default_hash(key.comp))
-			 ^ (31 * default_hash(key.cnj))
-			 ^ (53 * default_hash(key.corr))
-			 ^ (97 * default_hash(key.correlated_by))
-			 ^ (193 * default_hash(key.coord))
-			 ^ (389 * default_hash(key.be))
-			 ^ (769 * default_hash(key.flags, (uint_fast8_t) grammatical_flag::COUNT))
-			 ^ (1543 * default_hash(key.aux))
-			 ^ (3079 * default_hash(key.mood))
-			 ^ (6151 * default_hash(key.aux_or_subjunctive_or_inf_or_to_inf))
-			 ^ (12289 * default_hash(key.is_first_token_capital));
+		return default_hash(key.number)
+			 ^ (3 * default_hash(key.comp))
+			 ^ (7 * default_hash(key.cnj))
+			 ^ (31 * default_hash(key.corr))
+			 ^ (53 * default_hash(key.correlated_by))
+			 ^ (97 * default_hash(key.coord))
+			 ^ (193 * default_hash(key.be))
+			 ^ (389 * default_hash(key.flags, (uint_fast8_t) grammatical_flag::COUNT))
+			 ^ (769 * default_hash(key.aux))
+			 ^ (1543 * default_hash(key.mood))
+			 ^ (3079 * default_hash(key.aux_or_subjunctive_or_inf_or_to_inf))
+			 ^ (6151 * default_hash(key.is_first_token_capital));
 	}
 
 	static inline void swap(grammatical_flags& first, grammatical_flags& second) {
-		core::swap(first.index_number, second.index_number);
-		core::swap(first.concord_number, second.concord_number);
+		core::swap(first.number, second.number);
 		core::swap(first.comp, second.comp);
 		core::swap(first.cnj, second.cnj);
 		core::swap(first.corr, second.corr);
@@ -577,8 +573,7 @@ struct grammatical_flags {
 
 private:
 	inline void init(const grammatical_flags& src) {
-		index_number = src.index_number;
-		concord_number = src.concord_number;
+		number = src.number;
 		comp = src.comp;
 		cnj = src.cnj;
 		for (uint_fast8_t i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
@@ -598,8 +593,7 @@ inline bool intersect(grammatical_flags& dst,
 		const grammatical_flags& first,
 		const grammatical_flags& second)
 {
-	if (!intersect(dst.index_number, first.index_number, second.index_number)
-	 || !intersect(dst.concord_number, first.concord_number, second.concord_number)
+	if (!intersect(dst.number, first.number, second.number)
 	 || !intersect(dst.comp, first.comp, second.comp)
 	 || !intersect(dst.cnj, first.cnj, second.cnj)
 	 || !intersect(dst.corr, first.corr, second.corr)
@@ -865,8 +859,6 @@ struct flagged_logical_form
 		REQUIRE_SINGULAR,
 		REQUIRE_PLURAL,
 		TRY_REMOVE_NUMBER,
-		ADD_CONCORD_SINGULAR,
-		ADD_CONCORD_PLURAL,
 		ADD_THAT,
 		REMOVE_THAT,
 		REQUIRE_NO_THAT,
@@ -1287,8 +1279,6 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 	{function_type::REQUIRE_SINGULAR, "require_singular"},
 	{function_type::REQUIRE_PLURAL, "require_plural"},
 	{function_type::TRY_REMOVE_NUMBER, "try_remove_number"},
-	{function_type::ADD_CONCORD_SINGULAR, "add_concord_singular"},
-	{function_type::ADD_CONCORD_PLURAL, "add_concord_plural"},
 	{function_type::ADD_THAT, "add_that"},
 	{function_type::REMOVE_THAT, "remove_that"},
 	{function_type::REQUIRE_NO_THAT, "require_no_that"},
@@ -1409,8 +1399,7 @@ const static_pair<typename flagged_logical_form<Formula>::function_type, const c
 };
 
 inline void initialize_any(grammatical_flags& flags) {
-	flags.concord_number = grammatical_num::ANY;
-	flags.index_number = grammatical_num::ANY;
+	flags.number = grammatical_num::ANY;
 	flags.comp = grammatical_comparison::ANY;
 	flags.cnj = grammatical_conjunction::ANY;
 	flags.corr = correlator::ANY;
@@ -1441,8 +1430,7 @@ inline bool operator == (
 		const grammatical_flags& first,
 		const grammatical_flags& second)
 {
-	if (first.index_number != second.index_number
-	 || first.concord_number != second.concord_number
+	if (first.number != second.number
 	 || first.comp != second.comp
 	 || first.cnj != second.cnj
 	 || first.corr != second.corr
@@ -1486,8 +1474,7 @@ inline bool operator != (
 		const grammatical_flags& first,
 		const grammatical_flags& second)
 {
-	if (first.index_number != second.index_number
-	 || first.concord_number != second.concord_number
+	if (first.number != second.number
 	 || first.comp != second.comp
 	 || first.cnj != second.cnj
 	 || first.corr != second.corr
@@ -1553,8 +1540,7 @@ inline bool print(const grammatical_flags& flags, Stream& out)
 
 	bool first = true;
 	if (!print('[', out)
-	 || !print_feature("index", first, flags.index_number, out)
-	 || !print_feature("concord", first, flags.concord_number, out)
+	 || !print_feature("index", first, flags.number, out)
 	 || !print_feature(first, flags.comp, out)
 	 || !print_feature(first, flags.cnj, out)
 	 || !print_feature("corr", first, flags.corr, out)
@@ -1599,17 +1585,11 @@ inline bool parse_flag(
 		position current)
 {
 	if (compare_strings("index:sg", str, length)) {
-		flags.index_number = grammatical_num::SINGULAR;
+		flags.number = grammatical_num::SINGULAR;
 	} else if (compare_strings("index:pl", str, length)) {
-		flags.index_number = grammatical_num::PLURAL;
+		flags.number = grammatical_num::PLURAL;
 	} else if (compare_strings("index:*", str, length)) {
-		flags.index_number = grammatical_num::ANY;
-	} else if (compare_strings("concord:sg", str, length)) {
-		flags.concord_number = grammatical_num::SINGULAR;
-	} else if (compare_strings("concord:pl", str, length)) {
-		flags.concord_number = grammatical_num::PLURAL;
-	} else if (compare_strings("concord:*", str, length)) {
-		flags.concord_number = grammatical_num::ANY;
+		flags.number = grammatical_num::ANY;
 	} else if (compare_strings("arg2", str, length)) {
 		flags.flags[(unsigned int) grammatical_flag::HAS_ARG2] = grammatical_flag_value::TRUE;
 	} else if (compare_strings("measure", str, length)) {
@@ -8245,7 +8225,7 @@ debug_nonterminal_printer = &nonterminal_printer;
 	{
 #if !defined(NDEBUG)
 		if (terminal_printer.map == NULL) {
-			fprintf(stderr, "hdp_parser.parse ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
+			fprintf(stderr, "hdp_parser.generate ERROR: `hdp_parser.invert_name_map` must be called before `hdp_parser.add_definition`.\n");
 			return false;
 		}
 #endif
@@ -8274,6 +8254,50 @@ core::free(nonterminal_name_map);
 		return result;
 	}
 
+	template<unsigned int K>
+	inline bool generate(
+			rooted_syntax_node<logical_form_type>* generated_derivations,
+			double* log_likelihoods,
+			unsigned int& generated_derivation_count,
+			Formula* logical_form,
+			hash_map<string, unsigned int>& names)
+	{
+		syntax_node<logical_form_type>* unrooted_derivations = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>) * K);
+		if (unrooted_derivations == nullptr) {
+			fprintf(stderr, "hdp_parser.generate ERROR: Out of memory.\n");
+			return false;
+		}
+		if (!generate<K>(unrooted_derivations, log_likelihoods, generated_derivation_count, logical_form, names)) {
+			core::free(unrooted_derivations);
+			return false;
+		}
+		for (unsigned int i = 0; i < generated_derivation_count; i++) {
+			generated_derivations[i].tree = (syntax_node<logical_form_type>*) malloc(sizeof(syntax_node<logical_form_type>));
+			if (generated_derivations[i].tree == nullptr) {
+				fprintf(stderr, "hdp_parser.generate ERROR: Out of memory.\n");
+				for (unsigned int j = 0; j < i; j++)
+					core::free(generated_derivations[j]);
+				for (unsigned int j = 0; j < generated_derivation_count; j++)
+					core::free(unrooted_derivations[j]);
+				core::free(unrooted_derivations);
+				return false;
+			} else if (!init(*generated_derivations[i].tree, unrooted_derivations[i])) {
+				core::free(generated_derivations[i].tree);
+				for (unsigned int j = 0; j < i; j++)
+					core::free(generated_derivations[j]);
+				for (unsigned int j = 0; j < generated_derivation_count; j++)
+					core::free(unrooted_derivations[j]);
+				core::free(unrooted_derivations);
+				return false;
+			}
+			generated_derivations[i].root = 1;
+		}
+		for (unsigned int j = 0; j < generated_derivation_count; j++)
+			core::free(unrooted_derivations[j]);
+		core::free(unrooted_derivations);
+		return true;
+	}
+
 	inline bool yield(
 			const syntax_node<logical_form_type>& derivation,
 			Formula* logical_form, sequence& output_sentence,
@@ -8282,6 +8306,13 @@ core::free(nonterminal_name_map);
 		generated_utterance utterance(output_sentence);
 		const logical_form_type root_logical_form(*logical_form);
 		return ::yield(G, derivation, nonterminal, root_logical_form, get_printer(terminal_printer), utterance, morph);
+	}
+
+	inline bool yield(
+			const rooted_syntax_node<logical_form_type>& derivation,
+			Formula* logical_form, sequence& output_sentence)
+	{
+		return yield(*derivation.tree, logical_form, output_sentence, derivation.root);
 	}
 
 	inline bool yield_search_query(
@@ -10429,6 +10460,8 @@ inline bool select_conjunct_in_set(
 							hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
 							HOL_ANY.reference_count++;
 							excluded_trees.length++;
+						} else if (excluded_tree->type == hol_term_type::ANY_ARRAY) {
+							continue;
 						} else if (excluded_tree->type != hol_term_type::ANY || excluded_tree->any.included == nullptr
 								|| !(excluded_tree->any.included->type == hol_term_type::EXISTS || excluded_tree->any.included->type == hol_term_type::FOR_ALL || excluded_tree->any.included->type == hol_term_type::LAMBDA)
 								|| dst_variables.contains(excluded_tree->any.included->quantifier.variable))
@@ -17213,12 +17246,20 @@ inline bool replace_predicative_quantifier(hol_term* src, hol_term*& dst)
 		return false;
 	}
 
+	hol_term* parent = nullptr;
+	hol_term* current = nullptr;
+	auto get_parent = [&parent, &current](hol_term* term) {
+		parent = current;
+		current = term;
+		return true;
+	};
+
 	array<hol_term*> siblings(8);
 	array<unsigned int> dst_variables(8);
 	bool removed_quantifier, remove_wide_scope_marker = false, remove_negations = false;
 	bool success = apply_head<true>(src, dst, dst_variables, siblings, max_variable, removed_quantifier, remove_negations, remove_wide_scope_marker,
 			predicative_head_finder<built_in_predicates>(lambda_variable),
-			[&max_variable,lambda_variable](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
+			[&max_variable,&parent,lambda_variable](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
 				hol_term* old_head = head;
 				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr
@@ -17238,8 +17279,26 @@ inline bool replace_predicative_quantifier(hol_term* src, hol_term*& dst)
 				bool must_have_wide_scope_marker_before_lambda_term = false;
 				bool could_have_wide_scope_marker_before_lambda_term = false;
 				if (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) {
+					/* check if wide scope is excluded */
+					bool wide_scope_excluded = false;
+					for (unsigned int i = 0; i < head->any.excluded_tree_count; i++) {
+						hol_term* tree = head->any.excluded_trees[i];
+						if (tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+						 && tree->any.included->type == hol_term_type::UNARY_APPLICATION
+						 && tree->any.included->binary.left->type == hol_term_type::CONSTANT
+						 && tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+						 && *tree->any.included->binary.right == HOL_ANY)
+						{
+							wide_scope_excluded = true;
+							break;
+						}
+					}
+
 					if (head_variable > max_variable)
 						max_variable = head_variable;
+					if (!wide_scope_excluded)
+						could_have_wide_scope_marker_before_lambda_term = true;
+					could_have_wide_scope_marker_before_quantifier = true;
 					if (head->any.included != nullptr && head->any.included->type == hol_term_type::UNARY_APPLICATION
 					 && head->any.included->binary.left->type == hol_term_type::VARIABLE
 					 && head->any.included->binary.left->variable == lambda_variable
@@ -17254,8 +17313,14 @@ inline bool replace_predicative_quantifier(hol_term* src, hol_term*& dst)
 					if (head_variable != 0)
 						set_variable = head_variable;
 					else set_variable = ++max_variable;
-					could_have_wide_scope_marker_before_lambda_term = true;
-					could_have_wide_scope_marker_before_quantifier = true;
+					if (parent != nullptr && parent->type == hol_term_type::UNARY_APPLICATION
+					 && parent->binary.left->type == hol_term_type::CONSTANT
+					 && parent->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
+					{
+						remove_wide_scope_marker = true;
+					} else if (wide_scope_excluded) {
+						could_have_wide_scope_marker_before_quantifier = false;
+					}
 				} else if (head->type == hol_term_type::EXISTS) {
 					hol_term* operand = head->quantifier.operand;
 					set_variable = head->quantifier.variable;
@@ -17493,6 +17558,39 @@ inline bool replace_predicative_quantifier(hol_term* src, hol_term*& dst)
 					}
 					HOL_ANY.reference_count++;
 
+					/* check if we need to remove an excluded wide scope from `head` */
+					hol_term* current_head;
+					if (remove_wide_scope_marker && (head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT)) {
+						array<hol_term*> excluded(max(1, head->any.excluded_tree_count));
+						for (unsigned int i = 0; i < head->any.excluded_tree_count; i++) {
+							hol_term* tree = head->any.excluded_trees[i];
+							if (tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+							 && tree->any.included->type == hol_term_type::UNARY_APPLICATION
+							 && tree->any.included->binary.left->type == hol_term_type::CONSTANT
+							 && tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+							 && *tree->any.included->binary.right == HOL_ANY)
+							{
+								continue;
+							}
+							excluded[excluded.length++] = tree;
+						}
+						if (excluded.length == head->any.excluded_tree_count) {
+							current_head = head;
+							head->reference_count++;
+						} else {
+							current_head = hol_term::new_any_right(head->any.included, excluded.data, excluded.length);
+							if (current_head == nullptr)
+								return (hol_term*) nullptr;
+							if (head->any.included != nullptr)
+								head->any.included->reference_count++;
+							for (hol_term* tree : excluded)
+								tree->reference_count++;
+						}
+					} else {
+						current_head = head;
+						head->reference_count++;
+					}
+
 					array<hol_term*> intersection(2);
 					intersect<built_in_predicates>(intersection, new_head, head);
 					free(*new_head); if (new_head->reference_count == 0) free(new_head);
@@ -17561,15 +17659,31 @@ inline bool replace_predicative_quantifier(hol_term* src, hol_term*& dst)
 				}
 
 				if (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) {
-					hol_term* new_dst = hol_term::new_any_right(dst);
+					array<hol_term*> excluded(max(1, old_head->any.excluded_tree_count));
+					for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
+						hol_term* tree = old_head->any.excluded_trees[i];
+						if (remove_wide_scope_marker && tree->type == hol_term_type::ANY_RIGHT && tree->any.included != nullptr
+						 && tree->any.included->type == hol_term_type::UNARY_APPLICATION
+						 && tree->any.included->binary.left->type == hol_term_type::CONSTANT
+						 && tree->any.included->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE
+						 && *tree->any.included->binary.right == HOL_ANY)
+						{
+							continue;
+						}
+						excluded[excluded.length++] = tree;
+					}
+
+					hol_term* new_dst = hol_term::new_any_right(dst, excluded.data, excluded.length);
 					if (new_dst == nullptr) {
 						free(*dst); if (dst->reference_count == 0) free(dst);
 						return (hol_term*) nullptr;
 					}
+					for (hol_term* tree : excluded)
+						tree->reference_count++;
 					dst = new_dst;
 				}
 				return dst;
-			}, no_op()) && dst != nullptr;
+			}, get_parent) && dst != nullptr;
 	if (!success) return false;
 
 	if (dst->type != hol_term_type::LAMBDA) {
@@ -20229,12 +20343,12 @@ inline bool size(hol_term* src, hol_term*& dst, grammatical_flags& dst_flags)
 			free_all(intersection);
 			return false;
 		} else if (dst->number.integer == 1 && dst->number.decimal == 0) {
-			if (!intersect(dst_flags.index_number, grammatical_num::SINGULAR, dst_flags.index_number)) {
+			if (!intersect(dst_flags.number, grammatical_num::SINGULAR, dst_flags.number)) {
 				free_all(intersection);
 				return false;
 			}
 		} else {
-			if (!intersect(dst_flags.index_number, grammatical_num::PLURAL, dst_flags.index_number)) {
+			if (!intersect(dst_flags.number, grammatical_num::PLURAL, dst_flags.number)) {
 				free_all(intersection);
 				return false;
 			}
@@ -20344,12 +20458,12 @@ inline bool arg_function(hol_term* src, hol_term*& dst, grammatical_flags& dst_f
 
 	if (dst->type == hol_term_type::NUMBER) {
 		if (dst->number.integer == 1 && dst->number.decimal == 0) {
-			if (!intersect(dst_flags.index_number, grammatical_num::SINGULAR, dst_flags.index_number)) {
+			if (!intersect(dst_flags.number, grammatical_num::SINGULAR, dst_flags.number)) {
 				free_all(intersection);
 				return false;
 			}
 		} else {
-			if (!intersect(dst_flags.index_number, grammatical_num::PLURAL, dst_flags.index_number)) {
+			if (!intersect(dst_flags.number, grammatical_num::PLURAL, dst_flags.number)) {
 				free_all(intersection);
 				return false;
 			}
@@ -22961,6 +23075,7 @@ inline bool select_function(
 	return apply_head<false>(src, dst, dst_variables, siblings, 0, removed_quantifier, remove_negations, remove_wide_scope_marker, find_head<built_in_predicates>,
 			[&scopes,lambda_variable,&max_variable](hol_term* head, unsigned int head_variable, head_index predicate_index, bool is_array, bool& remove_wide_scope_marker, array<hol_term*>& siblings)
 			{
+				remove_wide_scope_marker = true;
 				hol_term* old_head = head;
 				if ((head->type == hol_term_type::ANY || head->type == hol_term_type::ANY_RIGHT) && head->any.included != nullptr)
 					head = head->any.included;
@@ -23116,13 +23231,37 @@ inline bool select_function(
 						free(*excluded_trees[i]); if (excluded_trees[i]->reference_count == 0) free(excluded_trees[i]);
 					}
 					if (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) {
-						hol_term* temp = hol_term::new_any_right(dst, old_head->any.excluded_trees, old_head->any.excluded_tree_count);
-						if (temp == nullptr) {
+						/* make sure there is no wide scope */
+						hol_term* excluded_tree = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+						if (excluded_tree == nullptr) {
 							free(*dst); if (dst->reference_count == 0) free(dst);
 							return (hol_term*) nullptr;
 						}
-						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
-							old_head->any.excluded_trees[i]->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+						HOL_ANY.reference_count++;
+
+						bool is_wide_scope_excluded = false;
+						array<hol_term*> new_excluded(old_head->any.excluded_tree_count + 1);
+						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
+							if (!is_subset<built_in_predicates>(old_head->any.excluded_trees[i], excluded_tree)) {
+								new_excluded[new_excluded.length++] = old_head->any.excluded_trees[i];
+								old_head->any.excluded_trees[i]->reference_count++;
+								if (is_subset<built_in_predicates>(excluded_tree, old_head->any.excluded_trees[i]))
+									is_wide_scope_excluded = true;
+							}
+						}
+						if (!is_wide_scope_excluded) {
+							new_excluded[new_excluded.length++] = excluded_tree;
+						} else {
+							free(*excluded_tree); free(excluded_tree);
+						}
+
+						hol_term* temp = hol_term::new_any_right(dst, new_excluded.data, new_excluded.length);
+						if (temp == nullptr) {
+							free_all(new_excluded);
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
 						dst = temp;
 					}
 					return dst;
@@ -23238,13 +23377,37 @@ inline bool select_function(
 						free(*excluded_trees[i]); if (excluded_trees[i]->reference_count == 0) free(excluded_trees[i]);
 					}
 					if (old_head->type == hol_term_type::ANY || old_head->type == hol_term_type::ANY_RIGHT) {
-						hol_term* temp = hol_term::new_any_right(dst, old_head->any.excluded_trees, old_head->any.excluded_tree_count);
-						if (temp == nullptr) {
+						/* make sure there is no wide scope */
+						hol_term* excluded_tree = hol_term::new_any_right(hol_term::new_apply(&hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value, &HOL_ANY));
+						if (excluded_tree == nullptr) {
 							free(*dst); if (dst->reference_count == 0) free(dst);
 							return (hol_term*) nullptr;
 						}
-						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++)
-							old_head->any.excluded_trees[i]->reference_count++;
+						hol_term::constants<(unsigned int) built_in_predicates::WIDE_SCOPE>::value.reference_count++;
+						HOL_ANY.reference_count++;
+
+						bool is_wide_scope_excluded = false;
+						array<hol_term*> new_excluded(old_head->any.excluded_tree_count + 1);
+						for (unsigned int i = 0; i < old_head->any.excluded_tree_count; i++) {
+							if (!is_subset<built_in_predicates>(old_head->any.excluded_trees[i], excluded_tree)) {
+								new_excluded[new_excluded.length++] = old_head->any.excluded_trees[i];
+								old_head->any.excluded_trees[i]->reference_count++;
+								if (is_subset<built_in_predicates>(excluded_tree, old_head->any.excluded_trees[i]))
+									is_wide_scope_excluded = true;
+							}
+						}
+						if (!is_wide_scope_excluded) {
+							new_excluded[new_excluded.length++] = excluded_tree;
+						} else {
+							free(*excluded_tree); free(excluded_tree);
+						}
+
+						hol_term* temp = hol_term::new_any_right(dst, new_excluded.data, new_excluded.length);
+						if (temp == nullptr) {
+							free_all(new_excluded);
+							free(*dst); if (dst->reference_count == 0) free(dst);
+							return (hol_term*) nullptr;
+						}
 						dst = temp;
 					}
 					return dst;
@@ -25287,8 +25450,7 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 	switch (function.type) {
 	case function_type::EMPTY:
 		dst.root = Formula::new_false();
-		dst.flags.index_number = grammatical_num::NONE;
-		dst.flags.concord_number = grammatical_num::NONE;
+		dst.flags.number = grammatical_num::NONE;
 		dst.flags.comp = grammatical_comparison::NONE;
 		dst.flags.cnj = grammatical_conjunction::NONE;
 		dst.flags.corr = correlator::NONE;
@@ -25780,56 +25942,44 @@ bool apply(typename flagged_logical_form<Formula>::function function,
 		dst.flags = src.flags;
 		return require_capitalized<true, true>(src.root, dst.root);
 	case function_type::ADD_SINGULAR:
-		if (!has_intersection(src.flags.index_number, grammatical_num::NONE))
+		if (!has_intersection(src.flags.number, grammatical_num::NONE))
 			return false;
 		dst = src;
-		dst.flags.index_number = grammatical_num::SINGULAR;
+		dst.flags.number = grammatical_num::SINGULAR;
 		return true;
 	case function_type::ADD_PLURAL:
-		if (!has_intersection(src.flags.index_number, grammatical_num::NONE))
+		if (!has_intersection(src.flags.number, grammatical_num::NONE))
 			return false;
 		dst = src;
-		dst.flags.index_number = grammatical_num::PLURAL;
+		dst.flags.number = grammatical_num::PLURAL;
 		return true;
 	case function_type::TRY_ADD_SINGULAR:
-		if (!has_intersection(src.flags.index_number, grammatical_num::SINGULAR_OR_NONE))
+		if (!has_intersection(src.flags.number, grammatical_num::SINGULAR_OR_NONE))
 			return false;
 		dst = src;
-		dst.flags.index_number = grammatical_num::SINGULAR;
+		dst.flags.number = grammatical_num::SINGULAR;
 		return true;
 	case function_type::TRY_ADD_PLURAL:
-		if (!has_intersection(src.flags.index_number, grammatical_num::PLURAL_OR_NONE))
+		if (!has_intersection(src.flags.number, grammatical_num::PLURAL_OR_NONE))
 			return false;
 		dst = src;
-		dst.flags.index_number = grammatical_num::PLURAL;
+		dst.flags.number = grammatical_num::PLURAL;
 		return true;
 	case function_type::REQUIRE_SINGULAR:
-		if (!has_intersection(src.flags.index_number, grammatical_num::SINGULAR))
+		if (!has_intersection(src.flags.number, grammatical_num::SINGULAR))
 			return false;
 		dst = src;
-		dst.flags.index_number = grammatical_num::SINGULAR;
+		dst.flags.number = grammatical_num::SINGULAR;
 		return true;
 	case function_type::REQUIRE_PLURAL:
-		if (!has_intersection(src.flags.index_number, grammatical_num::PLURAL))
+		if (!has_intersection(src.flags.number, grammatical_num::PLURAL))
 			return false;
 		dst = src;
-		dst.flags.index_number = grammatical_num::PLURAL;
+		dst.flags.number = grammatical_num::PLURAL;
 		return true;
 	case function_type::TRY_REMOVE_NUMBER:
 		dst = src;
-		dst.flags.index_number = grammatical_num::NONE;
-		return true;
-	case function_type::ADD_CONCORD_SINGULAR:
-		if (!has_intersection(src.flags.concord_number, grammatical_num::NONE))
-			return false;
-		dst = src;
-		dst.flags.concord_number = grammatical_num::SINGULAR;
-		return true;
-	case function_type::ADD_CONCORD_PLURAL:
-		if (!has_intersection(src.flags.concord_number, grammatical_num::NONE))
-			return false;
-		dst = src;
-		dst.flags.concord_number = grammatical_num::PLURAL;
+		dst.flags.number = grammatical_num::NONE;
 		return true;
 	case function_type::ADD_THAT:
 		return add_conjunction(src, dst, grammatical_conjunction::THAT);
@@ -36574,6 +36724,9 @@ inline bool invert_select_predicate_in_set(
 					continue;
 				}
 
+				if (right->type == hol_term_type::ANY_RIGHT && right->any.included != nullptr)
+					right = right->any.included;
+
 				hol_term* operand;
 				if (right->type == hol_term_type::ANY_QUANTIFIER) {
 					operand = right->any_quantifier.operand;
@@ -37869,10 +38022,10 @@ inline bool invert_size(
 		if (second->number.decimal != 0) {
 			return false;
 		} else if (second->number.integer == 1 && second->number.decimal == 0) {
-			if (!intersect(flags.index_number, grammatical_num::SINGULAR, flags.index_number))
+			if (!intersect(flags.number, grammatical_num::SINGULAR, flags.number))
 				return false;
 		} else {
-			if (!intersect(flags.index_number, grammatical_num::PLURAL, flags.index_number))
+			if (!intersect(flags.number, grammatical_num::PLURAL, flags.number))
 				return false;
 		}
 	}
@@ -37917,10 +38070,10 @@ inline bool invert_arg_function(
 
 	if (second->type == hol_term_type::NUMBER) {
 		if (second->number.integer == 1 && second->number.decimal == 0) {
-			if (!intersect(flags.index_number, grammatical_num::SINGULAR, flags.index_number))
+			if (!intersect(flags.number, grammatical_num::SINGULAR, flags.number))
 				return false;
 		} else {
-			if (!intersect(flags.index_number, grammatical_num::PLURAL, flags.index_number))
+			if (!intersect(flags.number, grammatical_num::PLURAL, flags.number))
 				return false;
 		}
 	}
@@ -39706,6 +39859,7 @@ inline bool invert_select_function(
 		find_head<built_in_predicates>, find_root, on_remap_variables,
 		[&lambda_variable](array<hol_term*>& dst, array<hol_term*>& dst_outer, hol_term* first_head, hol_term* second_head, const apply_head_inverter& first_inverter, const apply_head_inverter& second_inverter, head_index first_predicate_index, head_index second_predicate_index, hol_term*& conjunct, unsigned int& max_variable, bool& any_right_only, bool& could_have_wide_scope, bool is_array)
 		{
+			could_have_wide_scope = true;
 			hol_term* old_second_head = second_head;
 			if (second_head->type == hol_term_type::UNARY_APPLICATION && second_head->binary.left->type == hol_term_type::CONSTANT
 			 && second_head->binary.left->constant == (unsigned int) built_in_predicates::WIDE_SCOPE)
@@ -40460,8 +40614,7 @@ inline bool invert_add_flag(
 {
 	grammatical_flags flags;
 	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40491,8 +40644,7 @@ inline bool invert_try_add_flag(
 {
 	grammatical_flags flags;
 	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40522,8 +40674,7 @@ inline bool invert_remove_flag(
 {
 	grammatical_flags flags;
 	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40553,8 +40704,7 @@ inline bool invert_try_remove_flag(
 {
 	grammatical_flags flags;
 	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40584,8 +40734,7 @@ inline bool invert_require_flag(
 {
 	grammatical_flags flags;
 	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::TRUE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40615,8 +40764,7 @@ inline bool invert_require_no_flag(
 {
 	grammatical_flags flags;
 	if ((second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::FALSE && second.flags.flags[(uint_fast8_t) flag] != grammatical_flag_value::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40646,8 +40794,7 @@ inline bool invert_add_conjunction(
 {
 	grammatical_flags flags;
 	if ((second.flags.cnj != cnj && second.flags.cnj != grammatical_conjunction::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -40674,8 +40821,7 @@ inline bool invert_remove_conjunction(
 {
 	grammatical_flags flags;
 	if ((second.flags.cnj != grammatical_conjunction::NONE && second.flags.cnj != grammatical_conjunction::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -40702,8 +40848,7 @@ inline bool invert_require_no_conjunction(
 {
 	grammatical_flags flags;
 	if (second.flags.cnj == cnj
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -40730,8 +40875,7 @@ inline bool invert_add_correlator(
 {
 	grammatical_flags flags;
 	if ((second.flags.corr != corr && second.flags.corr != correlator::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -40758,8 +40902,7 @@ inline bool invert_remove_correlator(
 {
 	grammatical_flags flags;
 	if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.corr, first.flags.corr, corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -40786,8 +40929,7 @@ inline bool invert_add_correlated_by(
 {
 	grammatical_flags flags;
 	if ((second.flags.correlated_by != correlated_by && second.flags.correlated_by != correlator::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40814,8 +40956,7 @@ inline bool invert_add_coordination(
 {
 	grammatical_flags flags;
 	if ((second.flags.coord != coord && second.flags.coord != coordination::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40842,8 +40983,7 @@ inline bool invert_remove_coordination(
 {
 	grammatical_flags flags;
 	if ((second.flags.coord != coordination::NONE && second.flags.coord != coordination::ANY)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 	 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -40887,8 +41027,7 @@ inline bool invert_add_be(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.be, be)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40915,8 +41054,7 @@ inline bool invert_remove_be(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.be, be_flag::FALSE)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40942,8 +41080,7 @@ inline bool invert_try_remove_coordinated_be(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.be, be_flag::FALSE)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -40969,8 +41106,7 @@ inline bool invert_require_no_be(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.be, be_flag::FALSE)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41004,8 +41140,7 @@ inline bool invert_try_coordinate_be(
 	{
 		return false;
 	}
-	if (!intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	if (!intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41032,8 +41167,7 @@ inline bool invert_apply_auxiliary(
 {
 	grammatical_flags flags;
 	if (!has_intersection(dst_aux, second.flags.aux)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41068,8 +41202,7 @@ inline bool invert_add_mood(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.mood, mood)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41106,8 +41239,7 @@ inline bool invert_remove_mood(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.mood, grammatical_mood::INDICATIVE)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41147,8 +41279,7 @@ inline bool invert_try_remove_mood(
 {
 	grammatical_flags flags;
 	if (!has_intersection(second.flags.mood, grammatical_mood::INDICATIVE)
-	 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-	 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+	 || !intersect(flags.number, first.flags.number, second.flags.number)
 	 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 	 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 	 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41607,9 +41738,8 @@ bool invert(
 		if (!intersect(flags, first.flags, second.flags)) return false;
 		return invert_require_no_subset_arg<(unsigned int) built_in_predicates::ARG3>(inverse, inverse_count, flags, first.root, second.root);;
 	case function_type::ADD_SINGULAR:
-		if (!has_intersection(second.flags.index_number, grammatical_num::SINGULAR)
-		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::NONE)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		if (!has_intersection(second.flags.number, grammatical_num::SINGULAR)
+		 || !intersect(flags.number, first.flags.number, grammatical_num::NONE)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41625,9 +41755,8 @@ bool invert(
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_PLURAL:
-		if (!has_intersection(second.flags.index_number, grammatical_num::PLURAL)
-		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::NONE)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		if (!has_intersection(second.flags.number, grammatical_num::PLURAL)
+		 || !intersect(flags.number, first.flags.number, grammatical_num::NONE)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41643,9 +41772,8 @@ bool invert(
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_ADD_SINGULAR:
-		if (!has_intersection(second.flags.index_number, grammatical_num::SINGULAR)
-		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::SINGULAR_OR_NONE)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		if (!has_intersection(second.flags.number, grammatical_num::SINGULAR)
+		 || !intersect(flags.number, first.flags.number, grammatical_num::SINGULAR_OR_NONE)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41661,9 +41789,8 @@ bool invert(
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_ADD_PLURAL:
-		if (!has_intersection(second.flags.index_number, grammatical_num::PLURAL)
-		 || !intersect(flags.index_number, first.flags.index_number, grammatical_num::PLURAL_OR_NONE)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		if (!has_intersection(second.flags.number, grammatical_num::PLURAL)
+		 || !intersect(flags.number, first.flags.number, grammatical_num::PLURAL_OR_NONE)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41679,8 +41806,7 @@ bool invert(
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_REMOVE_NUMBER:
-		if (!has_intersection(second.flags.index_number, grammatical_num::NONE)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		if (!has_intersection(second.flags.number, grammatical_num::NONE)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41691,43 +41817,7 @@ bool invert(
 		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
 			return false;
 		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-		flags.index_number = first.flags.index_number;
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& copy(inverse, inverse_count, flags, second.root);
-	case function_type::ADD_CONCORD_SINGULAR:
-		if ((second.flags.concord_number != grammatical_num::SINGULAR && second.flags.concord_number != grammatical_num::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, grammatical_num::NONE)
-		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-		 || !intersect(flags.be, first.flags.be, second.flags.be)
-		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
-			return false;
-		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
-		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
-			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
-		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
-			&& copy(inverse, inverse_count, flags, second.root);
-	case function_type::ADD_CONCORD_PLURAL:
-		if ((second.flags.concord_number != grammatical_num::PLURAL && second.flags.concord_number != grammatical_num::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, grammatical_num::NONE)
-		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
-		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
-		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
-		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
-		 || !intersect(flags.coord, first.flags.coord, second.flags.coord)
-		 || !intersect(flags.be, first.flags.be, second.flags.be)
-		 || !intersect(flags.aux, first.flags.aux, second.flags.aux)
-		 || !intersect(flags.mood, first.flags.mood, second.flags.mood))
-			return false;
-		flags.is_first_token_capital = (first.flags.is_first_token_capital || second.flags.is_first_token_capital);
+		flags.number = first.flags.number;
 		for (i = 0; i < (uint_fast8_t) grammatical_flag::COUNT; i++)
 			if (!intersect(flags.flags[i], first.flags.flags[i], second.flags.flags[i])) return false;
 		return flags.intersect_aux_or_subjunctive_or_inf_or_to_inf(first.flags.aux_or_subjunctive_or_inf_or_to_inf, second.flags.aux_or_subjunctive_or_inf_or_to_inf)
@@ -41756,8 +41846,7 @@ bool invert(
 		return invert_remove_conjunction(inverse, inverse_count, first, second, grammatical_conjunction::FOR);
 	case function_type::REQUIRE_NO_CONJUNCTION:
 		if ((second.flags.cnj != grammatical_conjunction::NONE && second.flags.cnj != grammatical_conjunction::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -41804,8 +41893,7 @@ bool invert(
 	{
 		grammatical_flags flags;
 		if (!intersect(flags.aux, auxiliary_flag::AUX | auxiliary_flag::REQ_SUBJECT, second.flags.aux)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41867,8 +41955,7 @@ bool invert(
 		return invert_remove_correlator(inverse, inverse_count, first, second, correlator::NEITHER);
 	case function_type::TRY_REMOVE_CORRELATOR:
 		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -41885,8 +41972,7 @@ bool invert(
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::REQUIRE_NO_CORRELATOR:
 		if ((second.flags.corr != correlator::NONE && second.flags.corr != correlator::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.correlated_by, first.flags.correlated_by, second.flags.correlated_by)
@@ -41912,8 +41998,7 @@ bool invert(
 		return invert_add_correlated_by(inverse, inverse_count, first, second, correlator::NEITHER);
 	case function_type::TRY_REMOVE_CORRELATED:
 		if ((second.flags.correlated_by != correlator::NONE && second.flags.correlated_by != correlator::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -41930,8 +42015,7 @@ bool invert(
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::REQUIRE_NOT_CORRELATED:
 		if ((second.flags.correlated_by != correlator::NONE && second.flags.correlated_by != correlator::ANY)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, second.flags.comp)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -42156,8 +42240,7 @@ bool invert(
 		return invert_remove_coordination(inverse, inverse_count, first, second, coordination::NOT_NONE);
 	case function_type::ADD_COMPARATIVE:
 		if (!has_intersection(second.flags.comp, grammatical_comparison::COMPARATIVE)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::NONE)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -42174,8 +42257,7 @@ bool invert(
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::ADD_SUPERLATIVE:
 		if (!has_intersection(second.flags.comp, grammatical_comparison::SUPERLATIVE)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::NONE)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -42192,8 +42274,7 @@ bool invert(
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::TRY_REMOVE_SUPERLATIVE:
 		if (!has_intersection(second.flags.comp, grammatical_comparison::NONE)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::NOT_COMPARATIVE)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -42210,8 +42291,7 @@ bool invert(
 			&& copy(inverse, inverse_count, flags, second.root);
 	case function_type::REMOVE_SUPERLATIVE:
 		if (!has_intersection(second.flags.comp, grammatical_comparison::NONE)
-		 || !intersect(flags.index_number, first.flags.index_number, second.flags.index_number)
-		 || !intersect(flags.concord_number, first.flags.concord_number, second.flags.concord_number)
+		 || !intersect(flags.number, first.flags.number, second.flags.number)
 		 || !intersect(flags.comp, first.flags.comp, grammatical_comparison::SUPERLATIVE)
 		 || !intersect(flags.cnj, first.flags.cnj, second.flags.cnj)
 		 || !intersect(flags.corr, first.flags.corr, second.flags.corr)
@@ -45861,7 +45941,7 @@ bool morphology_parse(
 		for (const inflected_verb& form : forms) {
 			if (!has_intersection(grammatical_person::THIRD, form.person)
 			 || !intersect(marked_logical_form.flags.mood, logical_form.flags.mood, form.mood)
-			 || !intersect(marked_logical_form.flags.index_number, logical_form.flags.index_number, form.number))
+			 || !intersect(marked_logical_form.flags.number, logical_form.flags.number, form.number))
 				continue;
 
 			hol_term* new_logical_form;
@@ -45900,7 +45980,7 @@ bool morphology_parse(
 			/* TODO: should we prevent proper nouns from being parsed as `N` rather than `STRING`? e.g. "Solar System" */
 			/*if (form.is_proper == properness::PROPER)
 				continue;*/
-			if (!intersect(marked_logical_form.flags.index_number, logical_form.flags.index_number, form.number))
+			if (!intersect(marked_logical_form.flags.number, logical_form.flags.number, form.number))
 				continue;
 
 			if (!emit_root(form.root, marked_logical_form))
@@ -46022,10 +46102,10 @@ bool morphology_inflect(
 			return false;
 		}
 
-		return morphology_parser.inflect_verb({root, grammatical_person::THIRD, logical_form.flags.index_number, logical_form.flags.mood, tense}, inflections);
+		return morphology_parser.inflect_verb({root, grammatical_person::THIRD, logical_form.flags.number, logical_form.flags.mood, tense}, inflections);
 
 	} else if (pos == POS_NOUN) {
-		return morphology_parser.inflect_noun({root, properness::BOTH /* ignored */, logical_form.flags.index_number}, inflections);
+		return morphology_parser.inflect_noun({root, properness::BOTH /* ignored */, logical_form.flags.number}, inflections);
 
 	} else if (pos == POS_ADJECTIVE) {
 		if (has_intersection(logical_form.flags.flags[(unsigned int) grammatical_flag::LY], grammatical_flag_value::TRUE)) {
