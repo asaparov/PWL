@@ -8921,6 +8921,9 @@ bool subtract(array<LogicalFormSet>&, hol_term*, hol_term*);
 template<typename BuiltInPredicates, bool MapSecondVariablesToFirst = false, typename LogicalFormSet>
 bool subtract_any(array<LogicalFormSet>&, hol_term*, hol_term*);
 
+template<typename BuiltInPredicates, bool MapSecondVariablesToFirst = false, typename LogicalFormSet>
+bool subtract_any_right(array<LogicalFormSet>&, hol_term*, hol_term*);
+
 template<typename BuiltInPredicates, bool ComputeIntersection = true, bool MapSecondVariablesToFirst = false, typename LogicalFormSet>
 bool intersect_with_any(array<LogicalFormSet>&, hol_term*, hol_term*);
 
