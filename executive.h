@@ -7,6 +7,12 @@
 constexpr double PERPLEXITY_THRESHOLD = 0.0; //0.01;
 constexpr double SUFFICIENT_KNOWLEDGE_THRESHOLD = 8.0;
 
+/* TODO: for debugging; delete these */
+#include <atomic>
+std::atomic_uint total_read_sentence(0);
+std::atomic_uint add_formula_failures(0);
+std::atomic_uint total_add_formula(0);
+
 template<typename Formula>
 inline void free_logical_forms(Formula** logical_forms, unsigned int count)
 {
@@ -186,13 +192,18 @@ exit(EXIT_FAILURE);
 	}
 
 	/* add the most probable logical form to the theory */
+total_add_formula++;
 	set_changes<Formula> set_diff;
 	auto* new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
+total_read_sentence++;
+fprintf(stderr, "total_read_sentence = %u, add_formula_failures = %u, total_add_formula = %u\n", total_read_sentence.load(), add_formula_failures.load(), total_add_formula.load());
 	for (unsigned int i = 0; new_proof == nullptr && i < max_retries; i++) {
+add_formula_failures++;
 		set_diff.clear();
 auto collector = make_log_probability_collector(T, theory_prior);
 		for (unsigned int t = 0; t < mcmc_iterations_per_retry; t++)
 			do_exploratory_mh_step(T, theory_prior, proof_axioms, collector);
+total_add_formula++;
 		new_proof = T.add_formula(logical_forms[0], set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 	}
 	if (new_proof != nullptr && !proof_axioms.add(new_proof, set_diff.new_set_axioms, theory_prior)) {

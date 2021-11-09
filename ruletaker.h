@@ -985,6 +985,7 @@ inline void print_ruletaker_results(
 		const char* output_filepath)
 {
 	std::unique_lock<std::mutex> lock(results_lock);
+fprintf(stderr, "total_read_sentence = %u, add_formula_failures = %u, total_add_formula = %u\n", total_read_sentence.load(), add_formula_failures.load(), total_add_formula.load());
 	insertion_sort(results);
 	FILE* out = open_file(output_filepath, "w");
 	if (out == nullptr) {

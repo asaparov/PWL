@@ -50,6 +50,30 @@ enum class instance_type : instance_type_specifier {
 	STRING
 };
 
+/* TODO: for debugging; delete this */
+#include <atomic>
+std::atomic<unsigned long long> total_reasoning(0);
+std::atomic<unsigned long long> consistency_checking_ms(0);
+thread_local bool consistency_checking = false;
+struct time_aggregator {
+	std::atomic<unsigned long long>& milliseconds;
+	bool& guard;
+	bool old_guard;
+	timer stopwatch;
+
+	time_aggregator(std::atomic<unsigned long long>& milliseconds, bool& guard) :
+			milliseconds(milliseconds), guard(guard), old_guard(guard)
+	{
+		guard = true;
+	}
+	~time_aggregator() {
+		if (!old_guard) {
+			milliseconds += stopwatch.milliseconds();
+			guard = false;
+		}
+	}
+};
+
 struct instance {
 	instance_type type;
 	union {
@@ -11170,6 +11194,7 @@ private:
 
 	template<bool ResolveInconsistencies, typename... Args>
 	bool check_set_membership_after_addition(array<Formula*>& new_atoms, array<unsigned int>& new_antecedents, Args&&... visitor) {
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		/* We first need to find all pairs of tuples and sets such that, with
 		   the addition of `new_atom` as an axiom, the tuple must necessarily
 		   belong to the set (and is not the case otherwise without
@@ -12052,6 +12077,7 @@ private:
 	template<typename... Args>
 	bool check_set_membership_after_subtraction(array<Formula*>& old_atoms, unsigned int removed_set, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		unsigned int old_atom_index = 0;
 		array_map<unsigned int, tuple> old_elements(8);
 		array<unsigned int> old_antecedents(4);
@@ -12649,6 +12675,7 @@ private:
 			unsigned int set_id, array<Formula*>& quantifiers,
 			array<variable_assignment>& possible_values, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		array<unsigned int> new_antecedents(1);
 		array_map<tuple, array<unsigned int>> new_elements(1);
 		array<Formula*> new_atoms(1);
@@ -12701,6 +12728,7 @@ private:
 	template<bool ResolveInconsistencies, typename... Args>
 	inline bool check_new_set_membership(unsigned int set_id, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		Formula* set_formula = sets.sets[set_id].size_axioms[0]->formula->binary.left->binary.right;
 
 		array<Formula*> quantifiers(1 << (core::log2(sets.sets[set_id].arity) + 1));
@@ -12710,8 +12738,22 @@ private:
 		}
 
 		/* if this set is empty, negations of existentials could now be provable in other set formula */
-		if (sets.sets[set_id].set_size == 0)
-			return check_set_membership_after_addition<false>(set_formula, std::forward<Args>(visitor)...);
+		if (sets.sets[set_id].set_size == 0) {
+			array<Formula*> new_atoms(set_formula->type == TermType::AND ? set_formula->array.length : 1);
+			if (set_formula->type == TermType::AND) {
+				for (unsigned int i = 0; i < set_formula->array.length; i++) {
+					new_atoms[new_atoms.length++] = set_formula->array.operands[i];
+					set_formula->array.operands[i]->reference_count++;
+				}
+			} else {
+				new_atoms[new_atoms.length++] = set_formula;
+				set_formula->reference_count++;
+			}
+			array<unsigned int> new_antecedents(4);
+			bool result = check_set_membership_after_addition<ResolveInconsistencies>(new_atoms, new_antecedents, std::forward<Args>(visitor)...);
+			free_all(new_atoms);
+			return result;
+		}
 
 		array<variable_assignment> possible_values(4);
 		variable_assignment& values = possible_values[0];
@@ -12738,6 +12780,7 @@ private:
 	template<typename... Args>
 	bool check_old_set_membership(unsigned int set_id, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		Formula* set_formula = sets.sets[set_id].size_axioms[0]->formula->binary.left->binary.right;
 		array<Formula*> quantifiers(1 << (core::log2(sets.sets[set_id].arity) + 1));
 		for (unsigned int j = 0; j < sets.sets[set_id].arity; j++) {
@@ -12859,6 +12902,7 @@ private:
 	template<bool ResolveInconsistencies, typename... Args>
 	bool check_new_subset_membership(unsigned int antecedent_set, unsigned int consequent_set, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		/* this new extensional edge may cause the elements in the strongly
 		   connected component containing `antecedent_set` may be moveable into
 		   a descendant of `consequent_set` */
@@ -12940,6 +12984,7 @@ private:
 	template<typename... Args>
 	bool check_old_subset_membership(unsigned int antecedent_set, unsigned int consequent_set, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		Formula* consequent_formula = sets.sets[consequent_set].size_axioms[0]->formula->binary.left->binary.right;
 		array<Formula*> consequent_quantifiers(1 << (core::log2(sets.sets[consequent_set].arity) + 1));
 		for (unsigned int j = 0; j < sets.sets[consequent_set].arity; j++) {
@@ -13021,6 +13066,7 @@ private:
 	template<bool ResolveInconsistencies, typename... Args>
 	bool check_new_implication_satisfaction(unsigned int implication_id, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		Proof* axiom = implication_axioms[implication_id].key;
 		Formula* antecedent = axiom->formula->binary.left;
 
@@ -13053,6 +13099,7 @@ private:
 	template<typename... Args>
 	bool check_old_implication_satisfaction(unsigned int implication_id, Args&&... visitor)
 	{
+time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		if (!implication_axioms[implication_id].value)
 			return true;
 		implication_axioms[implication_id].value = false;
@@ -19671,6 +19718,7 @@ bool log_joint_probability_of_lambda_by_linear_search(
 	cached_proof_sampler prev_proof;
 	for (unsigned int i = 0; i < constants.length; i++)
 	{
+timer stopwatch;
 		/* copy the theory */
 		Theory& T_copy = *((Theory*) alloca(sizeof(Theory)));
 		PriorStateType& proof_axioms_copy = *((PriorStateType*) alloca(sizeof(PriorStateType)));
@@ -19729,6 +19777,8 @@ bool log_joint_probability_of_lambda_by_linear_search(
 		if (prev_proof.prev_proof.expected_constants.length == 0 && prev_proof.prev_proof.expected_operand_indices.length == 0)
 			log_joint_probability_of_lambda_by_linear_search_helper<false>(T_copy, proof_prior, proof_axioms_copy, substituted, num_samples, prev_proof, new_proof_sample_delegate);
 		else log_joint_probability_of_lambda_by_linear_search_helper<true>(T_copy, proof_prior, proof_axioms_copy, substituted, num_samples, prev_proof, new_proof_sample_delegate);
+total_reasoning += stopwatch.milliseconds();
+fprintf(stderr, "consistency checking time: %llums, total reasoning time: %llums\n", consistency_checking_ms.load(), total_reasoning.load());
 		free(*constant); if (constant->reference_count == 0) free(constant);
 		free(*substituted); if (substituted->reference_count == 0) free(substituted);
 		if (constants[i].type == instance_type::ANY && T_copy.ground_concepts[constant_id - T_copy.new_constant_offset].types.keys != nullptr)

@@ -11652,6 +11652,7 @@ bool has_subtraction_any(hol_term* first, hol_term* second) {
 template<typename BuiltInPredicates>
 bool is_subset(hol_term* first, hol_term* second) {
 	bool old_value = old_is_subset<BuiltInPredicates>(first, second);
+return old_value;
 	bool new_value;
 	if (second->type == hol_term_type::ANY) {
 		if (first->type == hol_term_type::ANY || first->type == hol_term_type::ANY_RIGHT || first->type == hol_term_type::ANY_RIGHT_ONLY) {
@@ -12766,7 +12767,7 @@ bool subtract_any(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 	return false;
 }
 
-template<typename BuiltInPredicates, bool MapSecondVariablesToFirst = false, typename LogicalFormSet>
+template<typename BuiltInPredicates, bool MapSecondVariablesToFirst, typename LogicalFormSet>
 bool subtract_any_right(array<LogicalFormSet>& dst, hol_term* first, hol_term* second)
 {
 #if !defined(NDEBUG)
