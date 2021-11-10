@@ -5381,7 +5381,8 @@ private:
 	template<typename... Args>
 	bool add_changes(theory::changes& changes, set_changes<Formula>& set_diff, Args&&... visitor)
 	{
-		for (change& c : changes.list) {
+		for (unsigned int i = changes.list.length; i > 0; i--) {
+			change& c = changes.list[i - 1];
 			array_multiset<unsigned int> constants(8);
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
@@ -5540,8 +5541,8 @@ private:
 	{
 		on_subtract_changes(std::forward<Args>(visitor)...);
 		array<Proof*> freeable_set_size_axioms(8);
-		for (unsigned int i = changes.list.length; i > 0; i--) {
-			change& c = changes.list[i - 1];
+		for (unsigned int i = 0; i < changes.list.length; i++) {
+			change& c = changes.list[i];
 			array_multiset<unsigned int> constants(8);
 			switch (c.type) {
 			case change_type::UNARY_ATOM:
@@ -5738,11 +5739,11 @@ private:
 #endif
 
 		unsigned int old_discharged_axiom_count = discharged_axioms.length;
+		unsigned int old_requested_set_size_count = requested_set_sizes.size;
 
 		Term* predicate = nullptr;
 		Term* arg1 = nullptr;
 		Term* arg2 = nullptr;
-		unsigned int old_requested_set_size_count = requested_set_sizes.size;
 		switch (proof.type) {
 		case ProofType::AXIOM:
 			if (discharged_axioms.contains(&proof)) break;
@@ -5954,18 +5955,18 @@ private:
 		unsigned int operand_count;
 		Proof* const* operands;
 		proof.get_subproofs(operands, operand_count);
-		for (unsigned int i = 0; i < operand_count; i++) {
-			if (operands[i] == NULL) continue;
+		for (unsigned int i = operand_count; i > 0; i--) {
+			if (operands[i - 1] == NULL) continue;
 			if (!reference_counts.ensure_capacity(reference_counts.size + 1))
 				return false;
-			unsigned int index = reference_counts.index_of(operands[i]);
+			unsigned int index = reference_counts.index_of(operands[i - 1]);
 			if (index == reference_counts.size) {
-				reference_counts.keys[index] = operands[i];
-				reference_counts.values[index] = operands[i]->reference_count;
+				reference_counts.keys[index] = operands[i - 1];
+				reference_counts.values[index] = operands[i - 1]->reference_count;
 				reference_counts.size++;
 			}
 			reference_counts.values[index]--;
-			if (!get_theory_changes(*operands[i], discharged_axioms, reference_counts, requested_set_sizes, changes, std::forward<Visitor>(visitor)...))
+			if (!get_theory_changes(*operands[i - 1], discharged_axioms, reference_counts, requested_set_sizes, changes, std::forward<Visitor>(visitor)...))
 				return false;
 		}
 		discharged_axioms.length = old_discharged_axiom_count;
@@ -15116,14 +15117,14 @@ private:
 						other_set_formula, set_formula, arity, antecedent_set, consequent_set,
 						is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
 				core::free(*axiom);
-				if (axiom->reference_count == axiom->children.length + 1)
+				if (axiom->reference_count == 1)
 					free_subset_axiom(other_set_formula, set_formula, arity, antecedent_set, consequent_set, std::forward<Args>(args)...);
 
 				axiom = get_subset_axiom<false>(
 						set_formula, other_set_formula, arity, antecedent_set, consequent_set,
 						is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
 				core::free(*axiom);
-				if (axiom->reference_count == axiom->children.length + 1)
+				if (axiom->reference_count == 1)
 					free_subset_axiom_with_required_set_size<true>(set_formula, other_set_formula, arity, antecedent_set, consequent_set, requested_set_size, requested_set_size, std::forward<Args>(args)...);
 			}
 		}

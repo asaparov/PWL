@@ -730,6 +730,7 @@ continue;
 				typedef typename Theory::Proof Proof;
 				Theory& T_MAP_true = *((Theory*) alloca(sizeof(Theory)));
 				Proof* proof_MAP_true; Proof* proof_MAP_false;
+timer stopwatch;
 				double log_probability_true = log_joint_probability_of_truth(job.T, proof_prior, job.proof_axioms, logical_forms[0], 100, 4, 20, T_MAP_true, proof_MAP_true);
 				for (unsigned int j = 0; isinf(log_probability_true) && j < 400; j++) {
 					null_collector collector;
@@ -798,6 +799,8 @@ fflush(stdout);
 					results.add({job.context_id, job.question_id, -std::numeric_limits<double>::infinity(), job.label});
 					results_lock.unlock();
 				}
+total_reasoning += stopwatch.milliseconds();
+fprintf(stderr, "consistency checking time: %llums, total reasoning time: %llums\n", consistency_checking_ms.load(), total_reasoning.load());
 				total++;
 				free_logical_forms(logical_forms, parse_count);
 			} else {
@@ -856,6 +859,7 @@ continue;
 					new (&proof_axioms_MAP) PriorStateType(job.proof_axioms, formula_map);
 					auto collector = make_log_probability_collector(job.T, proof_prior);
 					double max_log_probability = collector.current_log_probability;
+timer stopwatch;
 					for (unsigned int j = 0; j < 4; j++) {
 						for (unsigned int t = 0; t < 100; t++) {
 							bool print_debug = false;
@@ -894,6 +898,8 @@ job.T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 					new (&job.proof_axioms) PriorStateType(proof_axioms_MAP, formula_map);
 					T_MAP.print_axioms(stdout, *debug_terminal_printer); fflush(stdout);
 					free(T_MAP); proof_axioms_MAP.~PriorStateType();
+total_reasoning += stopwatch.milliseconds();
+fprintf(stderr, "consistency checking time: %llums, total reasoning time: %llums\n", consistency_checking_ms.load(), total_reasoning.load());
 				}
 			}
 
