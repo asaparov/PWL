@@ -397,7 +397,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			fictionalgeo_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1) || (job.context_id >= 541 - 1 && job.context_id <= 550 - 1) || (job.context_id >= 581 - 1 && job.context_id <= 590 - 1) || job.context_id == 520 - 1) {
+if (job.context_id != 433 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1) || (job.context_id >= 541 - 1 && job.context_id <= 550 - 1) || (job.context_id >= 581 - 1 && job.context_id <= 590 - 1) || job.context_id == 520 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -629,6 +629,7 @@ __lsan_do_leak_check();
 					PriorStateType::clone(job.proof_axioms, proof_axioms_MAP, formula_map);
 					auto collector = make_log_probability_collector(job.T, proof_prior, new_proof);
 					double max_log_probability = collector.current_log_probability;
+timer stopwatch;
 					for (unsigned int j = 0; j < 4; j++) {
 						for (unsigned int t = 0; t < 150; t++) {
 							fprintf(stderr, "j = %u, t = %u\n", j, t);
@@ -666,6 +667,8 @@ fprintf(stderr, "WARNING: `log_probability_collector.test_proof` is not an obser
 					PriorStateType::clone(proof_axioms_MAP, job.proof_axioms, formula_map);
 					T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
 					free(T_MAP); free(proof_axioms_MAP);
+total_reasoning += stopwatch.milliseconds();
+fprintf(stderr, "consistency checking time: %llums, total reasoning time: %llums\n", consistency_checking_ms.load(), total_reasoning.load());
 
 					FILE* theory_stream = (FILE*) fopen(filename, "wb");
 					write_random_state(theory_stream);

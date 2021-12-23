@@ -1994,16 +1994,16 @@ T.print_axioms(stderr); print('\n', stderr);
 		} else {
 			fprintf(stderr, "ERROR: Unable to convert semantic answer into text.\n");
 		}
-print("Totals so far:\n", stderr);
+/*print("Totals so far:\n", stderr);
 for (const auto& entry : answers) {
 print('"', stderr); print(entry.key, stderr); print("\": ", stderr);
 print(entry.value, stderr); print('\n', stderr);
-}
+}*/
 	};
 
 /* TODO: for debugging; delete this */
-extern const thread_local string_map_scribe* debug_terminal_printer;
-debug_terminal_printer = &parser.get_printer();
+//extern const thread_local string_map_scribe* debug_terminal_printer;
+//debug_terminal_printer = &parser.get_printer();
 	if (LinearSearch) {
 		if (!log_joint_probability_of_lambda_by_linear_search(T, theory_prior, proof_axioms, logical_form, num_samples, on_new_proof_sample)) {
 			fprintf(stderr, "ERROR: Failed to answer question.\n");
@@ -2017,7 +2017,7 @@ debug_terminal_printer = &parser.get_printer();
 			for (auto entry : answers) free(entry.key);
 			return false;
 		}
-T_map.print_axioms(stderr, *debug_terminal_printer);
+//T_map.print_axioms(stderr, *debug_terminal_printer);
 		free(T_map);
 	}
 

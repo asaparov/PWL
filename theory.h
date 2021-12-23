@@ -6619,6 +6619,109 @@ private:
 		return true;
 	}
 
+	static bool unify_subformula_helper(
+			Formula* first, Formula* second,
+			array<Formula*>& quantifiers,
+			array<array_map<Formula*, Term*>>& unifications)
+	{
+		if (unify(second, first, quantifiers, unifications[unifications.length])) {
+			unifications.length++;
+
+			if (!unifications.ensure_capacity(unifications.length + 1)) {
+				for (auto& u : unifications) core::free(u);
+				return false;
+			} else if (!array_map_init(unifications[unifications.length], 4)) {
+				for (auto& u : unifications) core::free(u);
+				return false;
+			}
+			return true;
+		}
+
+		if (first->type == FormulaType::NOT && second->type != FormulaType::NOT
+		 && unify(second, first->unary.operand, quantifiers, unifications[unifications.length]))
+		{
+			unifications.length++;
+
+			if (!unifications.ensure_capacity(unifications.length + 1)) {
+				for (auto& u : unifications) core::free(u);
+				return false;
+			} else if (!array_map_init(unifications[unifications.length], 4)) {
+				for (auto& u : unifications) core::free(u);
+				return false;
+			}
+			return true;
+		}
+
+		switch (second->type) {
+		case FormulaType::TRUE:
+		case FormulaType::FALSE:
+		case FormulaType::CONSTANT:
+		case FormulaType::VARIABLE:
+		case FormulaType::VARIABLE_PREIMAGE:
+		case FormulaType::PARAMETER:
+		case FormulaType::NUMBER:
+		case FormulaType::STRING:
+		case FormulaType::UINT_LIST:
+		case FormulaType::UNARY_APPLICATION:
+		case FormulaType::BINARY_APPLICATION:
+			return true;
+		case FormulaType::EQUALS:
+			if (second->binary.right->type == hol_term_type::LAMBDA)
+				return unify_subformula_helper(first, second->binary.right, quantifiers, unifications);
+			else return true;
+		case FormulaType::IF_THEN:
+			return unify_subformula_helper(first, second->binary.left, quantifiers, unifications)
+				&& unify_subformula_helper(first, second->binary.right, quantifiers, unifications);
+		case FormulaType::NOT:
+			return unify_subformula_helper(first, second->unary.operand, quantifiers, unifications);
+		case FormulaType::AND:
+		case FormulaType::OR:
+		case FormulaType::IFF:
+			for (unsigned int i = 0; i < second->array.length; i++)
+				if (!unify_subformula_helper(first, second->array.operands[i], quantifiers, unifications)) return false;
+			return true;
+		case FormulaType::FOR_ALL:
+		case FormulaType::EXISTS:
+		case FormulaType::LAMBDA:
+		{
+			if (!quantifiers.add(second)) {
+				for (auto& u : unifications) core::free(u);
+				core::free(unifications[unifications.length]);
+				return false;
+			}
+			bool result = unify_subformula_helper(first, second->quantifier.operand, quantifiers, unifications);
+			quantifiers.length--;
+			return result;
+		}
+		case FormulaType::ANY:
+		case FormulaType::ANY_RIGHT:
+		case FormulaType::ANY_RIGHT_ONLY:
+		case FormulaType::ANY_ARRAY:
+		case FormulaType::ANY_CONSTANT:
+		case FormulaType::ANY_CONSTANT_EXCEPT:
+		case FormulaType::ANY_QUANTIFIER:
+			break;
+		}
+		fprintf(stderr, "theory.unify_subformula_helper ERROR: Unrecognized FormulaType.\n");
+		for (auto& u : unifications) core::free(u);
+		core::free(unifications[unifications.length]);
+		return false;
+	}
+
+	static inline bool unify_subformula(
+			Formula* first, Formula* second,
+			array<Formula*>& quantifiers,
+			array<array_map<Formula*, Term*>>& unifications)
+	{
+		if (!array_map_init(unifications[unifications.length], 4)) {
+			return false;
+		} else if (!unify_subformula_helper(first, second, quantifiers, unifications)) {
+			return false;
+		}
+		core::free(unifications[unifications.length]);
+		return true;
+	}
+
 	struct hypothetical_reasoner {
 		struct axiom {
 			Formula* formula;
@@ -10500,6 +10603,10 @@ private:
 							 || (Contradiction && new_values.antiunify_value(left->variable - 1, ground_concepts[constant - new_constant_offset].definitions[0]->formula->binary.left)))
 							{
 								new_possible_values.length++;
+								array<variable_assignment> union_result(new_possible_values.length);
+								set_union(union_result.data, union_result.length, new_possible_values.data, new_possible_values.length - 1, new_possible_values.data + new_possible_values.length - 1, 1);
+								for (auto& element : new_possible_values) core::free(element);
+								swap(union_result, new_possible_values);
 							} else {
 								core::free(new_values);
 							}
@@ -11226,7 +11333,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 				if (set_formula->type == FormulaType::AND) {
 					for (unsigned int i = 0; i < set_formula->array.length; i++) {
 						unsigned int old_unification_count = unifications.length;
-						if (!unify_subformula<true>(next_new_atom, set_formula->array.operands[i], quantifiers, unifications)) {
+						if (!unify_subformula(next_new_atom, set_formula->array.operands[i], quantifiers, unifications)) {
 							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 							return false;
 						}
@@ -11234,7 +11341,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 							unifying_conjuncts.add(i);
 					}
 				} else {
-					if (!unify_subformula<true>(next_new_atom, set_formula, quantifiers, unifications)) {
+					if (!unify_subformula(next_new_atom, set_formula, quantifiers, unifications)) {
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 						return false;
 					}
@@ -18081,7 +18188,7 @@ bool filter_constants_helper(
 						arg2 = conjunct->binary.right;
 					}
 				}
-				if (is_name_scope && arg1->type == TermType::VARIABLE && arg1->variable == variable && arg2 != nullptr) {
+				if (is_name_scope && arg1 != nullptr && arg1->type == TermType::VARIABLE && arg1->variable == variable && arg2 != nullptr) {
 					unsigned int any_index = constants.length;
 					bool found_concept_with_name = false;
 					for (unsigned int i = 0; i < constants.length; i++) {
@@ -19245,8 +19352,8 @@ bool log_joint_probability_of_lambda(
 
 	unsigned int new_constant;
 	set_changes<Formula> set_diff;
-extern thread_local const string_map_scribe* debug_terminal_printer;
-T.print_axioms(stderr, *debug_terminal_printer);
+//extern thread_local const string_map_scribe* debug_terminal_printer;
+//T.print_axioms(stderr, *debug_terminal_printer);
 	Proof* new_proof = T.add_formula(existential, set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 	free(*existential); if (existential->reference_count == 0) free(existential);
 	if (new_proof == nullptr) {
@@ -19270,7 +19377,7 @@ T.print_axioms(stderr, *debug_terminal_printer);
 	double max_log_probability = collector.internal_collector.current_log_probability;
 	for (unsigned int t = 0; t < num_samples; t++)
 {
-fprintf(stderr, "DEBUG: t = %u\n", t);
+/*fprintf(stderr, "DEBUG: t = %u\n", t);
 proof_axioms.check_proof_axioms(T);
 proof_axioms.check_universal_eliminations(T, collector);
 T.check_concept_axioms();
@@ -19285,7 +19392,7 @@ if (!T.observations.contains(collector.internal_collector.test_proof))
 bool print_debug = false;
 extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
-if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 0.1);
 		if (collector.internal_collector.current_log_probability > max_log_probability) {
 			free(T_MAP); formula_map.clear();

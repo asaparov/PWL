@@ -1991,7 +1991,7 @@
 
 : # uses
 {(V "use"/"uses")}
-	{?[u]:(use_instrument(u) & present(u))[index:sg,arg2]};
+	{?[u]:(use(u) & present(u))[index:sg,arg2]};
 
 : # has
 {(V "have"/"has")}

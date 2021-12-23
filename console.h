@@ -22,6 +22,7 @@
 #define CONSOLE_HIDDEN      CONSOLE_CSI "8m"
 
 #include <core/lex.h>
+#include "higher_order_logic.h"
 #include "natural_deduction.h"
 #include "natural_deduction_mh.h"
 #include "theory_prior.h"
@@ -64,15 +65,16 @@ inline void run_console(Stream& input, const char* prompt,
 inline void print_help(unsigned int max_parse_count)
 {
 	printf(CONSOLE_BOLD "Available commands:\n" CONSOLE_RESET);
-	printf(CONSOLE_BOLD "read" CONSOLE_RESET " [sentence without surrounding quotes]      Find up to %u logical forms that maximize the likelihood.\n", max_parse_count);
-	printf(CONSOLE_BOLD "rerank" CONSOLE_RESET "                                          For each parsed logical form, compute its prior, and re-rank them according to their posterior.\n");
-	printf(CONSOLE_BOLD "add" CONSOLE_RESET " [logical form 0-based index]                Add the selected logical form as an observation to the theory. (default is the first logical form)\n");
-	printf(CONSOLE_BOLD "mcmc" CONSOLE_RESET " [iterations]                               Perform MCMC for the specified number of iterations.\n");
-	printf(CONSOLE_BOLD "print_theory" CONSOLE_RESET "                                    Print the current theory.\n");
-	printf(CONSOLE_BOLD "print_proofs" CONSOLE_RESET "                                    Print the proof of each observation in the theory.\n");
-	printf(CONSOLE_BOLD "research" CONSOLE_RESET " [question without surrounding quotes]  Try to answer the given question, searching the web for more information as needed.\n");
-	printf(CONSOLE_BOLD "generate" CONSOLE_RESET " [logical form 0-based index]           Generate sentences from the selected logical form. (default is the first logical form)\n");
-	printf(CONSOLE_BOLD "examples" CONSOLE_RESET "                                        Suggest some interesting examples.\n");
+	printf(CONSOLE_BOLD "read" CONSOLE_RESET " [sentence without surrounding quotes]       Find up to %u logical forms that maximize the likelihood.\n", max_parse_count);
+	printf(CONSOLE_BOLD "rerank" CONSOLE_RESET "                                           For each parsed logical form, compute its prior, and re-rank them according to their posterior.\n");
+	printf(CONSOLE_BOLD "add" CONSOLE_RESET " [logical form 0-based index]                 Add the selected logical form as an observation to the theory. (default is the first logical form)\n");
+	printf(CONSOLE_BOLD "mcmc" CONSOLE_RESET " [iterations]                                Perform MCMC for the specified number of iterations.\n");
+	printf(CONSOLE_BOLD "print_theory" CONSOLE_RESET "                                     Print the current theory.\n");
+	printf(CONSOLE_BOLD "print_proofs" CONSOLE_RESET "                                     Print the proof of each observation in the theory.\n");
+	printf(CONSOLE_BOLD "answer" CONSOLE_RESET " [logical form 0-based index] [iterations] Try to answer the given question, using the specified number of MCMC iterations.\n");
+	printf(CONSOLE_BOLD "research" CONSOLE_RESET " [question without surrounding quotes]   Try to answer the given question, searching the web for more information as needed.\n");
+	printf(CONSOLE_BOLD "generate" CONSOLE_RESET " [logical form 0-based index]            Generate sentences from the selected logical form. (default is the first logical form)\n");
+	printf(CONSOLE_BOLD "examples" CONSOLE_RESET "                                         Suggest some interesting examples.\n");
 }
 
 inline void print_examples()
@@ -93,6 +95,40 @@ inline void print_examples()
 	printf(" " CONSOLE_BOLD ">" CONSOLE_RESET " rerank\n\n");
 }
 
+template<typename Stream>
+unsigned int read_line(array<char>& line, Stream& input)
+{
+	unsigned int bytes_read = 0;
+	while (true) {
+		int width;
+		wint_t next = fgetwc(input);
+		if (!line.ensure_capacity(line.length + MB_CUR_MAX)) {
+			fprintf(stderr, "read_line ERROR: Out of memory.\n");
+			return 0;
+		}
+		switch (next) {
+		case WEOF:
+			return bytes_read;
+
+		case '\n':
+			return bytes_read + 1;
+
+		default:
+#if defined(_WIN32)
+			wctomb_s(&width, line.data + line.length, (line.capacity - line.length) * sizeof(char), next);
+#else
+			width = wctomb(line.data + line.length, next);
+#endif
+			if (width == -1)
+				return 0;
+			line.length += width;
+			bytes_read += width;
+		}
+	}
+
+	return bytes_read;
+}
+
 template<typename Stream, typename Parser>
 void run_console(
 		Stream& input, const char* prompt, Parser& parser,
@@ -100,11 +136,11 @@ void run_console(
 		hash_map<string, unsigned int>& names)
 {
 	if (!parser.invert_name_map(names)) {
-		fprintf(stderr, "ERROR: `hdp_parser.invert_name_map` failed.\n");
+		fprintf(stderr, "ERROR: `run_console.invert_name_map` failed.\n");
 		return;
 	}
 
-	theory<natural_deduction<hol_term, true>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(seed_axioms, 1000000000);
+	theory<natural_deduction<hol_term, false>, polymorphic_canonicalizer<true, false, built_in_predicates>> T(seed_axioms, 1000000000);
 	extern unsigned int constant_offset;
 	constant_offset = T.new_constant_offset;
 	auto constant_prior = make_simple_constant_distribution(
@@ -206,6 +242,55 @@ void run_console(
 				for (string& str : answers)
 					free(str);
 
+			} else if (compare_strings("answer", line.data, index)) {
+				if (parse_count == 0) {
+					printf("ERROR: There are no logical forms to answer. Use 'read' to parse a sentence into logical forms.\n");
+					continue;
+				}
+
+				unsigned int logical_form_index = 0;
+				while (isspace(line[index])) index++;
+				if (index < line.length) {
+					char* end_ptr;
+					logical_form_index = strtoul(line.data + index, &end_ptr, 0);
+					if (isspace(*end_ptr)) {
+						index = ((size_t) end_ptr - (size_t) line.data) / sizeof(char);
+					} else if (*end_ptr != '\0') {
+						printf("ERROR: Invalid logical form index.\n");
+						continue;
+					}
+				}
+				if (logical_form_index >= parse_count) {
+					printf("ERROR: Logical form index is out of bounds.\n");
+					continue;
+				}
+
+				unsigned int mcmc_iterations = 400;
+				while (isspace(line[index])) index++;
+				if (index < line.length) {
+					char* end_ptr;
+					mcmc_iterations = strtoul(line.data + index, &end_ptr, 0);
+					if (*end_ptr != '\0') {
+						printf("ERROR: Invalid number of MCMC iterations.\n");
+						continue;
+					}
+				}
+
+
+				hash_set<unsigned int> seed_entities(2);
+				array_map<string, double> answers(16);
+				if (answer_question<false>(answers, logical_forms[logical_form_index], mcmc_iterations, parser, T, proof_prior, proof_axioms)) {
+					print("Answers:\n", stdout);
+					sort(answers.values, answers.keys, answers.size, default_sorter());
+					for (unsigned int i = answers.size; i > 0; i--) {
+						print("  ", stdout); print(answers.keys[i - 1], stdout);
+						print(" with log probability ", stdout); print(answers.values[i - 1], stdout);
+						print('\n', stdout);
+					}
+				}
+				for (auto entry : answers)
+					free(entry.key);
+
 			} else if (compare_strings("rerank", line.data, index)) {
 				if (parse_count == 0) {
 					printf("ERROR: There are no logical forms to rerank. Use 'read' to parse a sentence into logical forms.\n");
@@ -215,7 +300,7 @@ void run_console(
 				double log_priors[max_parse_count];
 				double log_posteriors[max_parse_count];
 				for (unsigned int i = 0; i < parse_count; i++) {
-					log_priors[i] = log_joint_probability_of_observation(T, proof_prior, proof_axioms, logical_forms[i], 1000);
+					log_priors[i] = log_joint_probability_of_observation(T, proof_prior, proof_axioms, logical_forms[i], 400);
 					log_posteriors[i] = log_likelihoods[i] + log_priors[i];
 				}
 				unsigned int sorted_indices[max_parse_count];

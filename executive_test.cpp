@@ -93,40 +93,6 @@ bool contains_axiom(
 	}
 }
 
-template<typename Stream>
-unsigned int read_line(array<char>& line, Stream& input)
-{
-	unsigned int bytes_read = 0;
-	while (true) {
-		int width;
-		wint_t next = fgetwc(input);
-		if (!line.ensure_capacity(line.length + MB_CUR_MAX)) {
-			fprintf(stderr, "read_line ERROR: Out of memory.\n");
-			return 0;
-		}
-		switch (next) {
-		case WEOF:
-			return bytes_read;
-
-		case '\n':
-			return bytes_read + 1;
-
-		default:
-#if defined(_WIN32)
-			wctomb_s(&width, line.data + line.length, (line.capacity - line.length) * sizeof(char), next);
-#else
-			width = wctomb(line.data + line.length, next);
-#endif
-			if (width == -1)
-				return 0;
-			line.length += width;
-			bytes_read += width;
-		}
-	}
-
-	return bytes_read;
-}
-
 struct theory_initializer {
 	array<instance> expected_constants;
 	unsigned int constant_position;
@@ -247,6 +213,80 @@ bool read_terms(
 	return true;
 }
 
+enum class experiment_mode {
+	CONSOLE,
+	PROOFWRITER,
+	FICTIONALGEOQA
+};
+
+inline bool parse_mode(const char* arg,
+		bool& fail, experiment_mode& mode)
+{
+	if (strcmp(arg, "console") == 0) {
+		mode = experiment_mode::CONSOLE;
+	} else if (strcmp(arg, "proofwriter") == 0) {
+		mode = experiment_mode::PROOFWRITER;
+	} else if (strcmp(arg, "fictionalgeoqa") == 0) {
+		mode = experiment_mode::FICTIONALGEOQA;
+	} else {
+		fprintf(stderr, "ERROR: Unrecognized mode '%s'.\n", arg);
+		fail = true;
+	}
+	return true;
+}
+
+inline bool parse_option(const char* arg,
+		bool& fail, const char* to_match)
+{
+	return (strcmp(arg, to_match) == 0);
+}
+
+inline bool parse_option(
+		const char* arg, bool& fail,
+		const char* to_match, unsigned int& out)
+{
+	size_t length = strlen(to_match);
+	if (strncmp(arg, to_match, length) != 0)
+		return false;
+	const char* option = arg + length;
+
+	unsigned long long value;
+	if (!parse_ulonglong(string(option), value)) {
+		fprintf(stderr, "ERROR: Unable to parse option '%s'.\n", arg);
+		fail = true; return true;
+	}
+	out = (unsigned int) value;
+	return true;
+}
+
+inline bool parse_option(
+		const char* arg, bool& fail,
+		const char* to_match, const char*& out)
+{
+	size_t length = strlen(to_match);
+	if (strncmp(arg, to_match, length) != 0)
+		return false;
+	const char* option = arg + length;
+
+	out = option;
+	return true;
+}
+
+template<typename Stream>
+void print_usage(Stream&& out) {
+	fprintf(out, "Usage: executive_test_cpp <mode> [options]\n"
+		"\n"
+		"<mode> must be one of:\n"
+		"  console                  Starts a console rather than running an experiment.\n"
+		"  proofwriter              Runs ProofWriter experiment.\n"
+		"  fictionalgeoqa           Runs FictionalGeoQA experiment.\n"
+		"Available options:\n"
+		"  --threads=NUM            Sets the number of threads.\n"
+		"  --data=FILEPATH          Sets the path to the QA data.\n"
+		"  --out=FILEPATH           Sets the path to the output predicted answers.\n"
+		"  --help                   Prints this usage text.\n");
+}
+
 
 unsigned int constant_offset = 0;
 
@@ -261,6 +301,45 @@ int main(int argc, const char** argv)
 	log_cache<double>::instance().ensure_size(1024);
 set_seed(1356941742);
 	fprintf(stdout, "(seed = %u)\n", get_seed());
+
+	/* parse command-line arguments */
+	bool fail = false;
+	experiment_mode mode;
+	unsigned int num_threads = 8;
+	const char* data_filepath = nullptr;
+	const char* output_filepath = nullptr;
+	if (argc < 2) {
+		fprintf(stderr, "ERROR: Mode not specified.\n");
+		fail = true;
+	} else {
+		parse_mode(argv[1], fail, mode);
+	}
+	for (int i = 2; i < argc && !fail; i++) {
+		if (parse_option(argv[i], fail, "--threads=", num_threads)) continue;
+		if (parse_option(argv[i], fail, "--data=", data_filepath)) continue;
+		if (parse_option(argv[i], fail, "--out=", output_filepath)) continue;
+		if (parse_option(argv[i], fail, "--help")) {
+			print_usage(stdout);
+			fflush(stdout);
+			return EXIT_SUCCESS;
+		}
+
+		fprintf(stderr, "ERROR: Unrecognized command-line argument '%s'.\n", argv[i]);
+		fail = true;
+	}
+	if (fail)
+		return EXIT_FAILURE;
+	if (data_filepath == nullptr) {
+		if (mode == experiment_mode::PROOFWRITER)
+			data_filepath = "proofwriter/OWA/birds-electricity/meta-test.jsonl";
+		else if (mode == experiment_mode::FICTIONALGEOQA)
+			data_filepath = "fictionalgeoqa.jsonl";
+	} if (output_filepath == nullptr) {
+		if (mode == experiment_mode::PROOFWRITER)
+			output_filepath = "pwl_proofwriter_results.txt";
+		else if (mode == experiment_mode::FICTIONALGEOQA)
+			output_filepath = "pwl_fictionalgeoqa_results.txt";
+	}
 
 	hash_map<string, unsigned int> names(256);
 	if (!add_constants_to_string_map(names)) {
@@ -398,24 +477,23 @@ set_seed(1356941742);
 	}
 	fclose(in);
 
-//parser.invert_name_map(names);
-//parser.print_hdp("V_ADJUNCT", stderr);
-//parser.print_hdp("VP_R", stderr);
-//run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
-
-//run_console(stdin, "\nEnter sentence to parse: ", parser, names, seed_training_set);
-/*for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
-	for (auto entry : paragraph) { free(entry.key); free(entry.value); }
-	free(paragraph);
-}
-for (auto entry : names) free(entry.key);
-// to avoid breakpoints being moved due to eliminated code
-if (seed_training_set.length > 0)
-return EXIT_SUCCESS;*/
-
 	for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 		for (auto entry : paragraph) { free(entry.key); free(entry.value); }
 		free(paragraph);
+	}
+
+	if (mode == experiment_mode::CONSOLE) {
+		//parser.invert_name_map(names);
+		//parser.print_hdp("V_ADJUNCT", stderr);
+		//parser.print_hdp("VP_R", stderr);
+		run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
+
+		for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
+			for (auto entry : paragraph) { free(entry.key); free(entry.value); }
+			free(paragraph);
+		}
+		for (auto entry : names) free(entry.key);
+		return EXIT_SUCCESS;
 	}
 
 	/* read the articles */
@@ -498,12 +576,12 @@ return EXIT_SUCCESS;*/
 		return EXIT_FAILURE;
 	}
 
-/* run RuleTaker experiments */
-/*run_ruletaker_experiments_single_threaded(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, "proofwriter/OWA/birds-electricity/meta-test.jsonl", "ruletaker_results.txt");
-for (auto entry : names) free(entry.key);
-// to avoid breakpoints being moved due to eliminated code
-if (seed_training_set.length > 0)
-return EXIT_SUCCESS;*/
+	if (mode == experiment_mode::PROOFWRITER) {
+		/* run RuleTaker experiments */
+		run_ruletaker_experiments(corpus, parser, T, proof_axioms, proof_prior, names, seed_entities, data_filepath, output_filepath, num_threads);
+		for (auto entry : names) free(entry.key);
+		return EXIT_SUCCESS;
+	}
 
 Theory& T_copy = *((Theory*) alloca(sizeof(Theory)));
 PriorStateType& proof_axioms_copy = *((PriorStateType*) alloca(sizeof(PriorStateType)));
@@ -540,13 +618,13 @@ for (unsigned int counter = 0; ; counter++) {
 }
 fclose(in);
 
-/* run FictionalGeoQA experiments */
-run_fictionalgeoqa_experiments<false>(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, "fictionalgeoqa.jsonl", "fictionalgeoqa_results.open_ended.txt", 8);
-free(T_copy); free(proof_axioms_copy);
-for (auto entry : names) free(entry.key);
-// to avoid breakpoints being moved due to eliminated code
-if (seed_training_set.length > 0)
-return EXIT_SUCCESS;
+	if (mode == experiment_mode::FICTIONALGEOQA) {
+		/* run FictionalGeoQA experiments */
+		run_fictionalgeoqa_experiments<true>(corpus, parser, T_copy, proof_axioms_copy, proof_prior, names, seed_entities, geobase, data_filepath, output_filepath, num_threads);
+		free(T_copy); free(proof_axioms_copy);
+		for (auto entry : names) free(entry.key);
+		return EXIT_SUCCESS;
+	}
 
 	/*read_sentence(corpus, parser, "A butterfly has a spot.", T, names, seed_entities, proof_prior, proof_axioms);
 
@@ -625,7 +703,7 @@ initializer.expected_constants.add(instance_constant(1000000000 + 2));
 initializer.expected_constants.add(instance_any());
 initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 
-	read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
+	/*read_sentence(corpus, parser, "Louisiana is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "Arkansas is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "Oklahoma is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "New Mexico is a state that borders Texas.", T, names, seed_entities, proof_prior, proof_axioms);
@@ -633,7 +711,7 @@ initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 	read_sentence(corpus, parser, "The area of Louisiana is 52069 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The area of Arkansas is 53179 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The area of Oklahoma is 69899 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
-	read_sentence(corpus, parser, "The area of New Mexico is 121590 square miles.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "The area of New Mexico is 121590 square miles.", T, names, seed_entities, proof_prior, proof_axioms);*/
 
 	/*read_sentence(corpus, parser, "The Red River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "The Canadian River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
@@ -642,13 +720,19 @@ initializer.expected_constants.add(instance_constant(1000000000 + 1));*/
 	read_sentence(corpus, parser, "The Washita River is a river in Texas.", T, names, seed_entities, proof_prior, proof_axioms);
 	read_sentence(corpus, parser, "There are 5 rivers in Texas.", T, names, seed_entities, proof_prior, proof_axioms);*/
 
-typedef decltype(T) TheoryType;
+	read_sentence(corpus, parser, "There are 35 red or blue things.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "Every fish is red or blue.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "There are six red fish.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "There are 24 blue fish.", T, names, seed_entities, proof_prior, proof_axioms);
+	read_sentence(corpus, parser, "No fish is red and blue.", T, names, seed_entities, proof_prior, proof_axioms);
+
+/*typedef decltype(T) TheoryType;
 TheoryType& T_map = *((TheoryType*) alloca(sizeof(TheoryType)));
 hash_map<const hol_term*, hol_term*> term_map(128);
 TheoryType::clone(T, T_map, term_map);
 auto collector = make_log_probability_collector(T, proof_prior);
 double max_log_probability = collector.current_log_probability;
-for (unsigned int t = 0; t < 200 /*20000*/; t++) {
+for (unsigned int t = 0; t < 200 ; t++) {
 	bool print_debug = false;
 	if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 	if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
@@ -660,18 +744,18 @@ for (unsigned int t = 0; t < 200 /*20000*/; t++) {
 	}
 }
 T_map.print_axioms(stderr, *debug_terminal_printer);
-free(T_map);
+free(T_map);*/
 
-	array<string> answers(4);
-	/*if (answer_question<true>(answers, "Pittsburgh is in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	/*array<string> answers(4);
+	if (answer_question<true>(answers, "Pittsburgh is in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Des Moines is located in what state?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "The population of Arizona is what?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/ if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What is the largest state bordering Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	} /*if (answer_question<true>(answers, "What is the state with the highest population?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
+	} if (answer_question<true>(answers, "What is the state with the highest population?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "Which is the longest river in the USA?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
@@ -679,10 +763,10 @@ free(T_map);
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
 	} if (answer_question<true>(answers, "What are all the rivers in Texas?", 100000, corpus, parser, T, names, seed_entities, proof_prior, proof_axioms)) {
 		print("Answers: ", stdout); print(answers, stdout); print('\n', stdout);
-	}*/
+	}
 for (string& str : answers) free(str);
 for (auto entry : names) free(entry.key);
-return EXIT_SUCCESS;
+return EXIT_SUCCESS;*/
 
 	array_map<hol_term*, unsigned int> tracked_logical_forms(2);
 	/*tracked_logical_forms.put(
@@ -707,12 +791,12 @@ return EXIT_SUCCESS;
 	auto scribe = parser.get_printer();
 array_multiset<unsigned int> set_size_distribution(16);
 	for (unsigned int t = 0; t < iterations; t++) {
-proof_axioms.check_proof_axioms(T);
+/*proof_axioms.check_proof_axioms(T);
 T.check_disjunction_introductions();
 T.sets.check_freeable_sets();
 T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
-T.sets.check_set_ids();
+T.sets.check_set_ids();*/
 		if (stopwatch.milliseconds() > 1000) {
 			print("[iteration ", stdout); print(t, stdout); print("]\n", stdout);
 			for (const auto& entry : tracked_logical_forms) {
@@ -730,7 +814,7 @@ fprintf(stderr, "DEBUG: BREAKPOINT\n");*/
 		for (auto entry : tracked_logical_forms)
 			if (contains_axiom(T, entry.key)) entry.value++;
 hol_term* set_formula = hol_term::new_atom(names.get("fish"), &hol_term::variables<1>::value);
-hol_term::variables<1>::value.reference_count++;
+hol_term::variables<1>::value.reference_count += 1;
 bool contains;
 unsigned int set_id = T.sets.set_ids.get(*set_formula, contains);
 if (contains) set_size_distribution.add(T.sets.sets[set_id].set_size);
