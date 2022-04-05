@@ -920,6 +920,7 @@ VP_R -> VP_L:require_no_future,require_no_perfect,require_no_progressive,require
 # e.g. "Bob is a child, talking to everyone, and treated with condescension."
 # and "Is Bob a child, talking to everyone, and treated with condescension?"
 VP_R -> V_ADJUNCT:remove_be,require_no_head_array,require_left_predicate_same,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number
+VP_R -> V_ADJUNCT:remove_be,require_no_head_array,require_left_predicate_property,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number
 VP_R -> V_ADJUNCT:remove_be,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number,add_empty_verb
 
 # comparative constructions
@@ -2606,7 +2607,7 @@ ADJP_R nonterminal {} {1.0} {1.0} {} 10 1.0 {}
 # where fi(g) = ?[x]:(... & arg2(g)=x) and fi' = ?[x]:(...)
 # e.g. "afraid of dogs", "capable of swimming"
 # NOTE: `x` could also be universally-quantified, in which case it is passed to the PP.
-#ADJP_R -> ADJP_R:try_remove_is_adjunct,try_remove_wh_minus PP:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
+ADJP_R -> ADJP_R:try_remove_is_adjunct,try_remove_wh_minus,remove_right_conjunct PP:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct
 
 # ADJP_R {... & ?[g1]:(... & f1(g1)) & ... & ?[gn]:(... & fn(gn))}
 #  -> ADJP_R {... & ?[g1]:(...) & ... & ?[gn]:(...)}

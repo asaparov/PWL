@@ -323,7 +323,7 @@ inline bool parse_sentence_with_prior(Parser& parser, const char* input_sentence
 		theory<ProofCalculus, Canonicalizer>& T, hash_map<string, unsigned int>& names,
 		TheoryPrior& theory_prior, typename TheoryPrior::PriorState& proof_axioms)
 {
-	constexpr unsigned int max_parse_count = 6;
+	static constexpr unsigned int max_parse_count = 6;
 	hol_term* logical_forms[max_parse_count];
 	double log_likelihoods[max_parse_count];
 	unsigned int parse_count;
@@ -360,7 +360,7 @@ inline bool parse_sentence_with_prior(Parser& parser, const char* input_sentence
 template<typename Parser>
 inline bool parse_sentence(Parser& parser, const char* input_sentence, hash_map<string, unsigned int>& names)
 {
-	constexpr unsigned int max_parse_count = 4;
+	static constexpr unsigned int max_parse_count = 4;
 	hol_term* logical_forms[max_parse_count];
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count;
@@ -384,7 +384,7 @@ inline bool parse_sentence(
 	if (!tokenize(input_sentence, sentence, names))
 		return false;
 
-	constexpr unsigned int max_parse_count = 4;
+	static constexpr unsigned int max_parse_count = 4;
 	hol_term* logical_forms[max_parse_count];
 	double log_probabilities[max_parse_count];
 	unsigned int parse_count = 0;
@@ -451,7 +451,7 @@ debug_terminal_printer = &parser.get_printer();
 
 	if (parse_count != 0) {
 		unsigned int generated_derivation_count;
-		constexpr unsigned int max_generated_derivation_count = 12;
+		static constexpr unsigned int max_generated_derivation_count = 12;
 		double log_likelihoods[max_generated_derivation_count];
 		typename Parser::DerivationType* generated_derivations =
 				(typename Parser::DerivationType*) alloca(sizeof(typename Parser::DerivationType) * max_generated_derivation_count);
@@ -513,17 +513,24 @@ debug_terminal_printer = &parser.get_printer();
 inline ssize_t read(SSL* ssl, void* buf, size_t nbytes) {
 	return SSL_read(ssl, buf, nbytes);
 }
+
+#elif defined(_WIN32)
+
+inline ssize_t read(SOCKET handle, void* buf, size_t count) {
+	return recv(handle, buf, count, 0);
+}
+
 #endif /* DISABLE_SSL */
 
 template<unsigned int BufferSize, typename Stream>
-struct buffered_stream {
+struct buffered_socket {
 	Stream& underlying_stream;
 	unsigned long long timeout_ms;
 	array<char> buffer;
 	size_t position;
 	bool eof;
 
-	buffered_stream(Stream& underlying_stream, unsigned long long timeout_ms) :
+	buffered_socket(Stream& underlying_stream, unsigned long long timeout_ms) :
 			underlying_stream(underlying_stream), timeout_ms(timeout_ms), buffer(4096), position(0), eof(false) { }
 
 	bool fill_buffer() {
@@ -538,9 +545,15 @@ struct buffered_stream {
 			} else if (bytes_read > 0) {
 				buffer.length += bytes_read;
 				return true;
-			} else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-				fprintf(stderr, "buffered_stream.fill_buffer ERROR: `read` failed.\n");
+#if defined(_WIN32)
+			} else if (WSAGetLastError() != WSAEWOULDBLOCK) {
+				fprintf(stderr, "buffered_socket.fill_buffer ERROR: `read` failed.\n");
 				return false;
+#else
+			} else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+				fprintf(stderr, "buffered_socket.fill_buffer ERROR: `read` failed.\n");
+				return false;
+#endif
 			}
 			if (stopwatch.milliseconds() > timeout_ms)
 				return false;
@@ -549,7 +562,7 @@ struct buffered_stream {
 };
 
 template<unsigned int BufferSize, typename Stream>
-int fgetc(buffered_stream<BufferSize, Stream>& in) {
+int fgetc(buffered_socket<BufferSize, Stream>& in) {
 	if (in.position == in.buffer.length && (!in.fill_buffer() || in.eof))
 		return EOF;
 	return in.buffer[in.position++];
@@ -599,7 +612,7 @@ struct throttler
 
 	inline unsigned long long get_next_request_time(const string& hostname) const
 	{
-		unsigned int index = next_request_times.index_of(hostname);
+		size_t index = next_request_times.index_of(hostname);
 		if (index < next_request_times.size)
 			return next_request_times.values[index];
 		else return 0;
@@ -886,12 +899,13 @@ bool get_http_page(
 	auto process_connection = [&response,&success,request,request_length,filter_response_header,timeout_ms,hostname](socket_type& connection)
 #endif
 	{
+#if !defined(_WIN32)
 		/* make the underlying socket non-blocking */
 		int flags;
 		while ((flags = fcntl(connection.handle, F_GETFL)) == -1 && errno == EINTR) { }
 		if (flags == -1) {
 			fprintf(stderr, "get_http_page ERROR: Failed to make socket non-blocking; %s.\n", strerror(errno));
-			shutdown(connection.handle, 2);
+			close(connection);
 			success = false; return false;
 		}
 
@@ -899,9 +913,19 @@ bool get_http_page(
 		while ((rv = fcntl(connection.handle, F_SETFL, flags | O_NONBLOCK)) == -1 && errno == EINTR) { }
 		if (rv != 0) {
 			fprintf(stderr, "get_http_page ERROR: Failed to make socket non-blocking; %s.\n", strerror(errno));
-			shutdown(connection.handle, 2);
+			close(connection);
 			success = false; return false;
 		}
+#else
+		/* make the underlying socket non-blocking */
+		u_long mode = 1;
+		if (ioctlsocket(connection.handle, FIONBIO, &mode) != NO_ERROR) {
+			errno = (int) GetLastError();
+			fprintf(stderr, "get_http_page ERROR: Failed to make socket non-blocking; %s.\n", strerror(errno));
+			close(connection);
+			success = false; return false;
+		}
+#endif
 
 #if !defined(DISABLE_SSL)
 		SSL* ssl;
@@ -912,13 +936,13 @@ bool get_http_page(
 				char msg[1024];
 				ERR_error_string_n(ERR_get_error(), msg, sizeof(msg));
 				fprintf(stderr, "%s %s %s %s.\n", msg, ERR_lib_error_string(0), ERR_func_error_string(0), ERR_reason_error_string(0));
-				shutdown(connection.handle, 2);
+				close(connection);
 				success = false; return false;
 			}
 			if (!SSL_set_tlsext_host_name(ssl, hostname)) {
 				fprintf(stderr, "get_http_page ERROR: SSL_set_tlsext_host_name failed; ");
 				ERR_print_errors_fp(stderr);
-				SSL_free(ssl); shutdown(connection.handle, 2);
+				SSL_free(ssl); close(connection);
 				success = false; return false;
 			}
 			int ret = SSL_set_fd(ssl, connection.handle);
@@ -928,7 +952,7 @@ bool get_http_page(
 				bool can_shutdown;
 				print_openssl_error(ssl, ret, can_shutdown);
 				if (can_shutdown) SSL_shutdown(ssl);
-				SSL_free(ssl); shutdown(connection.handle, 2);
+				SSL_free(ssl); close(connection);
 				success = false; return false;
 			}
 			while (true) {
@@ -942,7 +966,7 @@ bool get_http_page(
 					bool can_shutdown;
 					print_openssl_error(ssl, ret, can_shutdown);
 					if (can_shutdown) SSL_shutdown(ssl);
-					SSL_free(ssl); shutdown(connection.handle, 2);
+					SSL_free(ssl); close(connection);
 					success = false; return false;
 				}
 			}
@@ -959,14 +983,14 @@ bool get_http_page(
 			} else
 #endif
 			{
-				written = write(connection.handle, request + total_written, request_length - total_written);
+				written = send(connection.handle, request + total_written, request_length - total_written, 0);
 			}
 			if (written == -1) {
 				fprintf(stderr, "get_http_page ERROR: Failed to send HTTP request.\n");
 #if !defined(DISABLE_SSL)
 				if (UseSSL) { SSL_shutdown(ssl); SSL_free(ssl); }
 #endif
-				shutdown(connection.handle, 2); success = false; return false;
+				close(connection); success = false; return false;
 			}
 			total_written += written;
 		}
@@ -974,16 +998,16 @@ bool get_http_page(
 		/* read the response */
 #if !defined(DISABLE_SSL)
 		if (UseSSL) {
-			buffered_stream<BUFSIZ, SSL*> in(ssl, timeout_ms);
+			buffered_socket<BUFSIZ, SSL*> in(ssl, timeout_ms);
 			success = parse_http_response(in, response, filter_response_header);
 			SSL_shutdown(ssl); SSL_free(ssl);
 		} else
 #endif
 		{
-			buffered_stream<BUFSIZ, decltype(connection.handle)> in(connection.handle, timeout_ms);
+			buffered_socket<BUFSIZ, decltype(connection.handle)> in(connection.handle, timeout_ms);
 			success = parse_http_response(in, response, filter_response_header);
 		}
-		shutdown(connection.handle, 2);
+		close(connection);
 		return success;
 	};
 
@@ -1621,7 +1645,7 @@ inline bool get_most_probable_answers(
 	for (unsigned int i = 1; i < input_answers.size; i++)
 		max_probability = max(max_probability, input_answers.values[i]);
 
-	for (unsigned int i = input_answers.size; i > 0; i--) {
+	for (size_t i = input_answers.size; i > 0; i--) {
 		if (input_answers.values[i - 1] < max_probability - SUFFICIENT_KNOWLEDGE_THRESHOLD)
 			continue;
 		if (!answers.ensure_capacity(answers.length + 1)
@@ -2071,7 +2095,7 @@ inline bool answer_question(array<string>& answers,
 		return false;
 
 	unsigned int parse_count;
-	constexpr unsigned int max_parse_count = 2;
+	static constexpr unsigned int max_parse_count = 2;
 	Formula* logical_forms[max_parse_count];
 	double log_parse_probabilities[max_parse_count];
 	while (true) {
@@ -2158,7 +2182,7 @@ inline bool answer_question(array<string>& answers,
 
 		/* generate a search query */
 		unsigned int generated_derivation_count;
-		constexpr unsigned int max_generated_derivation_count = 2;
+		static constexpr unsigned int max_generated_derivation_count = 2;
 		double generated_log_likelihoods[max_generated_derivation_count * 2];
 		syntax_node<typename Parser::logical_form_type>* generated_derivations =
 				(syntax_node<typename Parser::logical_form_type>*) alloca(sizeof(syntax_node<typename Parser::logical_form_type>) * max_generated_derivation_count * 2);
@@ -2249,7 +2273,7 @@ inline bool answer_question(array<string>& answers,
 				}
 				return true;
 			};
-			constexpr unsigned long long TIMEOUT_MS = 5000;
+			static constexpr unsigned long long TIMEOUT_MS = 5000;
 			auto process_search_result = [&left_query,&right_query,&names,process_matched_sentence](const string& result) {
 				return find_answer_in_website(result, TIMEOUT_MS, left_query, right_query, names, process_matched_sentence);
 			};
@@ -2268,7 +2292,6 @@ inline bool answer_question(array<string>& answers,
 					free(query); free(search_query); return false;
 				}
 				out.position = 0;
-				out.shift = {0};
 			}
 
 			if (!search_google(query, search_query.length, TIMEOUT_MS, process_search_result)) {

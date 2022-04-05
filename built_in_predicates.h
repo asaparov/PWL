@@ -42,6 +42,8 @@ enum class built_in_predicates : unsigned int {
 	LOW_DEGREE,
 	CARDINALITY,
 	VALUE,
+	LAMBDA_PREDICATE,
+	PROPERTY,
 
 	EQUALS, /* this is only used to refer to set definitions of the form `A=^[x]:f(x)` */
 	SUBSET,
@@ -231,6 +233,8 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("low_degree", (unsigned int) built_in_predicates::LOW_DEGREE)
 		&& names.put("cardinality", (unsigned int) built_in_predicates::CARDINALITY)
 		&& names.put("value", (unsigned int) built_in_predicates::VALUE)
+		&& names.put("lambda_predicate", (unsigned int) built_in_predicates::LAMBDA_PREDICATE)
+		&& names.put("property", (unsigned int) built_in_predicates::PROPERTY)
 		&& names.put("named_entity", (unsigned int) built_in_predicates::NAMED_ENTITY)
 		&& names.put("measure", (unsigned int) built_in_predicates::MEASURE)
 		&& names.put("ref", (unsigned int) built_in_predicates::REF)

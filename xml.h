@@ -18,7 +18,7 @@ enum class xml_state {
 	REFERENCE
 };
 
-inline bool is_whitespace(wint_t c) {
+inline bool is_whitespace(char32_t c) {
 	return (c == ' ' || c == '\t' || c == '\r' || c == '\n');
 }
 
@@ -28,7 +28,7 @@ inline bool is_whitespace_only(const array<char>& string) {
 	return true;
 }
 
-inline bool is_valid_name_start(wint_t c) {
+inline bool is_valid_name_start(char32_t c) {
 	return (c == ':' || (c >= 'A' && c <= 'Z') || c == '_' || (c >= 'a' && c <= 'z')
 		|| (c >= 0x20 && c <= 0xD6) || (c >= 0xD8 && c <= 0xF6)
 		|| (c >= 0xF8 && c <= 0x2FF) || (c >= 0x370 && c <= 0x37D)
@@ -38,12 +38,12 @@ inline bool is_valid_name_start(wint_t c) {
 		|| (c >= 0xFDF0 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0xEFFFF));
 }
 
-inline bool is_valid_name_char(wint_t c) {
+inline bool is_valid_name_char(char32_t c) {
 	return (is_valid_name_start(c) || c == '-' || c == '.' || (c >= '0' && c <= '9')
 		|| c == 0xB7 || (c >= 0x0300 && c <= 0x036F) || (c >= 0x203F && c <= 0x2040));
 }
 
-bool expand_reference(array<char>& reference_name, array<char>& text, std::mbstate_t& shift, position current) {
+bool expand_reference(array<char>& reference_name, array<char>& text, mbstate_t& shift, position current) {
 	if (compare_strings(reference_name, "lt")) {
 		return append_to_token(text, '<', shift);
 	} else if (compare_strings(reference_name, "gt")) {
@@ -66,7 +66,7 @@ bool expand_reference(array<char>& reference_name, array<char>& text, std::mbsta
 		}
 		reference_name.data--;
 		reference_name.length++;
-		return append_to_token(text, (wint_t) codepoint, shift);
+		return append_to_token(text, (char32_t) codepoint, shift);
 	} else {
 		read_error("Unrecognized reference name", current);
 		return false;
@@ -111,19 +111,21 @@ bool xml_parse(Stream& input, Reader& reader) {
 	xml_state prev_state = xml_state::DEFAULT;
 	array<xml_element> element_stack(16);
 	bool preserve_space = false;
-	std::mbstate_t shift = {0};
-	std::mbstate_t reference_shift = {0};
-	std::mbstate_t attr_shift = {0};
-	wint_t next = fgetwc(input);
+	mbstate_t shift = {0};
+	mbstate_t reference_shift = {0};
+	mbstate_t attr_shift = {0};
+	buffered_stream<MB_LEN_MAX, Stream> wrapper(input);
+	char32_t next = fgetc32(wrapper);
 	bool new_line = false;
-	while (next != WEOF) {
+	while (next != static_cast<char32_t>(-1)) {
+		bool read_next = true;
 		switch (state) {
 		case xml_state::DEFAULT:
 			if (next == '<') {
 				if (token.length != 0 && (preserve_space || !is_whitespace_only(token)) && !emit_text(token, start, current, reader)) {
 					for (xml_element& element : element_stack) { free(element); } return false;
 				}
-				wint_t peek = fgetwc(input);
+				char32_t peek = fgetc32(wrapper);
 				start = current;
 				if (peek == '/') {
 					/* found an end tag */
@@ -132,16 +134,19 @@ bool xml_parse(Stream& input, Reader& reader) {
 				} else {
 					/* found a start tag */
 					state = xml_state::START_TAG_NAME;
-					ungetwc(peek, input);
+					read_next = false;
+					next = peek;
 				}
 				token.clear(); shift = {0};
 			} else if (next == '&') {
 				prev_state = state;
 				state = xml_state::REFERENCE;
 			} else if (next == '\r') {
-				wint_t peek = fgetwc(input);
-				if (peek != '\n')
-					ungetwc(peek, input);
+				char32_t peek = fgetc32(wrapper);
+				if (peek != '\n') {
+					read_next = false;
+					next = peek;
+				}
 				new_line = true;
 				if (!append_to_token(token, '\n', shift)) {
 					for (xml_element& element : element_stack) { free(element); } return false;
@@ -248,10 +253,11 @@ bool xml_parse(Stream& input, Reader& reader) {
 			if (is_whitespace(next)) {
 				break;
 			} else if (next == '/') {
-				wint_t peek = fgetwc(input);
+				char32_t peek = fgetc32(wrapper);
 				if (peek != '>') {
 					/* this is a tag attribute */
-					ungetwc(peek, input);
+					read_next = false;
+					next = peek;
 					attr_token.clear(); attr_shift = {0};
 					if (Validate && !is_valid_name_start(next)) {
 						read_error("Invalid character in attribute name", current);
@@ -319,7 +325,7 @@ bool xml_parse(Stream& input, Reader& reader) {
 
 		case xml_state::ATTRIBUTE_NAME:
 			if (next == '=') {
-				wint_t peek = fgetwc(input);
+				char32_t peek = fgetc32(wrapper);
 				current.column++;
 				if (peek == '\'') {
 					state = xml_state::ATTRIBUTE_VALUE_SINGLE;
@@ -387,9 +393,11 @@ bool xml_parse(Stream& input, Reader& reader) {
 				prev_state = state;
 				state = xml_state::REFERENCE;
 			} else if (next == '\r') {
-				wint_t peek = fgetwc(input);
-				if (peek != '\n')
-					ungetwc(peek, input);
+				char32_t peek = fgetc32(wrapper);
+				if (peek != '\n') {
+					read_next = false;
+					next = peek;
+				}
 				new_line = true;
 				if (!append_to_token(token, '\n', shift)) {
 					for (xml_element& element : element_stack) { free(element); } return false;
@@ -416,7 +424,8 @@ bool xml_parse(Stream& input, Reader& reader) {
 			current.column = 1;
 			new_line = false;
 		} else current.column++;
-		next = fgetwc(input);
+		if (read_next)
+			next = fgetc32(wrapper);
 	}
 
 	for (xml_element& element : element_stack) { free(element); }

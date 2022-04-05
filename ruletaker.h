@@ -1026,8 +1026,8 @@ fprintf(stderr, "total_read_sentence = %u, add_formula_failures = %u, total_add_
 	fprintf(out,
 			"Results so far:\n"
 			"  Total questions: %u\n"
-			"  Answered questions: %lu\n"
-			"  Incorrect questions: %lu\n",
+			"  Answered questions: %zu\n"
+			"  Incorrect questions: %zu\n",
 			total.load(), results.length,
 			incorrect.length);
 	if (unparseable_context.length != 0) {
@@ -1043,8 +1043,8 @@ fprintf(stderr, "total_read_sentence = %u, add_formula_failures = %u, total_add_
 	fprintf(stdout,
 			"Results so far:\n"
 			"  Total questions: %u\n"
-			"  Answered questions: %lu\n"
-			"  Incorrect questions: %lu\n",
+			"  Answered questions: %zu\n"
+			"  Incorrect questions: %zu\n",
 			total.load(), results.length,
 			incorrect.length);
 	if (incorrect.length != 0) {

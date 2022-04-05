@@ -23,7 +23,7 @@ bool find_largest_disjoint_clique_with_set(
 		unsigned int, unsigned int, unsigned int*&, unsigned int&, unsigned int&, int);
 
 template<typename T, typename Stream>
-bool print(const hash_set<T>& set, Stream& out) {
+bool print(const hash_set<T>& set, Stream&& out) {
 	if (!print('{', out)) return false;
 	bool first = true;
 	for (const T& element : set) {
@@ -593,7 +593,7 @@ bool get_ancestors(
 		array_map<unsigned int, unsigned int>& ancestors)
 {
 	if (!ancestors.ensure_capacity(ancestors.size + 1)) return false;
-	unsigned int index = ancestors.index_of(vertex);
+	size_t index = ancestors.index_of(vertex);
 	if (index < ancestors.size) {
 		ancestors.values[index]++;
 		return true;
@@ -608,7 +608,7 @@ bool get_ancestors(
 		unsigned int v = stack.pop();
 		for (unsigned int parent : graph.vertices[v].parents) {
 			if (!ancestors.ensure_capacity(ancestors.size + 1)) return false;
-			unsigned int index = ancestors.index_of(parent);
+			size_t index = ancestors.index_of(parent);
 			if (index < ancestors.size) {
 				ancestors.values[index]++;
 			} else {
@@ -627,7 +627,7 @@ bool get_descendants(
 		array_map<unsigned int, unsigned int>& descendants)
 {
 	if (!descendants.ensure_capacity(descendants.size + 1)) return false;
-	unsigned int index = descendants.index_of(vertex);
+	size_t index = descendants.index_of(vertex);
 	if (index < descendants.size) {
 		descendants.values[index]++;
 		return true;
@@ -642,7 +642,7 @@ bool get_descendants(
 		unsigned int v = stack.pop();
 		for (unsigned int child : graph.vertices[v].children) {
 			if (!descendants.ensure_capacity(descendants.size + 1)) return false;
-			unsigned int index = descendants.index_of(child);
+			size_t index = descendants.index_of(child);
 			if (index < descendants.size) {
 				descendants.values[index]++;
 			} else {
@@ -4526,7 +4526,7 @@ bool find_largest_disjoint_clique_with_set(
 				completed_clique_count, min_priority, next.state->ancestor);
 
 		if (completed_clique != NULL) {
-			int priority = -sets.sets[next.state->ancestor].set_size;
+			int priority = -((int) sets.sets[next.state->ancestor].set_size);
 			for (unsigned int i = 0; i < completed_clique_count; i++)
 				priority += sets.sets[completed_clique[i]].set_size;
 			if (priority > best_clique_score && priority >= min_priority) {

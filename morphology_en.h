@@ -76,7 +76,7 @@ inline bool init_string_id_array(
 				free(dst); return false;
 			}
 
-			sequence src(tokens.data, tokens.length);
+			sequence src(tokens.data, (unsigned int) tokens.length);
 			dst[i] = src;
 		}
 
@@ -323,7 +323,7 @@ inline bool init(adjective_root& root, comparability comp,
 					if (root.adj_root.length != 0) free(root.adj_root);
 					return false;
 				}
-				sequence src(tokens.data, tokens.length);
+				sequence src(tokens.data, (unsigned int) tokens.length);
 				root.inflected_forms[i].key = src;
 			}
 
@@ -342,7 +342,7 @@ inline bool init(adjective_root& root, comparability comp,
 					if (root.adj_root.length != 0) free(root.adj_root);
 					return false;
 				}
-				sequence src(tokens.data, tokens.length);
+				sequence src(tokens.data, (unsigned int) tokens.length);
 				root.inflected_forms[i].value = src;
 			}
 		}
@@ -2067,7 +2067,7 @@ inline bool emit_adv_entry(
 	array<unsigned int> tokenization(2);
 	if (!tokenize(entry.root.data, entry.root.length, tokenization, names))
 		return false;
-	sequence root_ids(tokenization.data, tokenization.length);
+	sequence root_ids(tokenization.data, (unsigned int) tokenization.length);
 
 	/* check if we can form this adverb from an adjective */
 	bool contains;
@@ -2082,7 +2082,7 @@ inline bool emit_adv_entry(
 		array<unsigned int> new_tokenization(2);
 		if (!tokenize(substring.data, substring.length, new_tokenization, names))
 			return false;
-		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		sequence new_root_ids(new_tokenization.data, (unsigned int) new_tokenization.length);
 		m.adjectives.get(new_root_ids, contains);
 		if (contains)
 			/* we have an adverb of the form '-ly' (e.g. "quickly", "slowly") */
@@ -2096,7 +2096,7 @@ inline bool emit_adv_entry(
 		array<unsigned int> new_tokenization(2);
 		if (!tokenize(substring.data, substring.length, new_tokenization, names))
 			return false;
-		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		sequence new_root_ids(new_tokenization.data, (unsigned int) new_tokenization.length);
 		m.adjectives.get(new_root_ids, contains);
 		if (contains)
 			/* we have an adverb of the form '-ly' (e.g. "possibly", "forcibly") */
@@ -2112,7 +2112,7 @@ inline bool emit_adv_entry(
 		array<unsigned int> new_tokenization(2);
 		if (!tokenize(substring.data, substring.length, new_tokenization, names))
 			return false;
-		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		sequence new_root_ids(new_tokenization.data, (unsigned int) new_tokenization.length);
 		m.adjectives.get(new_root_ids, contains);
 		if (contains)
 			/* we have an adverb of the form '-ically' */
@@ -2129,7 +2129,7 @@ inline bool emit_adv_entry(
 		array<unsigned int> new_tokenization(2);
 		if (!tokenize(substring.data, substring.length, new_tokenization, names))
 			return false;
-		sequence new_root_ids(new_tokenization.data, new_tokenization.length);
+		sequence new_root_ids(new_tokenization.data, (unsigned int) new_tokenization.length);
 		m.adjectives.get(new_root_ids, contains);
 		if (contains)
 			/* we have an adverb of the form '-ily' */
@@ -2148,7 +2148,7 @@ inline bool emit_entry(
 	array<unsigned int> tokenization(2);
 	if (!tokenize(entry.root.data, entry.root.length, tokenization, names))
 		return false;
-	sequence root_ids(tokenization.data, tokenization.length);
+	sequence root_ids(tokenization.data, (unsigned int) tokenization.length);
 
 	if (entry.entries.length == 0) {
 		read_error("Found an entry with no elements", entry.pos);
@@ -2165,9 +2165,13 @@ inline bool emit_entry(
 			return m.add_noun_root(root_ids, new_root);
 		} else {
 			static constexpr const char* rare_str = "rare";
-			static unsigned int rare_str_length = strlen(rare_str);
+			static unsigned int rare_str_length = (unsigned int) strlen(rare_str);
 			static constexpr const char* by_suppletion_str = "by [[suppletion]]";
-			static unsigned int by_suppletion_str_length = strlen(by_suppletion_str);
+			static unsigned int by_suppletion_str_length = (unsigned int) strlen(by_suppletion_str);
+			static constexpr const char* nonstandard_str = "nonstandard";
+			static unsigned int nonstandard_str_length = (unsigned int) strlen(nonstandard_str);
+			static constexpr const char* archaic_str = "archaic";
+			static unsigned int archaic_str_length = (unsigned int) strlen(archaic_str);
 
 			array<string> plural_forms(entry.entries.length - 1);
 			countability count = countability::COUNTABLE;
@@ -2200,7 +2204,9 @@ inline bool emit_entry(
 					unsigned int qualifier_index; const char* qualifier; unsigned int qualifier_length;
 					if (get_parameter(entry.entries[i], "pl", "qual=", qualifier_index, qualifier, qualifier_length)) {
 						if (!string_compare(qualifier, qualifier_length, rare_str, rare_str_length)
-						 && !string_compare(qualifier, qualifier_length, by_suppletion_str, by_suppletion_str_length))
+						 && !string_compare(qualifier, qualifier_length, by_suppletion_str, by_suppletion_str_length)
+						 && !string_compare(qualifier, qualifier_length, nonstandard_str, nonstandard_str_length)
+						 && !string_compare(qualifier, qualifier_length, archaic_str, archaic_str_length))
 						{
 							for (string& str : plural_forms) free(str);
 							return true;
@@ -2215,7 +2221,7 @@ inline bool emit_entry(
 			}
 
 			noun_root new_root;
-			if (!init(new_root, false, count, plural_forms.data, plural_forms.length, names))
+			if (!init(new_root, false, count, plural_forms.data, (unsigned int) plural_forms.length, names))
 				return false;
 			for (string& str : plural_forms) free(str);
 			return m.add_noun_root(root_ids, new_root);
@@ -2252,7 +2258,7 @@ inline bool emit_entry(
 		}
 
 		noun_root new_root;
-		if (!init(new_root, true, count, plural_forms.data, plural_forms.length, names))
+		if (!init(new_root, true, count, plural_forms.data, (unsigned int) plural_forms.length, names))
 			return false;
 		for (string& str : plural_forms) free(str);
 		return m.add_noun_root(root_ids, new_root);
@@ -2288,7 +2294,7 @@ inline bool emit_entry(
 		}
 
 		static constexpr const char* obsolete_str = "obsolete";
-		static unsigned int obsolete_str_length = strlen(obsolete_str);
+		static unsigned int obsolete_str_length = (unsigned int) strlen(obsolete_str);
 
 		/* first process the flags */
 		array<string> args(entry.entries.length - 1);
@@ -2558,7 +2564,12 @@ inline bool emit_entry(
 		}
 
 		verb_root new_root;
-		if (!init(new_root, pres_3sg.data, pres_3sg.length, pres_ptc.data, pres_ptc.length, past.data, past.length, past_ptc.data, past_ptc.length, names)) {
+		if (!init(new_root,
+				pres_3sg.data, (unsigned int) pres_3sg.length,
+				pres_ptc.data, (unsigned int) pres_ptc.length,
+				past.data, (unsigned int) past.length,
+				past_ptc.data, (unsigned int) past_ptc.length, names))
+		{
 			free_strings();
 			return false;
 		}
@@ -2588,10 +2599,11 @@ bool morphology_read(morphology_en& m,
 	wikt_entry current_entry(start);
 	array<wikt_entry> adv_entries(1024);
 
-	std::mbstate_t shift = {0};
-	wint_t next = fgetwc(input);
+	mbstate_t shift = {0};
+	buffered_stream<MB_LEN_MAX, Stream> wrapper(input);
+	char32_t next = fgetc32(wrapper);
 	bool new_line = false;
-	while (next != WEOF) {
+	while (next != static_cast<char32_t>(-1)) {
 		switch (state) {
 		case morphology_state::DEFAULT:
 			if (next == '\t') {
@@ -2650,7 +2662,7 @@ bool morphology_read(morphology_en& m,
 			current_entry.pos.column = 1;
 			new_line = false;
 		} else current_entry.pos.column++;
-		next = fgetwc(input);
+		next = fgetc32(wrapper);
 	}
 
 	if (!feof(input)) {

@@ -233,32 +233,32 @@ inline instance instance_string(string* str) {
 	return i;
 }
 
-inline unsigned int index_of_any(const array<instance>& constants) {
-	for (unsigned int i = 0; i < constants.length; i++) {
+inline size_t index_of_any(const array<instance>& constants) {
+	for (size_t i = 0; i < constants.length; i++) {
 		if (constants[i].type == instance_type::ANY)
 			return i;
 	}
 	return constants.length;
 }
 
-inline unsigned int index_of_constant(const array<instance>& constants, unsigned int constant) {
-	for (unsigned int i = 0; i < constants.length; i++) {
+inline size_t index_of_constant(const array<instance>& constants, unsigned int constant) {
+	for (size_t i = 0; i < constants.length; i++) {
 		if (constants[i].type == instance_type::CONSTANT && constants[i].constant == constant)
 			return i;
 	}
 	return constants.length;
 }
 
-inline unsigned int index_of_number(const array<instance>& constants, hol_number number) {
-	for (unsigned int i = 0; i < constants.length; i++) {
+inline size_t index_of_number(const array<instance>& constants, hol_number number) {
+	for (size_t i = 0; i < constants.length; i++) {
 		if (constants[i].type == instance_type::NUMBER && constants[i].number == number)
 			return i;
 	}
 	return constants.length;
 }
 
-inline unsigned int index_of_string(const array<instance>& constants, string* str) {
-	for (unsigned int i = 0; i < constants.length; i++) {
+inline size_t index_of_string(const array<instance>& constants, string* str) {
+	for (size_t i = 0; i < constants.length; i++) {
 		if (constants[i].type == instance_type::STRING && (constants[i].str == str || *constants[i].str == *str))
 			return i;
 	}
@@ -1162,7 +1162,7 @@ inline bool intersect_with_any(instantiation& dst,
 		set_union(new_excluded.data, new_excluded.length, first.any.excluded, first.any.excluded_count, second.any.excluded, second.any.excluded_count);
 		dst.type = instantiation_type::ANY;
 		dst.any.excluded = new_excluded.data;
-		dst.any.excluded_count = new_excluded.length;
+		dst.any.excluded_count = (uint_fast8_t) new_excluded.length;
 		return true;
 	} else if (second.type == instantiation_type::ANY_NUMBER) {
 		if (first.any.excluded_count == 0)
@@ -1707,7 +1707,7 @@ struct instantiation_tuple {
 					index++;
 				if (index < not_equal_indices.length && new_pair == not_equal_indices[index])
 					return true;
-				shift_right(not_equal_indices.data, not_equal_indices.length, index);
+				shift_right(not_equal_indices.data, (unsigned int) not_equal_indices.length, index);
 				not_equal_indices[index] = new_pair;
 				not_equal_indices.length++;
 				return true;
@@ -2212,9 +2212,9 @@ inline bool is_subset(const instantiation_tuple& first, const instantiation_tupl
 		if (!is_subset(first.values[i], second.values[i]))
 			return false;
 	}
-	return is_subset(second.equal_indices.data, second.equal_indices.length, first.equal_indices.data, first.equal_indices.length)
-		&& is_subset(second.not_equal_indices.data, second.not_equal_indices.length, first.not_equal_indices.data, first.not_equal_indices.length)
-		&& is_subset(second.ge_indices.data, second.ge_indices.length, first.ge_indices.data, first.ge_indices.length);
+	return is_subset(second.equal_indices.data, (unsigned int) second.equal_indices.length, first.equal_indices.data, (unsigned int) first.equal_indices.length)
+		&& is_subset(second.not_equal_indices.data, (unsigned int) second.not_equal_indices.length, first.not_equal_indices.data, (unsigned int) first.not_equal_indices.length)
+		&& is_subset(second.ge_indices.data, (unsigned int) second.ge_indices.length, first.ge_indices.data, (unsigned int) first.ge_indices.length);
 }
 
 template<typename K, typename V, typename Stream, typename... Printer>
@@ -2333,7 +2333,7 @@ inline bool operator < (const axiom_assignment& src, const axiom_assignment& dst
 inline bool is_subset(const axiom_assignment& first, const axiom_assignment& second)
 {
 	for (const auto& entry : second.variable_map) {
-		unsigned int index = first.variable_map.index_of(entry.key);
+		size_t index = first.variable_map.index_of(entry.key);
 		if (index == first.variable_map.size
 		 || entry.value != first.variable_map.values[index])
 		{
@@ -2602,7 +2602,7 @@ inline bool operator < (const variable_assignment& src, const variable_assignmen
 inline bool is_subset(const variable_assignment& first, const variable_assignment& second)
 {
 	for (const auto& entry : second.axiom_assignments) {
-		unsigned int index = first.axiom_assignments.index_of(entry.key);
+		size_t index = first.axiom_assignments.index_of(entry.key);
 		if (index == first.axiom_assignments.size
 		 || !is_subset(entry.value, first.axiom_assignments.values[index]))
 		{
@@ -3797,7 +3797,7 @@ struct theory
 	}
 
 	template<bool PrintProvableElements = false, typename Stream, typename... Printer>
-	bool print_axioms(Stream& out, Printer&&... printer) const {
+	bool print_axioms(Stream&& out, Printer&&... printer) const {
 		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
 			if (ground_concepts[i].types.keys == NULL) continue;
 			if (!print("Concept ", out) || !print(i + new_constant_offset, out, std::forward<Printer>(printer)...) || !print(":\n", out)
@@ -3824,7 +3824,7 @@ struct theory
 	}
 
 	template<typename Stream, typename... Printer>
-	bool print_disjunction_introduction(const Proof* proof, Stream& out, Printer&&... printer) const {
+	bool print_disjunction_introduction(const Proof* proof, Stream&& out, Printer&&... printer) const {
 		if (proof->type == ProofType::EXISTENTIAL_INTRODUCTION) {
 			/* find the formula corresponding to this node */
 			unsigned int index;
@@ -3917,7 +3917,7 @@ struct theory
 	}
 
 	template<typename Stream, typename... Printer>
-	bool print_disjunction_introductions(Stream& out, Printer&&... printer) const {
+	bool print_disjunction_introductions(Stream&& out, Printer&&... printer) const {
 		for (const Proof* observation : observations) {
 			if (observation->type == ProofType::EXISTENTIAL_INTRODUCTION) {
 				unsigned int index;
@@ -3988,7 +3988,7 @@ struct theory
 	}
 
 	template<typename Stream, typename... Printer>
-	bool print_proofs(Stream& out, Printer&&... printer) const {
+	bool print_proofs(Stream&& out, Printer&&... printer) const {
 		for (const Proof* observation : observations) {
 			if (!print<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*observation, out, std::forward<Printer>(printer)...) || !print('\n', out))
 				return false;

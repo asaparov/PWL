@@ -791,7 +791,7 @@ inline void print_fictionalgeo_results(
 	fprintf(stdout,
 			"Results so far:\n"
 			"  Total questions: %u\n"
-			"  Answered questions: %lu\n",
+			"  Answered questions: %zu\n",
 			total.load(), results.length);
 	if (unparseable_context.length != 0) {
 		fprintf(stdout, "Failed to parse following context sentences:\n");

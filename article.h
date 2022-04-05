@@ -114,7 +114,7 @@ inline bool operator == (const sentence<Derivation>& first, const sentence<Deriv
 }
 
 template<typename Derivation, typename Stream, typename... Printer>
-bool print(const sentence<Derivation>& s, Stream& out, Printer&&... printer) {
+bool print(const sentence<Derivation>& s, Stream&& out, Printer&&... printer) {
 	if (!core::is_empty(s.derivation)) {
 		return print("<derivation tree printing not implemented>", out);
 		//return print(s.derivation, out, std::forward<Printer>(printer)...);
@@ -276,10 +276,11 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 	article_lexer_state state = article_lexer_state::DEFAULT;
 	array<char> token = array<char>(1024);
 
-	std::mbstate_t shift = {0};
-	wint_t next = fgetwc(input);
+	mbstate_t shift = {0};
+	buffered_stream<MB_LEN_MAX, Stream> wrapper(input);
+	char32_t next = fgetc32(wrapper);
 	bool new_line = false;
-	while (next != WEOF) {
+	while (next != static_cast<char32_t>(-1)) {
 		switch (state) {
 		case article_lexer_state::TOKEN:
 			if (next == '.' || next == '?' || next == '!' || next == ',' || next == ':' || next == ';' || next == '-'
@@ -358,7 +359,7 @@ bool article_lex(array<article_token>& tokens, Stream& input) {
 			current.column = 1;
 			new_line = false;
 		} else current.column++;
-		next = fgetwc(input);
+		next = fgetc32(wrapper);
 	}
 
 	if (state == article_lexer_state::TOKEN)
@@ -462,7 +463,7 @@ inline bool interpret_derivation_tree(
 	memory_stream& in = *((memory_stream*) alloca(sizeof(memory_stream)));
 	in.buffer = tokens[index].text.data;
 	in.length = tokens[index].text.length;
-	in.position = 0; in.shift = {0};
+	in.position = 0;
 	Derivation derivation;
 	if (!parse(in, derivation, names, nonterminal_names, tokens[index].start + 1))
 		return false;

@@ -25,6 +25,14 @@ bool operator == (const hol_term&, const hol_term&);
 bool operator != (const hol_term&, const hol_term&);
 bool operator < (const hol_term&, const hol_term&);
 
+#if defined(TRUE)
+#undef TRUE
+#endif
+
+#if defined(FALSE)
+#undef FALSE
+#endif
+
 typedef uint_fast8_t hol_term_type_specifier;
 enum class hol_term_type : hol_term_type_specifier {
 	VARIABLE = 1,
@@ -1582,7 +1590,7 @@ inline bool is_atomic(hol_term& term) {
 /* forward declarations for hol_term printing */
 
 template<hol_term_syntax Syntax = hol_term_syntax::CLASSIC, typename Stream, typename... Printer>
-bool print(const hol_term&, Stream&, Printer&&...);
+bool print(const hol_term&, Stream&&, Printer&&...);
 
 
 template<hol_term_syntax Syntax> struct and_symbol;
@@ -1765,7 +1773,7 @@ inline bool print_quantifier(hol_quantifier_type quantifier,
 }
 
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
-bool print(const hol_term& term, Stream& out, Printer&&... printer)
+bool print(const hol_term& term, Stream&& out, Printer&&... printer)
 {
 	bool first;
 	switch (term.type) {
@@ -3449,13 +3457,13 @@ inline bool new_variable(unsigned int src, unsigned int& dst,
 {
 	if (!variable_map.ensure_capacity(variable_map.size + 1))
 		return false;
-	unsigned int index = variable_map.index_of(src);
+	size_t index = variable_map.index_of(src);
 	if (index < variable_map.size) {
 		fprintf(stderr, "new_variable ERROR: Multiple declaration of variable %u.\n", src);
 		return false;
 	}
 	variable_map.keys[index] = src;
-	dst = variable_map.size + 1;
+	dst = (unsigned int) variable_map.size + 1;
 	variable_map.values[index] = dst;
 	variable_map.size++;
 	return true;
@@ -4827,7 +4835,7 @@ bool print(const hol_type<BaseType>& type, Stream& out, Printer&&... variable_pr
 }
 
 template<typename BaseType, typename Stream>
-bool print_type(const hol_type<BaseType>& type, Stream& out,
+bool print_type(const hol_type<BaseType>& type, Stream&& out,
 		const array<hol_type<BaseType>>& type_variables)
 {
 	array<unsigned int> variables(8);
@@ -7003,17 +7011,17 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 	switch (scope.type) {
 	case hol_term_type::AND:
 		return scope_to_term<hol_term_type::AND>(
-				scope.commutative.children.data, scope.commutative.children.length,
-				scope.commutative.negated.data, scope.commutative.negated.length);
+				scope.commutative.children.data, (unsigned int) scope.commutative.children.length,
+				scope.commutative.negated.data, (unsigned int) scope.commutative.negated.length);
 	case hol_term_type::OR:
 		return scope_to_term<hol_term_type::OR>(
-				scope.commutative.children.data, scope.commutative.children.length,
-				scope.commutative.negated.data, scope.commutative.negated.length);
+				scope.commutative.children.data, (unsigned int) scope.commutative.children.length,
+				scope.commutative.negated.data, (unsigned int) scope.commutative.negated.length);
 	case hol_term_type::IFF:
 		if (scope.commutative.children.length > 0 && scope.commutative.children.last().type == hol_term_type::FALSE) {
 			first = iff_scope_to_term(
-					scope.commutative.children.data, scope.commutative.children.length - 1,
-					scope.commutative.negated.data, scope.commutative.negated.length);
+					scope.commutative.children.data, (unsigned int) scope.commutative.children.length - 1,
+					scope.commutative.negated.data, (unsigned int) scope.commutative.negated.length);
 			if (!new_hol_term(new_term)) {
 				free(*first); if (first->reference_count == 0) free(first);
 				return NULL;
@@ -7024,17 +7032,17 @@ inline hol_term* scope_to_term(const hol_scope& scope)
 			return new_term;
 		} else {
 			return iff_scope_to_term(
-					scope.commutative.children.data, scope.commutative.children.length,
-					scope.commutative.negated.data, scope.commutative.negated.length);
+					scope.commutative.children.data, (unsigned int) scope.commutative.children.length,
+					scope.commutative.negated.data, (unsigned int) scope.commutative.negated.length);
 		}
 	case hol_term_type::IF_THEN:
 		first = scope_to_term<hol_term_type::AND>(
-				scope.noncommutative.left.data, scope.noncommutative.left.length,
-				scope.noncommutative.left_negated.data, scope.noncommutative.left_negated.length);
+				scope.noncommutative.left.data, (unsigned int) scope.noncommutative.left.length,
+				scope.noncommutative.left_negated.data, (unsigned int) scope.noncommutative.left_negated.length);
 		if (first == NULL) return NULL;
 		second = scope_to_term<hol_term_type::OR>(
-				scope.noncommutative.right.data, scope.noncommutative.right.length,
-				scope.noncommutative.right_negated.data, scope.noncommutative.right_negated.length);
+				scope.noncommutative.right.data, (unsigned int) scope.noncommutative.right.length,
+				scope.noncommutative.right_negated.data, (unsigned int) scope.noncommutative.right_negated.length);
 		if (second == NULL) {
 			free(*first); if (first->reference_count == 0) free(first);
 			return NULL;
@@ -7110,8 +7118,8 @@ inline void move_variables(
 {
 	array<unsigned int> variable_union(max(scope_variables.capacity, term_variables.length + scope_variables.length));
 	set_union(variable_union.data, variable_union.length,
-			term_variables.data, term_variables.length,
-			scope_variables.data, scope_variables.length);
+			term_variables.data, (unsigned int) term_variables.length,
+			scope_variables.data, (unsigned int) scope_variables.length);
 	swap(variable_union, scope_variables);
 }
 
@@ -9697,7 +9705,7 @@ inline bool intersect(
 		const variable_map& first,
 		const variable_map& second)
 {
-	if (!init(dst, first.scope_map.size + second.scope_map.size, first.free_variables.size + second.free_variables.size))
+	if (!init(dst, (unsigned int) first.scope_map.size + (unsigned int) second.scope_map.size, (unsigned int) first.free_variables.size + (unsigned int) second.free_variables.size))
 		return false;
 
 	bool success = true;
@@ -9726,8 +9734,8 @@ inline bool intersect(
 		dst.scope_map.size++;
 	};
 	set_union(union_both_scope, union_first_scope, union_second_scope,
-			first.scope_map.keys, first.scope_map.size,
-			second.scope_map.keys, second.scope_map.size);
+			first.scope_map.keys, (unsigned int) first.scope_map.size,
+			second.scope_map.keys, (unsigned int) second.scope_map.size);
 	if (!success) {
 		free(dst);
 		return false;
@@ -9758,8 +9766,8 @@ inline bool intersect(
 		dst.free_variables.size++;
 	};
 	set_union(union_both_variable, union_first_variable, union_second_variable,
-			first.free_variables.keys, first.free_variables.size,
-			second.free_variables.keys, second.free_variables.size);
+			first.free_variables.keys, (unsigned int) first.free_variables.size,
+			second.free_variables.keys, (unsigned int) second.free_variables.size);
 	if (!success) {
 		free(dst);
 		return false;
@@ -9783,7 +9791,7 @@ inline bool subtract(
 		const variable_map& first,
 		const variable_map& second)
 {
-	if (!init(dst, first.scope_map.size + second.scope_map.size, first.free_variables.size + second.free_variables.size))
+	if (!init(dst, (unsigned int) first.scope_map.size + (unsigned int) second.scope_map.size, (unsigned int) first.free_variables.size + (unsigned int) second.free_variables.size))
 		return false;
 
 	bool success = true;
@@ -9807,8 +9815,8 @@ inline bool subtract(
 		dst.scope_map.size++;
 	};
 	set_union(union_both_scope, union_first_scope, union_second_scope,
-			first.scope_map.keys, first.scope_map.size,
-			second.scope_map.keys, second.scope_map.size);
+			first.scope_map.keys, (unsigned int) first.scope_map.size,
+			second.scope_map.keys, (unsigned int) second.scope_map.size);
 	if (!success) {
 		free(dst);
 		return false;
@@ -9834,8 +9842,8 @@ inline bool subtract(
 		dst.free_variables.size++;
 	};
 	set_union(union_both_variable, union_first_variable, union_second_variable,
-			first.free_variables.keys, first.free_variables.size,
-			second.free_variables.keys, second.free_variables.size);
+			first.free_variables.keys, (unsigned int) first.free_variables.size,
+			second.free_variables.keys, (unsigned int) second.free_variables.size);
 	if (!success) {
 		free(dst);
 		return false;
@@ -19256,7 +19264,7 @@ bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char sym
 }
 
 template<typename Stream>
-inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t next, position& current)
+inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, char32_t& next, bool& read_next, position& current)
 {
 	if (next == ',' || next == ':' || next == '(' || next == ')'
 	 || next == '[' || next == ']' || next == '&' || next == '|'
@@ -19265,20 +19273,16 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	{
 		return tptp_emit_symbol(tokens, current, next);
 	} else if (next == '=') {
-		fpos_t pos;
-		fgetpos(input, &pos);
-		next = fgetwc(input);
+		next = fgetc32(input);
 		if (next != '>') {
-			fsetpos(input, &pos);
+			read_next = false;
 			if (!emit_token(tokens, current, current + 1, tptp_token_type::EQUALS)) return false;
 		} else {
 			if (!emit_token(tokens, current, current + 2, tptp_token_type::IF_THEN)) return false;
 		}
 		current.column++;
 	} else if (next == '-') {
-		fpos_t pos;
-		fgetpos(input, &pos);
-		next = fgetwc(input);
+		next = fgetc32(input);
 		if (next != '>') {
 			read_error("Expected '>' after '-'", current);
 			return false;
@@ -19299,10 +19303,12 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 	tptp_lexer_state state = tptp_lexer_state::DEFAULT;
 	array<char> token = array<char>(1024);
 
-	std::mbstate_t shift = {0};
-	wint_t next = fgetwc(input);
+	mbstate_t shift = {0};
+	buffered_stream<MB_LEN_MAX, Stream> wrapper(input);
+	char32_t next = fgetc32(wrapper);
 	bool new_line = false;
-	while (next != WEOF) {
+	while (next != static_cast<char32_t>(-1)) {
+		bool read_next = true;
 		switch (state) {
 		case tptp_lexer_state::IDENTIFIER:
 			if (next == ',' || next == ':' || next == '(' || next == ')'
@@ -19311,7 +19317,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			 || next == '^' || next == ';' || next == '.' || next == '-')
 			{
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER)
-				 || !tptp_lex_symbol(tokens, input, next, current))
+				 || !tptp_lex_symbol(tokens, wrapper, next, read_next, current))
 					return false;
 				state = tptp_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
@@ -19335,7 +19341,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 		case tptp_lexer_state::QUOTE:
 			if (next == '\\') {
 				/* this is an escape character */
-				next = fgetwc(input);
+				next = fgetc32(wrapper);
 				current.column++;
 				new_line = (next == '\n');
 				if (!append_to_token(token, next, shift)) return false;
@@ -19355,7 +19361,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			 || next == '~' || next == '!' || next == '?' || next == '='
 			 || next == '^' || next == ';' || next == '.' || next == '-')
 			{
-				if (!tptp_lex_symbol(tokens, input, next, current))
+				if (!tptp_lex_symbol(tokens, wrapper, next, read_next, current))
 					return false;
 			} else if (next == '"') {
 				state = tptp_lexer_state::QUOTE;
@@ -19376,7 +19382,8 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			current.column = 1;
 			new_line = false;
 		} else current.column++;
-		next = fgetwc(input);
+		if (read_next)
+			next = fgetc32(wrapper);
 	}
 
 	if (state == tptp_lexer_state::IDENTIFIER)
@@ -19455,7 +19462,7 @@ bool tptp_interpret_variable_list(
 			return false;
 		}
 		variables.keys[variables.size] = tokens[index].text;
-		variables.values[variables.size] = variables.size + 1;
+		variables.values[variables.size] = (unsigned int) variables.size + 1;
 		variables.size++;
 		index++;
 
@@ -19580,7 +19587,7 @@ bool tptp_interpret_unary_term(
 		index++;
 
 	} else if (tokens[index].type == tptp_token_type::IDENTIFIER) {
-		long integer;
+		long long integer;
 		if (tokens[index].text == "T") {
 			/* this the constant true */
 			term.type = hol_term_type::TRUE;
@@ -19591,7 +19598,7 @@ bool tptp_interpret_unary_term(
 			term.type = hol_term_type::FALSE;
 			term.reference_count = 1;
 			index++;
-		} else if (parse_long(tokens[index].text, integer)) {
+		} else if (parse_long_long(tokens[index].text, integer)) {
 			/* this is a number */
 			index++;
 			if (index < tokens.length && tokens[index].type == tptp_token_type::PERIOD) {
@@ -19605,7 +19612,7 @@ bool tptp_interpret_unary_term(
 				}
 				index++;
 				if (decimal != 0) {
-					unsigned long temp = decimal / 10;
+					unsigned long long temp = decimal / 10;
 					while (temp * 10 == decimal) {
 						decimal = temp;
 						temp /= 10;

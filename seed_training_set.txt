@@ -3661,6 +3661,148 @@
 {(N "meter"/"meter")}
 	{meter[index:sg,measure]};
 
+: # Neptune is distant from Mercury.
+{(S
+	(S':require_no_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
+						(NOMINAL_R:identity
+							(NOMINAL_L:identity
+								(STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Neptune"/"Neptune")
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2		# ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[d]:(distant_from(d) & present(d) & arg2(d)=m))
+				(VP_L:require_no_be
+					(BE:select_left_predicate_and_tense,try_remove_aspect "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,add_aux,add_be
+						(V_ADJUNCT:remove_be,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number,add_empty_verb	# ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[d]:(distant_from(d) & arg2(d)=m))
+							(ADJP_R:remove_wide_scope,add_is_adjunct,require_no_preposition,remove_empty_verb	# ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[d]:(distant_from(d) & arg2(d)=m))
+								(ADJP_R:try_remove_is_adjunct,try_remove_wh_minus,remove_right_conjunct			# ?[d]:distant_from(d)
+									(ADJP_L:try_remove_is_adjunct
+										(ADJ:require_no_correlator,remove_wide_scope "distant"/"distant")
+									)
+								)
+								(PP:try_remove_correlated,try_remove_correlator,try_remove_is_adjunct	# ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[d]:(distant_from(d) & arg2(d)=m))
+									(P:require_no_preposition,remove_right_conjunct "from")
+									(NP:try_remove_correlated,try_remove_is_adjunct,try_remove_modifies_event,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+										(NP':try_add_singular,try_remove_adv,require_no_correlator,require_predicative_existential,require_name_in_set
+											(NOMINAL_R:identity
+												(NOMINAL_L:identity
+													(STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Mercury"/"Mercury")
+												)
+											)
+										)
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(PERIOD ".")
+)}
+	{?[p]:(?[n]:(name(n) & (arg1_of(p)=n) & (arg2(n)="Neptune")) & ?[m]:(?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Mercury")) & ?[d]:((arg1(d)=p) & distant_from(d) & present(d) & (arg2(d)=m))))};
+
+: # afraid
+{(ADJ "afraid"/"afraid")}
+	{?[x]:afraid_of(x)};
+
+: # wolf
+{(N "wolf"/"wolf")}
+	{wolf[index:sg]};
+
+: # sheep
+{(N "sheep"/"sheep")}
+	{sheep[index:sg]};
+
+: # mouse
+{(N "mouse"/"mouse")}
+	{mouse[index:sg]};
+
+: # color
+{(N "color"/"color")}
+	{color[index:sg]};
+
+: # blue
+{(N "blue"/"blue")}
+	{blue[index:sg]};
+
+: # The Sun is what type?
+{(S
+	(S':require_lambda,mark_wide_scope
+		(S'':try_add_singular,require_no_conjunction,try_remove_is_adjunct
+			(V_ADJUNCT:try_remove_nullable_subject,require_no_subordinate,try_remove_correlator,try_remove_wh_minus,select_left_conjunct	# ?[S]:((S=^[m]:?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Sun"))) & (size(S)=1) & ?[m]:(S(m) & ?[s]:(has_property(s) & (arg1(s)=m))))
+				(NP:require_no_preposition,require_no_passive,require_no_empty_verb,try_remove_req_subject,select_right_arg1_without_head_predicative,factor_predicative,has_arg2_in_set
+					(DEF_NP:try_remove_adv,require_no_correlator,require_no_wh_minus
+						(THE "the")
+						(NP':try_remove_correlated,require_predicative_existential,require_singleton,remove_second_left_set_conjunct,try_add_singular
+							(NOMINAL_R:identity
+								(NOMINAL_L:identity
+									(STRING:require_no_correlator,require_no_measure,require_predicative_existential,select_name_in_set,require_capitalized "Sun")
+								)
+							)
+						)
+					)
+				)
+			)
+			(VP_R:try_remove_nullable_subject,try_remove_correlated,remove_left_conjunct,require_no_predicate_empty,has_arg2	# ^[x]:?[X]:((X=^[t]:type(t)) & X(x) & ?[s]:(x(s) & present(s)))
+				(VP_L:require_no_be
+					(BE:select_left_predicate_and_tense,try_remove_aspect "be"/"is")
+					(VP_R:try_remove_correlated,require_no_future,require_no_perfect,add_aux,add_be
+						(V_ADJUNCT:remove_be,require_no_head_array,require_left_predicate_property,require_no_progressive,require_no_inverse,require_no_req_subject,require_no_req_aux,require_no_to_infinitive,require_no_correlator,remove_second_left_conjunct,require_one_or_two_conjuncts,try_remove_number
+							(NP:require_no_preposition,require_no_passive,require_no_inverse,require_no_empty_verb,require_no_left_predicate_exist,select_right_arg2_without_head_predicative,factor_predicative,has_arg2_in_set
+								(WHAT:require_no_wh_minus "what")
+								(NOMINAL_R:try_remove_adv,try_remove_correlated,require_no_correlator,replace_predicative_lambda_with_existential,require_no_constant_in_set,try_add_singular
+									(NOMINAL_L:identity
+										(N:require_no_correlator,select_predicate_in_set "type")
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	)
+	(QUESTION "?")
+)}
+	{^[x]:?[S]:((S=^[m]:?[n]:(name(n) & (arg1_of(m)=n) & (arg2(n)="Sun"))) & (size(S)=1) & ?[m]:(S(m) & ?[X]:((X=^[t]:type(t)) & X(x) & ?[s]:((arg1(s)=m) & property(s) & present(s) & (arg2(s)=x)))))};
+
+: # frog
+{(N "frog"/"frog")}
+	{frog[index:sg]};
+
+: # lion
+{(N "lion"/"lion")}
+	{lion[index:sg]};
+
+: # swan
+{(N "swan"/"swan")}
+	{swan[index:sg]};
+
+: # rhino
+{(N "rhino"/"rhino")}
+	{rhino[index:sg]};
+
+: # rhinoceros
+{(N "rhinoceros"/"rhinoceros")}
+	{rhino[index:sg]};
+
+: # gray
+{(ADJ "gray"/"gray")}
+	{?[x]:gray(x)};
+
+: # grey
+{(ADJ "grey"/"grey")}
+	{?[x]:gray(x)};
+
 #: 4 cats sleep.
 #	{?[X]:(subset(X,^[x]:(U(0,x) & cat(x))) & size(X)=4 & ![x]:(X(x) => ?[s]:(arg1(s)=x & U(1,s) & sleep(s) & present(s))))};
 

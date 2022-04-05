@@ -3740,7 +3740,7 @@ bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char sym
 }
 
 template<typename Stream>
-inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t next, position& current)
+inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, char32_t& next, bool& read_next, position& current)
 {
 	if (next == ',' || next == ':' || next == '(' || next == ')'
 	 || next == '[' || next == ']' || next == '&' || next == '|'
@@ -3748,23 +3748,21 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, wint_t nex
 	{
 		return tptp_emit_symbol(tokens, current, next);
 	} else if (next == '=') {
-		fpos_t pos;
-		fgetpos(input, &pos);
-		next = fgetwc(input);
+		next = fgetc32(input);
 		if (next != '>') {
-			fsetpos(input, &pos);
+			read_next = false;
 			if (!emit_token(tokens, current, current + 1, tptp_token_type::EQUALS)) return false;
 		} else {
 			if (!emit_token(tokens, current, current + 2, tptp_token_type::IF_THEN)) return false;
 		}
 		current.column++;
 	} else if (next == '<') {
-		next = fgetwc(input);
+		next = fgetc32(input);
 		if (next != '=') {
 			read_error("Expected '=' after '<'", current);
 			return false;
 		}
-		next = fgetwc(input);
+		next = fgetc32(input);
 		if (next != '>') {
 			read_error("Expected '>' after '='", current);
 			return false;
@@ -3784,10 +3782,12 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 	tptp_lexer_state state = tptp_lexer_state::DEFAULT;
 	array<char> token = array<char>(1024);
 
-	std::mbstate_t shift = {0};
-	wint_t next = fgetwc(input);
+	mbstate_t shift = {0};
+	buffered_stream<MB_LEN_MAX, Stream> wrapper(input);
+	char32_t next = fgetc32(wrapper);
 	bool new_line = false;
-	while (next != WEOF) {
+	while (next != static_cast<char32_t>(-1)) {
+		bool read_next = true;
 		switch (state) {
 		case tptp_lexer_state::IDENTIFIER:
 			if (next == ',' || next == ':' || next == '(' || next == ')'
@@ -3796,7 +3796,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			 || next == '<' || next == ';')
 			{
 				if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER)
-				 || !tptp_lex_symbol(tokens, input, next, current))
+				 || !tptp_lex_symbol(tokens, wrapper, next, read_next, current))
 					return false;
 				state = tptp_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
@@ -3817,7 +3817,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			 || next == '~' || next == '!' || next == '?' || next == '='
 			 || next == '<' || next == ';')
 			{
-				if (!tptp_lex_symbol(tokens, input, next, current))
+				if (!tptp_lex_symbol(tokens, wrapper, next, read_next, current))
 					return false;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
@@ -3834,7 +3834,8 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 			current.column = 1;
 			new_line = false;
 		} else current.column++;
-		next = fgetwc(input);
+		if (read_next)
+			next = fgetc32(wrapper);
 	}
 
 	if (state == tptp_lexer_state::IDENTIFIER)

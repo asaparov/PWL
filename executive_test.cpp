@@ -297,6 +297,10 @@ bool print_special_string(unsigned int key, Stream& out) {
 
 int main(int argc, const char** argv)
 {
+#if defined(_WIN32)
+	/* set the terminal to correctly display UTF-8 characters */
+	SetConsoleOutputCP(CP_UTF8);
+#endif
 	setlocale(LC_ALL, "en_US.UTF-8");
 	log_cache<double>::instance().ensure_size(1024);
 set_seed(1356941742);
@@ -327,8 +331,11 @@ set_seed(1356941742);
 		fprintf(stderr, "ERROR: Unrecognized command-line argument '%s'.\n", argv[i]);
 		fail = true;
 	}
-	if (fail)
+	if (fail) {
+		print_usage(stdout);
+		fflush(stdout);
 		return EXIT_FAILURE;
+	}
 	if (data_filepath == nullptr) {
 		if (mode == experiment_mode::PROOFWRITER)
 			data_filepath = "proofwriter/OWA/birds-electricity/meta-test.jsonl";
@@ -486,7 +493,8 @@ set_seed(1356941742);
 		//parser.invert_name_map(names);
 		//parser.print_hdp("V_ADJUNCT", stderr);
 		//parser.print_hdp("VP_R", stderr);
-		run_console(stdin, "\nEnter command: ", parser, seed_axioms, names);
+		FILE* input_stream = stdin;
+		run_console(input_stream, "\nEnter command: ", parser, seed_axioms, names);
 
 		for (array_map<sentence_type, flagged_logical_form<hol_term>>& paragraph : seed_training_set) {
 			for (auto entry : paragraph) { free(entry.key); free(entry.value); }
@@ -600,10 +608,9 @@ array<char> line(1024);
 array<string> geobase(1024);
 for (unsigned int counter = 0; ; counter++) {
 	line.clear();
-	int num_read = read_line(line, in);
-	if (num_read == 0) {
+	if (!read_line(line, in)) {
 		break;
-	} else if (num_read > 0) {
+	} else {
 		if (!line.ensure_capacity(line.length + 1))
 			break;
 		line[line.length++] = '\0';

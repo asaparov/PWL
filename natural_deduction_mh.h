@@ -1246,7 +1246,7 @@ bool propose_change_set_size(
 			}
 
 			for (hol_term* conjunct : conjuncts) {
-				if (!T.template check_set_membership_after_subtraction(conjunct, 0)) {
+				if (!T.check_set_membership_after_subtraction(conjunct, 0)) {
 					is_consistent = false;
 					break;
 				}
@@ -1363,8 +1363,8 @@ inline double* compute_constant_probabilities(const array<instance>& constants, 
 	}
 
 	double max_probability = 0.0;
-	unsigned int any_index = constants.length;
-	for (unsigned int i = 0; i < constants.length; i++) {
+	size_t any_index = constants.length;
+	for (size_t i = 0; i < constants.length; i++) {
 		max_probability = max(max_probability, probabilities[i]);
 		if (constants[i].type == instance_type::ANY)
 			any_index = i;

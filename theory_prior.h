@@ -37,7 +37,7 @@ unsigned int sample(const geometric_distribution& prior, unsigned int min, unsig
 	double min_cdf = 1.0 - pow(1 - prior.p, min);
 	double max_cdf = (max == UINT_MAX ? 1.0 : (1.0 - pow(1 - prior.p, max + 1)));
 	double u = sample_uniform<double>() * (max_cdf - min_cdf) + min_cdf;
-	return floor(log(1.0 - u) / prior.log_one_minus_p);
+	return (unsigned int) floor(log(1.0 - u) / prior.log_one_minus_p);
 }
 
 struct very_light_tail_distribution {
@@ -2436,13 +2436,13 @@ double log_probability_ratio(
 		if (old_name_map.keys[i] == new_name_map.keys[j]) {
 			array<const hol_term*>& names = name_map.get(old_name_map.keys[i], contains);
 			unsigned int old_count = (contains ? names.length : 0);
-			name_prior += log_probability(old_count + ((ssize_t) new_name_map.values[j].length - old_name_map.values[i].length), prior.name_count_distribution)
+			name_prior += log_probability(old_count + ((std::make_signed<size_t>::type) new_name_map.values[j].length - old_name_map.values[i].length), prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			i++; j++;
 		} else if (old_name_map.keys[i] < new_name_map.keys[j]) {
 			array<const hol_term*>& names = name_map.get(old_name_map.keys[i], contains);
 			unsigned int old_count = (contains ? names.length : 0);
-			name_prior += log_probability(old_count - ((ssize_t) old_name_map.values[i].length), prior.name_count_distribution)
+			name_prior += log_probability(old_count - ((std::make_signed<size_t>::type) old_name_map.values[i].length), prior.name_count_distribution)
 						- log_probability(old_count, prior.name_count_distribution);
 			i++;
 		} else {
@@ -2455,7 +2455,7 @@ double log_probability_ratio(
 	} while (i < old_name_map.size) {
 		array<const hol_term*>& names = name_map.get(old_name_map.keys[i], contains);
 		unsigned int old_count = (contains ? names.length : 0);
-		name_prior += log_probability(old_count - ((ssize_t) old_name_map.values[i].length), prior.name_count_distribution)
+		name_prior += log_probability(old_count - ((std::make_signed<size_t>::type) old_name_map.values[i].length), prior.name_count_distribution)
 					- log_probability(old_count, prior.name_count_distribution);
 		i++;
 	} while (j < new_name_map.size) {
