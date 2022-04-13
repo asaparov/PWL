@@ -1,5 +1,22 @@
 # Probabilistic Worldbuilding from Language
 
+If you use this data or code in your research, please cite:
+
+```bibtex
+@article{10.1162/tacl_a_00463,
+  author = {Abulhair Saparov and Tom M. Mitchell},
+  title = {Towards General Natural Language Understanding with Probabilistic Worldbuilding},
+  journal = {Transactions of the Association for Computational Linguistics},
+  volume = {10},
+  pages = {325-342},
+  year = {2022},
+  month = {04},
+  issn = {2307-387X},
+  doi = {10.1162/tacl_a_00463},
+  url = {https://doi.org/10.1162/tacl\_a\_00463}
+}
+```
+
 This code depends on OpenSSL as well as the following repositories: [core](https://github.com/asaparov/core), [math](https://github.com/asaparov/math), [hdp](https://github.com/asaparov/hdp), and [grammar](https://github.com/asaparov/grammar).
 
 To use this code, download the repository and dependencies and run `make executive_test` and then `./executive_test`. In order to add paths to the `make` command to search for additional include files, run `make executive_test CPPFLAGS+='-I[1st additional path] -I[2nd additional path]'`.
