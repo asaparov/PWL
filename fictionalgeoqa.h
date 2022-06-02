@@ -397,12 +397,12 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			fictionalgeo_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 433 - 1) { //if ((job.context_id >= 31 - 1 && job.context_id <= 40 - 1) || (job.context_id >= 71 - 1 && job.context_id <= 80 - 1) || (job.context_id >= 91 - 1 && job.context_id <= 100 - 1) || (job.context_id >= 131 - 1 && job.context_id <= 140 - 1) || (job.context_id >= 291 - 1 && job.context_id <= 300 - 1) || (job.context_id >= 541 - 1 && job.context_id <= 550 - 1) || (job.context_id >= 581 - 1 && job.context_id <= 590 - 1) || job.context_id == 520 - 1) {
+/*if (job.context_id != 433 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
 continue;
-}
+}*/
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = prng_engine;

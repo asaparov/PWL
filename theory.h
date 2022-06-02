@@ -5088,7 +5088,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		if (!atoms.table.contains(*lifted_atom)) {
 			print("theory.remove_unary_atom WARNING: `atoms` does not contain the key ", stderr);
 			print(*lifted_atom, stderr); print(".\n", stderr);
-		} if (atom.binary.right->type == TermType::CONSTANT && (atom.binary.right->constant < new_constant_offset || ground_concepts[atom.binary.right->constant - new_constant_offset].types.keys == NULL))
+		} if (atom.binary.right->type == TermType::CONSTANT && (new_constant_offset > atom.binary.right->constant || ground_concepts[atom.binary.right->constant - new_constant_offset].types.keys == NULL))
 			fprintf(stderr, "theory.remove_unary_atom WARNING: `ground_concepts` does not contain the key %u.\n", atom.binary.right->constant);
 #endif
 
@@ -9754,8 +9754,8 @@ private:
 					if (formula->array.operands[i]->binary.right->type == TermType::STRING
 					 || formula->array.operands[i]->binary.right->type == TermType::NUMBER
 					 || (formula->array.operands[i]->binary.right->type == TermType::CONSTANT
-					  && (formula->array.operands[i]->binary.right->constant < new_constant_offset
-					   || ground_concepts[formula->array.operands[i]->binary.right->constant - new_constant_offset].definitions.length < 16)))
+					  && (new_constant_offset > formula->array.operands[i]->binary.right->constant
+					   || 16 > ground_concepts[formula->array.operands[i]->binary.right->constant - new_constant_offset].definitions.length)))
 					{
 						visited[i] = true;
 						if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
@@ -9851,8 +9851,8 @@ private:
 						if (formula->array.operands[i]->binary.right->type == TermType::STRING
 						 || formula->array.operands[i]->binary.right->type == TermType::NUMBER
 						 || (formula->array.operands[i]->binary.right->type == TermType::CONSTANT
-						  && (formula->array.operands[i]->binary.right->constant < new_constant_offset
-						   || ground_concepts[formula->array.operands[i]->binary.right->constant - new_constant_offset].definitions.length < 16)))
+						  && (new_constant_offset > formula->array.operands[i]->binary.right->constant
+						   || 16 > ground_concepts[formula->array.operands[i]->binary.right->constant - new_constant_offset].definitions.length)))
 						{
 							visited[i] = true;
 							if (!is_provable_without_abduction<false>(formula->array.operands[i], quantifiers, possible_values, prover)) break;
@@ -18017,7 +18017,7 @@ bool filter_constants_helper(
 			/* make sure y could not be a set in `x(y)` */
 			for (unsigned int i = 0; !Hypothetical && i < constants.length; i++) {
 				if (constants[i].type != instance_type::ANY && constants[i].type != instance_type::CONSTANT) {
-					if (left->type == TermType::CONSTANT && left->constant < T.new_constant_offset && left->constant != (unsigned int) built_in_predicates::NUMBER)
+					if (left->type == TermType::CONSTANT && T.new_constant_offset > left->constant && left->constant != (unsigned int) built_in_predicates::NUMBER)
 						constants.remove(i--);
 					continue;
 				} else if (constants[i].type == instance_type::CONSTANT && T.is_provably_a_set(constants[i].constant)) {
@@ -18922,7 +18922,6 @@ struct log_probability_collector
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, collector);
 //fprintf(stderr, "log probability of theory: %lf\n", value);
-//extern thread_local const string_map_scribe* debug_terminal_printer;
 //T.print_axioms(stderr, *debug_terminal_printer);
 //T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 			return value;
@@ -19017,7 +19016,6 @@ struct model_evidence_collector
 			T.get_extra_axioms(extra_axioms);
 			double value = log_probability(T.observations, extra_axioms, proof_prior, sample_collector);
 /*fprintf(stderr, "log probability of theory: %lf\n", value);
-extern thread_local const string_map_scribe* debug_terminal_printer;
 T.print_axioms(stderr, *debug_terminal_printer);
 T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			return value;
@@ -19207,7 +19205,6 @@ T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
-extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		do_mh_step(T, proof_prior, proof_axioms, collector);
@@ -19270,7 +19267,6 @@ T.sets.are_descendants_valid();
 T.sets.are_set_sizes_valid();
 T.sets.check_set_ids();
 bool print_debug = false;
-extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.template print_axioms<true>(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 			do_mh_step(T, proof_prior, proof_axioms, collector);
@@ -19352,7 +19348,6 @@ bool log_joint_probability_of_lambda(
 
 	unsigned int new_constant;
 	set_changes<Formula> set_diff;
-//extern thread_local const string_map_scribe* debug_terminal_printer;
 //T.print_axioms(stderr, *debug_terminal_printer);
 	Proof* new_proof = T.add_formula(existential, set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 	free(*existential); if (existential->reference_count == 0) free(existential);
@@ -19390,7 +19385,6 @@ T.sets.check_set_ids();
 if (!T.observations.contains(collector.internal_collector.test_proof))
 	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
 bool print_debug = false;
-extern thread_local const string_map_scribe* debug_terminal_printer;
 if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
 if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 0.1);
@@ -19754,8 +19748,6 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 		get_proof_disjunction_nodes(new_proof, sampler.prev_proof);
 	}
 
-	extern thread_local bool debug_flag;
-	extern thread_local const string_map_scribe* debug_terminal_printer;
 	auto collector = make_provability_collector(T, proof_prior, new_proof, on_new_proof_sample);
 	for (unsigned int t = 0; t < num_samples; t++) {
 		if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);

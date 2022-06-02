@@ -1,14 +1,15 @@
 #ifndef HDP_PARSER_H_
 #define HDP_PARSER_H_
 
+#include <grammar/parser.h>
+#include <grammar/hdp_grammar_io.h>
+
 #include "higher_order_logic.h"
 #include "array_view.h"
 #include "morphology_en.h"
 #include "article.h"
 #include "built_in_predicates.h"
 #include "console.h"
-#include <grammar/parser.h>
-#include <grammar/hdp_grammar_io.h>
 
 thread_local hol_term HOL_ZERO(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::ZERO);
 thread_local hol_term HOL_EMPTY(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::EMPTY);

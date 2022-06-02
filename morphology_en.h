@@ -1,15 +1,7 @@
-#ifndef MORPHOLOGY_H_
-#define MORPHOLOGY_H_
+#ifndef MORPHOLOGY_EN_H_
+#define MORPHOLOGY_EN_H_
 
 #include <core/map.h>
-
-enum part_of_speech : uint_fast8_t {
-	POS_NOUN = 1,
-	POS_VERB = 2,
-	POS_ADJECTIVE = 3,
-	POS_ADVERB = 4,
-	POS_OTHER = 5
-};
 
 template<typename T>
 inline bool merge_arrays(
@@ -2732,4 +2724,4 @@ inline bool init_capitalization_map(
 	return true;
 }
 
-#endif /* MORPHOLOGY_H_ */
+#endif /* MORPHOLOGY_EN_H_ */

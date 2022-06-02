@@ -1648,7 +1648,7 @@ const char lambda_symbol<hol_term_syntax::CLASSIC>::symbol[] = "λ";
 const char true_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊥";
 
-const char empty_string[] = "";
+constexpr char empty_string[] = "";
 
 template<hol_term_type Type> struct any_symbol;
 template<> struct any_symbol<hol_term_type::ANY> { static const char symbol[]; };
