@@ -849,7 +849,9 @@ void print_openssl_error(SSL* ssl, int ret, bool& can_shutdown)
 	case SSL_ERROR_WANT_X509_LOOKUP: fprintf(stderr, "X509 lookup operation did not complete.\n"); break;
 	case SSL_ERROR_WANT_ASYNC: fprintf(stderr, "Asynchronous engine is still processing data.\n"); break;
 	case SSL_ERROR_WANT_ASYNC_JOB: fprintf(stderr, "No asynchronous jobs are available.\n"); break;
+#if defined(SSL_ERROR_WANT_CLIENT_HELLO_CB)
 	case SSL_ERROR_WANT_CLIENT_HELLO_CB: fprintf(stderr, "Client callback operation did not complete.\n"); break;
+#endif
 	case SSL_ERROR_SYSCALL: fprintf(stderr, "I/O error.\n"); can_shutdown = false; break;
 	case SSL_ERROR_SSL:
 		ERR_error_string_n(ERR_get_error(), msg, sizeof(msg));

@@ -1649,9 +1649,6 @@ const char true_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊤";
 const char false_symbol<hol_term_syntax::CLASSIC>::symbol[] = "⊥";
 
 const char empty_string[] = "";
-const char left_curly_brace[] = "{";
-const char right_curly_brace[] = "}";
-const char comma[] = ",";
 
 template<hol_term_type Type> struct any_symbol;
 template<> struct any_symbol<hol_term_type::ANY> { static const char symbol[]; };
@@ -1700,6 +1697,19 @@ bool print_array(const hol_array_term& term, Stream& out, Printer&&... printer) 
 		}
 	}
 	return print(RightBracket, out);
+}
+
+template<typename Stream, typename... Printer>
+bool print_constant_array(const hol_any_constant& constants, Stream& out, Printer&&... printer) {
+	if (!print('{', out)) return false;
+	if (constants.length == 0)
+		return print('}', out);
+	if (!print(constants.constants[0], out, std::forward<Printer>(printer)...)) return false;
+	for (unsigned int i = 1; i < constants.length; i++) {
+		if (!print(',', out) || !print(constants.constants[i], out, std::forward<Printer>(printer)...))
+			return false;
+	}
+	return print('}', out);
 }
 
 template<hol_term_syntax Syntax, typename Stream, typename... Printer>
@@ -1957,12 +1967,12 @@ bool print(const hol_term& term, Stream&& out, Printer&&... printer)
 
 	case hol_term_type::ANY_CONSTANT:
 		return print("(* ∈ ", out)
-			&& print<unsigned int, left_curly_brace, right_curly_brace, comma>(term.any_constant.constants, term.any_constant.length, out, std::forward<Printer>(printer)...)
+			&& print_constant_array(term.any_constant, out, std::forward<Printer>(printer)...)
 			&& print(')', out);
 
 	case hol_term_type::ANY_CONSTANT_EXCEPT:
 		return print("(* ∉ ", out)
-			&& print<unsigned int, left_curly_brace, right_curly_brace, comma>(term.any_constant.constants, term.any_constant.length, out, std::forward<Printer>(printer)...)
+			&& print_constant_array(term.any_constant, out, std::forward<Printer>(printer)...)
 			&& print(')', out);
 
 	case hol_term_type::ANY_QUANTIFIER:

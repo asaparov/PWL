@@ -19,7 +19,10 @@ If you use this data or code in your research, please cite:
 
 This code depends on OpenSSL as well as the following repositories: [core](https://github.com/asaparov/core), [math](https://github.com/asaparov/math), [hdp](https://github.com/asaparov/hdp), and [grammar](https://github.com/asaparov/grammar).
 
-To use this code, download the repository and dependencies and run `make executive_test` and then `./executive_test`. In order to add paths to the `make` command to search for additional include files, run `make executive_test CPPFLAGS+='-I[1st additional path] -I[2nd additional path]'`.
+To use this code:
+1. Download the dependencies into a single directory.
+2. Download this repository and run `make executive_test CPPFLAGS+="-I[deps_directory]"` where `deps_directory` is the folder containing the dependency folders `core`, `math`, `hdp`, and `grammar`.
+3. Run `./executive_test`.
 
 ### Console
 

@@ -1912,10 +1912,10 @@ struct hol_non_head_constants {
 };
 
 template<typename BuiltInPredicates>
-const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[];
+constexpr unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANTS[];
 
 template<typename BuiltInPredicates>
-const unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANT_COUNT;
+constexpr unsigned int hol_non_head_constants<BuiltInPredicates>::CONSTANT_COUNT;
 
 template<typename BuiltInPredicates>
 inline bool is_built_in(unsigned int constant) {
@@ -27869,6 +27869,9 @@ inline bool invert_select_conjunct(
 				first_predicate = operand->any_array.right.operands[operand->any_array.right.length - first_predicate_index.index - 1];
 			else if (first_predicate_index.position == head_position::ANY) {
 				first_predicate = operand->any_array.any.operands[first_predicate_index.index];
+			} else if (first_predicate_index.position == head_position::ALL) {
+				free_all(intersection);
+				return false;
 			}
 		} else if (first_predicate_index.position == head_position::LEFT && first_predicate_index.index == 0) {
 			first_predicate = operand;
