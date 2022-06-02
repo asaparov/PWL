@@ -17,7 +17,7 @@ If you use this data or code in your research, please cite:
 }
 ```
 
-This code depends on OpenSSL as well as the following repositories: [core](https://github.com/asaparov/core), [math](https://github.com/asaparov/math), [hdp](https://github.com/asaparov/hdp), and [grammar](https://github.com/asaparov/grammar).
+This code depends on the following repositories: [core](https://github.com/asaparov/core), [math](https://github.com/asaparov/math), [hdp](https://github.com/asaparov/hdp), and [grammar](https://github.com/asaparov/grammar).
 
 To use this code:
 1. Download the dependencies into a single directory.
