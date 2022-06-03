@@ -813,12 +813,12 @@ fprintf(stderr, "consistency checking time: %llums, total reasoning time: %llums
 			num_threads_reading_context++;
 			ruletaker_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-if (job.context_id != 6 - 1) { // != 6 - 1) { //< 10 - 1 || job.context_id >= 139 - 1) {
+/*if (job.context_id != 6 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
 continue;
-}
+}*/
 
 			/* for reproducibility, reset the PRNG state */
 			core::engine = prng_engine;

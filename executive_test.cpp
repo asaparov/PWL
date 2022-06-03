@@ -356,7 +356,7 @@ set_seed(1356941742);
 	/* construct the parser */
 	hdp_parser<hol_term> parser = hdp_parser<hol_term>(
 			(unsigned int) built_in_predicates::UNKNOWN,
-			names, "english.morph.short", "english.gram");
+			names, "english.morph", "english.gram");
 
 	/* read the seed training set of sentences labeled with logical forms */
 	FILE* in = fopen("seed_training_set.txt", "rb");

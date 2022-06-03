@@ -397,7 +397,7 @@ __lsan_do_leak_check();
 			num_threads_reading_context++;
 			fictionalgeo_context_item<Theory, PriorStateType>& job = context_queue[context_queue_start++];
 			lock.unlock();
-/*if (job.context_id != 433 - 1) {
+/*if (job.context_id != 8 - 1) {
 total += job.questions.length;
 num_threads_reading_context--;
 free(job);
@@ -481,8 +481,8 @@ continue;
 			}
 
 			if (!error) {
-				char filename[256];
-				snprintf(filename, 256, "fictionalgeo_theories/%u.th", job.context_id);
+				/*char filename[256];
+				snprintf(filename, 256, "fictionalgeo_theories/%u.th", job.context_id);*/
 
 				unsigned int result_index;
 				if (ParseOnly) {
@@ -670,10 +670,10 @@ fprintf(stderr, "WARNING: `log_probability_collector.test_proof` is not an obser
 total_reasoning += stopwatch.milliseconds();
 fprintf(stderr, "consistency checking time: %llums, total reasoning time: %llums\n", consistency_checking_ms.load(), total_reasoning.load());
 
-					FILE* theory_stream = (FILE*) fopen(filename, "wb");
+					/*FILE* theory_stream = (FILE*) fopen(filename, "wb");
 					write_random_state(theory_stream);
 					write(job.T, theory_stream, job.proof_axioms);
-					fclose(theory_stream);
+					fclose(theory_stream);*/
 					sentence_counter++;
 #if defined(SANITIZE_ADDRESS)
 // TODO: for memory debugging; delete this

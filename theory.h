@@ -18100,7 +18100,7 @@ bool filter_constants_helper(
 				unsigned int arg = constants[i].constant;
 				if (arg < T.new_constant_offset || T.ground_concepts[arg - T.new_constant_offset].types.keys == nullptr)
 					continue;
-				if (left->constant == (unsigned int) built_in_predicates::NAME) {
+				if (left->type == TermType::CONSTANT && left->constant == (unsigned int) built_in_predicates::NAME) {
 					/* arg1 must be a non-name constant and arg2 must be a string */
 					Term* arg1 = T.template get_arg<(unsigned int) built_in_predicates::ARG1>(arg);
 					if (arg1 != nullptr) {
