@@ -18130,7 +18130,7 @@ bool filter_constants_helper(
 						constants.remove(i--);
 						continue;
 					}
-				} else {
+				} else if (left->type == TermType::CONSTANT && !set_definitions.contains(left->constant)) { /* ignore the possibility where we have `c(x)` where `c` is a constant with a set definition */
 					/* arg1 can be anything and arg2 must be a non-string */
 					bool contains;
 					Proof* proof = T.ground_concepts[arg - T.new_constant_offset].function_values.get((unsigned int) built_in_predicates::ARG2, contains);
