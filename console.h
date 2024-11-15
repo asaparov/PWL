@@ -268,7 +268,7 @@ void run_console(
 
 				hash_set<unsigned int> seed_entities(2);
 				array_map<string, double> answers(16);
-				if (answer_question<false>(answers, logical_forms[logical_form_index], mcmc_iterations, parser, T, proof_prior, proof_axioms)) {
+				if (answer_question<false>(answers, logical_forms[logical_form_index], mcmc_iterations, parser.get_printer(), T, proof_prior, proof_axioms)) {
 					print("Answers:\n", stdout);
 					sort(answers.values, answers.keys, answers.size, default_sorter());
 					for (unsigned int i = answers.size; i > 0; i--) {

@@ -1,8 +1,13 @@
 #ifndef THEORY_PRIOR_H_
 #define THEORY_PRIOR_H_
 
+#include "higher_order_logic.h"
+
 #include <core/random.h>
 #include <math/log.h>
+#include <math/multiset.h>
+
+using namespace core;
 
 //#define DEBUG_LOG_PROBABILITY
 

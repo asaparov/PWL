@@ -2795,50 +2795,18 @@ struct set_reasoning
 		else return true;
 	}
 
-	/* NOTE: this function does not check for consistency */
 	template<typename... Args>
-	bool add_subset_axiom(Proof* axiom, Args&&... visitor)
+	bool add_existing_subset_axiom(
+		Proof* axiom, Formula* antecedent, Formula* consequent,
+		unsigned int antecedent_set, unsigned int consequent_set)
 	{
-		Formula* operand = axiom->formula->quantifier.operand;
-		unsigned int arity = 1;
-		while (operand->type == FormulaType::FOR_ALL) {
-			operand = operand->quantifier.operand;
-			arity++;
-		}
-		Formula* antecedent = operand->binary.left;
-		Formula* consequent = operand->binary.right;
-
-		if (!set_ids.check_size(set_ids.table.size + 2)) return false;
-
-		unsigned int antecedent_set, consequent_set;
-		bool is_antecedent_new, is_consequent_new;
-		if (!get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
-			return false;
-		} else if (!get_set_id(consequent, arity, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
-			if (is_freeable(antecedent_set)) free_set(antecedent_set);
-			return false;
-		}
-
 #if !defined(NDEBUG)
 		if (consequent_set == antecedent_set)
 			fprintf(stderr, "set_reasoning.add_subset_axiom WARNING: `consequent` and `antecedent` are the same set.\n");
 #endif
 
-		if (!extensional_graph.add_edge(consequent_set, antecedent_set, axiom)) {
-			/* if either the antecedent or consequent sets have no references, free them */
-			if (is_freeable(consequent_set)) {
-				for (Proof* size_axiom : sets[consequent_set].size_axioms)
-					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-				on_free_set(consequent_set, *this, 0, 0);
-				free_set(consequent_set);
-			} if (is_freeable(antecedent_set)) {
-				for (Proof* size_axiom : sets[antecedent_set].size_axioms)
-					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-				on_free_set(antecedent_set, *this, 0, 0);
-				free_set(antecedent_set);
-			}
+		if (!extensional_graph.add_edge(consequent_set, antecedent_set, axiom))
 			return false;
-		}
 
 		if (!update_descendants(antecedent_set, consequent_set)) {
 			remove_subset_relation<true>(antecedent_set, consequent_set, antecedent, consequent);
@@ -2864,37 +2832,57 @@ struct set_reasoning
 				if (visited.contains(entry.key)) continue;
 				if (!ancestors_stack.add(entry.key) || !visited.add(entry.key)) {
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
-					if (is_freeable(consequent_set)) {
-						for (Proof* size_axiom : sets[consequent_set].size_axioms)
-							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(consequent_set, *this, 0, 0);
-						free_set(consequent_set);
-					} if (is_freeable(antecedent_set)) {
-						for (Proof* size_axiom : sets[antecedent_set].size_axioms)
-							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(antecedent_set, *this, 0, 0);
-						free_set(antecedent_set);
-					}
 					return false;
 				}
 			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (visited.contains(parent)) continue;
 				if (!ancestors_stack.add(parent) || !visited.add(parent)) {
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
-					if (is_freeable(consequent_set)) {
-						for (Proof* size_axiom : sets[consequent_set].size_axioms)
-							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(consequent_set, *this, 0, 0);
-						free_set(consequent_set);
-					} if (is_freeable(antecedent_set)) {
-						for (Proof* size_axiom : sets[antecedent_set].size_axioms)
-							on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
-						on_free_set(antecedent_set, *this, 0, 0);
-						free_set(antecedent_set);
-					}
 					return false;
 				}
 			}
+		}
+		return true;
+	}
+
+	/* NOTE: this function does not check for consistency */
+	template<typename... Args>
+	bool add_subset_axiom(Proof* axiom, Args&&... visitor)
+	{
+		Formula* operand = axiom->formula->quantifier.operand;
+		unsigned int arity = 1;
+		while (operand->type == FormulaType::FOR_ALL) {
+			operand = operand->quantifier.operand;
+			arity++;
+		}
+		Formula* antecedent = operand->binary.left;
+		Formula* consequent = operand->binary.right;
+
+		if (!set_ids.check_size(set_ids.table.size + 2)) return false;
+
+		unsigned int antecedent_set, consequent_set;
+		bool is_antecedent_new, is_consequent_new;
+		if (!get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
+			return false;
+		} else if (!get_set_id(consequent, arity, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
+			if (is_freeable(antecedent_set)) free_set(antecedent_set);
+			return false;
+		}
+
+		if (!add_existing_subset_axiom(axiom, antecedent, consequent, antecedent_set, consequent_set)) {
+			/* if either the antecedent or consequent sets have no references, free them */
+			if (is_freeable(consequent_set)) {
+				for (Proof* size_axiom : sets[consequent_set].size_axioms)
+					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
+				on_free_set(consequent_set, *this, 0, 0);
+				free_set(consequent_set);
+			} if (is_freeable(antecedent_set)) {
+				for (Proof* size_axiom : sets[antecedent_set].size_axioms)
+					on_old_size_axiom(size_axiom, std::forward<Args>(visitor)...);
+				on_free_set(antecedent_set, *this, 0, 0);
+				free_set(antecedent_set);
+			}
+			return false;
 		}
 		return true;
 	}
@@ -2978,13 +2966,13 @@ struct set_reasoning
 			unsigned int& antecedent_set, unsigned int& consequent_set,
 			bool& is_antecedent_new, bool& is_consequent_new, Args&&... visitor)
 	{
-		if (!set_ids.check_size(set_ids.table.size + 2)) return NULL;
+		if (!set_ids.check_size(set_ids.table.size + 2)) return nullptr;
 
 		if (!get_set_id(antecedent, arity, antecedent_set, is_antecedent_new, std::forward<Args>(visitor)...)) {
-			return NULL;
+			return nullptr;
 		} else if (!get_set_id(consequent, arity, consequent_set, is_consequent_new, std::forward<Args>(visitor)...)) {
 			if (FreeSets) try_free_set(antecedent_set);
-			return NULL;
+			return nullptr;
 		}
 
 #if !defined(NDEBUG)
@@ -2994,13 +2982,13 @@ struct set_reasoning
 
 		bool new_edge;
 		Proof* axiom = extensional_graph.get_edge(consequent_set, antecedent_set, consequent, antecedent, arity, new_edge);
-		if (axiom == NULL) {
+		if (axiom == nullptr) {
 			/* if either the antecedent or consequent sets have no references, free them */
 			if (FreeSets) {
 				try_free_set(consequent_set);
 				try_free_set(antecedent_set);
 			}
-			return NULL;
+			return nullptr;
 		}
 
 		if (!new_edge) return axiom;
@@ -3024,7 +3012,7 @@ struct set_reasoning
 							try_free_set(consequent_set);
 							try_free_set(antecedent_set);
 						}
-						return NULL;
+						return nullptr;
 					}
 				} else {
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
@@ -3032,7 +3020,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				}
 			}
 
@@ -3044,7 +3032,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				}
 			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (visited.contains(parent)) continue;
@@ -3054,7 +3042,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				}
 			}
 		}
@@ -3070,7 +3058,7 @@ struct set_reasoning
 								try_free_set(consequent_set);
 								try_free_set(antecedent_set);
 							}
-							return NULL;
+							return nullptr;
 						} else if (graph_changed) continue;
 
 						/* we were unable to change the graph, so it cannot be made consistent (as far as we can tell) */
@@ -3079,7 +3067,7 @@ struct set_reasoning
 							try_free_set(consequent_set);
 							try_free_set(antecedent_set);
 						}
-						return NULL;
+						return nullptr;
 					}
 				} else {
 					extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
@@ -3087,12 +3075,12 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				}
 			}
 		}
 		while (true) {
-			unsigned int* clique = NULL; unsigned int clique_count; unsigned int ancestor_of_clique;
+			unsigned int* clique = nullptr; unsigned int clique_count; unsigned int ancestor_of_clique;
 			if (sets[antecedent_set].set_size == 0) {
 				break;
 			} else if (sets[consequent_set].set_size == 0) {
@@ -3104,7 +3092,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				} else if (graph_changed) continue;
 
 				/* we were unable to change the graph, so it cannot be made consistent (as far as we can tell) */
@@ -3113,7 +3101,7 @@ struct set_reasoning
 					try_free_set(consequent_set);
 					try_free_set(antecedent_set);
 				}
-				return NULL;
+				return nullptr;
 			} else if (!find_largest_disjoint_clique_with_set(*this, antecedent_set, consequent_set, clique, clique_count, ancestor_of_clique, 1))
 			{
 				extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
@@ -3123,7 +3111,7 @@ struct set_reasoning
 				}
 			}
 
-			if (clique == NULL) break;
+			if (clique == nullptr) break;
 
 			if (ResolveInconsistencies) {
 				/* try increasing the size of the ancestor */
@@ -3139,7 +3127,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					core::free(clique); return NULL;
+					core::free(clique); return nullptr;
 				} else if (graph_changed) { core::free(clique); continue; }
 
 				for (unsigned int i = 0; i < clique_count; i++) {
@@ -3154,7 +3142,7 @@ struct set_reasoning
 							try_free_set(consequent_set);
 							try_free_set(antecedent_set);
 						}
-						core::free(clique); return NULL;
+						core::free(clique); return nullptr;
 					} else if (graph_changed) break;
 				}
 
@@ -3166,14 +3154,14 @@ struct set_reasoning
 					try_free_set(consequent_set);
 					try_free_set(antecedent_set);
 				}
-				core::free(clique); return NULL;
+				core::free(clique); return nullptr;
 			} else {
 				extensional_graph.remove_edge(consequent_set, antecedent_set, consequent, antecedent);
 				if (FreeSets) {
 					try_free_set(consequent_set);
 					try_free_set(antecedent_set);
 				}
-				core::free(clique); return NULL;
+				core::free(clique); return nullptr;
 			}
 		}
 
@@ -3205,7 +3193,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				}
 			} for (unsigned int parent : intensional_graph.vertices[current].parents) {
 				if (visited.contains(parent)) continue;
@@ -3215,7 +3203,7 @@ struct set_reasoning
 						try_free_set(consequent_set);
 						try_free_set(antecedent_set);
 					}
-					return NULL;
+					return nullptr;
 				}
 			}
 		}
@@ -3428,6 +3416,26 @@ struct set_reasoning
 			fprintf(stderr, "get_size_lower_bound WARNING: Set with ID %u is fixed. This function should not be called on fixed sets.\n", set_id);
 #endif
 
+		unsigned int intensional_lower_bound = 0;
+		Formula* formula = sets[set_id].set_formula();
+		if (formula->type == FormulaType::EQUALS && formula->binary.right->type == FormulaType::CONSTANT) {
+			lower_bound = 1;
+			return true;
+		} else if (formula->type == FormulaType::OR) {
+			for (unsigned int i = 0; i < formula->array.length; i++) {
+				Formula* operand = formula->array.operands[i];
+				if (operand->type == FormulaType::EQUALS && operand->binary.right->type == FormulaType::CONSTANT) {
+					intensional_lower_bound = max(intensional_lower_bound, 1);
+					continue;
+				}
+
+				unsigned int subset_id; bool contains;
+				subset_id = set_ids.get(*operand, contains);
+				if (contains)
+					intensional_lower_bound = max(intensional_lower_bound, sets[subset_id].set_size);
+			}
+		}
+
 		/* first compute the number of elements that provably belong to this set */
 		lower_bound = sets[set_id].provable_elements.length;
 
@@ -3475,6 +3483,7 @@ struct set_reasoning
 		} else {
 			ancestor_of_clique = 0;
 		}
+		lower_bound = max(intensional_lower_bound, lower_bound);
 		return true;
 	}
 
@@ -3495,10 +3504,48 @@ struct set_reasoning
 			fprintf(stderr, "get_size_upper_bound WARNING: Set with ID %u is fixed. This function should not be called on fixed sets.\n", set_id);
 #endif
 
+		unsigned int intensional_upper_bound = UINT_MAX;
+		Formula* formula = sets[set_id].set_formula();
+		if (formula->type == FormulaType::EQUALS && formula->binary.right->type == FormulaType::CONSTANT) {
+			upper_bound = 1;
+			return true;
+		} else if (formula->type == FormulaType::OR) {
+			intensional_upper_bound = 0;
+			for (unsigned int i = 0; i < formula->array.length; i++) {
+				Formula* operand = formula->array.operands[i];
+				if (operand->type == FormulaType::EQUALS && operand->binary.right->type == FormulaType::CONSTANT) {
+					intensional_upper_bound += 1;
+					continue;
+				}
+
+				unsigned int subset_id; bool contains;
+				subset_id = set_ids.get(*operand, contains);
+				if (!contains) {
+					intensional_upper_bound = UINT_MAX;
+					break;
+				} else {
+					intensional_upper_bound += sets[subset_id].set_size;
+				}
+			}
+		} else if (formula->type == FormulaType::AND) {
+			for (unsigned int i = 0; i < formula->array.length; i++) {
+				Formula* operand = formula->array.operands[i];
+				if (operand->type == FormulaType::EQUALS && operand->binary.right->type == FormulaType::CONSTANT) {
+					upper_bound = 1;
+					return true;
+				}
+
+				unsigned int subset_id; bool contains;
+				subset_id = set_ids.get(*operand, contains);
+				if (contains)
+					intensional_upper_bound = min(sets[subset_id].set_size, intensional_upper_bound);
+			}
+		}
+
 		if (!find_largest_disjoint_clique_with_set(*this, set_id, clique, clique_count, ancestor_of_clique, INT_MIN))
 			return false;
 		if (clique == NULL) {
-			upper_bound = UINT_MAX; /* the upper bound is infinite */
+			upper_bound = intensional_upper_bound; /* the upper bound is infinite */
 			return true;
 		}
 
@@ -3508,6 +3555,7 @@ struct set_reasoning
 		upper_bound = sets[ancestor_of_clique].set_size;
 		for (unsigned int i = 0; i < clique_count; i++)
 			upper_bound -= sets[clique[i]].set_size;
+		upper_bound = min(upper_bound, intensional_upper_bound);
 		return true;
 	}
 
@@ -3701,12 +3749,16 @@ struct set_reasoning
 		return true;
 	}
 
-	void check_freeable_sets() const {
+	bool check_freeable_sets() const {
+		bool success = true;
 		for (unsigned int i = 1; i < set_count + 1; i++) {
 			if (sets[i].size_axioms.data == nullptr) continue;
-			if (is_freeable(i))
+			if (is_freeable(i)) {
 				fprintf(stderr, "set_reasoning.check_freeable_sets: Set with ID %u is freeable.\n", i);
+				success = false;
+			}
 		}
+		return success;
 	}
 
 	bool are_set_sizes_valid() const {
@@ -3717,14 +3769,15 @@ struct set_reasoning
 			if (!set_size_bounds(i, min_set_size, max_set_size))
 				return false;
 			if (sets[i].set_size < min_set_size || sets[i].set_size > max_set_size) {
-				fprintf(stderr, "set_reasoning.are_set_sizes_valid WARNING: Set with ID %u has size outside the bounds computed by `set_reasoning.set_size_bounds`.\n", i);
+				fprintf(stderr, "set_reasoning.are_set_sizes_valid WARNING: Set with ID %u has size (%u) outside the bounds computed by `set_reasoning.set_size_bounds` (min: %u, max: %u).\n", i, sets[i].set_size, min_set_size, max_set_size);
 				success = false;
 			}
 		}
 		return success;
 	}
 
-	void check_set_ids() const {
+	bool check_set_ids() const {
+		bool success = true;
 		unsigned int actual_set_count = 0;
 		for (unsigned int i = 1; i < set_count + 1; i++) {
 			if (sets[i].size_axioms.data == nullptr) continue;
@@ -3734,26 +3787,106 @@ struct set_reasoning
 			if (!contains) {
 				fprintf(stderr, "set_reasoning.check_set_ids WARNING: Set with ID %u has set formula '", i);
 				print(*sets[i].set_formula(), stderr); fprintf(stderr, "' that does not exist in the `set_ids` map.\n");
+				success = false;
 			} else if (set_id != i) {
 				fprintf(stderr, "set_reasoning.check_set_ids WARNING: Set with ID %u has set formula '", i);
 				print(*sets[i].set_formula(), stderr); fprintf(stderr, "' that is mapped to %u in the `set_ids` map.\n", set_id);
+				success = false;
 			}
 			actual_set_count++;
 		}
-		if (actual_set_count != set_ids.table.size)
+		if (actual_set_count != set_ids.table.size) {
 			fprintf(stderr, "set_reasoning.check_set_ids WARNING: `set_id` has size %u but there are a total of %u sets.\n", set_ids.table.size, actual_set_count);
+			success = false;
+		}
 
 		for (const auto& entry : set_ids) {
 			if (sets[entry.value].size_axioms.data == nullptr) {
 				fprintf(stderr, "set_reasoning.check_set_ids WARNING: `set_ids` map contains an entry from formula '");
 				print(entry.key, stderr);
 				fprintf(stderr, "' to %u, but the set with ID %u doesn't exist (the size axiom is null).\n", entry.value, entry.value);
+				success = false;
 			} else if (*sets[entry.value].set_formula() != entry.key) {
 				fprintf(stderr, "set_reasoning.check_set_ids WARNING: `set_ids` map contains an entry from formula '");
 				print(entry.key, stderr); fprintf(stderr, "' to %u, but the set with ID %u has set formula '", entry.value, entry.value);
 				print(*sets[entry.value].set_formula(), stderr); fprintf(stderr, "'.\n");
+				success = false;
 			}
 		}
+		return success;
+	}
+
+	bool are_provable_elements_valid() const {
+		bool success = true;
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axioms.data == nullptr)
+				continue;
+
+			const tuple_element* elements_src = sets[i].elements.data;
+			for (unsigned int k = 0; k < sets[i].element_count(); k++) {
+				/* check for any duplicate elements */
+				for (unsigned int l = k + 1; l < sets[i].element_count(); l++) {
+					bool is_equal = true;
+					for (uint_fast8_t m = 0; m < sets[i].arity; m++) {
+						if (*(elements_src + (k * sets[i].arity) + m) != *(elements_src + (l * sets[i].arity) + m)) {
+							is_equal = false;
+							break;
+						}
+					}
+					if (is_equal) {
+						fprintf(stderr, "set_reasoning.are_provable_elements_valid WARNING: Set with ID %u has duplicate element ", i);
+						if (sets[i].arity > 1 && !print('(', stderr)) return false;
+						for (uint_fast8_t j = 0; j < sets[i].arity; j++) {
+							if (j != 0 && !print(", ", stderr)) return false;
+							if (!print(sets[i].elements[k * sets[i].arity + j], stderr, *debug_terminal_printer))
+								return false;
+						}
+						if (sets[i].arity > 1 && !print(')', stderr)) return false;
+						fprintf(stderr, ".\n");
+						success = false;
+						break;
+					}
+				}
+
+				/* check if element k is in the list of provable_elements */
+				bool is_element = false;
+				for (const tuple& tup : sets[i].provable_elements) {
+					bool is_equal = true;
+					for (uint_fast8_t l = 0; l < sets[i].arity; l++) {
+						if (*(elements_src + (k * sets[i].arity) + l) != tup.elements[l]) {
+							is_equal = false;
+							break;
+						}
+					}
+					if (is_equal) {
+						is_element = true;
+						break;
+					}
+				}
+
+				if (!is_element) {
+					fprintf(stderr, "set_reasoning.are_provable_elements_valid WARNING: Set with ID %u has element ", i);
+					if (sets[i].arity > 1 && !print('(', stderr)) return false;
+					for (uint_fast8_t j = 0; j < sets[i].arity; j++) {
+						if (j != 0 && !print(", ", stderr)) return false;
+						if (!print(sets[i].elements[k * sets[i].arity + j], stderr, *debug_terminal_printer))
+							return false;
+					}
+					if (sets[i].arity > 1 && !print(')', stderr)) return false;
+					fprintf(stderr, " that is missing from `provable_elements`.\n");
+					success = false;
+				}
+			}
+
+			if (sets[i].element_count() > sets[i].provable_elements.length) {
+				fprintf(stderr, "set_reasoning.are_provable_elements_valid WARNING: Set with ID %u has more elements than provable_elements.\n", i);
+				success = false;
+			} if (sets[i].element_count() > sets[i].provable_elements.capacity) {
+				fprintf(stderr, "set_reasoning.are_provable_elements_valid WARNING: Set with ID %u has more elements than provable_elements has capacity.\n", i);
+				success = false;
+			}
+		}
+		return success;
 	}
 };
 

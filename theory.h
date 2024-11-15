@@ -13,6 +13,7 @@
 #include "array_view.h"
 #include "set_reasoning.h"
 #include "built_in_predicates.h"
+#include "lf_helper.h"
 
 using namespace core;
 
@@ -3585,8 +3586,10 @@ struct theory
 				bool is_consequent_new = false;
 				unsigned int antecedent_set, consequent_set;
 				built_in_axioms[built_in_axioms.length] = get_subset_axiom<true>(left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new);
-				if (built_in_axioms[built_in_axioms.length] == NULL || !built_in_sets.add(antecedent_set) || !built_in_sets.add(consequent_set))
+				if (built_in_axioms[built_in_axioms.length] == nullptr || !built_in_sets.add(antecedent_set) || !built_in_sets.add(consequent_set)) {
+					print("Failed to add built-in axiom '", stderr); print(*seed_axiom, stderr, *debug_terminal_printer); print("'.\n", stderr);
 					exit(EXIT_FAILURE);
+				}
 				built_in_axioms[built_in_axioms.length++]->reference_count++;
 			}
 		}
@@ -3800,7 +3803,7 @@ struct theory
 	bool print_axioms(Stream&& out, Printer&&... printer) const {
 		for (unsigned int i = 0; i < ground_concept_capacity; i++) {
 			if (ground_concepts[i].types.keys == NULL) continue;
-			if (!print("Concept ", out) || !print(i + new_constant_offset, out, std::forward<Printer>(printer)...) || !print(":\n", out)
+			if (!print("Object ", out) || !print(i + new_constant_offset, out, std::forward<Printer>(printer)...) || !print(":\n", out)
 			 || !ground_concepts[i].print_axioms(out, "  ", std::forward<Printer>(printer)...)) return false;
 		}
 		if (constant_types.size > 0 || constant_negated_types.size > 0) {
@@ -4576,14 +4579,14 @@ struct theory
 
 		array_map<unsigned int, unsigned int> variable_map(16);
 /* TODO: for debugging; delete this */
-print("new_formula: ", stderr); print(*new_formula, stderr); print('\n', stderr);
+//print("new_formula: ", stderr); print(*new_formula, stderr); print('\n', stderr);
 		Formula* canonicalized = Canonicalizer::canonicalize(*new_formula, variable_map);
 		core::free(*new_formula); if (new_formula->reference_count == 0) core::free(new_formula);
 		if (canonicalized == NULL) return nullptr;
 
 /* TODO: for debugging; delete this */
 //print_axioms(stderr);
-//print("canonicalized: ", stderr); print(*canonicalized, stderr); print('\n', stderr);
+print("canonicalized: ", stderr); print(*canonicalized, stderr, *debug_terminal_printer); print('\n', stderr);
 		array_map<unsigned int, Proof*> set_definitions(4);
 		array_map<unsigned int, unsigned int> requested_set_sizes(4);
 		Proof* new_proof = make_proof<false, true, true>(canonicalized, set_definitions, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
@@ -4696,7 +4699,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		return success;
 	}
 
-	inline bool are_elements_provable() {
+	template<typename... Printer>
+	inline bool are_elements_provable(Printer&&... printer) {
 		bool success = true;
 		for (unsigned int i = 1; i < sets.set_count + 1; i++) {
 			if (sets.sets[i].size_axioms.data == nullptr)
@@ -4708,6 +4712,36 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				quantifiers[quantifiers.length++] = set_formula;
 				set_formula = set_formula->quantifier.operand;
 			}
+
+			array<variable_assignment> possible_values(8);
+			if (!::init(possible_values[0], sets.sets[i].arity))
+				return false;
+			possible_values.length = 1;
+			default_prover prover(sets, implication_axioms);
+			is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover);
+
+			/* count the number of concrete provable values in `possible_values` */
+			unsigned int num_concrete_elements = 0;
+			for (const variable_assignment& values : possible_values) {
+				/* if assignment is "concrete", check to make sure it's in the list of provable elements */
+				bool is_concrete = true;
+				for (uint_fast8_t k = 0; k < values.assignment.length; k++) {
+					if (values.assignment.values[k].type == instantiation_type::ANY_NUMBER
+					 || values.assignment.values[k].type == instantiation_type::ANY)
+					{
+						is_concrete = false;
+						break;
+					}
+				}
+				if (is_concrete)
+					num_concrete_elements++;
+			}
+			if (num_concrete_elements > sets.sets[i].provable_elements.length) {
+				print("theory.are_elements_provable ERROR: The set with ID ", stderr); print(i, stderr);
+				print(" contains more provable elements that those in `provable_elements`.\n", stderr);
+				success = false;
+			}
+			for (auto& element : possible_values) core::free(element);
 
 			hash_set<unsigned int> ancestors(16);
 			if (!sets.template get_ancestors<true>(i, ancestors))
@@ -4752,8 +4786,8 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 				if (!is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover)) {
 					print("theory.are_elements_provable ERROR: The element ", stderr);
 					if (sets.sets[i].arity == 1)
-						print(element[0], stderr);
-					else print(element, sets.sets[i].arity, stderr);
+						print(element[0], stderr, std::forward<Printer>(printer)...);
+					else print(element, sets.sets[i].arity, stderr, std::forward<Printer>(printer)...);
 					print(" does not provably belong to set with ID ", stderr);
 					print(i, stderr); print(".\n", stderr);
 					success = false;
@@ -5271,6 +5305,7 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			proof_node intro_node;
 		};
 		required_set_size requested_set_size;
+		required_set_size consequent_set_size;
 
 		static inline void free(change& c) {
 			switch (c.type) {
@@ -5345,6 +5380,19 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			return true;
 		}
 
+		inline bool add(change_type type, Proof* axiom,
+						required_set_size antecedent_set_size,
+						required_set_size consequent_set_size)
+		{
+			if (!list.ensure_capacity(list.length + 1)) return false;
+			list[list.length].type = type;
+			list[list.length].requested_set_size = antecedent_set_size;
+			list[list.length].consequent_set_size = consequent_set_size;
+			list[list.length++].axiom = axiom;
+			axiom->reference_count++;
+			return true;
+		}
+
 		inline bool add(change_type type, const proof_node& intro_node) {
 			if (!list.ensure_capacity(list.length + 1)) return false;
 			list[list.length].type = type;
@@ -5389,38 +5437,84 @@ private:
 				if (!get_constants(c.unary_atom.key, constants)) return false;
 				for (unsigned int i = 0; i < constants.counts.size; i++)
 					if (!try_init_concept(constants.counts.keys[i])) return false;
-				if (!add_unary_atom<false, false>(c.unary_atom.key, c.unary_atom.value, std::forward<Args>(visitor)...)) return false;
+				if (!add_unary_atom<false, false>(c.unary_atom.key, c.unary_atom.value, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+					fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  UNARY_ATOM: ", i);
+					print(c.unary_atom.key, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+					print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
+					return false;
+				}
 				continue;
 			case change_type::NEGATED_UNARY_ATOM:
 				if (!get_constants(c.unary_atom.key, constants)) return false;
 				for (unsigned int i = 0; i < constants.counts.size; i++)
 					if (!try_init_concept(constants.counts.keys[i])) return false;
-				if (!add_unary_atom<true, false>(c.unary_atom.key, c.unary_atom.value, std::forward<Args>(visitor)...)) return false;
+				if (!add_unary_atom<true, false>(c.unary_atom.key, c.unary_atom.value, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+					fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  NEGATED_UNARY_ATOM: ~", i);
+					print(c.unary_atom.key, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+					print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
+					return false;
+				}
 				continue;
 			case change_type::BINARY_ATOM:
 				if (!try_init_concept(c.binary_atom.key.predicate, 2)
 				 || !try_init_concept(c.binary_atom.key.arg1) || !try_init_concept(c.binary_atom.key.arg2)
-				 || !add_binary_atom<false, false>(c.binary_atom.key, c.binary_atom.value, std::forward<Args>(visitor)...)) return false;
+				 || !add_binary_atom<false, false>(c.binary_atom.key, c.binary_atom.value, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+					fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  BINARY_ATOM: ", i);
+					print(c.binary_atom.key.predicate, stderr, *debug_terminal_printer); print('(', stderr);
+					print(c.binary_atom.key.arg1, stderr, *debug_terminal_printer); print(',', stderr);
+					print(c.binary_atom.key.arg2, stderr, *debug_terminal_printer); print(").\nCurrent theory:\n", stderr);
+					print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
+					return false;
+				}
 				continue;
 			case change_type::NEGATED_BINARY_ATOM:
 				if (!try_init_concept(c.binary_atom.key.predicate, 2)
 				 || !try_init_concept(c.binary_atom.key.arg1) || !try_init_concept(c.binary_atom.key.arg2)
-				 || !add_binary_atom<true, false>(c.binary_atom.key, c.binary_atom.value, std::forward<Args>(visitor)...)) return false;
+				 || !add_binary_atom<true, false>(c.binary_atom.key, c.binary_atom.value, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+					fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  NEGATED_BINARY_ATOM: ~", i);
+					print(c.binary_atom.key.predicate, stderr, *debug_terminal_printer); print('(', stderr);
+					print(c.binary_atom.key.arg1, stderr, *debug_terminal_printer); print(',', stderr);
+					print(c.binary_atom.key.arg2, stderr, *debug_terminal_printer); print(").\nCurrent theory:\n", stderr);
+					print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
+					return false;
+				}
 				continue;
 			case change_type::SUBSET_AXIOM:
 				{
-					unsigned int variable = c.axiom->formula->quantifier.variable;
-					if (c.axiom->formula->quantifier.operand->type == FormulaType::IF_THEN) {
-						unsigned int predicate; Term const* arg1; Term const* arg2;
-						Formula* left = c.axiom->formula->quantifier.operand->binary.left;
-						if (is_atomic(*left, predicate, arg1, arg2)
-						 && arg1->type == TermType::VARIABLE
-						 && arg1->variable == variable && arg2 == NULL)
-						{
-							if (!try_init_concept(predicate, 1)) return false;
-						}
+					unsigned int arity = 1;
+					Formula* operand = c.axiom->formula->quantifier.operand;
+					while (operand->type == FormulaType::FOR_ALL) {
+						operand = operand->quantifier.operand;
+						arity++;
 					}
-					if (!sets.add_subset_axiom(c.axiom, set_diff, std::forward<Args>(visitor)...)) return false;
+					Formula* left = operand->binary.left;
+					Formula* right = operand->binary.right;
+
+					if (!get_constants(*operand, constants)) return false;
+					for (unsigned int i = 0; i < constants.counts.size; i++)
+						if (!try_init_concept(constants.counts.keys[i])) return false;
+
+					unsigned int antecedent_set, consequent_set;
+					bool is_antecedent_new, is_consequent_new;
+					Proof* axiom = get_subset_axiom_with_required_set_size<false, false>(
+							c.axiom, left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
+							c.requested_set_size, c.consequent_set_size, set_diff, std::forward<Args>(visitor)...);
+					if (axiom != c.axiom) {
+#ifndef NDEBUG
+						fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  SUBSET_AXIOM: ", i);
+						print(*c.axiom->formula, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+						print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
+						return false;
+					}
 				}
 				continue;
 			case change_type::IMPLICATION_AXIOM:
@@ -5430,6 +5524,11 @@ private:
 				implication_axioms[implication_axioms.length++].value = false;
 				c.axiom->reference_count++;
 				if (!check_new_implication_satisfaction<false>(implication_axioms.length - 1, set_diff, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+					fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  IMPLICATION_AXIOM: ", i);
+					print(*c.axiom->formula, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+					print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
 					implication_axioms.length--;
 					c.axiom->reference_count--;
 					return false;
@@ -5443,20 +5542,41 @@ private:
 						set_formula = set_formula->quantifier.operand;
 						arity++;
 					}
+					if (!get_constants(*set_formula, constants)) return false;
+					for (unsigned int i = 0; i < constants.counts.size; i++)
+						if (!try_init_concept(constants.counts.keys[i])) return false;
 					bool is_new;
 					if (!sets.get_set_id(set_formula, arity, set_id, is_new, set_diff, std::forward<Args>(visitor)...)
 					 || !sets.sets[set_id].set_size_axiom(c.axiom, set_diff, std::forward<Args>(visitor)...)
-					 || (is_new && !check_new_set_membership<false>(set_id, std::forward<Args>(visitor)...)))
+					 || (is_new && !check_new_set_membership<false>(set_id, std::forward<Args>(visitor)...))) {
+#ifndef NDEBUG
+						fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  SET_SIZE_AXIOM: ", i);
+						print(*c.axiom->formula, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+						print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
 						return false;
+					}
 				}
 				continue;
 			case change_type::DEFINITION:
-				if (!add_definition<false>(c.axiom, c.requested_set_size, set_diff, std::forward<Args>(visitor)...))
+				if (!add_definition<false>(c.axiom, c.requested_set_size, set_diff, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+					fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  DEFINITION: ", i);
+					print(*c.axiom->formula, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+					print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
 					return false;
+				}
 				continue;
 			case change_type::FUNCTION_VALUE:
-				if (!add_function_value<false>(c.axiom, std::forward<Args>(visitor)...))
+				if (!add_function_value<false>(c.axiom, std::forward<Args>(visitor)...)) {
+#ifndef NDEBUG
+						fprintf(stderr, "theory.add_changes ERROR: Failed to add change %u;\n  FUNCTION_VALUE: ", i);
+						print(*c.axiom->formula, stderr, *debug_terminal_printer); print(".\nCurrent theory:\n", stderr);
+						print_axioms<true>(stdout, *debug_terminal_printer);
+#endif
 					return false;
+				}
 				continue;
 			case change_type::IMPLICATION_INTRO_NODE:
 				if (!implication_intro_nodes.ensure_capacity(implication_intro_nodes.length + 1))
@@ -5571,21 +5691,24 @@ private:
 				continue;
 			case change_type::SUBSET_AXIOM:
 				{
-					unsigned int variable = c.axiom->formula->quantifier.variable;
-					if (c.axiom->formula->quantifier.operand->type == FormulaType::IF_THEN) {
-						unsigned int predicate; Term const* arg1; Term const* arg2;
-						Formula* left = c.axiom->formula->quantifier.operand->binary.left;
-						if (is_atomic(*left, predicate, arg1, arg2)
-						 && arg1->type == TermType::VARIABLE
-						 && arg1->variable == variable && arg2 == NULL)
-						{
-							try_free_concept_id(predicate);
-						}
-					}
+					if (!get_constants(*c.axiom->formula->quantifier.operand, constants)) return false;
+					for (unsigned int i = 0; i < constants.counts.size; i++)
+						try_free_concept_id(constants.counts.keys[i]);
 					unsigned int child_count = c.axiom->children.length;
 					if (changes.list.length == 1) child_count++;
 					if (c.axiom->reference_count == child_count + 2) {
-						sets.free_subset_axiom(c.axiom, set_diff, freeable_set_size_axioms, std::forward<Args>(visitor)...);
+						Formula* operand = c.axiom->formula->quantifier.operand;
+						unsigned int arity = 1;
+						while (operand->type == FormulaType::FOR_ALL) {
+							operand = operand->quantifier.operand;
+							arity++;
+						}
+						Formula* antecedent = operand->binary.left;
+						Formula* consequent = operand->binary.right;
+						unsigned int antecedent_set = sets.get_existing_set_id(antecedent, arity);
+						unsigned int consequent_set = sets.get_existing_set_id(consequent, arity);
+
+						free_subset_axiom_with_required_set_size<false>(antecedent, consequent, arity, antecedent_set, consequent_set, c.requested_set_size, c.consequent_set_size, freeable_set_size_axioms, set_diff, std::forward<Args>(visitor)...);
 					} else {
 						core::free(*c.axiom);
 					}
@@ -5776,8 +5899,47 @@ private:
 			{
 				if (!visit_subset_axiom(proof, std::forward<Visitor>(visitor)...))
 					return false;
+if (reference_count == 0) {
+fprintf(stderr, "DEBUG: Subset rule has reference_count = 0: ");
+print(*proof.formula, stderr, *debug_terminal_printer); print('\n', stderr);
+exit(1);
+}
 				if (reference_count != 1) return true;
-				return changes.add(change_type::SUBSET_AXIOM, &proof);
+
+				unsigned int arity = 1;
+				Formula* operand = proof.formula->quantifier.operand;
+				while (operand->type == FormulaType::FOR_ALL) {
+					operand = operand->quantifier.operand;
+					arity++;
+				}
+				Formula* left = operand->binary.left;
+				Formula* right = operand->binary.right;
+
+				required_set_size antecedent_set_size = {0, UINT_MAX};
+				required_set_size consequent_set_size = {0, UINT_MAX};
+				if (left->type == FormulaType::UNARY_APPLICATION
+				 && left->binary.left->type == FormulaType::CONSTANT
+				 && left->binary.right->type == FormulaType::VARIABLE)
+				{
+					unsigned int index = requested_set_sizes.index_of(left->binary.left->constant);
+					if (index < requested_set_sizes.size) {
+						antecedent_set_size.min_set_size = requested_set_sizes.values[index];
+						antecedent_set_size.max_set_size = requested_set_sizes.values[index];
+					}
+				}
+				if (right->type == FormulaType::UNARY_APPLICATION
+				 && right->binary.left->type == FormulaType::CONSTANT
+				 && right->binary.right->type == FormulaType::VARIABLE)
+				{
+					unsigned int index = requested_set_sizes.index_of(right->binary.left->constant);
+					if (index < requested_set_sizes.size) {
+						consequent_set_size.min_set_size = requested_set_sizes.values[index];
+						consequent_set_size.max_set_size = requested_set_sizes.values[index];
+					}
+				}
+
+				return changes.add(change_type::SUBSET_AXIOM, &proof, antecedent_set_size, consequent_set_size);
+
 			} else if (proof.formula->type == FormulaType::IF_THEN) {
 				if (reference_count != 1) return true;
 				return changes.add(change_type::IMPLICATION_AXIOM, &proof);
@@ -7598,6 +7760,43 @@ private:
 		}
 	};
 
+	template<bool Contradiction, class OnSuccessFunc>
+	bool unify_consequents(Formula* formula, array<Formula*>& quantifiers, Formula* consequent, array<Formula*>& second_quantifiers, array_map<Formula*, unsigned int>& antecedents, OnSuccessFunc on_success) const
+	{
+		if (consequent->type == FormulaType::AND) {
+			for (unsigned int i = 0; i < consequent->array.length; i++)
+				if (!unify_consequents<Contradiction>(formula, quantifiers, consequent->array.operands[i], second_quantifiers, antecedents, on_success)) return false;
+			return true;
+		} else if (consequent->type == FormulaType::FOR_ALL) {
+			if (!second_quantifiers.add(consequent)) return false;
+			if (!unify_consequents<Contradiction>(formula, quantifiers, consequent->quantifier.operand, second_quantifiers, antecedents, on_success))
+				return false;
+			second_quantifiers.length--;
+			return true;
+		} else if (consequent->type == FormulaType::IF_THEN) {
+			if (!antecedents.put(consequent->binary.left, second_quantifiers.length))
+				return false;
+			if (!unify_consequents<Contradiction>(formula, quantifiers, consequent->binary.right, second_quantifiers, antecedents, on_success))
+				return false;
+			antecedents.size--;
+			return true;
+		} else {
+			if (Contradiction) {
+				if (consequent->type != FormulaType::NOT) return true;
+				consequent = consequent->unary.operand;
+			}
+
+			array_map<Formula*, Term*> first_unifications(4);
+			array_map<Formula*, Term*> second_unifications(4);
+			if (unify(formula, consequent, quantifiers, first_unifications, second_quantifiers, second_unifications))
+			{
+				if (!on_success(antecedents, first_unifications, second_unifications))
+					return false;
+			}
+			return true;
+		}
+	}
+
 	template<bool Contradiction, typename Prover>
 	bool is_provable_by_theorem_without_abduction(
 			Formula* formula, array<Formula*>& quantifiers,
@@ -7616,69 +7815,119 @@ private:
 				set_formula = set_formula->quantifier.operand;
 			}
 
-			array_view<Formula*> set_formula_conjuncts(
-					(set_formula->type == FormulaType::AND) ? set_formula->array.operands : &set_formula,
-					(set_formula->type == FormulaType::AND) ? set_formula->array.length : 1);
-			for (unsigned int l = 0; l < set_formula_conjuncts.length; l++) {
-				Formula* set_formula_conjunct = set_formula_conjuncts.array[l];
-				if (Contradiction) {
-					if (set_formula_conjunct->type != FormulaType::NOT) continue;
-					set_formula_conjunct = set_formula_conjunct->unary.operand;
-				}
-				array_map<Formula*, Term*> first_unifications(4);
-				array_map<Formula*, Term*> second_unifications(4);
-				if (!unify(formula, set_formula_conjunct, quantifiers, first_unifications, second_quantifiers, second_unifications))
-					continue;
-
+			auto on_unify = [this,i,&possible_values,&second_quantifiers,&new_possible_values,&prover](array_map<Formula*, unsigned int>& antecedents, array_map<Formula*, Term*>& first_unifications, array_map<Formula*, Term*>& second_unifications)
+			{
 				typename Prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
-				for (unsigned int j = 0; j < possible_values.length; j++) {
-					const variable_assignment& values = possible_values[j];
-					if (!new_possible_values.ensure_capacity(new_possible_values.length + provable_elements.length + 1)) {
-						prover.free_provable_elements(provable_elements);
-						return false;
-					}
-					variable_assignment new_value(values);
+				if (provable_elements.length == 0) {
+					prover.free_provable_elements(provable_elements);
+					return true;
+				}
 
-					bool unifies = true;
-					for (const auto& unification : first_unifications) {
-						if (unification.value->type != TermType::VARIABLE
-						 && !new_value.unify_value(unification.key->quantifier.variable - 1, unification.value)) {
-							unifies = false;
-							break;
+				array<variable_assignment> temp_possible_values(3);
+				variable_assignment& values = temp_possible_values[0];
+				if (!::init(values, second_quantifiers.length)) {
+					prover.free_provable_elements(provable_elements);
+					return false;
+				}
+
+				for (const auto& entry : second_unifications) {
+					if (entry.value->type == TermType::CONSTANT) {
+						core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
+						values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::CONSTANT;
+						values.assignment.values[entry.key->quantifier.variable - 1].constant = entry.value->constant;
+					} else if (entry.value->type == TermType::NUMBER) {
+						core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
+						values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::NUMBER;
+						values.assignment.values[entry.key->quantifier.variable - 1].number = entry.value->number;
+					} else if (entry.value->type == TermType::STRING) {
+						core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
+						values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::STRING;
+						if (!core::init(values.assignment.values[entry.key->quantifier.variable - 1].str, entry.value->str)) {
+							prover.free_provable_elements(provable_elements);
+							values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::CONSTANT;
+							core::free(values); return false;
 						}
 					}
-					if (!unifies) continue;
+				}
+				temp_possible_values.length = 1;
 
+				for (unsigned int j = 0; j < possible_values.length; j++) {
+					variable_assignment& src_values = temp_possible_values[1];
+					variable_assignment& values = temp_possible_values[2];
+					if (!::init(src_values, possible_values[j])) {
+						prover.free_provable_elements(provable_elements);
+						for (auto& element : temp_possible_values) core::free(element);
+						return false;
+					} else if (!::init(values, temp_possible_values[0])) {
+						core::free(src_values);
+						prover.free_provable_elements(provable_elements);
+						for (auto& element : temp_possible_values) core::free(element);
+						return false;
+					}
+					temp_possible_values.length = 3;
+
+					bool unifies = true;
+					for (const auto& entry : first_unifications) {
+						if (entry.value->type == TermType::VARIABLE) {
+							Term* term;
+							if (possible_values[j].assignment.values[entry.key->quantifier.variable - 1].type == instantiation_type::CONSTANT) {
+								term = Term::new_constant(possible_values[j].assignment.values[entry.key->quantifier.variable - 1].constant);
+							} else if (possible_values[j].assignment.values[entry.key->quantifier.variable - 1].type == instantiation_type::NUMBER) {
+								term = Term::new_number(possible_values[j].assignment.values[entry.key->quantifier.variable - 1].number);
+							} else if (possible_values[j].assignment.values[entry.key->quantifier.variable - 1].type == instantiation_type::STRING) {
+								term = Term::new_string(possible_values[j].assignment.values[entry.key->quantifier.variable - 1].str);
+							} else {
+								continue;
+							}
+
+							if (term == nullptr) {
+								prover.free_provable_elements(provable_elements);
+								for (auto& element : temp_possible_values) core::free(element);
+								return false;
+							} else if (!values.unify_value(entry.value->variable - 1, term)) {
+								unifies = false;
+								core::free(*term); core::free(term);
+								break;
+							}
+							core::free(*term); core::free(term);
+						} else {
+							if (!src_values.unify_value(entry.key->quantifier.variable - 1, entry.value)) {
+								unifies = false;
+								break;
+							}
+						}
+					}
+					if (!unifies) {
+						core::free(values); core::free(src_values);
+						temp_possible_values.length = 1;
+						continue;
+					}
+
+					array<variable_assignment> new_temp_possible_values(provable_elements.length);
 					for (const tuple& element : provable_elements) {
-						variable_assignment& new_new_value = new_possible_values[new_possible_values.length];
-						if (!::init(new_new_value, new_value)) {
+						variable_assignment& new_values = new_temp_possible_values[new_temp_possible_values.length];
+						if (!::init(new_values, values)) {
 							prover.free_provable_elements(provable_elements);
+							for (auto& element : temp_possible_values) core::free(element);
 							return false;
 						}
 
-						unifies = true;
-						for (const auto& unification : first_unifications) {
-							if (unification.value->type != TermType::VARIABLE) continue;
-							if (unification.value->variable > element.length) {
-								if (unification.value->variable != unification.key->quantifier.variable) {
-									unifies = false;
-									break;
-								} else {
-									continue;
-								}
-							}
+						bool unifies = true;
+						for (unsigned int k = 0; k < element.length; k++) {
 							Term* constant = nullptr;
-							if (element[unification.value->variable - 1].type == tuple_element_type::CONSTANT)
-								constant = Term::new_constant(element[unification.value->variable - 1].constant);
-							else if (element[unification.value->variable - 1].type == tuple_element_type::NUMBER)
-								constant = Term::new_number(element[unification.value->variable - 1].number);
-							else if (element[unification.value->variable - 1].type == tuple_element_type::STRING)
-								constant = Term::new_string(element[unification.value->variable - 1].str);
+							if (element[k].type == tuple_element_type::CONSTANT)
+								constant = Term::new_constant(element[k].constant);
+							else if (element[k].type == tuple_element_type::NUMBER)
+								constant = Term::new_number(element[k].number);
+							else if (element[k].type == tuple_element_type::STRING)
+								constant = Term::new_string(element[k].str);
 							if (constant == nullptr) {
 								prover.free_provable_elements(provable_elements);
-								return false;
+								for (auto& element : temp_possible_values) core::free(element);
+								for (auto& element : new_temp_possible_values) core::free(element);
+								core::free(new_values); return false;
 							}
-							if (!new_new_value.unify_value(unification.key->quantifier.variable - 1, constant)) {
+							if (!new_values.unify_value(k, constant)) {
 								core::free(*constant); core::free(constant);
 								unifies = false;
 								break;
@@ -7686,44 +7935,106 @@ private:
 							core::free(*constant); core::free(constant);
 						}
 						if (!unifies) {
-							core::free(new_new_value);
+							core::free(new_values);
 							continue;
 						}
+						new_temp_possible_values.length++;
+					}
 
-						for (const auto& unification : second_unifications) {
-							if (element[unification.key->quantifier.variable - 1].type == tuple_element_type::CONSTANT) {
-								if (unification.value->type != TermType::CONSTANT
-								 || unification.value->constant != element[unification.key->quantifier.variable - 1].constant)
-								{
-									unifies = false;
-									break;
-								}
-							} else if (element[unification.key->quantifier.variable - 1].type == tuple_element_type::NUMBER) {
-								if (unification.value->type != TermType::NUMBER
-								 || unification.value->number != element[unification.key->quantifier.variable - 1].number)
-								{
-									unifies = false;
-									break;
-								}
-							} else if (element[unification.key->quantifier.variable - 1].type == tuple_element_type::STRING) {
-								if (unification.value->type != TermType::STRING
-								 || unification.value->str != element[unification.key->quantifier.variable - 1].str)
-								{
-									unifies = false;
-									break;
-								}
+					if (new_temp_possible_values.length == 0) {
+						core::free(values); core::free(src_values);
+						temp_possible_values.length = 1;
+						continue;
+					}
+					insertion_sort(new_temp_possible_values, default_sorter());
+					unique_and_cleanup(new_temp_possible_values);
+
+					/* first restrict the set of possible_values to only those that can prove the antecedents */
+					array<Formula*> antecedent_quantifiers(second_quantifiers.capacity);
+					for (const auto& entry : antecedents) {
+						Formula* antecedent = entry.key;
+						unsigned int num_quantifiers = entry.value;
+						for (unsigned int i = 0; i < num_quantifiers; i++)
+							antecedent_quantifiers[antecedent_quantifiers.length++] = second_quantifiers[i];
+						if (!is_provable_without_abduction<false>(antecedent, antecedent_quantifiers, new_temp_possible_values, prover))
+							break;
+					}
+					if (new_temp_possible_values.length == 0) {
+						core::free(values); core::free(src_values);
+						temp_possible_values.length = 1;
+						continue;
+					}
+
+					/* we can prove all antecedents; now we can use this consequent to prove `formula` */
+					if (!new_possible_values.ensure_capacity(new_possible_values.length + new_temp_possible_values.length + 1)) {
+						prover.free_provable_elements(provable_elements);
+						for (auto& element : temp_possible_values) core::free(element);
+						for (auto& element : new_temp_possible_values) core::free(element);
+						return false;
+					}
+					for (unsigned int k = 0; k < new_temp_possible_values.length; k++) {
+						variable_assignment& new_values = new_possible_values[new_possible_values.length];
+						if (!::init(new_values, src_values)) {
+							prover.free_provable_elements(provable_elements);
+							for (auto& element : temp_possible_values) core::free(element);
+							for (auto& element : new_temp_possible_values) core::free(element);
+							return false;
+						}
+
+						bool unifies = true;
+						for (const auto& unification : first_unifications) {
+							if (unification.value->type != TermType::VARIABLE)
+								continue;
+
+							Term* term;
+							if (new_temp_possible_values[k].assignment.values[unification.value->variable - 1].type == instantiation_type::CONSTANT) {
+								term = Term::new_constant(new_temp_possible_values[k].assignment.values[unification.value->variable - 1].constant);
+							} else if (new_temp_possible_values[k].assignment.values[unification.value->variable - 1].type == instantiation_type::NUMBER) {
+								term = Term::new_number(new_temp_possible_values[k].assignment.values[unification.value->variable - 1].number);
+							} else if (new_temp_possible_values[k].assignment.values[unification.value->variable - 1].type == instantiation_type::STRING) {
+								term = Term::new_string(new_temp_possible_values[k].assignment.values[unification.value->variable - 1].str);
+							} else {
+								continue;
 							}
+
+							if (term == nullptr) {
+								prover.free_provable_elements(provable_elements);
+								for (auto& element : temp_possible_values) core::free(element);
+								for (auto& element : new_temp_possible_values) core::free(element);
+								core::free(new_values); return false;
+							} else if (!new_values.unify_value(unification.key->quantifier.variable - 1, term)) {
+								unifies = false;
+								core::free(*term); core::free(term);
+								break;
+							}
+							core::free(*term); core::free(term);
 						}
 						if (!unifies) {
-							core::free(new_new_value);
+							core::free(new_values);
 							continue;
 						}
-
 						new_possible_values.length++;
 					}
+					for (auto& element : new_temp_possible_values) core::free(element);
+
+					core::free(values);
+					core::free(src_values);
+					temp_possible_values.length = 1;
 				}
 				prover.free_provable_elements(provable_elements);
-			}
+				for (auto& element : temp_possible_values) core::free(element);
+				return true;
+			};
+
+			array_map<Formula*, unsigned int> antecedents(8);
+/*debug_counter++;
+if (debug_flag) {
+fprintf(stderr, "[DEBUG: %u] calling unify_consequents:\n", debug_counter);
+print("  formula: ", stderr); print(*formula, stderr, *debug_terminal_printer); print('\n', stderr);
+print("  set_formula: ", stderr); print(*set_formula, stderr, *debug_terminal_printer); print('\n', stderr);
+}*/
+			if (!unify_consequents<Contradiction>(formula, quantifiers, set_formula, second_quantifiers, antecedents, on_unify))
+				return false;
 		}
 		for (unsigned int i = 0; i < implication_axioms.length; i++) {
 			if (!prover.is_antecedent_satisfied(i)) continue;
@@ -7792,7 +8103,7 @@ private:
 			return true;
 
 		/* also for performance, we only consider contradiction proofs of existentially quantified expressions */
-		if (!(formula->type == FormulaType::EXISTS || (formula->type == FormulaType::UNARY_APPLICATION && formula->binary.left->type == FormulaType::VARIABLE)))
+		if (!(formula->type == FormulaType::EXISTS || (formula->type == FormulaType::UNARY_APPLICATION && (formula->binary.left->type == FormulaType::VARIABLE || formula->binary.left->type == FormulaType::CONSTANT))))
 			return true;
 
 		unsigned int old_size = new_possible_values.length;
@@ -7825,7 +8136,8 @@ private:
 			   conjunct, then we avoid searching over this set if
 			   `possible_values` only contains constants that don't provably
 			   have the same name */
-			if (unifications.length == 1 && unifications[0].first_unifications.size == 1
+			/* TODO: i think this optimization is not correct? */
+			/*if (unifications.length == 1 && unifications[0].first_unifications.size == 1
 			 && unifications[0].first_unifications.values[0]->type == TermType::VARIABLE
 			 && possible_values.length == 1)
 			{
@@ -7862,7 +8174,7 @@ private:
 						continue;
 					}
 				}
-			}
+			}*/
 
 			unsigned int pushed_axiom_count;
 			if (!prover.template push_axiom<!Contradiction>(i, formula, possible_values, pushed_axiom_count, unifications)) {
@@ -9490,7 +9802,7 @@ private:
 					possible_values.clear(); return false;
 				}
 				if (temp.length != 0) {
-					sort(temp);
+					sort(temp, default_sorter());
 					array<variable_assignment> union_result(new_possible_values.length + temp.length);
 					set_union(union_result, new_possible_values, temp);
 					for (auto& element : temp) core::free(element);
@@ -9695,7 +10007,7 @@ private:
 				}
 			}
 			if (temp.length != 0) {
-				sort(temp); unique_and_cleanup(temp);
+				sort(temp, default_sorter()); unique_and_cleanup(temp);
 				array<variable_assignment> union_result(new_possible_values.length + temp.length);
 				set_union(union_result, new_possible_values, temp);
 				for (auto& element : temp) core::free(element);
@@ -11161,12 +11473,7 @@ private:
 				unsigned int provable_element_count = prover.get_provable_element_count(current);
 				if (AddSelfToAtoms || current != set_id) {
 					Formula* set_formula = sets.sets[current].set_formula();
-					if (set_formula->type == FormulaType::AND) {
-						for (unsigned int i = 0; i < set_formula->array.length; i++) {
-							if (!new_ancestor_terms.add(make_pair(set_formula->array.operands[i], provable_element_count == sets.sets[current].set_size)))
-								return false;
-						}
-					} else if (!new_ancestor_terms.add(make_pair(set_formula, provable_element_count == sets.sets[current].set_size))) {
+					if (!new_ancestor_terms.add(make_pair(set_formula, provable_element_count == sets.sets[current].set_size))) {
 						return false;
 					}
 				}
@@ -11205,33 +11512,22 @@ private:
 				}
 			}
 
-			if (!new_atoms.ensure_capacity(new_atoms.length + new_ancestor_terms.length)) {
-				for (unsigned int j = 0; j < tup.length; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
-				for (unsigned int j = 0; j < tup.length; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
-				return false;
-			}
 			for (pair<Formula*, bool> new_descendant_term : new_ancestor_terms) {
-				Formula* substituted_atom;
+				Formula* substituted;
 				if (new_descendant_term.value) {
-					substituted_atom = new_descendant_term.key;
-					substituted_atom->reference_count++;
+					substituted = new_descendant_term.key;
+					substituted->reference_count++;
 				} else {
-					substituted_atom = substitute_all(new_descendant_term.key, src_variables, dst_constants, tup.length);
-					if (substituted_atom == nullptr) {
+					substituted = substitute_all(new_descendant_term.key, src_variables, dst_constants, tup.length);
+					if (substituted == nullptr) {
 						for (unsigned int j = 0; j < tup.length; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
 						for (unsigned int j = 0; j < tup.length; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
 						return false;
 					}
 				}
 
-				bool atom_already_exists = false;
-				for (unsigned int k = new_atom_index; !atom_already_exists && k < new_atoms.length; k++)
-					if (*new_atoms[k] == *substituted_atom) atom_already_exists = true;
-				if (atom_already_exists) {
-					core::free(*substituted_atom); if (substituted_atom->reference_count == 0) core::free(substituted_atom);
-				} else {
-					new_atoms[new_atoms.length++] = substituted_atom;
-				}
+				add_all_atoms<true>(new_atoms, substituted, new_atom_index);
+				core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
 			}
 
 			for (unsigned int j = 0; j < tup.length; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
@@ -11272,32 +11568,81 @@ private:
 		if (!new_antecedents.add(implication_id))
 			return false;
 
-		if (consequent->type == FormulaType::AND) {
-			if (!new_atoms.ensure_capacity(new_atoms.length + consequent->array.length))
-				return false;
-			for (unsigned int i = 0; i < consequent->array.length; i++) {
-				Formula* conjunct = consequent->array.operands[i];
-				bool atom_already_exists = false;
-				for (unsigned int k = new_atom_index; !atom_already_exists && k < new_atoms.length; k++)
-					if (*new_atoms[k] == *conjunct) atom_already_exists = true;
-				if (!atom_already_exists) {
-					new_atoms[new_atoms.length++] = conjunct;
-					conjunct->reference_count++;
-				}
-			}
-		} else {
-			if (!new_atoms.ensure_capacity(new_atoms.length + 1))
-				return false;
-			bool atom_already_exists = false;
-			for (unsigned int k = new_atom_index; !atom_already_exists && k < new_atoms.length; k++)
-				if (*new_atoms[k] == *consequent) atom_already_exists = true;
-			if (!atom_already_exists) {
-				new_atoms[new_atoms.length++] = consequent;
-				consequent->reference_count++;
-			}
-		}
+		if (!add_all_atoms<true>(new_atoms, consequent, new_atom_index))
+			return false;
+
 		visited_sets.clear();
 		return true;
+	}
+
+	template<bool Polarity>
+	bool add_all_atoms(array<Formula*>& atoms, Formula* formula, unsigned int start_index) {
+		if (formula->type == FormulaType::UNARY_APPLICATION || formula->type == FormulaType::BINARY_APPLICATION || formula->type == FormulaType::EQUALS)
+		{
+			Formula* new_atom;
+			if (Polarity) {
+				new_atom = formula;
+			} else {
+				new_atom = Formula::new_not(formula);
+				if (new_atom == nullptr)
+					return false;
+			}
+			formula->reference_count++;
+
+			bool atom_already_exists = false;
+			for (unsigned int k = start_index; !atom_already_exists && k < atoms.length; k++)
+				if (*atoms[k] == *new_atom) atom_already_exists = true;
+			if (!atom_already_exists) {
+				if (!atoms.add(new_atom)) {
+					core::free(*new_atom); if (new_atom->reference_count == 0) core::free(new_atom);
+					return false;
+				}
+			} else {
+				core::free(*new_atom); if (new_atom->reference_count == 0) core::free(new_atom);
+			}
+			return true;
+		}
+
+		switch (formula->type) {
+		case FormulaType::TRUE:
+		case FormulaType::FALSE:
+		case FormulaType::CONSTANT:
+		case FormulaType::VARIABLE:
+		case FormulaType::VARIABLE_PREIMAGE:
+		case FormulaType::PARAMETER:
+		case FormulaType::NUMBER:
+		case FormulaType::STRING:
+		case FormulaType::UINT_LIST:
+		case FormulaType::UNARY_APPLICATION:
+		case FormulaType::BINARY_APPLICATION:
+		case FormulaType::EQUALS:
+			return true;
+		case FormulaType::IF_THEN:
+			return add_all_atoms<!Polarity>(atoms, formula->binary.left, start_index)
+				&& add_all_atoms<Polarity>(atoms, formula->binary.right, start_index);
+		case FormulaType::NOT:
+			return add_all_atoms<!Polarity>(atoms, formula->unary.operand, start_index);
+		case FormulaType::AND:
+		case FormulaType::OR:
+		case FormulaType::IFF:
+			for (unsigned int i = 0; i < formula->array.length; i++)
+				if (!add_all_atoms<Polarity>(atoms, formula->array.operands[i], start_index)) return false;
+			return true;
+		case FormulaType::FOR_ALL:
+		case FormulaType::EXISTS:
+		case FormulaType::LAMBDA:
+			return add_all_atoms<Polarity>(atoms, formula->quantifier.operand, start_index);
+		case FormulaType::ANY:
+		case FormulaType::ANY_RIGHT:
+		case FormulaType::ANY_RIGHT_ONLY:
+		case FormulaType::ANY_ARRAY:
+		case FormulaType::ANY_CONSTANT:
+		case FormulaType::ANY_CONSTANT_EXCEPT:
+		case FormulaType::ANY_QUANTIFIER:
+			break;
+		}
+		fprintf(stderr, "theory.add_all_atoms ERROR: Unrecognized FormulaType.\n");
+		return false;
 	}
 
 	template<bool ResolveInconsistencies, typename... Args>
@@ -11317,10 +11662,6 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 			for (unsigned int i = 1; i < sets.set_count + 1; i++) {
 				if (sets.sets[i].size_axioms.data == nullptr || visited_sets.contains(i))
 					continue;
-				if (!visited_sets.add(i)) {
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					return false;
-				}
 				Formula* set_formula = sets.sets[i].size_axioms[0]->formula->binary.left->binary.right;
 
 				array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
@@ -11395,6 +11736,12 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 				for (auto& element : unifications) core::free(element);
 				if (possible_values.length == 0) continue;
 
+				if (!visited_sets.add(i)) {
+					for (auto& element : possible_values) core::free(element);
+					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					return false;
+				}
+
 				/* remove possible_values that are subsets of another possible_value */
 				for (unsigned int i = 0; i < possible_values.length; i++) {
 					const instantiation_tuple& first = possible_values[i].assignment;
@@ -11467,8 +11814,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 
 						unsigned int substitution_count = 0;
 						Term** src_variables = (Term**) malloc(sizeof(Term*) * sets.sets[i].arity * 2);
-						if (src_variables == nullptr || !new_atoms.ensure_capacity(new_atoms.length + set_formula->array.length)) {
-							if (src_variables != nullptr) core::free(src_variables);
+						if (src_variables == nullptr) {
 							for (auto& element : possible_values) core::free(element);
 							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 							return false;
@@ -11526,15 +11872,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 								}
 							}
 
-							bool atom_already_exists = false;
-							for (unsigned int k = 0; !atom_already_exists && k < new_atoms.length; k++)
-								if (*new_atoms[k] == *substituted) atom_already_exists = true;
-							if (atom_already_exists) {
-								core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
-							} else {
-								new_atoms[new_atoms.length++] = substituted;
+							unsigned int old_atom_count = new_atoms.length;
+							add_all_atoms<true>(new_atoms, substituted, 0);
+							if (new_atoms.length != old_atom_count)
 								visited_sets.clear();
-							}
+							core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
 						}
 						for (unsigned int j = 0; j < substitution_count; j++) {
 							core::free(*src_variables[j]); if (src_variables[j]->reference_count == 0) core::free(src_variables[j]);
@@ -11895,8 +12237,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 	template<bool ResolveInconsistencies, typename... Args>
 	inline bool check_set_membership_after_addition(Formula* new_atom, Args&&... visitor) {
 		array<Formula*> new_atoms(4);
-		new_atoms[new_atoms.length++] = new_atom;
-		new_atom->reference_count++;
+		if (!add_all_atoms<true>(new_atoms, new_atom, 0))
+			return false;
 		array<unsigned int> new_antecedents(4);
 		bool result = check_set_membership_after_addition<ResolveInconsistencies>(new_atoms, new_antecedents, std::forward<Args>(visitor)...);
 		free_all(new_atoms);
@@ -12203,7 +12545,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					set_formula = set_formula->quantifier.operand;
 				}
 				array<array_map<Formula*, Term*>> unifications(4);
-				if (!unify_subformula<true>(next_old_atom, set_formula, quantifiers, unifications)) {
+				if (!unify_subformula(next_old_atom, set_formula, quantifiers, unifications)) {
 					for (auto entry : old_elements) core::free(entry.value);
 					return false;
 				}
@@ -12266,17 +12608,6 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 						continue;
 					}
 
-					array<Formula*> conjuncts(4);
-					if (set_formula->type == FormulaType::AND) {
-						if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
-							for (auto& element : unifications) core::free(element);
-							for (auto entry : old_elements) core::free(entry.value);
-							core::free(element); return false;
-						}
-					} else {
-						conjuncts[conjuncts.length++] = set_formula;
-					}
-
 					sets.remove_element_at(i, j - 1);
 					if (!old_elements.ensure_capacity(old_elements.size + 1)) {
 						for (auto& element : unifications) core::free(element);
@@ -12286,6 +12617,24 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					old_elements.keys[old_elements.size] = i;
 					move(element, old_elements.values[old_elements.size]);
 					old_elements.size++;
+
+					/* this set is no longer full, so we may no longer be able to prove other things that relied on proof by excluding elements from this set */
+					bool no_longer_full = (sets.sets[i].provable_elements.length + 1 == sets.sets[i].set_size);
+
+					array_map<Formula*, bool> conjuncts(4);
+					if (set_formula->type == FormulaType::AND) {
+						for (unsigned int j = 0; j < set_formula->array.length; j++) {
+							if (!conjuncts.put(set_formula->array.operands[j], no_longer_full)) {
+								for (auto& element : unifications) core::free(element);
+								for (auto entry : old_elements) core::free(entry.value);
+								core::free(element); return false;
+							}
+						}
+					} else {
+						conjuncts.keys[0] = set_formula;
+						conjuncts.values[0] = no_longer_full;
+						conjuncts.size++;
+					}
 
 					/* terms in the set formulae of the ancestors of set `formula_set_id` could also be no longer provable */
 					array<unsigned int> stack(8);
@@ -12297,13 +12646,16 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 
 						if (current != i) {
 							Formula* set_formula = sets.sets[current].set_formula();
+							no_longer_full = (sets.sets[current].provable_elements.length + 1 == sets.sets[current].set_size);
 							if (set_formula->type == FormulaType::AND) {
-								if (!conjuncts.append(set_formula->array.operands, set_formula->array.length)) {
-									for (auto& element : unifications) core::free(element);
-									for (auto entry : old_elements) core::free(entry.value);
-									return false;
+								for (unsigned int j = 0; j < set_formula->array.length; j++) {
+									if (!conjuncts.put(set_formula->array.operands[j], no_longer_full)) {
+										for (auto& element : unifications) core::free(element);
+										for (auto entry : old_elements) core::free(entry.value);
+										return false;
+									}
 								}
-							} else if (!conjuncts.add(set_formula)) {
+							} else if (!conjuncts.put(set_formula, no_longer_full)) {
 								for (auto& element : unifications) core::free(element);
 								for (auto entry : old_elements) core::free(entry.value);
 								return false;
@@ -12354,10 +12706,16 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 							return false;
 						}
 					}
-					for (Formula* conjunct : conjuncts) {
-						Formula* substituted_conjunct = substitute_all(conjunct, src_variables, dst_constants, sets.sets[i].arity);
+					for (auto conjunct : conjuncts) {
+						Formula* substituted_conjunct;
+						if (conjunct.value) {
+							substituted_conjunct = conjunct.key;
+							substituted_conjunct->reference_count++;
+						} else {
+							substituted_conjunct = substitute_all(conjunct.key, src_variables, dst_constants, sets.sets[i].arity);
+						}
 						if (substituted_conjunct == nullptr
-						 || !old_atoms.ensure_capacity(old_atoms.length + 1))
+						 || !add_all_atoms<true>(old_atoms, substituted_conjunct, old_atom_index + 1))
 						{
 							if (substituted_conjunct != nullptr) { core::free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) core::free(substituted_conjunct); }
 							for (unsigned int j = 0; j < sets.sets[i].arity; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
@@ -12366,15 +12724,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 							for (auto entry : old_elements) core::free(entry.value);
 							return false;
 						}
-						/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
-						bool in_old_atoms = false;
-						for (unsigned int j = old_atom_index + 1; !in_old_atoms && j < old_atoms.length; j++)
-							if (*old_atoms[j] == *substituted_conjunct) in_old_atoms = true;
-						if (in_old_atoms) {
-							core::free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) core::free(substituted_conjunct);
-							continue;
-						}
-						old_atoms[old_atoms.length++] = substituted_conjunct;
+						core::free(*substituted_conjunct); if (substituted_conjunct->reference_count == 0) core::free(substituted_conjunct);
 					}
 					for (unsigned int j = 0; j < sets.sets[i].arity; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
 					for (unsigned int j = 0; j < sets.sets[i].arity; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
@@ -12390,8 +12740,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					for (const array_map<Formula*, Term*>& unification : unifications) {
 						unsigned int substitution_count = 0;
 						Term** src_variables = (Term**) malloc(sizeof(Term*) * sets.sets[i].arity * 2);
-						if (src_variables == nullptr || !old_atoms.ensure_capacity(old_atoms.length + set_formula->array.length)) {
-							if (src_variables != nullptr) core::free(src_variables);
+						if (src_variables == nullptr) {
 							for (auto& element : unifications) core::free(element);
 							for (auto entry : old_elements) core::free(entry.value);
 							return false;
@@ -12459,14 +12808,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 								}
 							}
 
-							bool atom_already_exists = false;
-							for (unsigned int k = 0; !atom_already_exists && k < old_atoms.length; k++)
-								if (*old_atoms[k] == *substituted) atom_already_exists = true;
-							if (atom_already_exists) {
-								core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
-							} else {
-								old_atoms[old_atoms.length++] = substituted;
-							}
+							add_all_atoms<true>(old_atoms, substituted, 0);
+							core::free(*substituted); if (substituted->reference_count == 0) core::free(substituted);
 						}
 						for (unsigned int j = 0; j < substitution_count; j++) {
 							core::free(*src_variables[j]); if (src_variables[j]->reference_count == 0) core::free(src_variables[j]);
@@ -12500,37 +12843,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 				}
 				implication_axioms[i].value = false;
 
-				array<Formula*> conjuncts(4);
-				if (antecedent->type == FormulaType::AND) {
-					if (!conjuncts.append(antecedent->array.operands, antecedent->array.length)) {
-						for (auto entry : old_elements) core::free(entry.value);
-						return false;
-					}
-				} else {
-					conjuncts[conjuncts.length++] = antecedent;
-				}
-				if (consequent->type == FormulaType::AND) {
-					if (!conjuncts.append(consequent->array.operands, consequent->array.length)) {
-						for (auto entry : old_elements) core::free(entry.value);
-						return false;
-					}
-				} else {
-					conjuncts[conjuncts.length++] = consequent;
-				}
-
-				if (!old_atoms.ensure_capacity(old_atoms.length + conjuncts.length)) {
+				if (!add_all_atoms<true>(old_atoms, antecedent, old_atom_index + 1)
+				 || !add_all_atoms<true>(old_atoms, consequent, old_atom_index + 1))
+				{
 					for (auto entry : old_elements) core::free(entry.value);
 					return false;
-				}
-				for (Formula* conjunct : conjuncts) {
-					/* make sure `conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
-					bool in_old_atoms = false;
-					for (unsigned int j = old_atom_index + 1; !in_old_atoms && j < old_atoms.length; j++)
-						if (*old_atoms[j] == *conjunct) in_old_atoms = true;
-					if (in_old_atoms)
-						continue;
-					old_atoms[old_atoms.length++] = conjunct;
-					conjunct->reference_count++;
 				}
 			}
 		}
@@ -12713,9 +13030,22 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 						return false;
 					}
 					/* this element could also be in `old_elements`, so remove it
-					from `old_elements` to avoid the same element being added to
-					the set multiple times */
-					for (unsigned int j = i + 1; j < old_elements.size; j++) {
+					   from `old_elements` to avoid the same element being added to
+					   the set multiple times */
+					for (unsigned int j = 0; j < i; j++) {
+						if (old_elements.keys[j] == new_set && old_elements.values[j] == old_elements.values[i]) {
+							core::free(old_elements.values[j]);
+							core::move(old_elements.keys[i-1],old_elements.keys[j]);
+							core::move(old_elements.values[i-1],old_elements.values[j]);
+							core::move(old_elements.keys[i],old_elements.keys[i-1]);
+							core::move(old_elements.values[i],old_elements.values[i-1]);
+							old_elements.size--;
+							core::move(old_elements.keys[old_elements.size],old_elements.keys[i]);
+							core::move(old_elements.values[old_elements.size],old_elements.values[i]);
+							i--;
+						}
+					}
+					for (unsigned int j = 0; j < old_elements.size; j++) {
 						if (old_elements.keys[j] == new_set && old_elements.values[j] == old_elements.values[i]) {
 							core::free(old_elements.values[j]);
 							old_elements.remove_at(j--);
@@ -12761,8 +13091,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 	inline bool check_set_membership_after_subtraction(Formula* old_atom, unsigned int removed_set, Args&&... visitor)
 	{
 		array<Formula*> old_atoms(8);
-		old_atoms[old_atoms.length++] = old_atom;
-		old_atom->reference_count++;
+		if (!add_all_atoms<true>(old_atoms, old_atom, 0))
+			return false;
 		if (old_atom->type == FormulaType::EQUALS) {
 			Formula* swapped = Formula::new_equals(old_atom->binary.right, old_atom->binary.left);
 			if (swapped == nullptr) {
@@ -12847,16 +13177,9 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 
 		/* if this set is empty, negations of existentials could now be provable in other set formula */
 		if (sets.sets[set_id].set_size == 0) {
-			array<Formula*> new_atoms(set_formula->type == TermType::AND ? set_formula->array.length : 1);
-			if (set_formula->type == TermType::AND) {
-				for (unsigned int i = 0; i < set_formula->array.length; i++) {
-					new_atoms[new_atoms.length++] = set_formula->array.operands[i];
-					set_formula->array.operands[i]->reference_count++;
-				}
-			} else {
-				new_atoms[new_atoms.length++] = set_formula;
-				set_formula->reference_count++;
-			}
+			array<Formula*> new_atoms(4);
+			if (!add_all_atoms<true>(new_atoms, set_formula, 0))
+				return false;
 			array<unsigned int> new_antecedents(4);
 			bool result = check_set_membership_after_addition<ResolveInconsistencies>(new_atoms, new_antecedents, std::forward<Args>(visitor)...);
 			free_all(new_atoms);
@@ -13022,15 +13345,12 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		/* check if any of the elements in `antecedent_component` is provably an element of `antecedent_set` */
 		array<variable_assignment> possible_values(8);
 		for (unsigned int set_id : antecedent_component) {
-			if (!possible_values.ensure_capacity(possible_values.length + sets.sets[set_id].element_count())) {
+			if (!possible_values.ensure_capacity(possible_values.length + sets.sets[set_id].provable_elements.length)) {
 				for (auto& element : possible_values) core::free(element);
 				return false;
 			}
-			for (unsigned int i = 0; i < sets.sets[set_id].element_count(); i++) {
-				tuple_element* element = sets.sets[set_id].elements.data + (sets.sets[set_id].arity * i);
-				tuple& current_element = *((tuple*) alloca(sizeof(tuple)));
-				current_element.elements = element;
-				current_element.length = sets.sets[set_id].arity;
+			for (unsigned int i = 0; i < sets.sets[set_id].provable_elements.length; i++) {
+				tuple& current_element = sets.sets[set_id].provable_elements[i];
 
 				variable_assignment& values = possible_values[possible_values.length];
 				if (!::init(values, sets.sets[set_id].arity)) {
@@ -13102,8 +13422,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 
 		array<Formula*> old_atoms(8);
 		for (unsigned int descendant : sets.sets[antecedent_set].descendants) {
-			for (unsigned int i = sets.sets[descendant].element_count(); i > 0; i--) {
-				const tuple_element* element = sets.sets[descendant].elements.data + (sets.sets[descendant].arity * (i - 1));
+			for (unsigned int i = sets.sets[descendant].provable_elements.length; i > 0; i--) {
+				const tuple& element = sets.sets[descendant].provable_elements[i - 1];
 				Term** src_variables = (Term**) alloca(sizeof(Term*) * sets.sets[descendant].arity * 2);
 				for (unsigned int i = 0; i < sets.sets[descendant].arity; i++) {
 					src_variables[i] = Term::new_variable(i + 1);
@@ -13133,35 +13453,12 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 				if (substituted_formula == nullptr) {
 					free_all(old_atoms);
 					return false;
-				} else if (substituted_formula->type == FormulaType::AND) {
-					if (!old_atoms.ensure_capacity(old_atoms.length + substituted_formula->array.length)) {
+				} else {
+					if (!add_all_atoms<true>(old_atoms, substituted_formula, 0)) {
 						core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
 						free_all(old_atoms); return false;
-					}
-					for (unsigned int k = 0; k < substituted_formula->array.length; k++) {
-						/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
-						bool in_old_atoms = false;
-						for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
-							if (*old_atoms[j] == *substituted_formula->array.operands[k]) in_old_atoms = true;
-						if (in_old_atoms) continue;
-						old_atoms[old_atoms.length++] = substituted_formula->array.operands[k];
-						substituted_formula->array.operands[k]->reference_count++;
 					}
 					core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
-				} else {
-					if (!old_atoms.ensure_capacity(old_atoms.length + 1)) {
-						core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
-						free_all(old_atoms); return false;
-					}
-					/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
-					bool in_old_atoms = false;
-					for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
-						if (*old_atoms[j] == *substituted_formula) in_old_atoms = true;
-					if (in_old_atoms) {
-						core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
-						continue;
-					}
-					old_atoms[old_atoms.length++] = substituted_formula;
 				}
 			}
 		}
@@ -13215,35 +13512,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		Formula* consequent = axiom->formula->binary.left;
 
 		array<Formula*> old_atoms(8);
-		if (consequent->type == FormulaType::AND) {
-			if (!old_atoms.ensure_capacity(old_atoms.length + consequent->array.length)) {
-				free_all(old_atoms);
-				return false;
-			}
-			for (unsigned int k = 0; k < consequent->array.length; k++) {
-				/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
-				bool in_old_atoms = false;
-				for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
-					if (*old_atoms[j] == *consequent->array.operands[k]) in_old_atoms = true;
-				if (!in_old_atoms) {
-					old_atoms[old_atoms.length++] = consequent->array.operands[k];
-					consequent->array.operands[k]->reference_count++;
-				}
-			}
-		} else {
-			if (!old_atoms.ensure_capacity(old_atoms.length + 1)) {
-				free_all(old_atoms);
-				return false;
-			}
-			/* make sure `substituted_conjunct` doesn't already exist in `old_atoms` to avoid redundant computation */
-			bool in_old_atoms = false;
-			for (unsigned int j = 0; !in_old_atoms && j < old_atoms.length; j++)
-				if (*old_atoms[j] == *consequent) in_old_atoms = true;
-			if (!in_old_atoms) {
-				old_atoms[old_atoms.length++] = consequent;
-				consequent->reference_count++;
-			}
-		}
+		if (!add_all_atoms<true>(old_atoms, consequent, 0))
+			return false;
 
 		bool result = check_set_membership_after_subtraction(old_atoms, 0, std::forward<Args>(visitor)...);
 		free_all(old_atoms);
@@ -13500,7 +13770,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					unsigned int antecedent_set, consequent_set;
 					bool is_antecedent_new, is_consequent_new;
 					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies, false>(
-							left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
+							nullptr, left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
 							antecedent_set_size, consequent_set_size, set_diff, std::forward<Args>(args)...);
 					core::free(*new_canonicalized); if (new_canonicalized->reference_count == 0) core::free(new_canonicalized);
 					if (new_axiom == NULL) return NULL;
@@ -13519,7 +13789,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					unsigned int antecedent_set, consequent_set;
 					bool is_antecedent_new, is_consequent_new;
 					new_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies, false>(
-							left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
+							nullptr, left, right, arity, antecedent_set, consequent_set, is_antecedent_new, is_consequent_new,
 							antecedent_set_size, consequent_set_size, set_diff, std::forward<Args>(args)...);
 					core::free(*new_canonicalized); if (new_canonicalized->reference_count == 0) core::free(new_canonicalized);
 					if (new_axiom == NULL) return NULL;
@@ -14599,6 +14869,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 			prover.h.set_ids.length = 0;
 			is_provable_without_abduction<false>(formula, quantifiers, possible_values, prover);
 			if (possible_values.length > set_size.max_set_size) {
+				for (auto& element : possible_values) core::free(element);
 				core::free(*canonicalized); if (canonicalized->reference_count == 0) core::free(canonicalized);
 				return false;
 			}
@@ -14641,7 +14912,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 	}
 
 	template<bool ResolveInconsistencies, bool SameSize, typename... Args>
-	inline Proof* get_subset_axiom_with_required_set_size(
+	inline Proof* get_subset_axiom_with_required_set_size(Proof* axiom,
 			Formula* antecedent, Formula* consequent, unsigned int arity,
 			unsigned int& antecedent_set, unsigned int& consequent_set,
 			bool& is_antecedent_new, bool& is_consequent_new,
@@ -14692,11 +14963,16 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		bool is_subset_new = !sets.extensional_graph.vertices[consequent_set].children.contains(antecedent_set)
 						  && !sets.intensional_graph.vertices[consequent_set].children.contains(antecedent_set);
 
-		bool dummy;
-		Proof* axiom = sets.template get_subset_axiom<ResolveInconsistencies, false>(
-				antecedent, consequent, arity,
-				antecedent_set, consequent_set,
-				dummy, dummy, std::forward<Args>(visitor)...);
+		if (axiom == nullptr) {
+			bool dummy;
+			axiom = sets.template get_subset_axiom<ResolveInconsistencies, false>(
+					antecedent, consequent, arity,
+					antecedent_set, consequent_set,
+					dummy, dummy, std::forward<Args>(visitor)...);
+		} else {
+			if (!sets.add_existing_subset_axiom(axiom, antecedent, consequent, antecedent_set, consequent_set))
+				axiom = nullptr;
+		}
 		if (axiom == nullptr) {
 			if (is_consequent_new) {
 				check_old_set_membership(consequent_set, std::forward<Args>(visitor)...);
@@ -14954,6 +15230,10 @@ private:
 		}
 
 		/* check if the axiom already exists */
+		if (constant->constant < new_constant_offset) {
+			print("ERROR: Attempted to add definition for symbol '", stderr); print(*constant, stderr, *debug_terminal_printer); print("'.\n", stderr);
+			exit(EXIT_FAILURE);
+		}
 		for (Proof* definition : ground_concepts[constant->constant - new_constant_offset].definitions) {
 			if ((definition->formula->binary.left == constant || *definition->formula->binary.left == *constant)
 			 && (definition->formula->binary.right == new_definition || *definition->formula->binary.right == *new_definition))
@@ -15019,14 +15299,17 @@ private:
 					unsigned int antecedent_set, consequent_set;
 					bool is_antecedent_new, is_consequent_new;
 					Proof* first_subset_axiom = get_subset_axiom_with_required_set_size<ResolveInconsistencies, true>(
-							new_set_formula, other_set_formula, arity, antecedent_set, consequent_set,
+							nullptr, new_set_formula, other_set_formula, arity, antecedent_set, consequent_set,
 							is_antecedent_new, is_consequent_new, requested_set_size, requested_set_size, std::forward<Args>(args)...);
 					if (first_subset_axiom == nullptr) {
 						/* undo the changes we've made so far */
 						on_subtract_changes(std::forward<Args>(args)...);
 						for (unsigned int j = 0; j < i; j++) {
 							Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
-							if (definition->formula->binary.right->type != FormulaType::LAMBDA) continue;
+							Formula* other_set_formula = definition->formula->binary.right;
+							if (other_set_formula->type != FormulaType::LAMBDA) continue;
+							while (other_set_formula->type == FormulaType::LAMBDA)
+								other_set_formula = other_set_formula->quantifier.operand;
 							Proof* axiom = get_subset_axiom<false>(new_set_formula, other_set_formula, arity,
 									antecedent_set, consequent_set, is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
 							core::free(*axiom);
@@ -15052,10 +15335,13 @@ private:
 						on_subtract_changes(std::forward<Args>(args)...);
 						core::free(*first_subset_axiom);
 						if (first_subset_axiom->reference_count == 1)
-							free_subset_axiom_with_required_set_size<true>(new_set_formula, other_set_formula, arity, consequent_set, antecedent_set, requested_set_size, requested_set_size, std::forward<Args>(args)...);
+							free_subset_axiom_with_required_set_size<true>(new_set_formula, other_set_formula, arity, antecedent_set, consequent_set, requested_set_size, requested_set_size, std::forward<Args>(args)...);
 						for (unsigned int j = 0; j < i; j++) {
 							Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
-							if (definition->formula->binary.right->type != FormulaType::LAMBDA) continue;
+							Formula* other_set_formula = definition->formula->binary.right;
+							if (other_set_formula->type != FormulaType::LAMBDA) continue;
+							while (other_set_formula->type == FormulaType::LAMBDA)
+								other_set_formula = other_set_formula->quantifier.operand;
 							Proof* axiom = get_subset_axiom<false>(new_set_formula, other_set_formula, arity,
 									antecedent_set, consequent_set, is_antecedent_new, is_consequent_new, std::forward<Args>(args)...);
 							core::free(*axiom);
@@ -15087,6 +15373,7 @@ private:
 					Proof* definition = ground_concepts[constant->constant - new_constant_offset].definitions[j];
 					if (definition->formula->binary.right->type != FormulaType::LAMBDA) continue;
 					Formula* other_set_formula = definition->formula->binary.right->quantifier.operand;
+					if (other_set_formula->type != FormulaType::LAMBDA) continue;
 					while (other_set_formula->type == FormulaType::LAMBDA)
 						other_set_formula = other_set_formula->quantifier.operand;
 					Proof* axiom = get_subset_axiom<false>(new_set_formula, other_set_formula, arity,
@@ -15191,15 +15478,6 @@ private:
 #endif
 
 		ground_concepts[concept_id - new_constant_offset].definitions.remove(index);
-		if (definition->formula->type == FormulaType::EQUALS) {
-			Formula* swapped = Formula::new_equals(definition->formula->binary.right, definition->formula->binary.left);
-			if (swapped != nullptr) {
-				definition->formula->binary.left->reference_count++;
-				definition->formula->binary.right->reference_count++;
-				check_set_membership_after_subtraction(swapped, 0, std::forward<Args>(args)...);
-				core::free(*swapped); core::free(swapped);
-			}
-		}
 		check_set_membership_after_subtraction(definition->formula, 0, std::forward<Args>(args)...);
 
 		/* remove subset edges from other set definitions for `concept_id` */
@@ -19324,6 +19602,27 @@ lambda_proof_sample_delegate<OnProofSampleFunction> make_lambda_proof_sample_del
 	return lambda_proof_sample_delegate<OnProofSampleFunction>(on_new_proof_sample);
 }
 
+template<typename Theory, typename ProofAxioms, typename Collector>
+bool check_consistency(
+	Theory& T, const ProofAxioms& proof_axioms, const Collector& collector)
+{
+	bool success = proof_axioms.check_proof_axioms(T);
+	success &= proof_axioms.check_universal_eliminations(T, collector);
+	success &= T.check_concept_axioms();
+	success &= T.check_disjunction_introductions();
+	success &= T.are_elements_provable(*debug_terminal_printer);
+	success &= T.sets.check_freeable_sets();
+	success &= T.sets.are_descendants_valid();
+	success &= T.sets.are_set_sizes_valid();
+	success &= T.sets.check_set_ids();
+	success &= T.sets.are_provable_elements_valid();
+	if (!observations_has_test_proof(T, collector)) {
+		fprintf(stderr, "WARNING: `collector.test_proof` is not an observation in the theory.\n");
+		success = false;
+	}
+	return success;
+}
+
 template<typename ProofCalculus, typename Canonicalizer, typename ProofPrior, typename OnProofSampleFunction, typename... Args>
 bool log_joint_probability_of_lambda(
 		theory<ProofCalculus, Canonicalizer>& T,
@@ -19370,24 +19669,15 @@ bool log_joint_probability_of_lambda(
 	auto new_proof_sample_delegate = make_lambda_proof_sample_delegate(on_new_proof_sample);
 	auto collector = make_provability_collector(T, proof_prior, new_proof, new_proof_sample_delegate);
 	double max_log_probability = collector.internal_collector.current_log_probability;
-	for (unsigned int t = 0; t < num_samples; t++)
-{
-/*fprintf(stderr, "DEBUG: t = %u\n", t);
-proof_axioms.check_proof_axioms(T);
-proof_axioms.check_universal_eliminations(T, collector);
-T.check_concept_axioms();
-T.check_disjunction_introductions();
-T.are_elements_provable();
-T.sets.check_freeable_sets();
-T.sets.are_descendants_valid();
-T.sets.are_set_sizes_valid();
-T.sets.check_set_ids();
-if (!T.observations.contains(collector.internal_collector.test_proof))
-	fprintf(stderr, "log_joint_probability_of_lambda WARNING: `provability_collector.internal_collector.test_proof` is not an observation in the theory.\n");
-bool print_debug = false;
-if (print_debug) T.print_axioms(stderr, *debug_terminal_printer);
-if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
-		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 0.1);
+	for (unsigned int t = 0; t < num_samples; t++) {
+fprintf(stderr, "DEBUG: t = %u\n", t);
+T.print_axioms(stderr, *debug_terminal_printer);
+T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+if (!check_consistency(T, proof_axioms, collector)) exit(0);
+if (t == 252)
+	debug_flag = true;
+else debug_flag = false;
+		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, t < num_samples / 4 ? 1.0 : 0.1);
 		if (collector.internal_collector.current_log_probability > max_log_probability) {
 			free(T_MAP); formula_map.clear();
 			if (!theory<ProofCalculus, Canonicalizer>::clone(T, T_MAP, formula_map)) {
@@ -19400,9 +19690,7 @@ if (print_debug) T.print_disjunction_introductions(stderr, *debug_terminal_print
 			}
 			max_log_probability = collector.internal_collector.current_log_probability;
 		}
-if (t % 1000 == 0)
-	fprintf(stdout, "(seed = %u)\n", get_seed());
-}
+	}
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.internal_collector.test_proof);
@@ -19750,12 +20038,12 @@ bool log_joint_probability_of_lambda_by_linear_search_helper(
 
 	auto collector = make_provability_collector(T, proof_prior, new_proof, on_new_proof_sample);
 	for (unsigned int t = 0; t < num_samples; t++) {
-		if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
-		if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+		//if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
+		//if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, 1.0);
 	}
-	if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
-	if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
+	//if (debug_flag) T.template print_axioms<true>(stderr, *debug_terminal_printer);
+	//if (debug_flag) T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 	T.template remove_formula<false>(collector.internal_collector.test_proof, set_diff);
 	proof_axioms.template subtract<false>(collector.internal_collector.test_proof, set_diff.old_set_axioms, proof_prior);
 	free(*collector.internal_collector.test_proof);

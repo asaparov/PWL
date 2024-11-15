@@ -1,0 +1,56 @@
+?[a]:(?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha") & person(a));
+?[c]:(?[n]:(name(n) & arg1(n)=c & arg2(n)="Charles") & person(c));
+?[B]:(B=^[b]:butler(b) & size(B)=1 & ?[b]:(B(b) & person(b)));
+?[s]:(person(s)
+		& ?[l]:(live(l) & arg1(l)=s
+				& ?[m]:(?[n]:(name(n) & arg1(n)=m & arg2(n)="Dreadbury") & mansion(m)
+			& arg2(l)=m))
+	& ?[a]:(aunt(a) & ?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+	& ?[k]:(kill(k) & past(k) & arg1(k)=s & arg2(k)=a)));
+?[a]:(?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+	& ?[B]:(B=^[b]:butler(b) & size(B)=1
+		& ?[c]:(?[n]:(name(n) & arg1(n)=c & arg2(n)="Charles")
+			& ?[S]:(S=^[s]:(s=a | B(s) | s=c)
+				& ?[m]:(?[n]:(name(n) & arg1(n)=m & arg2(n)="Dreadbury")
+					& ![s]:(S(s) => ?[l]:(live(l) & arg1(l)=s & arg2(l)=m)))
+				& ?[r]:(?[n]:(name(n) & arg1(n)=r & arg2(n)="Dreadbury")
+					& ?[P]:(P=^[p]:(person(p) & ?[l]:(live(l) & arg1(l)=p & arg2(l)=r))
+						& ?[o]:(only(o) & arg1(o)=S & arg2(o)=P)
+					)
+				)
+			)
+		)
+	)
+);
+?[K]:(K=^[k]:agent(kill)(k)
+	& ![k]:(K(k) => ![v]:((victim(v) & ?[p]:(possessive(p) & arg1(p)=k & arg2(p)=v))
+		=> (?[h]:(hate(h) & arg1(h)=k & arg2(h)=v) & ~?[r]:(greater(wealth)(r) & arg1(r)=k & arg2(r)=v)))
+	)
+);
+?[c]:(?[n]:(name(n) & arg1(n)=c & arg2(n)="Charles")
+	& ?[a]:(aunt(a) & ?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+		& ?[S]:(S=^[s]:?[h]:(hate(h) & arg1(h)=a & arg2(h)=s)
+			& ![s]:(S(s) => ~?[h]:(hate(h) & arg1(h)=c & arg2(h)=s)))));
+?[a]:(?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+	& ?[B]:((B=^[b]:butler(b)) & (size(B)=1)
+		& ?[S]:(S=^[s]:(person(s) & ~B(s))
+			& ![s]:(S(s) => ?[h]:(hate(h) & arg1(h)=a & arg2(h)=s)))));
+?[B]:(B=^[b]:butler(b) & size(B)=1 & ?[b]:(B(b)
+	& ?[a]:(aunt(a) & ?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+		& ?[E]:(E=^[e]:(person(e) & ~?[r]:(greater(wealth)(r) & arg1(r)=e & arg2(r)=a))
+			& ![e]:(E(e) => ?[h]:(hate(h) & arg1(h)=b & arg2(h)=e))))));
+?[B]:(B=^[b]:butler(b) & size(B)=1 & ?[b]:(B(b)
+	& ?[a]:(aunt(a) & ?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+		& ?[E]:(E=^[e]:(person(e) & ?[h]:(hate(h) & arg1(h)=a & arg2(h)=e))
+			& ![e]:(E(e) => ?[h]:(hate(h) & arg1(h)=b & arg2(h)=e))
+		)
+	)
+));
+?[E]:(E=^[e]:person(e)
+	& ~?[p]:(person(p)
+		& ![e]:(E(e) => ?[h]:(hate(h) & arg1(h)=p & arg2(h)=e))));
+?[a]:(?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+	& ?[B]:(B=^[b]:butler(b) & size(B)=1 & ?[b]:(B(b)
+		& ~?[s]:(same(s) & arg1(s)=a & arg2(s)=b))));
+^[x]:?[a]:(?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")
+	& ?[k]:(kill(k) & arg1(k)=x & arg2(k)=a));

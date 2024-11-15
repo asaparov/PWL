@@ -10,6 +10,9 @@
 EXECUTIVE_TEST_CPP_SRCS=executive_test.cpp
 EXECUTIVE_TEST_DBG_OBJS=$(EXECUTIVE_TEST_CPP_SRCS:.cpp=.debug.o)
 EXECUTIVE_TEST_OBJS=$(EXECUTIVE_TEST_CPP_SRCS:.cpp=.release.o)
+PWL_REASONER_CPP_SRCS=pwl_reasoner.cpp
+PWL_REASONER_DBG_OBJS=$(PWL_REASONER_CPP_SRCS:.cpp=.debug.o)
+PWL_REASONER_OBJS=$(PWL_REASONER_CPP_SRCS:.cpp=.release.o)
 EXTRACT_WIKT_MORPHOLOGY_EN_CPP_SRCS=extract_wikt_morphology_en.cpp
 EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS=$(EXTRACT_WIKT_MORPHOLOGY_EN_CPP_SRCS:.cpp=.debug.o)
 EXTRACT_WIKT_MORPHOLOGY_EN_OBJS=$(EXTRACT_WIKT_MORPHOLOGY_EN_CPP_SRCS:.cpp=.release.o)
@@ -41,8 +44,8 @@ ifeq "$(.SHELLSTATUS)" "0"
 endif
 
 WARNING_FLAGS=-Wall -Wpedantic
-override CPPFLAGS_DBG += $(WARNING_FLAGS) -I. -g -march=native -mtune=native -std=c++11 -DDISABLE_SSL
-override CPPFLAGS += $(WARNING_FLAGS) -I. -Ofast -fno-finite-math-only -DNDEBUG -march=native -mtune=native -std=c++11 -fno-stack-protector -DDISABLE_SSL
+override CPPFLAGS_DBG += $(WARNING_FLAGS) -I. -g -march=native -mtune=native -std=c++17 -DDISABLE_SSL
+override CPPFLAGS += $(WARNING_FLAGS) -I. -Ofast -fno-finite-math-only -DNDEBUG -march=native -mtune=native -std=c++17 -fno-stack-protector -DDISABLE_SSL
 override LDFLAGS_DBG += -g $(LIB_PATHS) $(PKG_LIBS)
 override LDFLAGS += $(LIB_PATHS) -fwhole-program $(PKG_LIBS)
 
@@ -93,6 +96,12 @@ executive_test: $(LIBS) $(EXECUTIVE_TEST_OBJS)
 executive_test_dbg: $(LIBS) $(EXECUTIVE_TEST_DBG_OBJS)
 		$(CPP) -o executive_test_dbg $(CPPFLAGS_DBG) $(EXECUTIVE_TEST_DBG_OBJS) $(LDFLAGS_DBG)
 
+pwl_reasoner: $(LIBS) $(PWL_REASONER_OBJS)
+		$(CPP) -o pwl_reasoner $(CPPFLAGS) $(PWL_REASONER_OBJS) $(LDFLAGS)
+
+pwl_reasoner_dbg: $(LIBS) $(PWL_REASONER_DBG_OBJS)
+		$(CPP) -o pwl_reasoner_dbg $(CPPFLAGS_DBG) $(PWL_REASONER_DBG_OBJS) $(LDFLAGS_DBG)
+
 extract_wikt_morphology_en: $(LIBS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS)
 		$(CPP) -o extract_wikt_morphology_en $(CPPFLAGS) $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS) $(LDFLAGS)
 
@@ -106,4 +115,4 @@ set_reasoning_test_dbg: $(LIBS) $(SET_REASONING_TEST_DBG_OBJS)
 		$(CPP) -o set_reasoning_test_dbg $(CPPFLAGS_DBG) $(SET_REASONING_TEST_DBG_OBJS) $(LDFLAGS_DBG)
 
 clean:
-	    ${RM} -f *.o */*.o */*/*.o *.d */*.d */*/*.d executive_test executive_test.exe executive_test_dbg executive_test_dbg.exe extract_wikt_morphology_en extract_wikt_morphology_en_dbg extract_wikt_morphology_en.exe extract_wikt_morphology_en_dbg.exe set_reasoning_test set_reasoning_test_dbg set_reasoning_test.exe set_reasoning_test_dbg.exe $(LIBS)
+	    ${RM} -f *.o */*.o */*/*.o *.d */*.d */*/*.d executive_test executive_test.exe executive_test_dbg executive_test_dbg.exe pwl_reasoner pwl_reasoner.exe pwl_reasoner_dbg pwl_reasoner_dbg.exe extract_wikt_morphology_en extract_wikt_morphology_en_dbg extract_wikt_morphology_en.exe extract_wikt_morphology_en_dbg.exe set_reasoning_test set_reasoning_test_dbg set_reasoning_test.exe set_reasoning_test_dbg.exe $(LIBS)

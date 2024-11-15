@@ -248,4 +248,12 @@ struct no_op {
 	inline constexpr bool operator() (Args&&... args) const { return true; }
 };
 
+thread_local hol_term HOL_ZERO(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::ZERO);
+thread_local hol_term HOL_EMPTY(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::EMPTY);
+thread_local hol_term HOL_UNKNOWN(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::UNKNOWN);
+thread_local hol_term HOL_GAP(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::GAP);
+thread_local hol_term HOL_NAME(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::NAME);
+thread_local hol_term HOL_EXIST(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::EXIST);
+thread_local hol_term HOL_SAME(hol_term_type::CONSTANT, (unsigned int) built_in_predicates::SAME);
+
 #endif /* BUILT_IN_PREDICATES_H_ */

@@ -1665,11 +1665,11 @@ constexpr const char* UNKNOWN_CONCEPT_NAME = "<unknown concept>";
 
 template<
 	bool LinearSearch, typename ProofCalculus, typename Canonicalizer,
-	typename TheoryPrior, typename Parser, typename... Args>
+	typename TheoryPrior, typename... Args>
 inline bool answer_question(
 		array_map<string, double>& answers,
 		typename ProofCalculus::Language* logical_form,
-		unsigned int num_samples, Parser& parser,
+		unsigned int num_samples, const string_map_scribe& printer,
 		theory<ProofCalculus, Canonicalizer>& T,
 		TheoryPrior& theory_prior,
 		typename TheoryPrior::PriorState& proof_axioms,
@@ -1679,19 +1679,20 @@ inline bool answer_question(
 	typedef typename Formula::Term Term;
 	typedef typename Formula::TermType TermType;
 
-	auto on_new_proof_sample = [&answers, &parser](const theory<ProofCalculus, Canonicalizer>& T, const Term* term, double log_probability)
+	auto on_new_proof_sample = [&answers, &printer](const theory<ProofCalculus, Canonicalizer>& T, const Term* term, double log_probability)
 	{
 		/* get the name of the term */
+		unsigned int name_index;
 		if (term->type == TermType::STRING) {
 			if (!answers.ensure_capacity(answers.size + 1))
 				return;
-			unsigned int index = answers.index_of(term->str);
-			if (index < answers.size) {
-				answers.values[index] = logsumexp(answers.values[index], log_probability);
+			name_index = answers.index_of(term->str);
+			if (name_index < answers.size) {
+				answers.values[name_index] = logsumexp(answers.values[name_index], log_probability);
 			} else {
-				if (!init(answers.keys[index], term->str))
+				if (!init(answers.keys[name_index], term->str))
 					return;
-				answers.values[index] = log_probability;
+				answers.values[name_index] = log_probability;
 				answers.size++;
 			}
 		} else if (term->type == TermType::NUMBER) {
@@ -1708,31 +1709,30 @@ inline bool answer_question(
 			else snprintf(new_name.data, length + 1, "%" PRId64 ".%" PRIu64, term->number.integer, term->number.decimal);
 			new_name.length = length;
 
-			unsigned int index = answers.index_of(new_name);
-			if (index < answers.size) {
-				answers.values[index] = logsumexp(answers.values[index], log_probability);
+			name_index = answers.index_of(new_name);
+			if (name_index < answers.size) {
+				answers.values[name_index] = logsumexp(answers.values[name_index], log_probability);
 			} else {
-				if (!init(answers.keys[index], new_name))
+				if (!init(answers.keys[name_index], new_name))
 					return;
-				answers.values[index] = log_probability;
+				answers.values[name_index] = log_probability;
 				answers.size++;
 			}
 		} else if (term->type == TermType::CONSTANT) {
 			/* check if the constant is named */
 			bool named_constant_or_set_or_unit;
 			if (T.new_constant_offset > term->constant) {
-				const string_map_scribe& printer = parser.get_printer();
 				if (printer.length > term->constant) {
 					named_constant_or_set_or_unit = true;
 					if (!answers.ensure_capacity(answers.size + 1))
 						return;
-					unsigned int index = answers.index_of(*printer.map[term->constant]);
-					if (index < answers.size) {
-						answers.values[index] = logsumexp(answers.values[index], log_probability);
+					name_index = answers.index_of(*printer.map[term->constant]);
+					if (name_index < answers.size) {
+						answers.values[name_index] = logsumexp(answers.values[name_index], log_probability);
 					} else {
-						if (!init(answers.keys[index], *printer.map[term->constant]))
+						if (!init(answers.keys[name_index], *printer.map[term->constant]))
 							return;
-						answers.values[index] = log_probability;
+						answers.values[name_index] = log_probability;
 						answers.size++;
 					}
 				} else {
@@ -1744,18 +1744,18 @@ inline bool answer_question(
 					return;
 				named_constant_or_set_or_unit = (name_terms.length != 0);
 				for (Term* name_term : name_terms) {
-print(term->constant, stderr); print(": \"", stderr);
+print(term->constant, stderr, *debug_terminal_printer); print(": \"", stderr);
 print(name_term->str, stderr);
 print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);
 					if (!answers.ensure_capacity(answers.size + 1))
 						return;
-					unsigned int index = answers.index_of(name_term->str);
-					if (index < answers.size) {
-						answers.values[index] = logsumexp(answers.values[index], log_probability);
+					name_index = answers.index_of(name_term->str);
+					if (name_index < answers.size) {
+						answers.values[name_index] = logsumexp(answers.values[name_index], log_probability);
 					} else {
-						if (!init(answers.keys[index], name_term->str))
+						if (!init(answers.keys[name_index], name_term->str))
 							return;
-						answers.values[index] = log_probability;
+						answers.values[name_index] = log_probability;
 						answers.size++;
 					}
 				}
@@ -1814,7 +1814,6 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 							break;
 						case tuple_element_type::CONSTANT:
 							if (tup[i].constant < T.new_constant_offset) {
-								const string_map_scribe& printer = parser.get_printer();
 								if (tup[i].constant < printer.length) {
 									if (!init(next_name, *printer.map[tup[i].constant])) {
 										for (array<string>& name_array : element_names) {
@@ -1947,13 +1946,13 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 
 				if (!answers.ensure_capacity(answers.size + 1))
 					return;
-				unsigned int index = answers.index_of(new_name);
-				if (index < answers.size) {
+				name_index = answers.index_of(new_name);
+				if (name_index < answers.size) {
 					free(new_name);
-					answers.values[index] = logsumexp(answers.values[index], log_probability);
+					answers.values[name_index] = logsumexp(answers.values[name_index], log_probability);
 				} else {
-					move(new_name, answers.keys[index]);
-					answers.values[index] = log_probability;
+					move(new_name, answers.keys[name_index]);
+					answers.values[name_index] = log_probability;
 					answers.size++;
 				}
 			}
@@ -1987,13 +1986,13 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 						else snprintf(new_name.data, length + 1, "%" PRId64 ".%" PRIu64, arg1->number.integer, arg1->number.decimal);
 						new_name.length = length;
 
-						unsigned int index = answers.index_of(new_name);
-						if (index < answers.size) {
-							answers.values[index] = logsumexp(answers.values[index], log_probability);
+						name_index = answers.index_of(new_name);
+						if (name_index < answers.size) {
+							answers.values[name_index] = logsumexp(answers.values[name_index], log_probability);
 						} else {
-							if (!init(answers.keys[index], new_name))
+							if (!init(answers.keys[name_index], new_name))
 								return;
-							answers.values[index] = log_probability;
+							answers.values[name_index] = log_probability;
 							answers.size++;
 						}
 						named_constant_or_set_or_unit = true;
@@ -2002,9 +2001,9 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 			}
 
 			if (!named_constant_or_set_or_unit) {
-print(term->constant, stderr); print(": <unnamed>, log probability: ", stderr);
+print(term->constant, stderr, *debug_terminal_printer); print(": <unnamed>, log probability: ", stderr);
 print(log_probability, stderr); print('\n', stderr);
-T.print_axioms(stderr); print('\n', stderr);
+T.print_axioms(stderr, *debug_terminal_printer); print('\n', stderr);
 				if (!answers.ensure_capacity(answers.size + 1))
 					return;
 				unsigned int index = answers.index_of(UNKNOWN_CONCEPT_NAME);
@@ -2052,10 +2051,10 @@ print(entry.value, stderr); print('\n', stderr);
 
 template<
 	bool LinearSearch, typename ProofCalculus, typename Canonicalizer,
-	typename TheoryPrior, typename Parser, typename... Args>
+	typename TheoryPrior, typename... Args>
 inline bool answer_question(array<string>& answers,
 		typename ProofCalculus::Language* logical_form,
-		unsigned int num_samples, Parser& parser,
+		unsigned int num_samples, const string_map_scribe& printer,
 		theory<ProofCalculus, Canonicalizer>& T,
 		TheoryPrior& theory_prior,
 		typename TheoryPrior::PriorState& proof_axioms,
@@ -2063,7 +2062,7 @@ inline bool answer_question(array<string>& answers,
 		Args&&... add_formula_args)
 {
 	array_map<string, double> temp_answers(8);
-	if (!answer_question<LinearSearch>(temp_answers, logical_form, num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
+	if (!answer_question<LinearSearch>(temp_answers, logical_form, num_samples, printer, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...))
 		return false;
 
 	if (!get_most_probable_answers(temp_answers, answers, log_probability_answer)) {
@@ -2074,8 +2073,7 @@ inline bool answer_question(array<string>& answers,
 	return true;
 }
 
-#include <grammar/parser.h>
-#include <grammar/grammar.h>
+template<typename T> struct syntax_node;
 
 template<bool LookupUnknownWords, typename ArticleSource,
 	typename ProofCalculus, typename Canonicalizer,
@@ -2166,7 +2164,7 @@ inline bool answer_question(array<string>& answers,
 	free(sentence);
 
 	array_map<string, double> temp_answers(8);
-	if (!answer_question<false>(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...)) {
+	if (!answer_question<false>(temp_answers, logical_forms[0], num_samples, parser.get_printer(), T, theory_prior, proof_axioms, std::forward<Args>(add_formula_args)...)) {
 		free_logical_forms(logical_forms, parse_count);
 		return false;
 	}
@@ -2261,7 +2259,7 @@ inline bool answer_question(array<string>& answers,
 			bool failure = false;
 			auto process_matched_sentence = [&failure, &articles, &parser, &T, &names, &visited_articles, &theory_prior, &proof_axioms, &logical_forms, num_samples, &temp_answers](const html_lexer_token* tokens, unsigned int length) {
 				if (read_sentence(articles, parser, tokens, length, T, names, visited_articles, theory_prior, proof_axioms)) {
-					if (!answer_question<false>(temp_answers, logical_forms[0], num_samples, parser, T, theory_prior, proof_axioms)) {
+					if (!answer_question<false>(temp_answers, logical_forms[0], num_samples, parser.get_printer(), T, theory_prior, proof_axioms)) {
 						failure = true;
 						return false;
 					};

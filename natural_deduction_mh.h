@@ -1849,9 +1849,14 @@ bool undo_proof_changes(
 	free(new_proof_changes);
 	free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 
+if (debug_flag)
+T.print_axioms(stderr);
+
 	/* add the changes back into T from `old_proof` */
 	if (!T.add_changes(old_proof_changes, set_diff, old_sets)) {
 		free(old_proof_changes);
+		fprintf(stderr, "undo_proof_changes ERROR: Failed to add changes back to theory.\n");
+		exit(0);
 		return false;
 	}
 	free(old_proof_changes);
@@ -2083,8 +2088,7 @@ bool propose_disjunction_intro(
 	set_changes<Formula> new_set_diff;
 	get_proof_disjunction_nodes(selected_proof_step.proof, sampler.old_proof);
 unsigned int debug = 0;
-bool local_debug_flag = false;
-if (local_debug_flag) {
+if (debug_flag) {
 print(*selected_proof_step.formula, stderr); print('\n', stderr);
 }
 	while (true) {
@@ -2093,7 +2097,7 @@ print(*selected_proof_step.formula, stderr); print('\n', stderr);
 		   also compute the log probability of the new path */
 		unsigned int new_constant = 0;
 		sampler.clear();
-if (local_debug_flag) {
+if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u\n", debug);
 T.print_axioms(stderr);
 }
@@ -2106,7 +2110,7 @@ debug++;
 		if (new_proof != NULL)
 			break;
 	}
-if (local_debug_flag) {
+if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
 T.print_axioms(stderr);
 }
@@ -3171,7 +3175,31 @@ inline bool do_mh_disjunction_intro(
 		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
 #endif
 
+bool is_agatha_suicide_proposal = false;
+typedef theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer> Theory;
+typedef typename Formula::Type FormulaType;
+for (const typename Theory::change& change : new_proof_changes.list) {
+	if (change.type == Theory::change_type::UNARY_ATOM && change.unary_atom.key.binary.left->constant < T.new_constant_offset && *debug_terminal_printer->map[change.unary_atom.key.binary.left->constant] == "kill") {
+		unsigned int event = change.unary_atom.key.binary.right->constant;
+		Formula* arg1 = nullptr;
+		Formula* arg2 = nullptr;
+		for (const typename Theory::change& c : new_proof_changes.list) {
+			if (c.type == Theory::change_type::DEFINITION && c.axiom->formula->binary.right->type == FormulaType::UNARY_APPLICATION && c.axiom->formula->binary.right->binary.left->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.left->constant == (unsigned int) built_in_predicates::ARG1 && c.axiom->formula->binary.right->binary.right->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.right->constant == event)
+				arg1 = c.axiom->formula->binary.left;
+			if (c.type == Theory::change_type::DEFINITION && c.axiom->formula->binary.right->type == FormulaType::UNARY_APPLICATION && c.axiom->formula->binary.right->binary.left->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.left->constant == (unsigned int) built_in_predicates::ARG2 && c.axiom->formula->binary.right->binary.right->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.right->constant == event)
+				arg2 = c.axiom->formula->binary.left;
+		}
+		if (arg1 != nullptr && arg2 != nullptr && *arg1 == *arg2) {
+			is_agatha_suicide_proposal = true;
+			agatha_suicide_proposals++;
+		}
+	}
+}
+
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+if (is_agatha_suicide_proposal)
+agatha_suicide_acceptances++;
+
 		/* we accepted the new proof */
 		proof_axioms.subtract(old_axioms);
 		if (!proof_axioms.add(new_axioms))

@@ -1940,8 +1940,8 @@ bool check_proof(const nd_step<Formula>& proof,
 	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 /* TODO: for debugging; delete this */
-print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
-print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr); print('\n', stderr);
+//print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
+//print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr); print('\n', stderr);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
 	free(*actual_conclusion);

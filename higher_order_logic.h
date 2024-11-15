@@ -19703,6 +19703,31 @@ bool tptp_interpret_unary_term(
 			return false;
 		}
 	}
+
+	while (index < tokens.length && tokens[index].type == tptp_token_type::EQUALS) {
+		hol_term* left;
+		if (!new_hol_term(left)) {
+			free(term);
+			return false;
+		}
+		move(term, *left);
+		index++;
+
+		hol_term* right;
+		if (!new_hol_term(right)) {
+			free(*left); free(left);
+			return false;
+		} else if (!tptp_interpret_unary_term(tokens, index, *right, names, variables)) {
+			free(right);
+			free(*left); free(left);
+			return false;
+		}
+
+		term.type = hol_term_type::EQUALS;
+		term.binary.left = left;
+		term.binary.right = right;
+		term.reference_count = 1;
+	}
 	return true;
 }
 
@@ -19803,11 +19828,6 @@ bool tptp_interpret(
 	} else if (tokens[index].type == tptp_token_type::IF_THEN) {
 		index++;
 		if (!tptp_interpret_binary_term<hol_term_type::IF_THEN>(tokens, index, term, names, variables, left))
-			return false;
-
-	} else if (tokens[index].type == tptp_token_type::EQUALS) {
-		index++;
-		if (!tptp_interpret_binary_term<hol_term_type::EQUALS>(tokens, index, term, names, variables, left))
 			return false;
 
 	} else {
