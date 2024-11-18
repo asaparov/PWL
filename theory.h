@@ -19861,6 +19861,9 @@ else debug_flag = false;*/
 	free(*collector.internal_collector.test_proof);
 	if (collector.internal_collector.test_proof->reference_count == 0)
 		free(collector.internal_collector.test_proof);
+print("Best theory while answering question:\n", stdout);
+T_MAP.print_axioms(stdout, *debug_terminal_printer);
+fprintf(stdout, "Theory log probability: %lf\n", max_log_probability);
 	return true;
 }
 

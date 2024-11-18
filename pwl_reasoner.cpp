@@ -282,6 +282,8 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 	array_map<string, double> answers(8);
 	answer_question<false>(answers, agatha_lfs.last(), 1000, printer, T, proof_prior, proof_axioms);
 	sort(answers.values, answers.keys, answers.size, default_sorter());
+	//print("Theory after attempting to answer question:\n", stdout);
+	//T.template print_axioms<true>(stdout, *debug_terminal_printer); print('\n', stdout).
 	reverse(answers.keys, answers.size);
 	reverse(answers.values, answers.size);
 	normalize_exp(answers.values, answers.size);
@@ -291,7 +293,6 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		print(" : ", stdout); print(answers.values[i], stdout);
 		print('\n', stdout);
 	}
-	//T.template print_axioms<true>(stdout, *debug_terminal_printer);
 	fflush(stdout);
 
 	free(name_map);
