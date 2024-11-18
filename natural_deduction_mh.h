@@ -3175,31 +3175,7 @@ inline bool do_mh_disjunction_intro(
 		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
 #endif
 
-bool is_agatha_suicide_proposal = false;
-typedef theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer> Theory;
-typedef typename Formula::Type FormulaType;
-for (const typename Theory::change& change : new_proof_changes.list) {
-	if (change.type == Theory::change_type::UNARY_ATOM && change.unary_atom.key.binary.left->constant < T.new_constant_offset && *debug_terminal_printer->map[change.unary_atom.key.binary.left->constant] == "kill") {
-		unsigned int event = change.unary_atom.key.binary.right->constant;
-		Formula* arg1 = nullptr;
-		Formula* arg2 = nullptr;
-		for (const typename Theory::change& c : new_proof_changes.list) {
-			if (c.type == Theory::change_type::DEFINITION && c.axiom->formula->binary.right->type == FormulaType::UNARY_APPLICATION && c.axiom->formula->binary.right->binary.left->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.left->constant == (unsigned int) built_in_predicates::ARG1 && c.axiom->formula->binary.right->binary.right->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.right->constant == event)
-				arg1 = c.axiom->formula->binary.left;
-			if (c.type == Theory::change_type::DEFINITION && c.axiom->formula->binary.right->type == FormulaType::UNARY_APPLICATION && c.axiom->formula->binary.right->binary.left->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.left->constant == (unsigned int) built_in_predicates::ARG2 && c.axiom->formula->binary.right->binary.right->type == FormulaType::CONSTANT && c.axiom->formula->binary.right->binary.right->constant == event)
-				arg2 = c.axiom->formula->binary.left;
-		}
-		if (arg1 != nullptr && arg2 != nullptr && *arg1 == *arg2) {
-			is_agatha_suicide_proposal = true;
-			agatha_suicide_proposals++;
-		}
-	}
-}
-
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
-if (is_agatha_suicide_proposal)
-agatha_suicide_acceptances++;
-
 		/* we accepted the new proof */
 		proof_axioms.subtract(old_axioms);
 		if (!proof_axioms.add(new_axioms))

@@ -2,8 +2,6 @@
 const thread_local core::string_map_scribe* debug_terminal_printer = nullptr;
 bool debug_flag = false;
 unsigned int debug_counter = 0;
-unsigned int agatha_suicide_proposals = 0;
-unsigned int agatha_suicide_acceptances = 0;
 
 #include "theory_prior.h"
 #include "built_in_predicates.h"
@@ -294,6 +292,7 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		print('\n', stdout);
 	}
 	fflush(stdout);
+	for (auto entry : answers) core::free(entry.key);
 
 	free(name_map);
 	free_all(agatha_lfs);
