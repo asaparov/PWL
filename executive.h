@@ -1744,9 +1744,9 @@ inline bool answer_question(
 					return;
 				named_constant_or_set_or_unit = (name_terms.length != 0);
 				for (Term* name_term : name_terms) {
-print(term->constant, stderr, *debug_terminal_printer); print(": \"", stderr);
+/*print(term->constant, stderr, *debug_terminal_printer); print(": \"", stderr);
 print(name_term->str, stderr);
-print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);
+print("\", log probability: ", stderr); print(log_probability, stderr); print('\n', stderr);*/
 					if (!answers.ensure_capacity(answers.size + 1))
 						return;
 					name_index = answers.index_of(name_term->str);
@@ -2001,9 +2001,9 @@ print("\", log probability: ", stderr); print(log_probability, stderr); print('\
 			}
 
 			if (!named_constant_or_set_or_unit) {
-print(term->constant, stderr, *debug_terminal_printer); print(": <unnamed>, log probability: ", stderr);
+/*print(term->constant, stderr, *debug_terminal_printer); print(": <unnamed>, log probability: ", stderr);
 print(log_probability, stderr); print('\n', stderr);
-T.print_axioms(stderr, *debug_terminal_printer); print('\n', stderr);
+T.print_axioms(stderr, *debug_terminal_printer); print('\n', stderr);*/
 				if (!answers.ensure_capacity(answers.size + 1))
 					return;
 				unsigned int index = answers.index_of(UNKNOWN_CONCEPT_NAME);

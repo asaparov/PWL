@@ -129,7 +129,7 @@ set_seed(1356941742);
 	printf("Finished reading seed axioms.\n"); fflush(stdout);
 	fclose(in);
 
-	/* read the seed axioms */
+	/* read the input logical forms */
 	array<hol_term*> agatha_lfs(8);
 	const char* input_filename = "agatha_lfs.txt";
 	in = fopen(input_filename, "rb");
@@ -195,8 +195,8 @@ set_seed(1356941742);
 			set_diff.clear();
 			null_collector collector;
 			for (unsigned int t = 0; t < 10; t++) {
-fprintf(stderr, "(add_formula) j = %u, t = %u\n", j, t);
-if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
+//fprintf(stderr, "(add_formula) j = %u, t = %u\n", j, t);
+//if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);*/
 				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
@@ -237,11 +237,11 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		double max_log_probability = collector.current_log_probability;
 		for (unsigned int j = 0; j < 4; j++) {
 			for (unsigned int t = 0; t < 500; t++) {
-fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
-/*T.template print_axioms<true>(stdout, *debug_terminal_printer);
+//fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
+/*if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
+T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
-if (i == 8 && j == 0 && t == 50) {
+if (i == 4 && j == 3 && t == 63) {
 fprintf(stderr, "DEBUG\n");
 debug_flag = true;
 } else {
@@ -262,7 +262,7 @@ debug_flag = false;
 /*fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
 T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);*/
-if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
+//if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
 					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector, collector.test_proof, 1.0);
 				}
 			}
@@ -272,19 +272,26 @@ if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit
 		PriorStateType::clone(proof_axioms_MAP, proof_axioms, formula_map);
 		print("Best theory so far:\n", stdout);
 		T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
-		print("Theory log probability: ", stdout); print(max_log_probability, stdout); print('\n', stdout);
+		print("Theory log probability: ", stdout); print(max_log_probability, stdout); print("\n\n", stdout);
 		free(T_MAP); free(proof_axioms_MAP);
 	}
 
+	print("Finished reading declarative sentences. Attempting to answer question:\n", stdout);
+	print("  Logical form: ", stdout); print(*agatha_lfs.last(), stdout, printer); print("\n", stdout);
+
 	array_map<string, double> answers(8);
 	answer_question<false>(answers, agatha_lfs.last(), 1000, printer, T, proof_prior, proof_axioms);
-	print("Answers:\n", stdout);
+	sort(answers.values, answers.keys, answers.size, default_sorter());
+	reverse(answers.keys, answers.size);
+	reverse(answers.values, answers.size);
+	normalize_exp(answers.values, answers.size);
+	print("Answers: (with estimated probabilies)\n", stdout);
 	for (unsigned int i = 0; i < answers.size; i++) {
 		print("  ", stdout); print(answers.keys[i], stdout);
 		print(" : ", stdout); print(answers.values[i], stdout);
 		print('\n', stdout);
 	}
-	T.template print_axioms<true>(stdout, *debug_terminal_printer);
+	//T.template print_axioms<true>(stdout, *debug_terminal_printer);
 	fflush(stdout);
 
 	free(name_map);

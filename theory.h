@@ -4586,7 +4586,7 @@ struct theory
 
 /* TODO: for debugging; delete this */
 //print_axioms(stderr);
-print("canonicalized: ", stderr); print(*canonicalized, stderr, *debug_terminal_printer); print('\n', stderr);
+//print("canonicalized: ", stderr); print(*canonicalized, stderr, *debug_terminal_printer); print('\n', stderr);
 		array_map<unsigned int, Proof*> set_definitions(4);
 		array_map<unsigned int, unsigned int> requested_set_sizes(4);
 		Proof* new_proof = make_proof<false, true, true>(canonicalized, set_definitions, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
@@ -4721,25 +4721,35 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 			is_provable_without_abduction<false>(set_formula, quantifiers, possible_values, prover);
 
 			/* count the number of concrete provable values in `possible_values` */
-			unsigned int num_concrete_elements = 0;
 			for (const variable_assignment& values : possible_values) {
 				/* if assignment is "concrete", check to make sure it's in the list of provable elements */
+				tuple tup;
+				::init(tup, values.assignment.length);
 				bool is_concrete = true;
 				for (uint_fast8_t k = 0; k < values.assignment.length; k++) {
-					if (values.assignment.values[k].type == instantiation_type::ANY_NUMBER
-					 || values.assignment.values[k].type == instantiation_type::ANY)
-					{
+					if (values.assignment.values[k].type == instantiation_type::CONSTANT) {
+						tup.elements[k].type = tuple_element_type::CONSTANT;
+						tup.elements[k].constant = values.assignment.values[k].constant;
+					} else if (values.assignment.values[k].type == instantiation_type::NUMBER) {
+						tup.elements[k].type = tuple_element_type::NUMBER;
+						tup.elements[k].number = values.assignment.values[k].number;
+					} else if (values.assignment.values[k].type == instantiation_type::STRING) {
+						tup.elements[k].type = tuple_element_type::STRING;
+						tup.elements[k].str = values.assignment.values[k].str;
+					} else {
 						is_concrete = false;
 						break;
 					}
 				}
-				if (is_concrete)
-					num_concrete_elements++;
-			}
-			if (num_concrete_elements > sets.sets[i].provable_elements.length) {
-				print("theory.are_elements_provable ERROR: The set with ID ", stderr); print(i, stderr);
-				print(" contains more provable elements that those in `provable_elements`.\n", stderr);
-				success = false;
+				if (is_concrete) {
+					if (!sets.sets[i].provable_elements.contains(tup)) {
+						print("theory.are_elements_provable ERROR: The set with ID ", stderr); print(i, stderr);
+						print(" provably contains the element ", stderr); print(tup, stderr, *debug_terminal_printer);
+						print(" but is not in `provable_elements`.\n", stderr);
+						success = false;
+					}
+				}
+				core::free(tup);
 			}
 			for (auto& element : possible_values) core::free(element);
 
@@ -11656,98 +11666,256 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		unsigned int new_atom_index = 0;
 		array_map<tuple, array<unsigned int>> new_elements(4);
 		array<unsigned int> visited_sets(16);
-		while (new_atom_index < new_atoms.length) {
-			Formula* next_new_atom = new_atoms[new_atom_index++];
+		while (new_atom_index < new_atoms.length)
+		{
+			/* We have to consider all atoms in `new_atoms` to determine which
+			   sets to visit. Otherwise, if for example we have the following
+			   next atoms `person(x1)` and `x1(bob)`, we would visit the set
+			   `^[x1,x2]:x1(x2)` only once to check if any elements of the form
+			   (person,x1) were provable elements, then the set would be added
+			   to `visited` and we would be unable to check whether any
+			   elements of the form (x1,bob) were provable. */
+			array_map<unsigned int, array<variable_assignment>> possible_values(4);
+			array<array<unsigned int>> unifying_conjuncts(4);
+			array<unsigned int> unifying_antecedents(4);
+			array<unsigned int> unifying_consequents(4);
+			while (new_atom_index < new_atoms.length) {
+				Formula* next_new_atom = new_atoms[new_atom_index++];
 
-			for (unsigned int i = 1; i < sets.set_count + 1; i++) {
-				if (sets.sets[i].size_axioms.data == nullptr || visited_sets.contains(i))
-					continue;
+				for (unsigned int i = 1; i < sets.set_count + 1; i++) {
+					if (sets.sets[i].size_axioms.data == nullptr || visited_sets.contains(i))
+						continue;
+					Formula* set_formula = sets.sets[i].size_axioms[0]->formula->binary.left->binary.right;
+
+					array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
+					for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
+						quantifiers[quantifiers.length++] = set_formula;
+						set_formula = set_formula->quantifier.operand;
+					}
+					array<array_map<Formula*, Term*>> unifications(4);
+					array<unsigned int> curr_unifying_conjuncts(4);
+					if (set_formula->type == FormulaType::AND) {
+						for (unsigned int i = 0; i < set_formula->array.length; i++) {
+							unsigned int old_unification_count = unifications.length;
+							if (!unify_subformula(next_new_atom, set_formula->array.operands[i], quantifiers, unifications)) {
+								for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+								for (auto entry : possible_values) {
+									for (auto& value : entry.value) core::free(value);
+									core::free(entry.value);
+								}
+								for (auto& a : unifying_conjuncts) core::free(a);
+								return false;
+							}
+							if (unifications.length != old_unification_count)
+								curr_unifying_conjuncts.add(i);
+						}
+					} else {
+						if (!unify_subformula(next_new_atom, set_formula, quantifiers, unifications)) {
+							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+							for (auto entry : possible_values) {
+								for (auto& value : entry.value) core::free(value);
+								core::free(entry.value);
+							}
+							for (auto& a : unifying_conjuncts) core::free(a);
+							return false;
+						}
+						if (unifications.length != 0)
+							curr_unifying_conjuncts[curr_unifying_conjuncts.length++] = 0;
+					}
+					if (unifications.length == 0)
+						continue;
+
+					if (!possible_values.ensure_capacity(possible_values.size + 1)
+					 || !unifying_conjuncts.ensure_capacity(unifying_conjuncts.length + 1))
+					{
+						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+						for (auto entry : possible_values) {
+							for (auto& value : entry.value) core::free(value);
+							core::free(entry.value);
+						}
+						for (auto& a : unifying_conjuncts) core::free(a);
+						return false;
+					}
+					unsigned int index = possible_values.index_of(i);
+					if (index == possible_values.size) {
+						possible_values.keys[index] = i;
+						if (!array_init(possible_values.values[index], max((size_t) 1, unifications.length))) {
+							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+							for (auto entry : possible_values) {
+								for (auto& value : entry.value) core::free(value);
+								core::free(entry.value);
+							}
+							for (auto& a : unifying_conjuncts) core::free(a);
+							return false;
+						}
+						array_init(unifying_conjuncts[index], curr_unifying_conjuncts.length);
+						possible_values.size++;
+						unifying_conjuncts.length++;
+					} else if (!possible_values.values[index].ensure_capacity(possible_values.values[index].length + unifications.length)
+							|| !unifying_conjuncts[index].ensure_capacity(unifying_conjuncts[index].length + curr_unifying_conjuncts.length))
+					{
+						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+						for (auto entry : possible_values) {
+							for (auto& value : entry.value) core::free(value);
+							core::free(entry.value);
+						}
+						for (auto& a : unifying_conjuncts) core::free(a);
+						return false;
+					}
+					unifying_conjuncts[index].append(curr_unifying_conjuncts.data, curr_unifying_conjuncts.length);
+
+					array<variable_assignment>& curr_possible_values = possible_values.values[index];
+					for (const array_map<Formula*, Term*>& unification : unifications) {
+						/* given `unification`, find the values of the quantified variables that make `set_formula` necessarily true */
+						bool valid_unification = true;
+						variable_assignment& values = curr_possible_values[curr_possible_values.length];
+						if (!::init(values, sets.sets[i].arity)) {
+							for (auto& element : unifications) core::free(element);
+							for (auto entry : possible_values) {
+								for (auto& value : entry.value) core::free(value);
+								core::free(entry.value);
+							}
+							for (auto& a : unifying_conjuncts) core::free(a);
+							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+							return false;
+						}
+						for (const auto& entry : unification) {
+							if (entry.value->type != TermType::CONSTANT && entry.value->type != TermType::NUMBER && entry.value->type != TermType::STRING && entry.value->type != TermType::VARIABLE) {
+								valid_unification = false;
+								break;
+							} else if (entry.key->quantifier.variable <= sets.sets[i].arity) {
+								if (entry.value->type == TermType::CONSTANT) {
+									core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
+									values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::CONSTANT;
+									values.assignment.values[entry.key->quantifier.variable - 1].constant = entry.value->constant;
+								} else if (entry.value->type == TermType::NUMBER) {
+									core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
+									values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::NUMBER;
+									values.assignment.values[entry.key->quantifier.variable - 1].number = entry.value->number;
+								} else if (entry.value->type == TermType::STRING) {
+									core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
+									values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::STRING;
+									if (!core::init(values.assignment.values[entry.key->quantifier.variable - 1].str, entry.value->str)) {
+										values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::CONSTANT;
+										for (auto& element : unifications) core::free(element);
+										for (auto entry : possible_values) {
+											for (auto& value : entry.value) core::free(value);
+											core::free(entry.value);
+										}
+										for (auto& a : unifying_conjuncts) core::free(a);
+										for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+										core::free(values); return false;
+									}
+								}
+							}
+						}
+						if (!valid_unification) {
+							core::free(values);
+							continue;
+						}
+						curr_possible_values.length++;
+					}
+					for (auto& element : unifications) core::free(element);
+				}
+
+				for (unsigned int i = 0; i < implication_axioms.length; i++) {
+					Proof* axiom = implication_axioms[i].key;
+					Formula* antecedent = axiom->formula->binary.left;
+
+					array<Formula*> quantifiers(4);
+					array<array_map<Formula*, Term*>> unifications(4);
+					if (!unify_subformula<true>(next_new_atom, antecedent, quantifiers, unifications)) {
+						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+						for (auto entry : possible_values) {
+							for (auto& value : entry.value) core::free(value);
+							core::free(entry.value);
+						}
+						for (auto& a : unifying_conjuncts) core::free(a);
+						return false;
+					}
+
+					bool has_valid_unification = false;
+					for (const array_map<Formula*, Term*>& unification : unifications) {
+						bool valid_unification = true;
+						for (const auto& entry : unification) {
+							if (entry.value->type != TermType::CONSTANT && entry.value->type != TermType::NUMBER && entry.value->type != TermType::STRING && entry.value->type != TermType::VARIABLE) {
+								valid_unification = false;
+								break;
+							}
+						}
+						if (valid_unification) {
+							has_valid_unification = true;
+							break;
+						}
+					}
+					for (auto& element : unifications) core::free(element);
+					if (has_valid_unification)
+						unifying_antecedents.add(i);
+				}
+				for (unsigned int i = 0; i < implication_axioms.length; i++) {
+					if (!implication_axioms[i].value) continue;
+					Proof* axiom = implication_axioms[i].key;
+					Formula* consequent = axiom->formula->binary.right;
+
+					array<Formula*> quantifiers(4);
+					array<array_map<Formula*, Term*>> unifications(4);
+					if (!unify_subformula<true>(next_new_atom, consequent, quantifiers, unifications)) {
+						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+						for (auto entry : possible_values) {
+							for (auto& value : entry.value) core::free(value);
+							core::free(entry.value);
+						}
+						for (auto& a : unifying_conjuncts) core::free(a);
+						return false;
+					}
+
+					bool has_valid_unification = false;
+					for (const array_map<Formula*, Term*>& unification : unifications) {
+						bool valid_unification = true;
+						for (const auto& entry : unification) {
+							if (entry.value->type != TermType::CONSTANT && entry.value->type != TermType::NUMBER && entry.value->type != TermType::STRING && entry.value->type != TermType::VARIABLE) {
+								valid_unification = false;
+								break;
+							}
+						}
+						if (valid_unification) {
+							has_valid_unification = true;
+							break;
+						}
+					}
+					for (auto& element : unifications) core::free(element);
+					if (!has_valid_unification)
+						unifying_consequents.add(i);
+				}
+			}
+
+			for (unsigned int index = 0; index < possible_values.size; index++) {
+				unsigned int i = possible_values.keys[index];
+				array<variable_assignment>& curr_possible_values = possible_values.values[index];
+				array<unsigned int>& curr_unifying_conjuncts = unifying_conjuncts[index];
 				Formula* set_formula = sets.sets[i].size_axioms[0]->formula->binary.left->binary.right;
-
 				array<Formula*> quantifiers(1 << (core::log2(sets.sets[i].arity) + 1));
 				for (unsigned int j = 0; j < sets.sets[i].arity; j++) {
 					quantifiers[quantifiers.length++] = set_formula;
 					set_formula = set_formula->quantifier.operand;
 				}
-				array<array_map<Formula*, Term*>> unifications(4);
-				array<unsigned int> unifying_conjuncts(4);
-				if (set_formula->type == FormulaType::AND) {
-					for (unsigned int i = 0; i < set_formula->array.length; i++) {
-						unsigned int old_unification_count = unifications.length;
-						if (!unify_subformula(next_new_atom, set_formula->array.operands[i], quantifiers, unifications)) {
-							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-							return false;
-						}
-						if (unifications.length != old_unification_count)
-							unifying_conjuncts.add(i);
-					}
-				} else {
-					if (!unify_subformula(next_new_atom, set_formula, quantifiers, unifications)) {
-						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-						return false;
-					}
-					if (unifications.length != 0)
-						unifying_conjuncts[unifying_conjuncts.length++] = 0;
-				}
-
-				array<variable_assignment> possible_values(max((size_t) 1, 4 * unifications.length));
-				for (const array_map<Formula*, Term*>& unification : unifications) {
-					/* given `unification`, find the values of the quantified variables that make `set_formula` necessarily true */
-					bool valid_unification = true;
-					variable_assignment& values = possible_values[possible_values.length];
-					if (!::init(values, sets.sets[i].arity)) {
-						for (auto& element : unifications) core::free(element);
-						for (auto& element : possible_values) core::free(element);
-						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-						return false;
-					}
-					for (const auto& entry : unification) {
-						if (entry.value->type != TermType::CONSTANT && entry.value->type != TermType::NUMBER && entry.value->type != TermType::STRING && entry.value->type != TermType::VARIABLE) {
-							valid_unification = false;
-							break;
-						} else if (entry.key->quantifier.variable <= sets.sets[i].arity) {
-							if (entry.value->type == TermType::CONSTANT) {
-								core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
-								values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::CONSTANT;
-								values.assignment.values[entry.key->quantifier.variable - 1].constant = entry.value->constant;
-							} else if (entry.value->type == TermType::NUMBER) {
-								core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
-								values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::NUMBER;
-								values.assignment.values[entry.key->quantifier.variable - 1].number = entry.value->number;
-							} else if (entry.value->type == TermType::STRING) {
-								core::free(values.assignment.values[entry.key->quantifier.variable - 1]);
-								values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::STRING;
-								if (!core::init(values.assignment.values[entry.key->quantifier.variable - 1].str, entry.value->str)) {
-									values.assignment.values[entry.key->quantifier.variable - 1].type = instantiation_type::CONSTANT;
-									for (auto& element : unifications) core::free(element);
-									for (auto& element : possible_values) core::free(element);
-									for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-									core::free(values); return false;
-								}
-							}
-						}
-					}
-					if (!valid_unification) {
-						core::free(values);
-						continue;
-					}
-					possible_values.length++;
-				}
-				for (auto& element : unifications) core::free(element);
-				if (possible_values.length == 0) continue;
 
 				if (!visited_sets.add(i)) {
-					for (auto& element : possible_values) core::free(element);
+					for (auto entry : possible_values) {
+						for (auto& value : entry.value) core::free(value);
+						core::free(entry.value);
+					}
+					for (auto& a : unifying_conjuncts) core::free(a);
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 					return false;
 				}
 
 				/* remove possible_values that are subsets of another possible_value */
-				for (unsigned int i = 0; i < possible_values.length; i++) {
-					const instantiation_tuple& first = possible_values[i].assignment;
-					for (unsigned int j = 0; j < possible_values.length; j++) {
+				for (unsigned int i = 0; i < curr_possible_values.length; i++) {
+					const instantiation_tuple& first = curr_possible_values[i].assignment;
+					for (unsigned int j = 0; j < curr_possible_values.length; j++) {
 						if (j == i) continue;
-						const instantiation_tuple& second = possible_values[j].assignment;
+						const instantiation_tuple& second = curr_possible_values[j].assignment;
 
 						/* check if `first` is a subset of `second` */
 						/* NOTE: this is not a general `subset` function for `instantiation_tuple` */
@@ -11776,8 +11944,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 							}
 						}
 						if (is_subset) {
-							core::free(possible_values[i]);
-							possible_values.remove(i--);
+							core::free(curr_possible_values[i]);
+							curr_possible_values.remove(i--);
 							break;
 						}
 					}
@@ -11789,7 +11957,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 				typename set_membership_prover::ProvableElementArray provable_elements = prover.get_provable_elements(i);
 				if (provable_elements.length == sets.sets[i].set_size && set_formula->type == FormulaType::AND) {
 					/* this set being full could make other expressions provable by exclusion */
-					for (const variable_assignment& possible_value : possible_values) {
+					for (const variable_assignment& possible_value : curr_possible_values) {
 						/* optimization: if the set formula has a name scope, only consider proof-by-exclusion if the `possible_value` has that name */
 						bool skip = false;
 						for (unsigned int k = 0; k < set_formula->array.length; k++) {
@@ -11815,7 +11983,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 						unsigned int substitution_count = 0;
 						Term** src_variables = (Term**) malloc(sizeof(Term*) * sets.sets[i].arity * 2);
 						if (src_variables == nullptr) {
-							for (auto& element : possible_values) core::free(element);
+							for (auto entry : possible_values) {
+								for (auto& value : entry.value) core::free(value);
+								core::free(entry.value);
+							}
+							for (auto& a : unifying_conjuncts) core::free(a);
 							for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 							return false;
 						}
@@ -11841,7 +12013,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 									core::free(*dst_variables[j]); core::free(dst_variables[j]);
 								}
 								core::free(src_variables);
-								for (auto& element : possible_values) core::free(element);
+								for (auto entry : possible_values) {
+									for (auto& value : entry.value) core::free(value);
+									core::free(entry.value);
+								}
+								for (auto& a : unifying_conjuncts) core::free(a);
 								for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 								return false;
 							}
@@ -11852,7 +12028,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 							/* we only check conjuncts that don't unify with `next_new_atom` since
 							   we're already checking those sets anyway in this loop (this is why we
 							   require `set_formula` to be a conjunction) */
-							if (unifying_conjuncts.contains(k)) continue;
+							if (curr_unifying_conjuncts.contains(k)) continue;
 							Formula* conjunct = set_formula->array.operands[k];
 							Formula* substituted;
 							if (substitution_count == 0) {
@@ -11866,7 +12042,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 										core::free(*dst_variables[j]); if (dst_variables[j]->reference_count == 0) core::free(dst_variables[j]);
 									}
 									core::free(src_variables);
-									for (auto& element : possible_values) core::free(element);
+									for (auto entry : possible_values) {
+										for (auto& value : entry.value) core::free(value);
+										core::free(entry.value);
+									}
+									for (auto& a : unifying_conjuncts) core::free(a);
 									for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 									return false;
 								}
@@ -11886,14 +12066,18 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					}
 				}
 
-				array<variable_assignment> new_possible_values(max((size_t) 1, 4 * possible_values.length));
-				for (const variable_assignment& possible_value : possible_values) {
+				array<variable_assignment> new_possible_values(max((size_t) 1, 4 * curr_possible_values.length));
+				for (const variable_assignment& possible_value : curr_possible_values) {
 					array<variable_assignment> temp_possible_values(4);
 					variable_assignment& values = temp_possible_values[0];
 					if (!::init(values, possible_value)) {
 						prover.free_provable_elements(provable_elements);
 						for (auto& element : new_possible_values) core::free(element);
-						for (auto& element : possible_values) core::free(element);
+						for (auto entry : possible_values) {
+							for (auto& value : entry.value) core::free(value);
+							core::free(entry.value);
+						}
+						for (auto& a : unifying_conjuncts) core::free(a);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 						return false;
 					}
@@ -11910,7 +12094,6 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					for (auto& element : temp_possible_values) core::free(element);
 					swap(union_result, new_possible_values);
 				}
-				for (auto& element : possible_values) core::free(element);
 
 				/* the addition could cause this formula to be provably false */
 				array<variable_assignment> temp_possible_values(max(1, provable_elements.length));
@@ -11921,6 +12104,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 						prover.free_provable_elements(provable_elements);
 						for (auto& element : new_possible_values) core::free(element);
 						for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+						for (auto entry : possible_values) {
+							for (auto& value : entry.value) core::free(value);
+							core::free(entry.value);
+						}
+						for (auto& a : unifying_conjuncts) core::free(a);
 						return false;
 					}
 					for (uint_fast8_t k = 0; k < element.length; k++) {
@@ -11939,6 +12127,11 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 								values.assignment.values[k].type = instantiation_type::CONSTANT;
 								for (auto& element : temp_possible_values) core::free(element);
 								prover.free_provable_elements(provable_elements);
+								for (auto entry : possible_values) {
+									for (auto& value : entry.value) core::free(value);
+									core::free(entry.value);
+								}
+								for (auto& a : unifying_conjuncts) core::free(a);
 								for (auto& element : new_possible_values) core::free(element);
 								for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
 								values.assignment.values[k].type = instantiation_type::CONSTANT;
@@ -11954,45 +12147,36 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					for (auto& element : temp_possible_values) core::free(element);
 					for (auto& element : new_possible_values) core::free(element);
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					for (auto entry : possible_values) {
+						for (auto& value : entry.value) core::free(value);
+						core::free(entry.value);
+					}
+					for (auto& a : unifying_conjuncts) core::free(a);
 					return false;
 				}
 
 				if (new_possible_values.length == 0) continue;
-				if (!check_set_membership<ResolveInconsistencies, true, false>(i, new_possible_values, new_antecedents, new_elements, quantifiers, new_atoms, new_atom_index + 1, visited_sets)) {
+				if (!check_set_membership<ResolveInconsistencies, true, true>(i, new_possible_values, new_antecedents, new_elements, quantifiers, new_atoms, new_atom_index + 1, visited_sets)) {
 					for (auto& element : new_possible_values) core::free(element);
 					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
+					for (auto entry : possible_values) {
+						for (auto& value : entry.value) core::free(value);
+						core::free(entry.value);
+					}
+					for (auto& a : unifying_conjuncts) core::free(a);
 					return false;
 				}
 				for (auto& element : new_possible_values) core::free(element);
 			}
-			for (unsigned int i = 0; i < implication_axioms.length; i++) {
+			for (auto entry : possible_values) {
+				for (auto& value : entry.value) core::free(value);
+				core::free(entry.value);
+			}
+			for (auto& a : unifying_conjuncts) core::free(a);
+
+			for (unsigned int i : unifying_antecedents) {
 				Proof* axiom = implication_axioms[i].key;
 				Formula* antecedent = axiom->formula->binary.left;
-
-				array<Formula*> quantifiers(4);
-				array<array_map<Formula*, Term*>> unifications(4);
-				if (!unify_subformula<true>(next_new_atom, antecedent, quantifiers, unifications)) {
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					return false;
-				}
-
-				bool has_valid_unification = false;
-				for (const array_map<Formula*, Term*>& unification : unifications) {
-					bool valid_unification = true;
-					for (const auto& entry : unification) {
-						if (entry.value->type != TermType::CONSTANT && entry.value->type != TermType::NUMBER && entry.value->type != TermType::STRING && entry.value->type != TermType::VARIABLE) {
-							valid_unification = false;
-							break;
-						}
-					}
-					if (valid_unification) {
-						has_valid_unification = true;
-						break;
-					}
-				}
-				for (auto& element : unifications) core::free(element);
-				if (!has_valid_unification)
-					continue;
 
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
 				prover.h.set_ids[0] = 0;
@@ -12003,6 +12187,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					return false;
 				}
 				temp_possible_values.length = 1;
+				array<Formula*> quantifiers(4);
 				if (!is_provable_without_abduction<false>(antecedent, quantifiers, temp_possible_values, prover)) {
 					for (auto& element : temp_possible_values) core::free(element);
 					continue;
@@ -12014,35 +12199,10 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					return false;
 				}
 			}
-			for (unsigned int i = 0; i < implication_axioms.length; i++) {
+			for (unsigned int i : unifying_consequents) {
 				if (!implication_axioms[i].value) continue;
 				Proof* axiom = implication_axioms[i].key;
 				Formula* consequent = axiom->formula->binary.right;
-
-				array<Formula*> quantifiers(4);
-				array<array_map<Formula*, Term*>> unifications(4);
-				if (!unify_subformula<true>(next_new_atom, consequent, quantifiers, unifications)) {
-					for (auto entry : new_elements) { core::free(entry.key); core::free(entry.value); }
-					return false;
-				}
-
-				bool has_valid_unification = false;
-				for (const array_map<Formula*, Term*>& unification : unifications) {
-					bool valid_unification = true;
-					for (const auto& entry : unification) {
-						if (entry.value->type != TermType::CONSTANT && entry.value->type != TermType::NUMBER && entry.value->type != TermType::STRING && entry.value->type != TermType::VARIABLE) {
-							valid_unification = false;
-							break;
-						}
-					}
-					if (valid_unification) {
-						has_valid_unification = true;
-						break;
-					}
-				}
-				for (auto& element : unifications) core::free(element);
-				if (!has_valid_unification)
-					continue;
 
 				/* the addition could cause this formula to be provably false */
 				set_membership_prover prover(sets, implication_axioms, new_elements, new_antecedents);
@@ -12054,6 +12214,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					return false;
 				}
 				temp_possible_values.length = 1;
+				array<Formula*> quantifiers(4);
 				if (is_provable_without_abduction<true>(consequent, quantifiers, temp_possible_values, prover)) {
 					for (auto& element : temp_possible_values) core::free(element);
 					return false;
@@ -12531,6 +12692,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		unsigned int old_atom_index = 0;
 		array_map<unsigned int, tuple> old_elements(8);
 		array<unsigned int> old_antecedents(4);
+if (debug_flag && old_atoms[0]->type == TermType::UNARY_APPLICATION && old_atoms[0]->binary.left->type == TermType::CONSTANT && old_atoms[0]->binary.left->constant < new_constant_offset && *debug_terminal_printer->map[old_atoms[0]->binary.left->constant] == "kill" && old_atoms[0]->binary.right->type == TermType::CONSTANT && old_atoms[0]->binary.right->constant == new_constant_offset + 5)
+fprintf(stderr, "DEBUG\n");
 		while (old_atom_index < old_atoms.length) {
 			Formula* next_old_atom = old_atoms[old_atom_index++];
 
@@ -12614,6 +12777,8 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 						for (auto entry : old_elements) core::free(entry.value);
 						core::free(element); return false;
 					}
+if (debug_flag && element.elements[0].type == tuple_element_type::CONSTANT && element.elements[0].constant < new_constant_offset && *debug_terminal_printer->map[element.elements[0].constant] == "victim" && element.elements[1].type == tuple_element_type::CONSTANT && element.elements[1].constant == new_constant_offset + 4)
+fprintf(stderr, "DEBUG\n");
 					old_elements.keys[old_elements.size] = i;
 					move(element, old_elements.values[old_elements.size]);
 					old_elements.size++;
@@ -19670,13 +19835,13 @@ bool log_joint_probability_of_lambda(
 	auto collector = make_provability_collector(T, proof_prior, new_proof, new_proof_sample_delegate);
 	double max_log_probability = collector.internal_collector.current_log_probability;
 	for (unsigned int t = 0; t < num_samples; t++) {
-fprintf(stderr, "DEBUG: t = %u\n", t);
+/*fprintf(stderr, "DEBUG: t = %u\n", t);
 T.print_axioms(stderr, *debug_terminal_printer);
 T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 if (!check_consistency(T, proof_axioms, collector)) exit(0);
 if (t == 252)
 	debug_flag = true;
-else debug_flag = false;
+else debug_flag = false;*/
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, t < num_samples / 4 ? 1.0 : 0.1);
 		if (collector.internal_collector.current_log_probability > max_log_probability) {
 			free(T_MAP); formula_map.clear();
