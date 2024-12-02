@@ -19234,7 +19234,9 @@ inline bool print(tptp_token_type type, Stream& stream) {
 enum class tptp_lexer_state {
 	DEFAULT,
 	IDENTIFIER,
-	QUOTE
+	QUOTE,
+	LINE_COMMENT,
+	BLOCK_COMMENT
 };
 
 bool tptp_emit_symbol(array<tptp_token>& tokens, const position& start, char symbol) {
@@ -19289,8 +19291,8 @@ inline bool tptp_lex_symbol(array<tptp_token>& tokens, Stream& input, char32_t& 
 			if (!emit_token(tokens, current, current + 1, tptp_token_type::EQUALS)) return false;
 		} else {
 			if (!emit_token(tokens, current, current + 2, tptp_token_type::IF_THEN)) return false;
+			current.column++;
 		}
-		current.column++;
 	} else if (next == '-') {
 		next = fgetc32(input);
 		if (next != '>') {
@@ -19343,6 +19345,24 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 				state = tptp_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
 				new_line = (next == '\n');
+			} else if (next == '/') {
+				next = fgetc32(wrapper);
+				if (next == '*') {
+					if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
+						return false;
+					state = tptp_lexer_state::BLOCK_COMMENT;
+					token.clear(); shift = {0};
+					current.column++;
+				} else if (next == '/') {
+					if (!emit_token(tokens, token, start, current, tptp_token_type::IDENTIFIER))
+						return false;
+					state = tptp_lexer_state::LINE_COMMENT;
+					token.clear(); shift = {0};
+					current.column++;
+				} else {
+					if (!append_to_token(token, next, shift)) return false;
+					read_next = false;
+				}
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
 			}
@@ -19379,10 +19399,39 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 				start = current;
 			} else if (next == ' ' || next == '\t' || next == '\n' || next == '\r') {
 				new_line = (next == '\n');
+			} else if (next == '/') {
+				next = fgetc32(wrapper);
+				if (next == '*') {
+					state = tptp_lexer_state::BLOCK_COMMENT;
+					current.column++;
+				} else if (next == '/') {
+					state = tptp_lexer_state::LINE_COMMENT;
+					current.column++;
+				} else {
+					if (!append_to_token(token, next, shift)) return false;
+					read_next = false;
+				}
 			} else {
 				if (!append_to_token(token, next, shift)) return false;
 				state = tptp_lexer_state::IDENTIFIER;
 				start = current;
+			}
+			break;
+
+		case tptp_lexer_state::BLOCK_COMMENT:
+			if (next == '*') {
+				next = fgetc32(wrapper);
+				if (next == '/') {
+					state = tptp_lexer_state::DEFAULT;
+					current.column++;
+				}
+			}
+			break;
+
+		case tptp_lexer_state::LINE_COMMENT:
+			if (next == '\n') {
+				new_line = true;
+				state = tptp_lexer_state::DEFAULT;
 			}
 			break;
 		}
