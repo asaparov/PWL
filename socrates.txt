@@ -1,0 +1,3 @@
+![m]:(man(m) => mortal(m));
+?[s]:(?[n]:(name(n) & arg1(n)=s & arg2(n)="Socrates") & man(s));
+?[s]:(?[n]:(name(n) & arg1(n)=s & arg2(n)="Socrates") & mortal(s));

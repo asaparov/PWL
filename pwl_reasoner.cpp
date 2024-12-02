@@ -106,6 +106,12 @@ int main(int argc, const char** argv)
 set_seed(1356941742);
 	fprintf(stdout, "(seed = %u)\n", get_seed());
 
+	/* parse command-line arguments */
+	if (argc < 2) {
+		fprintf(stdout, "Usage: pwl_reasoner <file with logical forms>\n");
+		exit(EXIT_FAILURE);
+	}
+
 	hash_map<string, unsigned int> names(256);
 	if (!add_constants_to_string_map(names))
 		return EXIT_FAILURE;
@@ -128,17 +134,17 @@ set_seed(1356941742);
 	fclose(in);
 
 	/* read the input logical forms */
-	array<hol_term*> agatha_lfs(8);
-	const char* input_filename = "agatha_lfs.txt";
+	array<hol_term*> lfs(8);
+	const char* input_filename = argv[1];
 	in = fopen(input_filename, "rb");
 	if (in == nullptr) {
 		fprintf(stderr, "ERROR: Unable to open '%s' for reading.\n", input_filename);
 		free_all(seed_axioms);
 		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
-	} else if (!read_terms(agatha_lfs, in, names)) {
+	} else if (!read_terms(lfs, in, names)) {
 		fprintf(stderr, "ERROR: Failed to parse logical forms in '%s'.\n", input_filename);
-		fclose(in); free_all(seed_axioms); free_all(agatha_lfs);
+		fclose(in); free_all(seed_axioms); free_all(lfs);
 		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
 	}
@@ -147,7 +153,7 @@ set_seed(1356941742);
 
 	const string** name_map = invert(names);
 	if (name_map == nullptr) {
-		free_all(agatha_lfs);
+		free_all(lfs);
 		free_all(seed_axioms);
 		for (auto entry : names) free(entry.key);
 		return EXIT_FAILURE;
@@ -183,9 +189,9 @@ set_seed(1356941742);
 
 	PriorStateType proof_axioms;
 
-	for (unsigned int i = 0; i + 1 < agatha_lfs.length; i++) {
+	for (unsigned int i = 0; i + 1 < lfs.length; i++) {
 		/* add the logical form to the theory */
-		hol_term* lf = agatha_lfs[i];
+		hol_term* lf = lfs[i];
 		set_changes<hol_term> set_diff;
 		unsigned int new_constant;
 		auto* new_proof = T.add_formula(lf, set_diff, new_constant);
@@ -275,27 +281,65 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 	}
 
 	print("Finished reading declarative sentences. Attempting to answer question:\n", stdout);
-	print("  Logical form: ", stdout); print(*agatha_lfs.last(), stdout, printer); print("\n", stdout);
+	print("  Logical form: ", stdout); print(*lfs.last(), stdout, printer); print("\n", stdout);
 
-	array_map<string, double> answers(8);
-	answer_question<false>(answers, agatha_lfs.last(), 1000, printer, T, proof_prior, proof_axioms);
-	sort(answers.values, answers.keys, answers.size, default_sorter());
-	//print("Theory after attempting to answer question:\n", stdout);
-	//T.template print_axioms<true>(stdout, *debug_terminal_printer); print('\n', stdout).
-	reverse(answers.keys, answers.size);
-	reverse(answers.values, answers.size);
-	normalize_exp(answers.values, answers.size);
-	print("Answers: (with estimated probabilies)\n", stdout);
-	for (unsigned int i = 0; i < answers.size; i++) {
-		print("  ", stdout); print(answers.keys[i], stdout);
-		print(" : ", stdout); print(answers.values[i], stdout);
-		print('\n', stdout);
+	if (lfs.last()->type != hol_term_type::LAMBDA) {
+		typedef typename Theory::Proof Proof;
+		Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
+		Theory::set_empty(T_MAP);
+		Proof* proof_MAP;
+		double log_probability_true = log_joint_probability_of_truth(T, proof_prior, proof_axioms, lfs.last(), 250, 4, 20, T_MAP, proof_MAP);
+		if (!Theory::is_empty(T_MAP)) {
+			print("Highest probability theory after testing whether query is true:\n", stdout);
+			T_MAP.print_axioms(stdout, *debug_terminal_printer);
+			free(T_MAP); Theory::set_empty(T_MAP);
+		}
+
+		hol_term* negation;
+		if (lfs.last()->type == hol_term_type::NOT) {
+			negation = lfs.last()->unary.operand;
+			negation->reference_count++;
+		} else {
+			negation = hol_term::new_not(lfs.last());
+		}
+		double log_probability_false = log_joint_probability_of_truth(T, proof_prior, proof_axioms, negation, 250, 4, 20, T_MAP, proof_MAP);
+		if (!Theory::is_empty(T_MAP)) {
+			print("Highest probability theory after testing whether query is false:\n", stdout);
+			T_MAP.print_axioms(stdout, *debug_terminal_printer);
+			free(*negation); if (negation->reference_count == 0) free(negation);
+			free(T_MAP);
+		}
+
+		double probabilities[] = {log_probability_true, log_probability_false};
+		normalize_exp(probabilities, array_length(probabilities));
+		print("Answer:\n", stdout);
+		print("  true : ", stdout);
+		print(probabilities[0], stdout); print('\n', stdout);
+		print("  false : ", stdout);
+		print(probabilities[1], stdout); print('\n', stdout);
+		fflush(stdout);
+
+	} else {
+		array_map<string, double> answers(8);
+		answer_question<false>(answers, lfs.last(), 1000, printer, T, proof_prior, proof_axioms);
+		sort(answers.values, answers.keys, answers.size, default_sorter());
+		//print("Theory after attempting to answer question:\n", stdout);
+		//T.template print_axioms<true>(stdout, *debug_terminal_printer); print('\n', stdout).
+		reverse(answers.keys, answers.size);
+		reverse(answers.values, answers.size);
+		normalize_exp(answers.values, answers.size);
+		print("Answers: (with estimated probabilities)\n", stdout);
+		for (unsigned int i = 0; i < answers.size; i++) {
+			print("  ", stdout); print(answers.keys[i], stdout);
+			print(" : ", stdout); print(answers.values[i], stdout);
+			print('\n', stdout);
+		}
+		fflush(stdout);
+		for (auto entry : answers) core::free(entry.key);
 	}
-	fflush(stdout);
-	for (auto entry : answers) core::free(entry.key);
 
 	free(name_map);
-	free_all(agatha_lfs);
+	free_all(lfs);
 	free_all(seed_axioms);
 	for (auto entry : names) free(entry.key);
 	return EXIT_SUCCESS;
