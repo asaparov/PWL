@@ -5909,19 +5909,11 @@ private:
 			{
 				if (!visit_subset_axiom(proof, std::forward<Visitor>(visitor)...))
 					return false;
-if (reference_count == 0) {
-fprintf(stderr, "DEBUG: Subset rule has reference_count = 0: ");
-print(*proof.formula, stderr, *debug_terminal_printer); print('\n', stderr);
-exit(1);
-}
 				if (reference_count != 1) return true;
 
-				unsigned int arity = 1;
 				Formula* operand = proof.formula->quantifier.operand;
-				while (operand->type == FormulaType::FOR_ALL) {
+				while (operand->type == FormulaType::FOR_ALL)
 					operand = operand->quantifier.operand;
-					arity++;
-				}
 				Formula* left = operand->binary.left;
 				Formula* right = operand->binary.right;
 
@@ -9014,12 +9006,10 @@ print("  set_formula: ", stderr); print(*set_formula, stderr, *debug_terminal_pr
 				set_formula = set_formula->quantifier.operand;
 			}
 
-			unsigned int set_quantifier_count = 0;
 			Formula* set_operand = set_formula;
 			while (set_operand->type == FormulaType::EXISTS) {
 				second_quantifiers.add(set_operand);
 				set_operand = set_operand->quantifier.operand;
-				set_quantifier_count++;
 			}
 
 			array_map<Formula*, Term*> first_unifications(4);
@@ -12692,8 +12682,6 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 		unsigned int old_atom_index = 0;
 		array_map<unsigned int, tuple> old_elements(8);
 		array<unsigned int> old_antecedents(4);
-if (debug_flag && old_atoms[0]->type == TermType::UNARY_APPLICATION && old_atoms[0]->binary.left->type == TermType::CONSTANT && old_atoms[0]->binary.left->constant < new_constant_offset && *debug_terminal_printer->map[old_atoms[0]->binary.left->constant] == "kill" && old_atoms[0]->binary.right->type == TermType::CONSTANT && old_atoms[0]->binary.right->constant == new_constant_offset + 5)
-fprintf(stderr, "DEBUG\n");
 		while (old_atom_index < old_atoms.length) {
 			Formula* next_old_atom = old_atoms[old_atom_index++];
 
@@ -12777,8 +12765,6 @@ fprintf(stderr, "DEBUG\n");
 						for (auto entry : old_elements) core::free(entry.value);
 						core::free(element); return false;
 					}
-if (debug_flag && element.elements[0].type == tuple_element_type::CONSTANT && element.elements[0].constant < new_constant_offset && *debug_terminal_printer->map[element.elements[0].constant] == "victim" && element.elements[1].type == tuple_element_type::CONSTANT && element.elements[1].constant == new_constant_offset + 4)
-fprintf(stderr, "DEBUG\n");
 					old_elements.keys[old_elements.size] = i;
 					move(element, old_elements.values[old_elements.size]);
 					old_elements.size++;

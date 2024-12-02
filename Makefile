@@ -29,7 +29,7 @@ CPP=g++
 cc-option = $(shell $(CPP) -Werror $(1) -c -x c /dev/null -o /dev/null 2>/dev/null; echo $$?)
 
 LIBRARY_PKG_LIBS=
-PKG_LIBS=-pthread -lssl -lcrypto
+PKG_LIBS=
 NO_AS_NEEDED=-Wl,--no-as-needed
 ifeq ($(call cc-option, $(NO_AS_NEEDED)),0)
 	PKG_LIBS += $(NO_AS_NEEDED)
@@ -66,6 +66,8 @@ debug: executive_test_dbg extract_wikt_morphology_en_dbg set_reasoning_test_dbg
 
 -include $(EXECUTIVE_TEST_OBJS:.release.o=.release.d)
 -include $(EXECUTIVE_TEST_DBG_OBJS:.debug.o=.debug.d)
+-include $(PWL_REASONER_OBJS:.release.o=.release.d)
+-include $(PWL_REASONER_DBG_OBJS:.debug.o=.debug.d)
 -include $(EXTRACT_WIKT_MORPHOLOGY_EN_OBJS:.release.o=.release.d)
 -include $(EXTRACT_WIKT_MORPHOLOGY_EN_DBG_OBJS:.debug.o=.debug.d)
 -include $(SET_REASONING_TEST_OBJS:.release.o=.release.d)
@@ -91,10 +93,10 @@ endef
 	$(call make_dependencies,$(CPP),$(CPPFLAGS_DBG),$*,cpp,debug.pic)
 
 executive_test: $(LIBS) $(EXECUTIVE_TEST_OBJS)
-		$(CPP) -o executive_test $(CPPFLAGS) $(EXECUTIVE_TEST_OBJS) $(LDFLAGS)
+		$(CPP) -o executive_test $(CPPFLAGS) $(EXECUTIVE_TEST_OBJS) $(LDFLAGS) -lssl -lcrypto
 
 executive_test_dbg: $(LIBS) $(EXECUTIVE_TEST_DBG_OBJS)
-		$(CPP) -o executive_test_dbg $(CPPFLAGS_DBG) $(EXECUTIVE_TEST_DBG_OBJS) $(LDFLAGS_DBG)
+		$(CPP) -o executive_test_dbg $(CPPFLAGS_DBG) $(EXECUTIVE_TEST_DBG_OBJS) $(LDFLAGS_DBG) -lssl -lcrypto
 
 pwl_reasoner: $(LIBS) $(PWL_REASONER_OBJS)
 		$(CPP) -o pwl_reasoner $(CPPFLAGS) $(PWL_REASONER_OBJS) $(LDFLAGS)
