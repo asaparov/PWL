@@ -3219,7 +3219,7 @@ template<
 	typename ProofLengthPrior,
 	typename TheorySampleCollector>
 double log_probability(
-		const hash_set<nd_step<Formula>*>& proofs,
+		const array<nd_step<Formula>*>& proofs,
 		const array<Formula*>& extra_observations,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, ConjunctionEliminationPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
 		TheorySampleCollector& theory_sample_collector)

@@ -3640,7 +3640,7 @@ struct set_reasoning
 		return (size_axiom->children.length == 0);
 	}
 
-	inline bool is_unfixed(Proof* size_axiom, const hash_set<Proof*>& observations) const {
+	inline bool is_unfixed(Proof* size_axiom, const array<Proof*>& observations) const {
 		return (size_axiom->children.length == 0
 			&& !observations.contains(size_axiom));
 	}
@@ -3651,13 +3651,13 @@ struct set_reasoning
 		return true;
 	}
 
-	inline bool is_unfixed(unsigned int set_id, const hash_set<Proof*>& observations) const {
+	inline bool is_unfixed(unsigned int set_id, const array<Proof*>& observations) const {
 		for (Proof* size_axiom : sets[set_id].size_axioms)
 			if (!is_unfixed(size_axiom, observations)) return false;
 		return true;
 	}
 
-	bool get_unfixed_sets(array<unsigned int>& unfixed_set_ids, const hash_set<Proof*>& observations) {
+	bool get_unfixed_sets(array<unsigned int>& unfixed_set_ids, const array<Proof*>& observations) {
 		for (unsigned int i = 2; i < set_count + 1; i++) {
 			if (sets[i].size_axioms.data == nullptr || !is_unfixed(i, observations))
 				continue;

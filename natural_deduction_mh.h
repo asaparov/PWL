@@ -1829,9 +1829,9 @@ bool undo_proof_changes(
 	}
 
 	for (auto& entry : observation_changes) {
-		T.observations.remove(entry.key);
+		unsigned int index = T.observations.index_of(entry.key);
+		T.observations[index] = entry.value;
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
-		T.observations.add(entry.value);
 		entry.value->reference_count++;
 	}
 	free(inverse_proofs);
@@ -2182,13 +2182,9 @@ T.print_axioms(stderr);
 	}
 
 	for (auto& entry : observation_changes) {
-		T.observations.remove(entry.key);
+		unsigned int index = T.observations.index_of(entry.key);
+		T.observations[index] = entry.value;
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
-		if (!T.observations.add(entry.value)) {
-			undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_proof_step.proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
-			free(*selected_proof_step.proof); if (selected_proof_step.proof->reference_count == 0) free(selected_proof_step.proof);
-			return false;
-		}
 		entry.value->reference_count++;
 	}
 
@@ -2723,9 +2719,9 @@ inline bool do_split_merge(
 		}
 
 		for (auto& entry : observation_changes) {
-			T.observations.remove(entry.key);
+			unsigned int index = T.observations.index_of(entry.key);
+			T.observations[index] = entry.value;
 			free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
-			T.observations.add(entry.value);
 			entry.value->reference_count++;
 		}
 		free(inverse_proofs);
@@ -2748,12 +2744,9 @@ inline bool do_split_merge(
 	};
 
 	for (auto& entry : observation_changes) {
-		T.observations.remove(entry.key);
+		unsigned int index = T.observations.index_of(entry.key);
+		T.observations[index] = entry.value;
 		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
-		if (!T.observations.add(entry.value)) {
-			undo_proof_changes();
-			return false;
-		}
 		entry.value->reference_count++;
 	}
 
@@ -3017,9 +3010,9 @@ bool do_mh_universal_intro(
 			return false;
 		}
 		for (auto& entry : observation_changes) {
-			T.observations.remove_at(T.observations.index_of(entry.key));
+			unsigned int index = T.observations.index_of(entry.key);
+			T.observations[index] = entry.value;
 			free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
-			T.observations.add(entry.value);
 			entry.value->reference_count++;
 		}
 		proof_axioms.subtract(old_axioms);
@@ -3116,9 +3109,9 @@ bool do_mh_universal_elim(
 		}
 
 		for (auto& entry : observation_changes) {
-			T.observations.remove(entry.key);
+			unsigned int index = T.observations.index_of(entry.key);
+			T.observations[index] = entry.value;
 			free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
-			T.observations.add(entry.value);
 			entry.value->reference_count++;
 		}
 		proof_axioms.subtract(old_axioms);
