@@ -2622,7 +2622,11 @@ struct set_reasoning
 
 		if (!is_fixed) {
 			bool child_graph_changed = false;
-			if (!increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed)) {
+			unsigned int clique_upper_bound = sets[ancestor_of_clique].set_size;
+			for (unsigned int i = 0; i < clique_count; i++)
+				clique_upper_bound -= sets[clique[i]].set_size;
+			if (clique_upper_bound < requested_size && !increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed))
+			{
 				if (connected_component.size > 1)
 					uncontract_component(set, connected_component, old_disjoint_cache_items);
 				core::free(clique); return false;

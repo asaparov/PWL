@@ -590,7 +590,8 @@ job.T.template print_axioms<true>(stdout, *debug_terminal_printer);*/
 
 					// TODO: this is kind of a hacky way to get the new proof
 					hash_set<nd_step<hol_term>*> old_proofs(job.T.observations.capacity);
-					old_proofs.add_all(job.T.observations);
+					for (nd_step<hol_term>* term : job.T.observations)
+						old_proofs.add(term);
 					printf("Sentence index: %u\n", sentence_counter);
 					if (!read_sentence(corpus, parser, context_sentences[i].data, job.T, names, seed_entities, proof_prior, job.proof_axioms)) {
 						std::unique_lock<std::mutex> lock(results_lock);

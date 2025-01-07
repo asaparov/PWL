@@ -55,8 +55,10 @@ enum class built_in_predicates : unsigned int {
 	MEASURE,
 	REF,
 	PLURAL_REF,
+	LOC_REF,
 	ANIMATE,
 	CAPABLE_OF,
+	LOCATION,
 
 	COUNT
 };
@@ -239,8 +241,10 @@ inline bool add_constants_to_string_map(hash_map<string, unsigned int>& names)
 		&& names.put("measure", (unsigned int) built_in_predicates::MEASURE)
 		&& names.put("ref", (unsigned int) built_in_predicates::REF)
 		&& names.put("plural_ref", (unsigned int) built_in_predicates::PLURAL_REF)
+		&& names.put("loc_ref", (unsigned int) built_in_predicates::LOC_REF)
 		&& names.put("animate", (unsigned int) built_in_predicates::ANIMATE)
-		&& names.put("capable_of", (unsigned int) built_in_predicates::CAPABLE_OF);
+		&& names.put("capable_of", (unsigned int) built_in_predicates::CAPABLE_OF)
+		&& names.put("location", (unsigned int) built_in_predicates::LOCATION);
 }
 
 struct no_op {

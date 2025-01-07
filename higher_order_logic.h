@@ -2143,6 +2143,22 @@ inline bool contains_parameter(const hol_term& src, unsigned int parameter) {
 	return !visit(src, visitor);
 }
 
+struct term_ptr_comparator {
+	const hol_term* term_ptr;
+};
+
+template<hol_term_type Type>
+inline bool visit(const hol_term& term, const term_ptr_comparator& visitor) {
+	if (&term == visitor.term_ptr)
+		return false;
+	return true;
+}
+
+inline bool contains_term_ptr(const hol_term& src, const hol_term* term_ptr) {
+	term_ptr_comparator visitor = {term_ptr};
+	return !visit(src, visitor);
+}
+
 struct constant_comparator {
 	unsigned int constant;
 };
@@ -19381,6 +19397,7 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 				state = tptp_lexer_state::DEFAULT;
 				token.clear(); shift = {0};
 			} else {
+				new_line = (next == '\n');
 				if (!append_to_token(token, next, shift)) return false;
 			}
 			break;
@@ -19425,6 +19442,8 @@ bool tptp_lex(array<tptp_token>& tokens, Stream& input, position start = positio
 					state = tptp_lexer_state::DEFAULT;
 					current.column++;
 				}
+			} else if (next == '\n') {
+				new_line = true;
 			}
 			break;
 

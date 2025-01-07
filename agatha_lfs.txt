@@ -13,7 +13,7 @@
 			& ?[S]:(S=^[s]:(s=a | B(s) | s=c)
 				& ?[m]:(?[n]:(name(n) & arg1(n)=m & arg2(n)="Dreadbury")
 					& ![s]:(S(s) => ?[l]:(live(l) & arg1(l)=s & arg2(l)=m)))
-				& ?[r]:(?[n]:(name(n) & arg1(n)=r & arg2(n)="Dreadbury")
+				& ?[r]:(loc_ref(r)
 					& ?[P]:(P=^[p]:(person(p) & ?[l]:(live(l) & arg1(l)=p & arg2(l)=r))
 						& ?[o]:(only(o) & arg1(o)=S & arg2(o)=P)
 					)
@@ -22,10 +22,11 @@
 		)
 	)
 );
-?[K]:(K=^[k]:agent(kill)(k)
-	& ![k]:(K(k) => ![v]:((victim(v) & ?[p]:(possessive(p) & arg1(p)=k & arg2(p)=v))
-		=> (?[h]:(hate(h) & arg1(h)=k & arg2(h)=v) & ~?[r]:(greater(wealth)(r) & arg1(r)=k & arg2(r)=v)))
-	)
+![k]:(agent(kill)(k) =>
+	(?[r]:(ref(r) & ![v]:((victim(v) & ?[p]:(possessive(p) & arg1(p)=r & arg2(p)=v))
+		=> ?[h]:(hate(h) & arg1(h)=k & arg2(h)=v)))
+	& ?[r]:(ref(r) & ![v]:((victim(v) & ?[p]:(possessive(p) & arg1(p)=r & arg2(p)=v))
+		=> ~?[w]:(greater(wealth)(w) & arg1(w)=k & arg2(w)=v))))
 );
 ?[c]:(?[n]:(name(n) & arg1(n)=c & arg2(n)="Charles")
 	& ?[a]:(aunt(a) & ?[n]:(name(n) & arg1(n)=a & arg2(n)="Agatha")

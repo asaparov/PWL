@@ -240,12 +240,12 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		auto collector = make_log_probability_collector(T, proof_prior, new_proof);
 		double max_log_probability = collector.current_log_probability;
 		for (unsigned int j = 0; j < 4; j++) {
-			for (unsigned int t = 0; t < 500; t++) {
+			for (unsigned int t = 0; t < 1000; t++) {
 //fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-/*if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
-T.template print_axioms<true>(stdout, *debug_terminal_printer);
+//if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
+/*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
-if (i == 4 && j == 3 && t == 63) {
+if (i == 9 && j == 0 && t == 239) {
 fprintf(stderr, "DEBUG\n");
 debug_flag = true;
 } else {
@@ -262,11 +262,11 @@ debug_flag = false;
 			}
 
 			if (j + 1 < 4) {
-				for (unsigned int t = 0; t < 20; t++) {
-/*fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-T.template print_axioms<true>(stdout, *debug_terminal_printer);
-T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);*/
+				for (unsigned int t = 0; t < 40; t++) {
+//fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
 //if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
+//T.template print_axioms<true>(stdout, *debug_terminal_printer);
+//T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
 					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector, collector.test_proof, 1.0);
 				}
 			}
@@ -275,8 +275,11 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		Theory::clone(T_MAP, T, formula_map);
 		PriorStateType::clone(proof_axioms_MAP, proof_axioms, formula_map);
 		print("Best theory so far:\n", stdout);
-		T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer); fflush(stdout);
-		print("Theory log probability: ", stdout); print(max_log_probability, stdout); print("\n\n", stdout);
+		T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer);
+		print("Theory log probability: ", stdout); print(max_log_probability, stdout); print("\n", stdout);
+		print("Proof of newly-added logical form in the best theory:\n", stdout);
+		print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T.observations.last(), stdout, *debug_terminal_printer);
+		print('\n', stdout); fflush(stdout);
 		free(T_MAP); free(proof_axioms_MAP);
 	}
 
@@ -292,6 +295,9 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		if (!Theory::is_empty(T_MAP)) {
 			print("Highest probability theory after testing whether query is true:\n", stdout);
 			T_MAP.print_axioms(stdout, *debug_terminal_printer);
+			print("Proof of newly-added logical form in the best theory:\n", stdout);
+			print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T_MAP.observations.last(), stdout, *debug_terminal_printer);
+			print('\n', stdout); fflush(stdout);
 			free(T_MAP); Theory::set_empty(T_MAP);
 		}
 
@@ -301,12 +307,16 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 			negation->reference_count++;
 		} else {
 			negation = hol_term::new_not(lfs.last());
+			lfs.last()->reference_count++;
 		}
 		double log_probability_false = log_joint_probability_of_truth(T, proof_prior, proof_axioms, negation, 250, 4, 20, T_MAP, proof_MAP);
+		free(*negation); if (negation->reference_count == 0) free(negation);
 		if (!Theory::is_empty(T_MAP)) {
 			print("Highest probability theory after testing whether query is false:\n", stdout);
 			T_MAP.print_axioms(stdout, *debug_terminal_printer);
-			free(*negation); if (negation->reference_count == 0) free(negation);
+			print("Proof of newly-added logical form in the best theory:\n", stdout);
+			print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T_MAP.observations.last(), stdout, *debug_terminal_printer);
+			print('\n', stdout); fflush(stdout);
 			free(T_MAP);
 		}
 

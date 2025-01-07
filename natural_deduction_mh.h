@@ -1849,9 +1849,6 @@ bool undo_proof_changes(
 	free(new_proof_changes);
 	free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
 
-if (debug_flag)
-T.print_axioms(stderr);
-
 	/* add the changes back into T from `old_proof` */
 	if (!T.add_changes(old_proof_changes, set_diff, old_sets)) {
 		free(old_proof_changes);
@@ -2099,7 +2096,7 @@ print(*selected_proof_step.formula, stderr); print('\n', stderr);
 		sampler.clear();
 if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u\n", debug);
-T.print_axioms(stderr);
+T.print_axioms(stderr, *debug_terminal_printer);
 }
 debug++;
 		new_set_diff.clear();
@@ -2112,7 +2109,7 @@ debug++;
 	}
 if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
-T.print_axioms(stderr);
+T.print_axioms(stderr, *debug_terminal_printer);
 }
 
 	log_proposal_probability_ratio -= sampler.log_probability;
@@ -2202,7 +2199,7 @@ T.print_axioms(stderr);
 	array<relation> splittable_events(8);
 	get_splittable_events(T, splittable_events);
 
-	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_proof_step);
+	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_proof_step.proof);
 
 	return do_mh_disjunction_intro(T, selected_proof_step, new_proof, proposed_proofs, observation_changes,
 			old_proof_changes, new_proof_changes, proof_axioms, old_axioms, new_axioms, log_proposal_probability_ratio,
@@ -3188,6 +3185,202 @@ inline bool do_mh_disjunction_intro(
 	return true;
 }
 
+template<typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename ProofPrior,
+	typename TheorySampleCollector, typename ProposalDistribution>
+bool propose_rebind_anaphora(
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+	unsigned int sentence_id, unsigned int anaphora_id,
+	double& log_proposal_probability_ratio,
+	ProofPrior& proof_prior,
+	typename ProofPrior::PriorState& proof_axioms,
+	TheorySampleCollector& sample_collector,
+	const ProposalDistribution& proposal_distribution)
+{
+	typedef nd_step<Formula> Proof;
+	typedef natural_deduction<Formula, Intuitionistic> ProofCalculus;
+	typedef theory<ProofCalculus, Canonicalizer> Theory;
+
+	unsigned int anaphora_start = T.ctx.referent_iterators[sentence_id].anaphora.values[anaphora_id];
+	if (anaphora_start <= 1)
+		/* there is no more than one possible referent for this anaphora */
+		return true;
+
+	/* check to make sure this proof wouldn't remove any subset edges, since we cannot make the inverse proposal */
+	Proof* proof = T.observations[sentence_id];
+	if (has_proof_step<nd_step_type::IMPLICATION_ELIMINATION>(proof))
+		return true;
+
+	/* first remove the observation with ID given by `sentence_id` */
+	set_changes<Formula> set_diff;
+	inverse_proof_sampler inverse_sampler;
+	typename Theory::changes& old_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
+	if (!Theory::init(old_proof_changes)) {
+		return false;
+	} else if (!T.get_theory_changes(*proof, old_proof_changes)) {
+		free(old_proof_changes);
+		return false;
+	}
+	T.subtract_changes(old_proof_changes, set_diff, inverse_sampler);
+	/* some removed set size axioms may actually become extra axioms */
+	for (const typename Theory::change& change : old_proof_changes.list) {
+		if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
+			bool was_removed = false;
+			for (Formula* old_axiom : set_diff.old_set_axioms) {
+				if (old_axiom == change.axiom->formula) {
+					was_removed = true;
+					break;
+				}
+			}
+			if (!was_removed)
+				set_diff.new_set(change.axiom->formula);
+		}
+	}
+
+	/* try re-binding the selected anaphora */
+	Proof* new_proof;
+	proof_sampler<ProposalDistribution::IsExploratory> sampler;
+	set_changes<Formula> new_set_diff;
+	unsigned int old_referent_id = T.ctx.bindings[sentence_id].indices[anaphora_id];
+	while (true) {
+		unsigned int new_referent_id = sample_uniform(anaphora_start);
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = anaphora_start - new_referent_id - 1;
+		if (!is_anaphora_binding_legal(T.ctx.referent_iterators[sentence_id], T.ctx.bindings[sentence_id].indices))
+			continue;
+
+		hol_term* resolved_logical_form = bind_anaphora(T.ctx.referent_iterators[sentence_id], T.ctx.bindings[sentence_id].indices);
+		if (resolved_logical_form == nullptr)
+			continue;
+
+		unsigned int new_constant = 0;
+		sampler.clear();
+		new_set_diff.clear();
+		new_proof = T.add_formula_helper(resolved_logical_form, new_set_diff, new_constant, sampler);
+		core::free(*resolved_logical_form);
+		if (resolved_logical_form->reference_count == 0)
+			core::free(resolved_logical_form);
+		if (new_proof != nullptr)
+			break;
+	}
+
+	/* compute the log probability of the new theory */
+	log_proposal_probability_ratio -= sampler.log_probability;
+	log_proposal_probability_ratio -= sampler.set_size_log_probability;
+	log_proposal_probability_ratio += proof_sample_log_probability(inverse_sampler, T, sampler.new_proof);
+	log_proposal_probability_ratio += inverse_sampler.set_size_log_probability;
+
+	typename Theory::changes& new_proof_changes = *((typename Theory::changes*) alloca(sizeof(typename Theory::changes)));
+	if (!Theory::init(new_proof_changes)) {
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = old_referent_id;
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes); return false;
+	} else if (!T.get_theory_changes(*new_proof, new_proof_changes)) {
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = old_referent_id;
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
+		return false;
+	}
+
+	/* some new set size axioms may actually have already been extra axioms */
+	for (const typename Theory::change& change : new_proof_changes.list) {
+		if (change.type == Theory::change_type::SET_SIZE_AXIOM) {
+			bool is_new = false;
+			for (Formula* new_axiom : new_set_diff.new_set_axioms) {
+				if (new_axiom == change.axiom->formula) {
+					is_new = true;
+					break;
+				}
+			}
+			if (!is_new)
+				new_set_diff.old_set(change.axiom->formula);
+		}
+	}
+	for (Formula* old_axiom : new_set_diff.old_set_axioms)
+		set_diff.old_set(old_axiom);
+	for (Formula* new_axiom : new_set_diff.new_set_axioms)
+		set_diff.new_set(new_axiom);
+
+	/* propose `new_proof` to substitute `proof` */
+	array<pair<Proof*, Proof*>> observation_changes(8);
+	proof_transformations<Formula>& proposed_proofs = *((proof_transformations<Formula>*) alloca(sizeof(proof_transformations<Formula>)));
+	if (!init(proposed_proofs)) {
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = old_referent_id;
+		proposed_proofs.transformed_proofs.keys = nullptr;
+		undo_proof_changes<false>(T, old_proof_changes, new_proof_changes, proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+		return false;
+	} else if (!propose_transformation(T, proposed_proofs, observation_changes, proof, new_proof)) {
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = old_referent_id;
+		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+		free(proposed_proofs); return false;
+	}
+
+	/* compute the proof portion of the prior for both current and proposed theories */
+	typename ProofPrior::PriorStateChanges old_axioms, new_axioms;
+	double proof_prior_diff = log_probability_ratio(proposed_proofs.transformed_proofs,
+			set_diff.old_set_axioms, set_diff.new_set_axioms,
+			proof_prior, proof_axioms, old_axioms, new_axioms, sample_collector);
+	log_proposal_probability_ratio += proof_prior_diff;
+
+	if (!transform_proofs<ProofCalculus>(proposed_proofs)) {
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = old_referent_id;
+		undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+		free(*proof); if (proof->reference_count == 0) free(proof);
+		return false;
+	}
+
+	for (auto& entry : observation_changes) {
+		unsigned int index = T.observations.index_of(entry.key);
+		T.observations[index] = entry.value;
+		free(*entry.key); if (entry.key->reference_count == 0) free(entry.key);
+		entry.value->reference_count++;
+	}
+
+	/* count all unfixed sets */
+	array<unsigned int> unfixed_sets(8);
+	if (!T.sets.get_unfixed_sets(unfixed_sets, T.observations)) return false;
+
+	/* count all eliminable extensional edges */
+	array<extensional_edge<Formula>> eliminable_extensional_edges(8);
+	get_eliminable_extensional_edges(T, eliminable_extensional_edges);
+
+	array<pair<relation, relation>> mergeable_events(8);
+	get_mergeable_events(T, mergeable_events);
+
+	array<relation> splittable_events(8);
+	get_splittable_events(T, splittable_events);
+
+	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, proof);
+
+#if !defined(NDEBUG)
+	double log_proposal_probability_ratio_without_set_sizes = log_proposal_probability_ratio + sampler.set_size_log_probability - inverse_sampler.set_size_log_probability;
+	if (isnan(log_proposal_probability_ratio))
+		fprintf(stderr, "do_mh_disjunction_intro WARNING: The computed log probability ratio is NaN.\n");
+	if (*proof == *new_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
+		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
+#endif
+
+	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+		/* we accepted the new proof */
+		proof_axioms.subtract(old_axioms);
+		if (!proof_axioms.add(new_axioms))
+			return false;
+		free(proposed_proofs);
+		free(new_proof_changes);
+		free(*new_proof); if (new_proof->reference_count == 0) free(new_proof);
+		free(old_proof_changes);
+		/* TODO: we could keep track of the extra axioms within `theory` */
+		array<hol_term*> extra_axioms(16);
+		T.get_extra_axioms(extra_axioms);
+		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
+			return false;
+	} else {
+		T.ctx.bindings[sentence_id].indices[anaphora_id] = old_referent_id;
+		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, proof, new_proof, proposed_proofs, undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes));
+	}
+	return true;
+}
+
 template<typename Formula, bool Intuitionistic, typename Canonicalizer>
 bool is_eliminable_extensional_edge(
 		theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
@@ -3565,11 +3758,14 @@ inline unsigned int sample(
 			+ eliminable_extensional_edges.length + unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+	unsigned int anaphora_count = 0;
+	for (unsigned int i = 0; i < T.ctx.referent_iterators.length; i++)
+		anaphora_count += T.ctx.referent_iterators[i].anaphora.size;
 #if !defined(NDEBUG)
-	if (axiom_count + mergeable_events.length + splittable_events.length == 0)
-		fprintf(stderr, "sample WARNING: `axiom_count + mergeable_events.length + splittable_events.length` is 0.\n");
+	if (axiom_count + mergeable_events.length + splittable_events.length + anaphora_count == 0)
+		fprintf(stderr, "sample WARNING: `axiom_count + mergeable_events.length + splittable_events.length + anaphora_count` is 0.\n");
 #endif
-	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length;
+	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length + anaphora_count;
 	double random = sample_uniform<double>() * normalization;
 	proposal_distribution.old_normalization = normalization;
 	if (random < axiom_count) {
@@ -3589,6 +3785,12 @@ inline unsigned int sample(
 		return axiom_count + mergeable_events.length + (unsigned int) (random / proposal_distribution.split_weight);
 	}
 	random -= proposal_distribution.split_weight * splittable_events.length;
+
+	if (random < anaphora_count) {
+		log_proposal_probability_ratio -= -log(normalization);
+		return axiom_count + mergeable_events.length + splittable_events.length + (unsigned int) random;
+	}
+	random -= anaphora_count;
 
 	fprintf(stderr, "sample ERROR: Unable to sample Metropolis-Hastings proposal.\n");
 	return UINT_MAX;
@@ -3611,17 +3813,20 @@ inline double log_probability(
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
 		array<relation>& splittable_events,
-		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
+		const nd_step<Formula>* selected_disjunction_intro)
 {
 	unsigned int axiom_count = T.ground_axiom_count
 			+ eliminable_extensional_edges.length + unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+	unsigned int anaphora_count = 0;
+	for (unsigned int i = 0; i < T.ctx.referent_iterators.length; i++)
+		anaphora_count += T.ctx.referent_iterators[i].anaphora.size;
 #if !defined(NDEBUG)
-	if (axiom_count + mergeable_events.length + splittable_events.length == 0)
-		fprintf(stderr, "log_probability WARNING: `axiom_count + mergeable_events.length + splittable_events.length` is 0.\n");
+	if (axiom_count + mergeable_events.length + splittable_events.length + anaphora_count == 0)
+		fprintf(stderr, "log_probability WARNING: `axiom_count + mergeable_events.length + splittable_events.length + anaphora_count` is 0.\n");
 #endif
-	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length;
+	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length + anaphora_count;
 	return -log(normalization);
 }
 
@@ -3639,11 +3844,14 @@ inline double log_probability(
 			+ eliminable_extensional_edges.length + unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+	unsigned int anaphora_count = 0;
+	for (unsigned int i = 0; i < T.ctx.referent_iterators.length; i++)
+		anaphora_count += T.ctx.referent_iterators[i].anaphora.size;
 #if !defined(NDEBUG)
-	if (axiom_count + mergeable_events.length + splittable_events.length == 0)
-		fprintf(stderr, "log_probability WARNING: `axiom_count + mergeable_events.length + splittable_events.length` is 0.\n");
+	if (axiom_count + mergeable_events.length + splittable_events.length + anaphora_count == 0)
+		fprintf(stderr, "log_probability WARNING: `axiom_count + mergeable_events.length + splittable_events.length + anaphora_count` is 0.\n");
 #endif
-	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length;
+	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length + anaphora_count;
 	return proposal_distribution.log_merge_weight - log(normalization);
 }
 
@@ -3661,11 +3869,14 @@ inline double log_probability(
 			+ eliminable_extensional_edges.length + unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+	unsigned int anaphora_count = 0;
+	for (unsigned int i = 0; i < T.ctx.referent_iterators.length; i++)
+		anaphora_count += T.ctx.referent_iterators[i].anaphora.size;
 #if !defined(NDEBUG)
-	if (axiom_count + mergeable_events.length + splittable_events.length == 0)
-		fprintf(stderr, "log_probability WARNING: `axiom_count + mergeable_events.length + splittable_events.length` is 0.\n");
+	if (axiom_count + mergeable_events.length + splittable_events.length + anaphora_count == 0)
+		fprintf(stderr, "log_probability WARNING: `axiom_count + mergeable_events.length + splittable_events.length + anaphora_count` is 0.\n");
 #endif
-	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length;
+	double normalization = axiom_count + proposal_distribution.merge_weight * mergeable_events.length + proposal_distribution.split_weight * splittable_events.length + anaphora_count;
 	return proposal_distribution.log_split_weight - log(normalization);
 }
 
@@ -3686,11 +3897,28 @@ inline unsigned int sample(
 	unsigned int axiom_count = unfixed_sets.length
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length + T.existential_intro_nodes.length;
+
+	unsigned int anaphora_count = 0;
+	for (unsigned int i = 0; i < T.ctx.referent_iterators.length; i++)
+		anaphora_count += T.ctx.referent_iterators[i].anaphora.size;
+
 #if !defined(NDEBUG)
-	if (axiom_count == 0)
-		fprintf(stderr, "sample WARNING: `axiom_count` is 0.\n");
+	if (axiom_count + anaphora_count == 0)
+		fprintf(stderr, "sample WARNING: `axiom_count + anaphora_count` is 0.\n");
 #endif
-	return T.ground_axiom_count + eliminable_extensional_edges.length + sample_uniform(axiom_count);
+
+	unsigned int random = sample_uniform(axiom_count + anaphora_count);
+	if (random < axiom_count) {
+		return T.ground_axiom_count + eliminable_extensional_edges.length + sample_uniform(axiom_count);
+	} else {
+		random -= axiom_count;
+		unsigned int anaphora_offset = T.ground_axiom_count
+				+ eliminable_extensional_edges.length + unfixed_sets.length
+				+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
+				+ T.implication_intro_nodes.length + T.existential_intro_nodes.length
+				+ mergeable_events.length + splittable_events.length;
+		return anaphora_offset + random;
+	}
 }
 
 inline double log_probability(
@@ -3709,7 +3937,7 @@ inline double log_probability(
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
 		array<relation>& splittable_events,
-		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
+		const nd_step<Formula>* selected_disjunction_intro)
 {
 	return 1.0e100;
 }
@@ -3776,20 +4004,38 @@ inline unsigned int sample(
 			+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
 			+ T.implication_intro_nodes.length;
 
+	unsigned int observation_index;
+	for (observation_index = 0; observation_index < T.observations.length; observation_index++)
+		if (T.observations[observation_index] == proposal_distribution.query_proof) break;
+	unsigned int num_anaphora = T.ctx.referent_iterators[observation_index].anaphora.size;
+
 	array<const nd_step<Formula>*> proof_steps(4);
 	get_proof_steps<nd_step_type::EXISTENTIAL_INTRODUCTION>(proposal_distribution.query_proof, proof_steps);
-	proposal_distribution.query_step_count = proof_steps.length;
+	proposal_distribution.query_step_count = proof_steps.length + num_anaphora;
 
 	if (proof_steps.length != 0 && sample_uniform<double>() < proposal_distribution.sample_query_probability) {
-		log_cache<double>::instance().ensure_size(proof_steps.length + 1);
-		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proof_steps.length);
+		log_cache<double>::instance().ensure_size(proof_steps.length + num_anaphora + 1);
+		log_proposal_probability_ratio -= proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proof_steps.length + num_anaphora);
 		proposal_distribution.selected_query = true;
-		const nd_step<Formula>* selected_step = sample_uniform(proof_steps);
+		unsigned int random = sample_uniform(proof_steps.length + num_anaphora);
+		if (random < proof_steps.length) {
+			const nd_step<Formula>* selected_step = proof_steps[random];
 
-		unsigned int query_index;
-		for (query_index = 0; query_index < T.existential_intro_nodes.length; query_index++)
-			if (T.existential_intro_nodes[query_index].proof == selected_step) break;
-		return offset + query_index;
+			unsigned int query_index;
+			for (query_index = 0; query_index < T.existential_intro_nodes.length; query_index++)
+				if (T.existential_intro_nodes[query_index].proof == selected_step) break;
+			return offset + query_index;
+		} else {
+			unsigned int anaphora_offset = T.ground_axiom_count
+					+ eliminable_extensional_edges.length + unfixed_sets.length
+					+ T.disjunction_intro_nodes.length + T.negated_conjunction_nodes.length
+					+ T.implication_intro_nodes.length + T.existential_intro_nodes.length
+					+ mergeable_events.length + splittable_events.length;
+			for (unsigned int i = 0; i < observation_index; i++)
+				anaphora_offset += T.ctx.referent_iterators[i].anaphora.size;
+			random -= proof_steps.length;
+			return anaphora_offset + random;
+		}
 	} else {
 		proposal_distribution.selected_query = false;
 		return sample(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, log_proposal_probability_ratio);
@@ -3816,7 +4062,7 @@ inline double log_probability(
 		array<unsigned int>& unfixed_sets,
 		array<pair<relation, relation>>& mergeable_events,
 		array<relation>& splittable_events,
-		const typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_disjunction_intro)
+		const nd_step<Formula>* selected_disjunction_intro)
 {
 	if (proposal_distribution.selected_query) {
 		return logsumexp(proposal_distribution.log_sample_query_probability - log_cache<double>::instance().get(proposal_distribution.query_step_count),
@@ -3962,6 +4208,14 @@ bool do_mh_step(
 		return propose_split_event(T, splittable_events[random], log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector, proposal_distribution);
 	}
 	random -= splittable_events.length;
+
+	for (unsigned int i = 0; i < T.ctx.referent_iterators.length; i++) {
+		if (random < T.ctx.referent_iterators[i].anaphora.size) {
+			/* propose resampling the j-th anaphora in the i-th sentence, where `j = random` */
+			return propose_rebind_anaphora(T, i, random, log_proposal_probability_ratio, proof_prior, proof_axioms, sample_collector, proposal_distribution);
+		}
+		random -= T.ctx.referent_iterators[i].anaphora.size;
+	}
 
 	fprintf(stderr, "propose ERROR: Unable to select axiom.\n");
 	return false;
