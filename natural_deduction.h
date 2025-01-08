@@ -1940,8 +1940,8 @@ bool check_proof(const nd_step<Formula>& proof,
 	if (actual_conclusion == NULL) return false;
 	bool success = (*actual_conclusion == *expected_conclusion);
 /* TODO: for debugging; delete this */
-//print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr); print('\n', stderr);
-//print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr); print('\n', stderr);
+//print("actual_conclusion:   ", stderr); print(*actual_conclusion, stderr, *debug_terminal_printer); print('\n', stderr);
+//print("expected_conclusion: ", stderr); print(*expected_conclusion, stderr, *debug_terminal_printer); print('\n', stderr);
 	if (!success)
 		fprintf(stderr, "check_proof ERROR: Actual concluding formula does not match the expected formula.\n");
 	free(*actual_conclusion);
@@ -3219,7 +3219,7 @@ template<
 	typename ProofLengthPrior,
 	typename TheorySampleCollector>
 double log_probability(
-		const hash_set<nd_step<Formula>*>& proofs,
+		const array<nd_step<Formula>*>& proofs,
 		const array<Formula*>& extra_observations,
 		canonicalized_proof_prior<AxiomPrior, ConjunctionIntroductionPrior, ConjunctionEliminationPrior, UniversalIntroductionPrior, UniversalEliminationPrior, TermIndicesPrior, ProofLengthPrior>& prior,
 		TheorySampleCollector& theory_sample_collector)

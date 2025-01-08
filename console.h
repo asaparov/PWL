@@ -1,27 +1,8 @@
 #ifndef CONSOLE_H_
 #define CONSOLE_H_
 
-#define CONSOLE_CSI "\33["
-
-#define CONSOLE_BLACK       CONSOLE_CSI "30m"
-#define CONSOLE_RED         CONSOLE_CSI "31m"
-#define CONSOLE_GREEN       CONSOLE_CSI "32m"
-#define CONSOLE_YELLOW      CONSOLE_CSI "33m"
-#define CONSOLE_BLUE        CONSOLE_CSI "34m"
-#define CONSOLE_MAGENTA     CONSOLE_CSI "35m"
-#define CONSOLE_CYAN        CONSOLE_CSI "36m"
-#define CONSOLE_GRAY        CONSOLE_CSI "37m"
-#define CONSOLE_DEFAULT     CONSOLE_CSI "39m"
-
-#define CONSOLE_RESET       CONSOLE_CSI "0m"
-#define CONSOLE_BOLD        CONSOLE_CSI "1m"
-#define CONSOLE_DIM         CONSOLE_CSI "2m"
-#define CONSOLE_UNDERLINE   CONSOLE_CSI "4m"
-#define CONSOLE_BLINK       CONSOLE_CSI "5m"
-#define CONSOLE_REVERSE     CONSOLE_CSI "7m"
-#define CONSOLE_HIDDEN      CONSOLE_CSI "8m"
-
 #include <core/lex.h>
+#include "console_utils.h"
 #include "higher_order_logic.h"
 #include "natural_deduction.h"
 #include "natural_deduction_mh.h"

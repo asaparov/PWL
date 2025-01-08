@@ -13,7 +13,8 @@
 #include "array_view.h"
 #include "set_reasoning.h"
 #include "built_in_predicates.h"
-#include "lf_helper.h"
+#include "lf_utils.h"
+#include "context.h"
 
 using namespace core;
 
@@ -3471,13 +3472,14 @@ struct theory
 	concept<ProofCalculus>* ground_concepts;
 	unsigned int ground_concept_capacity;
 	unsigned int ground_axiom_count;
+	context ctx;
 
 	hash_map<Term, unsigned int> reverse_definitions;
 
 	array_map<Term, Proof*> constant_types;
 	array_map<Term, Proof*> constant_negated_types;
 
-	hash_set<Proof*> observations;
+	array<Proof*> observations;
 	set_reasoning<built_in_predicates, ProofCalculus, Canonicalizer> sets;
 
 	struct proof_node {
@@ -3523,7 +3525,7 @@ struct theory
 			new_constant_offset(new_constant_offset), atoms(64), relations(64),
 			ground_concept_capacity(64), ground_axiom_count(0),
 			reverse_definitions(256), constant_types(8),
-			constant_negated_types(8), observations(64),
+			constant_negated_types(8), observations(32),
 			disjunction_intro_nodes(16), negated_conjunction_nodes(16),
 			implication_intro_nodes(16), existential_intro_nodes(16),
 			implication_axioms(16), built_in_axioms(8), built_in_sets(8)
@@ -3700,6 +3702,7 @@ struct theory
 		core::free(T.constant_types);
 		core::free(T.constant_negated_types);
 		core::free(T.observations);
+		core::free(T.ctx);
 		core::free(T.sets);
 		core::free(T.disjunction_intro_nodes);
 		core::free(T.negated_conjunction_nodes);
@@ -4158,7 +4161,7 @@ struct theory
 		for (unsigned int i = 0; i < dst.ground_concept_capacity; i++)
 			dst.ground_concepts[i].types.keys = nullptr; /* this is used to indicate that this concept is uninitialized */
 		dst.ground_axiom_count = src.ground_axiom_count;
-		if (!hash_set_init(dst.observations, src.observations.capacity)) {
+		if (!array_init(dst.observations, src.observations.capacity)) {
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
 			return false;
@@ -4324,6 +4327,25 @@ struct theory
 			core::free(dst.built_in_sets);
 			core::free(dst.constant_types);
 			core::free(dst.constant_negated_types);
+			core::free(dst.sets); core::free(dst.observations);
+			core::free(dst.ground_concepts);
+			core::free(dst.atoms); core::free(dst.relations);
+			for (unsigned int j = 0; j < dst.built_in_axioms.length; j++) {
+				core::free(*dst.built_in_axioms[j]); if (dst.built_in_axioms[j]->reference_count == 0) core::free(dst.built_in_axioms[j]);
+			} core::free(dst.built_in_axioms);
+			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
+			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
+			return false;
+		} else if (!context::clone(src.ctx, dst.ctx)) {
+			core::free(dst.implication_intro_nodes);
+			core::free(dst.negated_conjunction_nodes);
+			core::free(dst.disjunction_intro_nodes);
+			core::free(dst.existential_intro_nodes);
+			core::free(dst.implication_axioms);
+			core::free(dst.built_in_sets);
+			core::free(dst.constant_types);
+			core::free(dst.constant_negated_types);
+			core::free(dst.reverse_definitions);
 			core::free(dst.sets); core::free(dst.observations);
 			core::free(dst.ground_concepts);
 			core::free(dst.atoms); core::free(dst.relations);
@@ -4572,17 +4594,82 @@ struct theory
 	template<typename... Args>
 	Proof* add_formula(Formula* formula, set_changes<Formula>& set_diff, unsigned int& new_constant, Args&&... args)
 	{
+		if (!observations.ensure_capacity(observations.length + 1)
+		 || !ctx.referent_iterators.ensure_capacity(ctx.referent_iterators.length + 1)
+		 || !ctx.bindings.ensure_capacity(ctx.bindings.length + 1)
+		 || !::init(ctx.referent_iterators[ctx.referent_iterators.length], formula))
+			return nullptr;
+		ctx.referent_iterators.length++;
+		referent_iterator& ref_iterator = ctx.referent_iterators.last();
+
+		array_map<unsigned int, const hol_term*> bound_variables(8);
+		if (!get_referents(formula, ref_iterator, bound_variables)
+		 || !::init(ctx.bindings[ctx.bindings.length], ref_iterator.anaphora.size))
+		{
+			core::free(ref_iterator);
+			ctx.referent_iterators.length--;
+			return nullptr;
+		}
+		ctx.bindings.length++;
+		anaphora_binding& binding = ctx.bindings.last();
+
+		std::set<referent_iterator_state> queue;
+		referent_iterator_state initial_state(&ref_iterator, 0.0);
+		for (unsigned int j = 0; j < ref_iterator.anaphora.size; j++)
+			initial_state.indices[j] = 0;
+		queue.insert(initial_state);
+
+		hol_term* resolved_formulas[2];
+		double resolved_log_probabilities[2];
+		unsigned int resolved_formula_count = 0;
+		Proof* new_proof = nullptr;
+/* TODO: for debugging; delete this */
+//print("add_formula: Adding formula ", stderr); print(*formula, stderr, *debug_terminal_printer); print('\n', stderr);
+		while (!queue.empty() && new_proof == nullptr)
+		{
+			auto last = queue.cend(); last--;
+			referent_iterator_state state = *last;
+			queue.erase(last);
+
+			process_referent_iterator(state, queue, resolved_formulas, resolved_log_probabilities, resolved_formula_count);
+
+			for (unsigned int i = 0; i < resolved_formula_count; i++) {
+/* TODO: for debugging; delete this */
+//print("add_formula: Adding resolved formula ", stderr); print(*resolved_formulas[i], stderr, *debug_terminal_printer); print('\n', stderr);
+				new_proof = add_formula_helper(resolved_formulas[i], set_diff, new_constant, std::forward<Args>(args)...);
+				if (new_proof != nullptr) {
+					observations[observations.length++] = new_proof;
+
+					/* record this anaphora binding in `ctx` */
+					for (unsigned int j = 0; j < ref_iterator.anaphora.size; j++)
+						binding.indices[j] = state.indices[j];
+					break;
+				}
+			}
+			for (unsigned int i = 0; i < resolved_formula_count; i++) {
+				core::free(*resolved_formulas[i]);
+				if (resolved_formulas[i]->reference_count == 0)
+					core::free(resolved_formulas[i]);
+			}
+		}
+
+		return new_proof;
+	}
+
+	template<typename... Args>
+	Proof* add_formula_helper(Formula* formula, set_changes<Formula>& set_diff, unsigned int& new_constant, Args&&... args)
+	{
 		new_constant = 0;
 
 		Formula* new_formula = preprocess_formula(formula);
-		if (new_formula == NULL) return nullptr;
+		if (new_formula == nullptr) return nullptr;
 
 		array_map<unsigned int, unsigned int> variable_map(16);
 /* TODO: for debugging; delete this */
-//print("new_formula: ", stderr); print(*new_formula, stderr); print('\n', stderr);
+//print("add_formula_helper: Adding formula ", stderr); print(*new_formula, stderr, *debug_terminal_printer); print('\n', stderr);
 		Formula* canonicalized = Canonicalizer::canonicalize(*new_formula, variable_map);
 		core::free(*new_formula); if (new_formula->reference_count == 0) core::free(new_formula);
-		if (canonicalized == NULL) return nullptr;
+		if (canonicalized == nullptr) return nullptr;
 
 /* TODO: for debugging; delete this */
 //print_axioms(stderr);
@@ -4591,7 +4678,7 @@ struct theory
 		array_map<unsigned int, unsigned int> requested_set_sizes(4);
 		Proof* new_proof = make_proof<false, true, true>(canonicalized, set_definitions, requested_set_sizes, set_diff, new_constant, std::forward<Args>(args)...);
 //print_axioms(stderr);
-if (new_proof != NULL) {
+if (new_proof != nullptr) {
 array_map<unsigned int, unsigned int> constant_map(1);
 constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
@@ -4604,19 +4691,13 @@ core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0)
 		core::free(*canonicalized);
 		if (canonicalized->reference_count == 0)
 			core::free(canonicalized);
-		if (new_proof == NULL) {
-			return nullptr;
-		} else if (!observations.add(new_proof)) {
-			free_proof(new_proof, set_diff, std::forward<Args>(args)...);
-			return nullptr;
-		}
 		return new_proof;
 	}
 
 	template<bool FreeProof = true>
 	void remove_formula(Proof* proof, set_changes<Formula>& set_diff) {
 		theory::changes changes;
-		observations.remove(proof);
+		observations.remove(observations.index_of(proof));
 		if (!get_theory_changes(*proof, changes)) return;
 		subtract_changes(changes, set_diff);
 		if (FreeProof) {
@@ -13571,6 +13652,46 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 			consequent_formula = consequent_formula->quantifier.operand;
 		}
 
+		for (unsigned int i = 0; i < sets.sets[antecedent_set].element_count(); i++) {
+			/* check each element of `antecedent_set` that is no longer in `provable_elements` of `consequent_set` */
+			tuple_element* element_src = sets.sets[antecedent_set].elements.data + i * sets.sets[antecedent_set].arity;
+			tuple element;
+			element.elements = element_src;
+			element.length = sets.sets[antecedent_set].arity;
+			if (sets.sets[consequent_set].provable_elements.contains(element))
+				continue;
+
+			array<variable_assignment> temp_possible_values(1);
+			variable_assignment& values = temp_possible_values[0];
+			if (!::init(values, sets.sets[consequent_set].arity))
+				return false;
+			for (unsigned int k = 0; k < values.assignment.length; k++) {
+				core::free(values.assignment.values[k]);
+				if (element[k].type == tuple_element_type::CONSTANT) {
+					values.assignment.values[k].type = instantiation_type::CONSTANT;
+					values.assignment.values[k].constant = element[k].constant;
+				} else if (element[k].type == tuple_element_type::NUMBER) {
+					values.assignment.values[k].type = instantiation_type::NUMBER;
+					values.assignment.values[k].number = element[k].number;
+				} else if (element[k].type == tuple_element_type::STRING) {
+					values.assignment.values[k].type = instantiation_type::STRING;
+					if (!core::init(values.assignment.values[k].str, element[k].str)) {
+						values.assignment.values[k].type = instantiation_type::CONSTANT;
+						core::free(values); return false;
+					}
+				}
+			}
+			temp_possible_values.length++;
+
+			default_prover prover(sets, implication_axioms);
+			if (is_provable_without_abduction<false>(consequent_formula, consequent_quantifiers, temp_possible_values, prover)) {
+				/* this element is still provably a member of the consequent set */
+				for (auto& element : temp_possible_values) core::free(element);
+				if (!sets.add_element(consequent_set, element))
+					return false;
+			}
+		}
+
 		array<Formula*> old_atoms(8);
 		for (unsigned int descendant : sets.sets[antecedent_set].descendants) {
 			for (unsigned int i = sets.sets[descendant].provable_elements.length; i > 0; i--) {
@@ -19214,13 +19335,13 @@ private:
 };
 
 template<typename Proof>
-bool init(theory_sample<Proof>& sample, const hash_set<Proof*>& proofs,
+bool init(theory_sample<Proof>& sample, const array<Proof*>& proofs,
 		const array<typename Proof::FormulaType*>& extra_axioms, double log_probability)
 {
 	typedef typename Proof::FormulaType Formula;
 
 	sample.log_probability = log_probability;
-	sample.proofs = (Proof**) malloc(max((size_t) 1, sizeof(Proof*) * proofs.size));
+	sample.proofs = (Proof**) malloc(max((size_t) 1, sizeof(Proof*) * proofs.length));
 	if (sample.proofs == nullptr) {
 		fprintf(stderr, "init ERROR: Insufficient memory for `theory_sample.proofs`.\n");
 		return false;
@@ -19310,7 +19431,7 @@ struct null_collector {
 	}
 
 	template<typename Proof>
-	constexpr inline bool accept(const hash_set<Proof*>& sample,
+	constexpr inline bool accept(const array<Proof*>& sample,
 			const array<typename Proof::FormulaType*>& extra_axioms,
 			double proof_prior_diff) const
 	{
@@ -19318,7 +19439,7 @@ struct null_collector {
 	}
 
 	template<typename Proof>
-	constexpr inline bool accept_with_observation_changes(const hash_set<Proof*>& sample,
+	constexpr inline bool accept_with_observation_changes(const array<Proof*>& sample,
 			const array<typename Proof::FormulaType*>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes) const
 	{
@@ -19365,7 +19486,7 @@ struct log_probability_collector
 		return true;
 	}
 
-	bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
+	bool accept(const array<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
 	{
 		current_log_probability += proof_prior_diff;
@@ -19381,7 +19502,7 @@ struct log_probability_collector
 		return true;
 	}
 
-	inline bool accept_with_observation_changes(const hash_set<typename ProofCalculus::Proof*>& sample,
+	inline bool accept_with_observation_changes(const array<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes)
 	{
@@ -19434,7 +19555,7 @@ struct model_evidence_collector
 	model_evidence_collector(const theory<ProofCalculus, Canonicalizer>& T_src,
 			ProofPrior& proof_prior, Proof* test_proof, TheorySampleCollector& sample_collector,
 			OnProofSampleFunction on_new_proof_sample = no_op()) :
-		T(T_src), samples(1024), observation_count(T.observations.size), test_proof(test_proof), on_new_proof_sample(on_new_proof_sample)
+		T(T_src), samples(1024), observation_count(T.observations.length), test_proof(test_proof), on_new_proof_sample(on_new_proof_sample)
 	{
 		/* initialize `current_log_probability` */
 		array<Formula*> extra_axioms(16);
@@ -19474,7 +19595,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		return (proof != test_proof);
 	}
 
-	bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
+	bool accept(const array<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
 	{
 		typedef typename ProofCalculus::Proof Proof;
@@ -19517,7 +19638,7 @@ T.print_disjunction_introductions(stderr, *debug_terminal_printer);*/
 		return true;
 	}
 
-	inline bool accept_with_observation_changes(const hash_set<typename ProofCalculus::Proof*>& sample,
+	inline bool accept_with_observation_changes(const array<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes)
 	{
@@ -19562,13 +19683,13 @@ struct provability_collector
 		return (proof != internal_collector.test_proof);
 	}
 
-	inline bool accept(const hash_set<typename ProofCalculus::Proof*>& sample,
+	inline bool accept(const array<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff)
 	{
 		return internal_collector.accept(sample, extra_axioms, proof_prior_diff);
 	}
 
-	bool accept_with_observation_changes(const hash_set<typename ProofCalculus::Proof*>& sample,
+	bool accept_with_observation_changes(const array<typename ProofCalculus::Proof*>& sample,
 			const array<typename ProofCalculus::Language*>& extra_axioms, double proof_prior_diff,
 			const array<pair<Proof*, Proof*>>& observation_changes)
 	{

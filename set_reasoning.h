@@ -2622,7 +2622,11 @@ struct set_reasoning
 
 		if (!is_fixed) {
 			bool child_graph_changed = false;
-			if (!increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed)) {
+			unsigned int clique_upper_bound = sets[ancestor_of_clique].set_size;
+			for (unsigned int i = 0; i < clique_count; i++)
+				clique_upper_bound -= sets[clique[i]].set_size;
+			if (clique_upper_bound < requested_size && !increase_set_size(ancestor_of_clique, sets[ancestor_of_clique].set_size + (requested_size - upper_bound), stack, child_graph_changed))
+			{
 				if (connected_component.size > 1)
 					uncontract_component(set, connected_component, old_disjoint_cache_items);
 				core::free(clique); return false;
@@ -3640,7 +3644,7 @@ struct set_reasoning
 		return (size_axiom->children.length == 0);
 	}
 
-	inline bool is_unfixed(Proof* size_axiom, const hash_set<Proof*>& observations) const {
+	inline bool is_unfixed(Proof* size_axiom, const array<Proof*>& observations) const {
 		return (size_axiom->children.length == 0
 			&& !observations.contains(size_axiom));
 	}
@@ -3651,13 +3655,13 @@ struct set_reasoning
 		return true;
 	}
 
-	inline bool is_unfixed(unsigned int set_id, const hash_set<Proof*>& observations) const {
+	inline bool is_unfixed(unsigned int set_id, const array<Proof*>& observations) const {
 		for (Proof* size_axiom : sets[set_id].size_axioms)
 			if (!is_unfixed(size_axiom, observations)) return false;
 		return true;
 	}
 
-	bool get_unfixed_sets(array<unsigned int>& unfixed_set_ids, const hash_set<Proof*>& observations) {
+	bool get_unfixed_sets(array<unsigned int>& unfixed_set_ids, const array<Proof*>& observations) {
 		for (unsigned int i = 2; i < set_count + 1; i++) {
 			if (sets[i].size_axioms.data == nullptr || !is_unfixed(i, observations))
 				continue;

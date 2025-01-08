@@ -4,3 +4,4 @@
 ![x,y]:(?[k]:(kill(k) & arg1(k)=x & arg2(k)=y) => (victim(y) & ?[p]:(possessive(p) & arg1(p)=x & arg2(p)=y)));
 ![a,x]:(?[e]:(a(e) & arg1(e)=x) => agent(a)(x));
 ![a,x]:(agent(a)(x) => ?[e]:(a(e) & arg1(e)=x));
+![x]:(person(x) => ~location(x));
