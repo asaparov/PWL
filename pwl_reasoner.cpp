@@ -299,6 +299,8 @@ debug_flag = false;
 			print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T_MAP.observations.last(), stdout, *debug_terminal_printer);
 			print('\n', stdout); fflush(stdout);
 			free(T_MAP); Theory::set_empty(T_MAP);
+		} else {
+			print("Unable to find theory where query is true.\n\n", stdout);
 		}
 
 		hol_term* negation;
@@ -318,6 +320,8 @@ debug_flag = false;
 			print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T_MAP.observations.last(), stdout, *debug_terminal_printer);
 			print('\n', stdout); fflush(stdout);
 			free(T_MAP);
+		} else {
+			print("Unable to find theory where query is false.\n\n", stdout);
 		}
 
 		double probabilities[] = {log_probability_true, log_probability_false};
