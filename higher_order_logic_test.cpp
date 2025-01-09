@@ -1,3 +1,6 @@
+#include <core/utility.h>
+const thread_local core::string_map_scribe* debug_terminal_printer = nullptr;
+
 #include "higher_order_logic.h"
 
 #include <locale.h>
@@ -39,8 +42,9 @@ bool read_terms(
 	return true;
 }
 
+template<typename BaseType>
 struct type_statements {
-	array_map<hol_term, hol_type> types;
+	array_map<hol_term, hol_type<BaseType>> types;
 
 	static inline void free(type_statements& example) {
 		for (auto entry : example.types) {
@@ -51,13 +55,14 @@ struct type_statements {
 	}
 };
 
-inline bool init(type_statements& t) {
+template<typename BaseType>
+inline bool init(type_statements<BaseType>& t) {
 	return array_map_init(t.types, 8);
 }
 
-template<typename Stream>
+template<typename BaseType, typename Stream>
 bool read_types(
-	array<type_statements>& examples, Stream& in,
+	array<type_statements<BaseType>>& examples, Stream& in,
 	hash_map<string, unsigned int>& names)
 {
 	array<tptp_token> tokens = array<tptp_token>(512);
@@ -74,7 +79,7 @@ bool read_types(
 			free_tokens(tokens);
 			return false;
 		}
-		type_statements& example = examples[examples.length];
+		type_statements<BaseType>& example = examples[examples.length];
 		examples.length++;
 
 		while (true) {
@@ -85,7 +90,7 @@ bool read_types(
 			}
 
 			hol_term& term = example.types.keys[example.types.size];
-			hol_type& type = example.types.values[example.types.size];
+			hol_type<BaseType>& type = example.types.values[example.types.size];
 			if (!tptp_interpret(tokens, index, term, type, names, variables)) {
 				fprintf(stderr, "ERROR: Unable to parse higher-order type statement.\n");
 				for (auto entry : variables) free(entry.key);
@@ -126,9 +131,10 @@ void cleanup(
 	}
 }
 
+template<typename BaseType>
 void cleanup(
 	hash_map<string, unsigned int>& names,
-	array<type_statements>& examples)
+	array<type_statements<BaseType>>& examples)
 {
 	for (auto entry : names) free(entry.key);
 	free_elements(examples);
@@ -183,8 +189,9 @@ bool hol_test_canonicalization(const char* filename = "hol_canonicalization_test
 
 	const string** name_ids = invert(names);
 	string_map_scribe printer = { name_ids, names.table.size + 1 };
+	debug_terminal_printer = &printer;
 	for (unsigned int i = 0; i < terms.length; i += 2) {
-		hol_term* canonicalized = canonicalize(*terms[i], standard_canonicalizer<true, false>());
+		hol_term* canonicalized = standard_canonicalizer<true, false>::canonicalize(*terms[i]);
 		if (canonicalized == NULL) {
 			fprintf(stderr, "ERROR: Unable to canonicalize example %u.\n", i / 2);
 			continue;
@@ -203,6 +210,7 @@ bool hol_test_canonicalization(const char* filename = "hol_canonicalization_test
 	return true;
 }
 
+template<typename BaseType>
 bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 {
 	setlocale(LC_CTYPE, "en_US.UTF-8");
@@ -212,7 +220,7 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 		return false;
 	}
 
-	array<type_statements> examples = array<type_statements>(16);
+	array<type_statements<BaseType>> examples = array<type_statements<BaseType>>(16);
 	hash_map<string, unsigned int> names = hash_map<string, unsigned int>(1024);
 	if (!read_types(examples, in, names)) {
 		fclose(in); cleanup(names, examples); return false;
@@ -226,16 +234,17 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 
 	const string** name_ids = invert(names);
 	string_map_scribe printer = { name_ids, names.table.size + 1 };
+	debug_terminal_printer = &printer;
 	for (unsigned int i = 0; i < examples.length; i++)
 	{
 		bool success;
-		const type_statements& example = examples[i];
+		const type_statements<BaseType>& example = examples[i];
 		if (example.types.size == 0) {
 			fprintf(stderr, "ERROR: Test example %u is empty.\n", i);
 			continue;
 		}
 		const hol_term& term = example.types.keys[0];
-		const hol_type& term_type = example.types.values[0];
+		const hol_type<BaseType>& term_type = example.types.values[0];
 
 		bool expect_success = true;
 		for (const auto& entry : example.types) {
@@ -245,12 +254,12 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 			}
 		}
 
-		type_map types(16);
-		array_map<unsigned int, hol_type> constant_types(8);
-		array_map<unsigned int, hol_type> variable_types(8);
-		array_map<unsigned int, hol_type> parameter_types(8);
+		type_map<BaseType> types(16);
+		array_map<unsigned int, hol_type<BaseType>> constant_types(8);
+		array_map<unsigned int, hol_type<BaseType>> variable_types(8);
+		array_map<unsigned int, hol_type<BaseType>> parameter_types(8);
 
-		/*array<hol_type> type_variables(8);
+		/*array<hol_type<BaseType>> type_variables(8);
 		if (!init(type_variables[0], hol_type_kind::ANY)) {
 			cleanup(names, examples); free(name_ids);
 			return false;
@@ -258,7 +267,7 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 		type_variables.length++;
 
 		print(CONSOLE_BOLD "Example ", stdout); print(i, stdout); print(":" CONSOLE_RESET "\n", stdout);
-		hol_type type(0);
+		hol_type<BaseType> type(0);
 		success = compute_type<false>(term, types, type, constant_types, variable_types, parameter_types, type_variables);
 
 		if (success) {
@@ -290,7 +299,7 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 		variable_types.clear(); parameter_types.clear();
 		if (!expect_success)
 			print("Expecting 'compute_type' to output error on this example:\n", stdout);
-		success = compute_type<false>(term, types, constant_types, variable_types, parameter_types);
+		success = compute_type<false, false>(term, types, constant_types, variable_types, parameter_types);
 		if (success) {
 			if (!expect_success)
 				fprintf(stderr, "ERROR: On example %u, expected 'compute_type' to return false, but it returned true.\n", i);
@@ -312,10 +321,10 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 
 			for (unsigned int j = 1; expect_success && j < example.types.size; j++) {
 				const hol_term& term = example.types.keys[j];
-				const hol_type& expected_type = example.types.values[j];
+				const hol_type<BaseType>& expected_type = example.types.values[j];
 				if (term.type == hol_term_type::CONSTANT) {
 					bool contains;
-					const hol_type& computed_type = constant_types.get(term.constant, contains);
+					const hol_type<BaseType>& computed_type = constant_types.get(term.constant, contains);
 					if (!contains) {
 						fprintf(stderr, "ERROR: On example %u, 'compute_type' did not compute the type of '", i);
 						print(term, stderr, printer); print("'.\n", stderr);
@@ -344,5 +353,6 @@ bool hol_test_compute_type(const char* filename = "hol_type_check_test.txt")
 
 int main(int argc, const char** argv)
 {
-	hol_test_compute_type();
+	hol_test_canonicalization();
+	//hol_test_compute_type<simple_type>();
 }
