@@ -3245,6 +3245,19 @@ bool propose_rebind_anaphora(
 	while (true) {
 		unsigned int new_referent_id = sample_uniform(anaphora_start);
 		T.ctx.bindings[sentence_id].indices[anaphora_id] = anaphora_start - new_referent_id - 1;
+		if (T.ctx.bindings[sentence_id].indices[anaphora_id] == old_referent_id) {
+			/* for performance, we assume that if the proposed anaphora binding
+			   is the same as the old one, we just propose the identity transformation */
+			set_changes<Formula> set_diff;
+			if (!T.add_changes(old_proof_changes, set_diff, undo_remove_sets(inverse_sampler.removed_set_sizes))) {
+				free(old_proof_changes);
+				fprintf(stderr, "undo_proof_changes ERROR: Failed to add changes back to theory.\n");
+				exit(0);
+				return false;
+			}
+			free(old_proof_changes);
+			return true;
+		}
 		if (!is_anaphora_binding_legal(T.ctx.referent_iterators[sentence_id], T.ctx.bindings[sentence_id].indices))
 			continue;
 

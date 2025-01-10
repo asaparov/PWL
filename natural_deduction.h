@@ -1294,7 +1294,9 @@ bool check_proof(proof_state<Formula>& out,
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		if (!is_canonical<Canonicalizer>(*proof.formula)) {
-			fprintf(stderr, "check_proof ERROR: Axiom is not in canonical form.\n");
+			print("check_proof ERROR: Axiom '", stderr);
+			print(*proof.formula, stderr, *debug_terminal_printer);
+			print("' is not in canonical form.\n", stderr);
 			return false;
 		}
 		out.formula = proof.formula;
@@ -1624,7 +1626,7 @@ bool check_proof(proof_state<Formula>& out,
 		second_operand = map_const(proof.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (second_operand->type == nd_step_type::ARRAY_PARAMETER && proof.operands[2]->type == nd_step_type::TERM_PARAMETER) {
 			Term* replaced_term = get_term_at_index(*operand_states[0]->formula, second_operand->parameters.data[0]);
-			if (*replaced_term != *proof.operands[2]->term)
+			if (replaced_term == nullptr || *replaced_term != *proof.operands[2]->term)
 				return false;
 
 			Formula* temp = shift_bound_variables(operand_states[0]->formula, 1);
@@ -2066,6 +2068,8 @@ bool print(const nd_step<Formula>& proof, Stream& out, Printer&&... printer)
 
 		/* compute the conclusion at this proof step */
 		if (!check_proof<BuiltInPredicates, Canonicalizer, Intuitionistic>(state.key, *node, operand_states.data, operand_states.length)) {
+			print("print ERROR: `check_proof` failed to compute conclusion of proof step ", stderr);
+			print(state.value, stderr); print(".\n", stderr);
 			free_proof_states(proof_states);
 			return false;
 		}
