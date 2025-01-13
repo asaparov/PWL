@@ -1206,6 +1206,12 @@ bool subtract_unifying_hypotheses(
 template<typename Canonicalizer, typename Formula>
 inline Formula* try_canonicalize(Formula* formula) {
 	Formula* out = Canonicalizer::canonicalize(*formula);
+#if !defined(NDEBUG)
+	if (out == nullptr) {
+		print("try_canonicalize ERROR: Failed to canonicalize ", stderr);
+		print(*formula, stderr, *debug_terminal_printer); print('\n', stderr);
+	}
+#endif
 	free(*formula); if (formula->reference_count == 0) free(formula);
 	return out;
 }
@@ -1288,7 +1294,9 @@ bool check_proof(proof_state<Formula>& out,
 	switch (proof.type) {
 	case nd_step_type::AXIOM:
 		if (!is_canonical<Canonicalizer>(*proof.formula)) {
-			fprintf(stderr, "check_proof ERROR: Axiom is not in canonical form.\n");
+			print("check_proof ERROR: Axiom '", stderr);
+			print(*proof.formula, stderr, *debug_terminal_printer);
+			print("' is not in canonical form.\n", stderr);
 			return false;
 		}
 		out.formula = proof.formula;
@@ -1595,7 +1603,19 @@ bool check_proof(proof_state<Formula>& out,
 		 || second_operand->type != nd_step_type::TERM_PARAMETER)
 			return false;
 		variable = Formula::new_variable(operand_states[0]->formula->quantifier.variable);
-		out.formula = substitute<TermType::VARIABLE, -1>(operand_states[0]->formula->quantifier.operand, variable, second_operand->term);
+		{
+			unsigned int max_variable = 0;
+			Formula* to_substitute = second_operand->term;
+			if (max_bound_variable(*operand_states[0]->formula, max_variable)) {
+				to_substitute = shift_bound_variables(to_substitute, max_variable - 1);
+			} else {
+				to_substitute->reference_count++;
+			}
+			Formula* substituted = substitute<TermType::VARIABLE, -1>(operand_states[0]->formula->quantifier.operand, variable, to_substitute);
+			free(*to_substitute); if (to_substitute->reference_count == 0) free(to_substitute);
+			out.formula = relabel_variables(substituted);
+			free(*substituted); if (substituted->reference_count == 0) free(substituted);
+		}
 		free(*variable); if (variable->reference_count == 0) free(variable);
 		if (out.formula == NULL) return false;
 		out.formula = try_canonicalize<Canonicalizer>(out.formula);
@@ -1606,7 +1626,7 @@ bool check_proof(proof_state<Formula>& out,
 		second_operand = map_const(proof.operands[1], std::forward<ProofMap>(proof_map)...);
 		if (second_operand->type == nd_step_type::ARRAY_PARAMETER && proof.operands[2]->type == nd_step_type::TERM_PARAMETER) {
 			Term* replaced_term = get_term_at_index(*operand_states[0]->formula, second_operand->parameters.data[0]);
-			if (*replaced_term != *proof.operands[2]->term)
+			if (replaced_term == nullptr || *replaced_term != *proof.operands[2]->term)
 				return false;
 
 			Formula* temp = shift_bound_variables(operand_states[0]->formula, 1);
@@ -2048,6 +2068,8 @@ bool print(const nd_step<Formula>& proof, Stream& out, Printer&&... printer)
 
 		/* compute the conclusion at this proof step */
 		if (!check_proof<BuiltInPredicates, Canonicalizer, Intuitionistic>(state.key, *node, operand_states.data, operand_states.length)) {
+			print("print ERROR: `check_proof` failed to compute conclusion of proof step ", stderr);
+			print(state.value, stderr); print(".\n", stderr);
 			free_proof_states(proof_states);
 			return false;
 		}

@@ -4684,6 +4684,7 @@ constant_map.put((unsigned int) built_in_predicates::UNKNOWN, new_constant);
 Formula* expected_conclusion = relabel_constants(canonicalized, constant_map);
 if (!check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*new_proof, expected_conclusion)) {
 check_proof<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*new_proof, expected_conclusion);
+print<built_in_predicates, typename ProofCalculus::ProofCanonicalizer, ProofCalculus::Intuitionistic>(*new_proof, stderr, *debug_terminal_printer);
 fprintf(stderr, "add_formula WARNING: `check_proof` failed.\n");
 }
 core::free(*expected_conclusion); if (expected_conclusion->reference_count == 0) core::free(expected_conclusion);
@@ -14562,7 +14563,7 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					}
 				}
 
-				Formula* beta_left = lambda_formula;
+				Formula* beta_left = shift_bound_variables(lambda_formula, arity);
 				for (unsigned int i = 0; i < arity; i++) {
 					Formula* temp = Formula::new_apply(beta_left, Formula::new_variable(i + 1));
 					if (temp == nullptr) {

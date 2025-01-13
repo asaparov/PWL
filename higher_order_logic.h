@@ -19574,8 +19574,22 @@ bool tptp_interpret_quantifier(
 	hol_term* operand;
 	if (!new_hol_term(operand)) return false;
 	operand->reference_count = 1;
-	if (!tptp_interpret_unary_term(tokens, index, *operand, names, variables)) {
-		free(operand); return false;
+	if (index < tokens.length && tokens[index].type == tptp_token_type::LPAREN) {
+		index++;
+
+		if (!tptp_interpret(tokens, index, *operand, names, variables)) {
+			free(operand); return false;
+		}
+
+		if (!expect_token(tokens, index, tptp_token_type::RPAREN, "closing parenthesis for quantificand")) {
+			free(*operand); free(operand);
+			return false;
+		}
+		index++;
+	} else {
+		if (!tptp_interpret_unary_term(tokens, index, *operand, names, variables)) {
+			free(operand); return false;
+		}
 	}
 
 	hol_term* inner = operand;
