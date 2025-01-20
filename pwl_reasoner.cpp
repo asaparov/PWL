@@ -240,7 +240,7 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		auto collector = make_log_probability_collector(T, proof_prior, new_proof);
 		double max_log_probability = collector.current_log_probability;
 		for (unsigned int j = 0; j < 4; j++) {
-			for (unsigned int t = 0; t < 1000; t++) {
+			for (unsigned int t = 0; t < 500; t++) {
 //fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
 //if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
@@ -278,7 +278,7 @@ debug_flag = false;
 		T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer);
 		print("Theory log probability: ", stdout); print(max_log_probability, stdout); print("\n", stdout);
 		print("Proof of newly-added logical form in the best theory:\n", stdout);
-		print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T.observations.last(), stdout, *debug_terminal_printer);
+		print<built_in_predicates, identity_canonicalizer, false>(*T.observations.last(), stdout, *debug_terminal_printer);
 		print('\n', stdout); fflush(stdout);
 		free(T_MAP); free(proof_axioms_MAP);
 	}

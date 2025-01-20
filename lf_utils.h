@@ -3741,17 +3741,24 @@ struct referent_iterator
 	static inline void free(referent_iterator& iterator) {
 		core::free(iterator.anaphora);
 		core::free(iterator.referents);
+		core::free(*iterator.logical_form);
+		if (iterator.logical_form->reference_count == 0)
+			core::free(iterator.logical_form);
 	}
 
 	static inline bool clone(
-			const referent_iterator& src, referent_iterator& dst)
+			const referent_iterator& src, referent_iterator& dst,
+			hash_map<const hol_term*, hol_term*>& formula_map)
 	{
-		dst.logical_form = src.logical_form;
 		dst.max_variable = src.max_variable;
 		if (!array_map_init(dst.referents, src.referents.capacity)) {
 			return false;
 		} else if (!array_map_init(dst.anaphora, src.anaphora.capacity)) {
 			core::free(dst.referents);
+			return false;
+		} else if (!::clone(src.logical_form, dst.logical_form, formula_map)) {
+			core::free(dst.referents);
+			core::free(dst.anaphora);
 			return false;
 		}
 
@@ -3783,6 +3790,86 @@ inline bool init(referent_iterator& iterator, hol_term* logical_form) {
 		return false;
 	}
 	iterator.logical_form = logical_form;
+	logical_form->reference_count++;
+	return true;
+}
+
+inline bool get_formula_map(const referent_iterator& iterator, hash_map<const hol_term*, unsigned int>& formula_map)
+{
+	return get_formula_map(iterator.logical_form, formula_map);
+}
+
+template<typename Stream>
+bool read(referent_iterator& iterator, Stream& in, hol_term** formulas)
+{
+	size_t referent_count, anaphora_count;
+	unsigned int lf_index;
+	if (!read(iterator.max_variable, in)
+	 || !read(referent_count, in)
+	 || !read(anaphora_count, in)
+	 || !read(lf_index, in)
+	 || !array_map_init(iterator.referents, ((size_t) 1) << (core::log2(referent_count == 0 ? 1 : referent_count) + 1)))
+	{
+		return false;
+	} else if (!array_map_init(iterator.anaphora, ((size_t) 1) << (core::log2(anaphora_count == 0 ? 1 : anaphora_count) + 1))) {
+		core::free(iterator.referents);
+		return false;
+	}
+
+	iterator.logical_form = formulas[lf_index];
+	iterator.logical_form->reference_count++;
+
+	for (size_t i = 0; i < referent_count; i++) {
+		unsigned int key_index;
+		unsigned int value_index;
+		if (!read(key_index, in)
+		 || !read(value_index, in))
+		{
+			core::free(iterator);
+			return false;
+		}
+		iterator.referents.keys[iterator.referents.size] = formulas[key_index];
+		iterator.referents.values[iterator.referents.size++] = formulas[value_index];
+	} for (size_t i = 0; i < anaphora_count; i++) {
+		unsigned int key_index;
+		unsigned int value;
+		if (!read(key_index, in)
+		 || !read(value, in))
+		{
+			core::free(iterator);
+			return false;
+		}
+		iterator.anaphora.keys[iterator.anaphora.size] = formulas[key_index];
+		iterator.anaphora.values[iterator.anaphora.size++] = value;
+	}
+	return true;
+}
+
+template<typename Stream>
+bool write(const referent_iterator& iterator, Stream& out,
+		const hash_map<const hol_term*, unsigned int>& formula_map)
+{
+	if (!write(iterator.max_variable, out)
+	 || !write(iterator.referents.size, out)
+	 || !write(iterator.anaphora.size, out)
+	 || !write(formula_map.get(iterator.logical_form), out))
+	{
+		return false;
+	}
+
+	for (size_t i = 0; i < iterator.referents.size; i++) {
+		if (!write(formula_map.get(iterator.referents.keys[i]), out)
+		 || !write(formula_map.get(iterator.referents.values[i]), out))
+		{
+			return false;
+		}
+	} for (size_t i = 0; i < iterator.anaphora.size; i++) {
+		if (!write(formula_map.get(iterator.anaphora.keys[i]), out)
+		 || !write(iterator.anaphora.values[i], out))
+		{
+			return false;
+		}
+	}
 	return true;
 }
 

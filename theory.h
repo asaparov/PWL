@@ -4336,7 +4336,7 @@ struct theory
 			core::free(*dst.empty_set_axiom); if (dst.empty_set_axiom->reference_count == 0) core::free(dst.empty_set_axiom);
 			core::free(*dst.NAME_ATOM); if (dst.NAME_ATOM->reference_count == 0) core::free(dst.NAME_ATOM);
 			return false;
-		} else if (!context::clone(src.ctx, dst.ctx)) {
+		} else if (!context::clone(src.ctx, dst.ctx, formula_map)) {
 			core::free(dst.implication_intro_nodes);
 			core::free(dst.negated_conjunction_nodes);
 			core::free(dst.disjunction_intro_nodes);
@@ -16374,7 +16374,8 @@ bool get_proof_map(const theory<ProofCalculus, Canonicalizer>& T,
 
 	if (!get_proof_map(T.empty_set_axiom, proof_map, formula_map)
 	 || !get_formula_map(T.NAME_ATOM, formula_map)
-	 || !get_proof_map(T.sets, proof_map, formula_map))
+	 || !get_proof_map(T.sets, proof_map, formula_map)
+	 || !get_formula_map(T.ctx, formula_map))
 	{
 		return false;
 	}
@@ -16443,7 +16444,8 @@ bool read(theory<ProofCalculus, Canonicalizer>& T, Stream& in,
 	 || !read(built_in_axiom_count, in)
 	 || !read(empty_set_axiom_index, in)
 	 || !read(NAME_ATOM_index, in)
-	 || !read(T.sets, in, proofs, formulas))
+	 || !read(T.sets, in, proofs, formulas)
+	 || !read(T.ctx, in, formulas))
 	{
 		return false;
 	} else if (!read(atom_count, in)) {

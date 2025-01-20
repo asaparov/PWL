@@ -3062,6 +3062,8 @@ hol_term* default_apply(hol_term* src, Function&&... function)
 		if (!changed) {
 			free(new_terms);
 			return src;
+		} else if (new_terms == NULL) {
+			return NULL;
 		} else {
 			if (!new_hol_term(new_term)) {
 				for (unsigned int j = 0; j < src->array.length; j++) {
@@ -3700,7 +3702,7 @@ inline hol_term* apply(hol_term* src, index_substituter& substituter)
 inline hol_term* substitute(
 		hol_term* src, const unsigned int* term_indices,
 		unsigned int term_index_count, hol_term* dst_term,
-		const hol_term* expected_src_term = NULL)
+		const hol_term* expected_src_term = nullptr)
 {
 	index_substituter substituter = {expected_src_term, dst_term, term_indices, term_index_count, 0};
 	hol_term* term = apply(src, substituter);
@@ -3720,7 +3722,7 @@ struct beta_reducer {
 inline hol_term* beta_reduce(hol_term* left_src, hol_term* right_src, beta_reducer& reducer)
 {
 	hol_term* right = apply(right_src, reducer);
-	if (right == NULL) return NULL;
+	if (right == nullptr) return nullptr;
 	else if (right == right_src)
 		right->reference_count++;
 
@@ -3729,12 +3731,12 @@ inline hol_term* beta_reduce(hol_term* left_src, hol_term* right_src, beta_reduc
 		reducer.max_variable = max(reducer.max_variable, left_src->quantifier.variable);
 		if (!reducer.substitutions.put(left_src->quantifier.variable, right)) {
 			free(*right); if (right->reference_count == 0) free(right);
-			return NULL;
+			return nullptr;
 		}
 
 		result = apply(left_src->quantifier.operand, reducer);
 		free(*right); if (right->reference_count == 0) free(right);
-		if (result == NULL) return NULL;
+		if (result == nullptr) return nullptr;
 		else if (result == left_src->quantifier.operand)
 			result->reference_count++;
 #if !defined(NDEBUG)
@@ -3745,9 +3747,9 @@ inline hol_term* beta_reduce(hol_term* left_src, hol_term* right_src, beta_reduc
 #endif
 	} else {
 		hol_term* left = apply(left_src, reducer);
-		if (left == NULL) {
+		if (left == nullptr) {
 			free(*right); if (right->reference_count == 0) free(right);
-			return NULL;
+			return nullptr;
 		} else if (left == left_src)
 			left->reference_count++;
 
@@ -3760,18 +3762,18 @@ inline hol_term* beta_reduce(hol_term* left_src, hol_term* right_src, beta_reduc
 
 			result = apply(left->quantifier.operand, new_reducer);
 			free(*right); if (right->reference_count == 0) free(right);
-			if (result == NULL) {
+			if (result == nullptr) {
 				free(*left); if (left->reference_count == 0) free(left);
-				return NULL;
+				return nullptr;
 			} else if (result == left->quantifier.operand)
 				result->reference_count++;
 			free(*left); if (left->reference_count == 0) free(left);
 		} else {
 			result = hol_term::new_apply(left, right);
-			if (result == NULL) {
+			if (result == nullptr) {
 				free(*right); if (right->reference_count == 0) free(right);
 				free(*left); if (left->reference_count == 0) free(left);
-				return NULL;
+				return nullptr;
 			}
 		}
 	}

@@ -1638,7 +1638,10 @@ bool check_proof(proof_state<Formula>& out,
 			return false;
 		}
 
-		if (formula == NULL) return false;
+		if (formula == NULL) {
+			fprintf(stderr, "check_proof ERROR: Invalid term indices for substitution.\n");
+			return false;
+		}
 		out.formula = Formula::new_exists(1, formula);
 		if (out.formula == NULL) {
 			free(*formula); if (formula->reference_count == 0) free(formula);
