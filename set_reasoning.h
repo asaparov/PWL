@@ -2587,7 +2587,7 @@ struct set_reasoning
 		}
 		stack[stack.length++] = set;
 
-		unsigned int* clique = NULL; unsigned int clique_count, ancestor_of_clique, upper_bound = 0;
+		unsigned int* clique = nullptr; unsigned int clique_count, ancestor_of_clique, upper_bound = 0;
 		if (is_fixed) {
 			upper_bound = sets[set].set_size;
 		} else if (!get_size_upper_bound(set, upper_bound, clique, clique_count, ancestor_of_clique)) {
@@ -2620,7 +2620,7 @@ struct set_reasoning
 			}
 		}
 
-		if (!is_fixed) {
+		if (!is_fixed && clique != nullptr) {
 			bool child_graph_changed = false;
 			unsigned int clique_upper_bound = sets[ancestor_of_clique].set_size;
 			for (unsigned int i = 0; i < clique_count; i++)
