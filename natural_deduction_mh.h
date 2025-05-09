@@ -2096,7 +2096,7 @@ print(*selected_proof_step.formula, stderr); print('\n', stderr);
 		sampler.clear();
 if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u\n", debug);
-T.print_axioms(stderr, *debug_terminal_printer);
+T.template print_axioms<true>(stderr, *debug_terminal_printer);
 }
 debug++;
 		new_set_diff.clear();
@@ -2109,7 +2109,7 @@ debug++;
 	}
 if (debug_flag) {
 fprintf(stderr, "INNER DEBUG: %u (loop broken)\n", debug);
-T.print_axioms(stderr, *debug_terminal_printer);
+T.template print_axioms<true>(stderr, *debug_terminal_printer);
 }
 
 	log_proposal_probability_ratio -= sampler.log_probability;

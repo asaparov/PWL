@@ -13693,6 +13693,37 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 			}
 		}
 
+		/* elements that were previously provable members of the consequent may
+		   have been removed from the `provable_elements` arrays of the
+		   consequent and its ancestors */
+		array<unsigned int> stack(8);
+		hash_set<unsigned int> visited(16);
+		stack[stack.length++] = consequent_set;
+		visited.add(consequent_set);
+		array<Formula*> conjuncts(8);
+		while (stack.length != 0) {
+			unsigned int current = stack.pop();
+
+			Formula* set_formula = sets.sets[current].set_formula();
+			if (set_formula->type == FormulaType::AND) {
+				for (unsigned int j = 0; j < set_formula->array.length; j++) {
+					if (!conjuncts.add(set_formula->array.operands[j]))
+						return false;
+				}
+			} else if (!conjuncts.add(set_formula))
+				return false;
+
+			for (unsigned int parent : sets.intensional_graph.vertices[current].parents) {
+				if (visited.contains(parent)) continue;
+				if (!visited.add(parent) || !stack.add(parent))
+					return false;
+			} for (const auto& entry : sets.extensional_graph.vertices[current].parents) {
+				if (visited.contains(entry.key)) continue;
+				if (!visited.add(entry.key) || !stack.add(entry.key))
+					return false;
+			}
+		}
+
 		array<Formula*> old_atoms(8);
 		for (unsigned int descendant : sets.sets[antecedent_set].descendants) {
 			for (unsigned int i = sets.sets[descendant].provable_elements.length; i > 0; i--) {
@@ -13720,19 +13751,26 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 					}
 				}
 
-				Formula* substituted_formula = substitute_all(consequent_formula, src_variables, dst_constants, sets.sets[descendant].arity);
+				for (Formula* conjunct : conjuncts) {
+					Formula* substituted_formula = substitute_all(conjunct, src_variables, dst_constants, sets.sets[descendant].arity);
+					if (substituted_formula == nullptr) {
+						free_all(old_atoms);
+						for (unsigned int j = 0; j < sets.sets[descendant].arity; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
+						for (unsigned int j = 0; j < sets.sets[descendant].arity; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
+						return false;
+					} else {
+						if (!add_all_atoms<true>(old_atoms, substituted_formula, 0)) {
+							core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
+							free_all(old_atoms);
+							for (unsigned int j = 0; j < sets.sets[descendant].arity; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
+							for (unsigned int j = 0; j < sets.sets[descendant].arity; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
+							return false;
+						}
+						core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
+					}
+				}
 				for (unsigned int j = 0; j < sets.sets[descendant].arity; j++) { core::free(*src_variables[j]); core::free(src_variables[j]); }
 				for (unsigned int j = 0; j < sets.sets[descendant].arity; j++) { core::free(*dst_constants[j]); if (dst_constants[j]->reference_count == 0) core::free(dst_constants[j]); }
-				if (substituted_formula == nullptr) {
-					free_all(old_atoms);
-					return false;
-				} else {
-					if (!add_all_atoms<true>(old_atoms, substituted_formula, 0)) {
-						core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
-						free_all(old_atoms); return false;
-					}
-					core::free(*substituted_formula); if (substituted_formula->reference_count == 0) core::free(substituted_formula);
-				}
 			}
 		}
 
