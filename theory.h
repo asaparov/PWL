@@ -4653,6 +4653,13 @@ struct theory
 			}
 		}
 
+		if (new_proof == nullptr) {
+			/* if we failed to find a valid proof, make sure to undo any changes to the context */
+			core::free(binding);
+			core::free(ref_iterator);
+			ctx.bindings.length--;
+			ctx.referent_iterators.length--;
+		}
 		return new_proof;
 	}
 
