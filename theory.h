@@ -15203,10 +15203,12 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 			sets.symbols_in_formulas.add(symbols);
 
 			if (!::init(sets.set_ids.table.keys[bucket], *canonicalized)) {
+				sets.symbols_in_formulas.subtract(symbols);
 				for (auto& element : possible_values) core::free(element);
 				core::free(*canonicalized); if (canonicalized->reference_count == 0) core::free(canonicalized);
 				return false;
 			} else if (!sets.new_set(canonicalized, arity, set_id, set_size, std::forward<Args>(visitor)...)) {
+				sets.symbols_in_formulas.subtract(symbols);
 				for (auto& element : possible_values) core::free(element);
 				core::free(*canonicalized); if (canonicalized->reference_count == 0) core::free(canonicalized);
 				core::free(sets.set_ids.table.keys[bucket]);
@@ -19994,7 +19996,7 @@ bool log_joint_probability_of_lambda(
 T.print_axioms(stderr, *debug_terminal_printer);
 T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 if (!check_consistency(T, proof_axioms, collector)) exit(0);
-if (t == 252)
+if (t == 329)
 	debug_flag = true;
 else debug_flag = false;*/
 		do_mh_step(T, proof_prior, proof_axioms, collector, collector.internal_collector.test_proof, t < num_samples / 4 ? 1.0 : 0.1);

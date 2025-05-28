@@ -1,7 +1,7 @@
-![x,f,S]:(?[g]:(greatest(f)(g) & arg1(g)=S & arg2(g)=x) => (S(x) & ![v]:(f(x)(v) => ![y]:(S(y) => ![w]:(f(y)(w) => ((number(v) => ≥(v,w)) & ![a]:((measure(v) & arg1(v)=a) => ![b]:((measure(w) & ?[u]:(arg2(v)=u & arg2(w)=u) & arg1(w)=b) => ≥(a,b)))))))));
+/*![x,f,S]:(?[g]:(greatest(f)(g) & arg1(g)=S & arg2(g)=x) => (S(x) & ![v]:(f(x)(v) => ![y]:(S(y) => ![w]:(f(y)(w) => ((number(v) => ≥(v,w)) & ![a]:((measure(v) & arg1(v)=a) => ![b]:((measure(w) & ?[u]:(arg2(v)=u & arg2(w)=u) & arg1(w)=b) => ≥(a,b)))))))));
 ![x,f,S]:(?[g]:(least(f)(g) & arg1(g)=S & arg2(g)=x) => (S(x) & ![v]:(f(x)(v) => ![y]:(S(y) => ![w]:(f(y)(w) => ((number(v) => ≥(w,v)) & ![a]:((measure(v) & arg1(v)=a) => ![b]:((measure(w) & ?[u]:(arg2(v)=u & arg2(w)=u) & arg1(w)=b) => ≥(b,a)))))))));
 ![o]:(only(o) => ![x]:(arg1(o)=x => arg2(o)=x));
 ![x,y]:(?[k]:(kill(k) & arg1(k)=x & arg2(k)=y) => (victim(y) & ?[p]:(possessive(p) & arg1(p)=x & arg2(p)=y)));
 ![a,x]:(?[e]:(a(e) & arg1(e)=x) => agent(a)(x));
-![a,x]:(agent(a)(x) => ?[e]:(a(e) & arg1(e)=x));
+![a,x]:(agent(a)(x) => ?[e]:(a(e) & arg1(e)=x));*/
 ![x]:(person(x) => ~location(x));

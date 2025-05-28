@@ -80,7 +80,12 @@ bool check_consistency(
 	success &= T.sets.are_descendants_valid();
 	success &= T.sets.are_set_sizes_valid();
 	success &= T.sets.check_set_ids();
+	success &= T.sets.check_symbols_in_formulas();
 	success &= T.sets.are_provable_elements_valid();
+	if (T.ctx.referent_iterators.length != T.observations.length) {
+		fprintf(stderr, "WARNING: `T.ctx.referent_iterators.length` is not equal to `T.observations.length`.\n");
+		success = false;
+	}
 	if (!observations_has_test_proof(T, collector)) {
 		fprintf(stderr, "WARNING: `collector.test_proof` is not an observation in the theory.\n");
 		success = false;
@@ -200,7 +205,7 @@ set_seed(1356941742);
 			null_collector collector;
 			for (unsigned int t = 0; t < 10; t++) {
 //fprintf(stderr, "(add_formula) j = %u, t = %u\n", j, t);
-//if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
+if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);*/
 				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
@@ -242,10 +247,10 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 		for (unsigned int j = 0; j < 4; j++) {
 			for (unsigned int t = 0; t < 500; t++) {
 //fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-//if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
+if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
-if (i == 9 && j == 0 && t == 239) {
+if (i == 6 && j == 0 && t == 173) {
 fprintf(stderr, "DEBUG\n");
 debug_flag = true;
 } else {
@@ -264,7 +269,7 @@ debug_flag = false;
 			if (j + 1 < 4) {
 				for (unsigned int t = 0; t < 40; t++) {
 //fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-//if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
+if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
 //T.template print_axioms<true>(stdout, *debug_terminal_printer);
 //T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
 					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector, collector.test_proof, 1.0);
@@ -294,7 +299,7 @@ debug_flag = false;
 		double log_probability_true = log_joint_probability_of_truth(T, proof_prior, proof_axioms, lfs.last(), 250, 4, 20, T_MAP, proof_MAP);
 		if (!Theory::is_empty(T_MAP)) {
 			print("Highest probability theory after testing whether query is true:\n", stdout);
-			T_MAP.print_axioms(stdout, *debug_terminal_printer);
+			T_MAP.print_axioms<true>(stdout, *debug_terminal_printer);
 			print("Proof of newly-added logical form in the best theory:\n", stdout);
 			print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T_MAP.observations.last(), stdout, *debug_terminal_printer);
 			print('\n', stdout); fflush(stdout);
@@ -315,7 +320,7 @@ debug_flag = false;
 		free(*negation); if (negation->reference_count == 0) free(negation);
 		if (!Theory::is_empty(T_MAP)) {
 			print("Highest probability theory after testing whether query is false:\n", stdout);
-			T_MAP.print_axioms(stdout, *debug_terminal_printer);
+			T_MAP.print_axioms<true>(stdout, *debug_terminal_printer);
 			print("Proof of newly-added logical form in the best theory:\n", stdout);
 			print<built_in_predicates, polymorphic_canonicalizer<true, false, built_in_predicates>, false>(*T_MAP.observations.last(), stdout, *debug_terminal_printer);
 			print('\n', stdout); fflush(stdout);

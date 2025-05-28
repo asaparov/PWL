@@ -2032,6 +2032,54 @@ inline void on_old_size_axiom(
 		const inverse_proof_sampler& visitor)
 { }
 
+template<bool IsExploratory, typename Formula, bool Intuitionistic,
+	typename Canonicalizer, typename PriorState,
+	typename PriorStateChanges, typename TheorySampleCollector>
+inline bool do_mh_disjunction_intro(
+	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_step,
+	nd_step<Formula>* proposed_proof,
+	proof_transformations<Formula>& proposed_proofs,
+	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& old_proof_changes,
+	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& new_proof_changes,
+	PriorState& proof_axioms,
+	const PriorStateChanges& old_axioms,
+	const PriorStateChanges& new_axioms,
+	double log_proposal_probability_ratio,
+	double log_proposal_probability_ratio_without_set_sizes,
+	const undo_remove_sets& old_sets,
+	const undo_remove_sets& new_sets,
+	double proof_prior_diff,
+	TheorySampleCollector& sample_collector)
+{
+#if !defined(NDEBUG)
+	if (isnan(log_proposal_probability_ratio))
+		fprintf(stderr, "do_mh_disjunction_intro WARNING: The computed log probability ratio is NaN.\n");
+	if (!IsExploratory && *selected_step.proof == *proposed_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
+		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
+#endif
+
+	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
+		/* we accepted the new proof */
+		proof_axioms.subtract(old_axioms);
+		if (!proof_axioms.add(new_axioms))
+			return false;
+		free(proposed_proofs);
+		free(new_proof_changes);
+		free(*proposed_proof); if (proposed_proof->reference_count == 0) free(proposed_proof);
+		free(old_proof_changes);
+		/* TODO: we could keep track of the extra axioms within `theory` */
+		array<hol_term*> extra_axioms(16);
+		T.get_extra_axioms(extra_axioms);
+		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
+			return false;
+	} else {
+		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.proof, proposed_proof, proposed_proofs, old_sets, new_sets);
+	}
+	return true;
+}
+
 template<typename Formula, bool Intuitionistic,
 	typename Canonicalizer, typename ProofPrior,
 	typename TheorySampleCollector, typename ProposalDistribution>
@@ -2201,8 +2249,9 @@ T.template print_axioms<true>(stderr, *debug_terminal_printer);
 
 	log_proposal_probability_ratio += log_probability(proposal_distribution, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, selected_proof_step.proof);
 
-	return do_mh_disjunction_intro(T, selected_proof_step, new_proof, proposed_proofs, observation_changes,
-			old_proof_changes, new_proof_changes, proof_axioms, old_axioms, new_axioms, log_proposal_probability_ratio,
+	return do_mh_disjunction_intro<ProposalDistribution::IsExploratory>(
+			T, selected_proof_step, new_proof, proposed_proofs, observation_changes, old_proof_changes,
+			new_proof_changes, proof_axioms, old_axioms, new_axioms, log_proposal_probability_ratio,
 			log_proposal_probability_ratio + sampler.set_size_log_probability - inverse_sampler.set_size_log_probability,
 			undo_remove_sets(inverse_sampler.removed_set_sizes), undo_remove_sets(sampler.removed_set_sizes),
 			proof_prior_diff, sample_collector);
@@ -3138,54 +3187,6 @@ bool do_mh_universal_elim(
 }
 
 template<typename Formula, bool Intuitionistic,
-	typename Canonicalizer, typename PriorState,
-	typename PriorStateChanges, typename TheorySampleCollector>
-inline bool do_mh_disjunction_intro(
-	theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>& T,
-	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::proof_node& selected_step,
-	nd_step<Formula>* proposed_proof,
-	proof_transformations<Formula>& proposed_proofs,
-	const array<pair<nd_step<Formula>*, nd_step<Formula>*>>& observation_changes,
-	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& old_proof_changes,
-	typename theory<natural_deduction<Formula, Intuitionistic>, Canonicalizer>::changes& new_proof_changes,
-	PriorState& proof_axioms,
-	const PriorStateChanges& old_axioms,
-	const PriorStateChanges& new_axioms,
-	double log_proposal_probability_ratio,
-	double log_proposal_probability_ratio_without_set_sizes,
-	const undo_remove_sets& old_sets,
-	const undo_remove_sets& new_sets,
-	double proof_prior_diff,
-	TheorySampleCollector& sample_collector)
-{
-#if !defined(NDEBUG)
-	if (isnan(log_proposal_probability_ratio))
-		fprintf(stderr, "do_mh_disjunction_intro WARNING: The computed log probability ratio is NaN.\n");
-	if (*selected_step.proof == *proposed_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
-		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
-#endif
-
-	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
-		/* we accepted the new proof */
-		proof_axioms.subtract(old_axioms);
-		if (!proof_axioms.add(new_axioms))
-			return false;
-		free(proposed_proofs);
-		free(new_proof_changes);
-		free(*proposed_proof); if (proposed_proof->reference_count == 0) free(proposed_proof);
-		free(old_proof_changes);
-		/* TODO: we could keep track of the extra axioms within `theory` */
-		array<hol_term*> extra_axioms(16);
-		T.get_extra_axioms(extra_axioms);
-		if (!sample_collector.accept_with_observation_changes(T.observations, extra_axioms, proof_prior_diff, observation_changes))
-			return false;
-	} else {
-		return undo_proof_changes<true>(T, old_proof_changes, new_proof_changes, selected_step.proof, proposed_proof, proposed_proofs, old_sets, new_sets);
-	}
-	return true;
-}
-
-template<typename Formula, bool Intuitionistic,
 	typename Canonicalizer, typename ProofPrior,
 	typename TheorySampleCollector, typename ProposalDistribution>
 bool propose_rebind_anaphora(
@@ -3251,7 +3252,7 @@ bool propose_rebind_anaphora(
 			set_changes<Formula> set_diff;
 			if (!T.add_changes(old_proof_changes, set_diff, undo_remove_sets(inverse_sampler.removed_set_sizes))) {
 				free(old_proof_changes);
-				fprintf(stderr, "undo_proof_changes ERROR: Failed to add changes back to theory.\n");
+				fprintf(stderr, "propose_rebind_anaphora ERROR: Failed to add changes back to theory.\n");
 				exit(0);
 				return false;
 			}
@@ -3368,9 +3369,9 @@ bool propose_rebind_anaphora(
 #if !defined(NDEBUG)
 	double log_proposal_probability_ratio_without_set_sizes = log_proposal_probability_ratio + sampler.set_size_log_probability - inverse_sampler.set_size_log_probability;
 	if (isnan(log_proposal_probability_ratio))
-		fprintf(stderr, "do_mh_disjunction_intro WARNING: The computed log probability ratio is NaN.\n");
-	if (*proof == *new_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
-		fprintf(stderr, "do_mh_disjunction_intro WARNING: This identity proposal does not have probability ratio 1.\n");
+		fprintf(stderr, "propose_rebind_anaphora WARNING: The computed log probability ratio is NaN.\n");
+	if (!ProposalDistribution::IsExploratory && set_diff.old_set_axioms.length == 0 && set_diff.new_set_axioms.length == 0 && *proof == *new_proof && fabs(log_proposal_probability_ratio_without_set_sizes) > 1.0e-12)
+		fprintf(stderr, "propose_rebind_anaphora WARNING: This identity proposal does not have probability ratio 1.\n");
 #endif
 
 	if (sample_uniform<double>() < exp(log_proposal_probability_ratio)) {
@@ -4051,7 +4052,7 @@ inline unsigned int sample(
 		}
 	} else {
 		proposal_distribution.selected_query = false;
-		return sample(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, log_proposal_probability_ratio);
+		return proposal_distribution.log_one_minus_sample_query_probability + sample(proposal_distribution.fallback_proposal, T, eliminable_extensional_edges, unfixed_sets, mergeable_events, splittable_events, log_proposal_probability_ratio);
 	}
 }
 

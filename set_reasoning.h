@@ -3820,6 +3820,37 @@ struct set_reasoning
 		return success;
 	}
 
+	bool check_symbols_in_formulas() const {
+		hash_multiset<unsigned int> computed_symbols_in_formulas(256);
+		for (unsigned int i = 1; i < set_count + 1; i++) {
+			if (sets[i].size_axioms.data == nullptr) continue;
+
+			array_multiset<unsigned int> symbols(16);
+			Formula* formula = sets[i].set_formula();
+			if (!get_constants(*formula, symbols)) return false;
+			computed_symbols_in_formulas.add<true>(symbols);
+		}
+
+		bool success = true;
+		for (const auto& entry : computed_symbols_in_formulas.counts) {
+			bool contains;
+			unsigned int count = symbols_in_formulas.counts.get(entry.key, contains);
+			if (!contains) count = 0;
+			if (entry.value != count) {
+				fprintf(stderr, "set_reasoning.check_symbols_in_formulas WARNING: `symbols_in_formulas` for symbol `%u` has count %u, but only %u symbols appear in set formulas.\n", entry.key, count, entry.value);
+				success = false;
+			}
+		} for (const auto& entry : symbols_in_formulas.counts) {
+			if (computed_symbols_in_formulas.counts.table.contains(entry.key))
+				continue;
+			if (entry.value != 0) {
+				fprintf(stderr, "set_reasoning.check_symbols_in_formulas WARNING: `symbols_in_formulas` for symbol `%u` has count %u, but only 0 symbols appear in set formulas.\n", entry.key, entry.value);
+				success = false;
+			}
+		}
+		return success;
+	}
+
 	bool are_provable_elements_valid() const {
 		bool success = true;
 		for (unsigned int i = 1; i < set_count + 1; i++) {
