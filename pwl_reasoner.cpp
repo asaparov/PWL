@@ -207,7 +207,11 @@ set_seed(1356941742);
 //fprintf(stderr, "(add_formula) j = %u, t = %u\n", j, t);
 if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
-T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);*/
+T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
+if (i == 13 && j == 76 && t == 2) {
+fprintf(stderr, "DEBUG\n");
+debug_flag = true;
+}*/
 				do_exploratory_mh_step(T, proof_prior, proof_axioms, collector);
 			}
 			new_proof = T.add_formula(lf, set_diff, new_constant);
@@ -250,7 +254,7 @@ T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdou
 if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
-if (i == 6 && j == 0 && t == 173) {
+if (i == 10 && j == 0 && t == 4) {
 fprintf(stderr, "DEBUG\n");
 debug_flag = true;
 } else {

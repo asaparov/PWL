@@ -3456,6 +3456,73 @@ inline hol_term* normalize_multiple_universal_quantifiers(hol_term* src)
 	return dst;
 }
 
+struct spurious_quantifier_remover {
+	array_map<unsigned int, bool> is_quantifier_spurious;
+
+	spurious_quantifier_remover() : is_quantifier_spurious(8) { }
+};
+
+template<hol_term_type Type, typename std::enable_if<Type == hol_term_type::FOR_ALL || Type == hol_term_type::EXISTS || Type == hol_term_type::VARIABLE>::type* = nullptr>
+inline hol_term* apply(hol_term* src, spurious_quantifier_remover& remover)
+{
+	if (Type == hol_term_type::VARIABLE) {
+		bool contains;
+		bool& is_spurious = remover.is_quantifier_spurious.get(src->variable, contains);
+		if (contains) is_spurious = false;
+		return src;
+	}
+
+	if (!remover.is_quantifier_spurious.put(src->quantifier.variable, true))
+		return nullptr;
+	hol_term* operand = apply(src->quantifier.operand, remover);
+	if (operand == nullptr)
+		return nullptr;
+
+	unsigned int index = remover.is_quantifier_spurious.index_of(src->quantifier.variable);
+	if (index == remover.is_quantifier_spurious.size) {
+		print("remove_spurious_quantifiers WARNING: Duplicate quantifier detected in logical form.\n", stderr);
+		print("  ", stderr); print(*src, stderr, *debug_terminal_printer); print('\n', stderr);
+		if (operand == src->quantifier.operand)
+			operand->reference_count++;
+		return operand;
+	}
+
+	bool is_spurious = remover.is_quantifier_spurious.values[index];
+	remover.is_quantifier_spurious.remove_at(index);
+	if (is_spurious) {
+		print("WARNING: Logical form contains an unused quantified variable:\n", stderr);
+		print("  ", stderr); print(*src, stderr, *debug_terminal_printer); print('\n', stderr);
+		if (operand == src->quantifier.operand)
+			operand->reference_count++;
+		return operand;
+	} else {
+		if (operand == src->quantifier.operand)
+			return src;
+		if (Type == hol_term_type::EXISTS) {
+			hol_term* new_lf = hol_term::new_exists(src->quantifier.variable, operand);
+			if (new_lf == nullptr)
+				return nullptr;
+			operand->reference_count++;
+			return new_lf;
+		} else {
+			hol_term* new_lf = hol_term::new_for_all(src->quantifier.variable, operand);
+			if (new_lf == nullptr)
+				return nullptr;
+			operand->reference_count++;
+			return new_lf;
+		}
+	}
+}
+
+inline hol_term* remove_spurious_quantifiers(hol_term* src)
+{
+	spurious_quantifier_remover remover;
+	hol_term* dst = apply(src, remover);
+	if (dst == src)
+		dst->reference_count++;
+	return dst;
+}
+
 enum class binding_state : uint_fast8_t {
 	NOT_BOUND = 0,
 	EXISTENTIAL,
@@ -4123,6 +4190,9 @@ bool get_referents(const hol_term* logical_form,
 			if (iterator.referents.size > 1
 			 && !iterator.anaphora.put(bound_variables.get(logical_form->binary.right->variable), (unsigned int) iterator.referents.size - 1))
 				return false;
+
+			/* do not allow anaphora scopes to be referents */
+			iterator.referents.remove(bound_variables.get(logical_form->binary.right->variable));
 		} else {
 			return get_referents(logical_form->binary.left, iterator, bound_variables)
 				&& get_referents(logical_form->binary.right, iterator, bound_variables);

@@ -3226,7 +3226,10 @@ inline Formula* preprocess_formula(Formula* src) {
 
 	second = normalize_multiple_universal_quantifiers(first);
 	free(*first); if (first->reference_count == 0) free(first);
-	return second;
+
+	first = remove_spurious_quantifiers(second);
+	free(*second); if (second->reference_count == 0) free(second);
+	return first;
 }
 
 /* this is useful in `theory.add_definition` where if any sets are created in
@@ -7871,6 +7874,36 @@ private:
 				return false;
 			antecedents.size--;
 			return true;
+		} else if (Contradiction && consequent->type == FormulaType::NOT && consequent->unary.operand->type == FormulaType::EXISTS) {
+			/* TODO: is this proof possible under intuitionistic logic? */
+			if (!second_quantifiers.add(consequent->unary.operand)) return false;
+
+			Formula** operands;
+			unsigned int operand_count;
+			if (consequent->unary.operand->quantifier.operand->type == FormulaType::AND) {
+				operands = consequent->unary.operand->quantifier.operand->array.operands;
+				operand_count = consequent->unary.operand->quantifier.operand->array.length;
+			} else {
+				operands = &consequent->unary.operand->quantifier.operand;
+				operand_count = 1;
+			}
+
+			for (unsigned int i = 0; i < operand_count; i++) {
+				/* try unifying `formula` with the i-th operand */
+				for (unsigned int j = 0; j < operand_count; j++) {
+					if (j == i) continue;
+					if (!antecedents.put(operands[j], second_quantifiers.length))
+						return false;
+				}
+
+				if (!unify_consequents<false>(formula, quantifiers, operands[i], second_quantifiers, antecedents, on_success))
+					return false;
+
+				antecedents.size -= operand_count - 1;
+			}
+
+			second_quantifiers.length--;
+			return true;
 		} else {
 			if (Contradiction) {
 				if (consequent->type != FormulaType::NOT) return true;
@@ -8049,6 +8082,7 @@ private:
 							antecedent_quantifiers[antecedent_quantifiers.length++] = second_quantifiers[i];
 						if (!is_provable_without_abduction<false>(antecedent, antecedent_quantifiers, new_temp_possible_values, prover))
 							break;
+						antecedent_quantifiers.clear();
 					}
 					if (new_temp_possible_values.length == 0) {
 						core::free(values); core::free(src_values);
@@ -13913,8 +13947,10 @@ time_aggregator profiler(consistency_checking_ms, consistency_checking);
 
 					Proof* proof = ProofCalculus::new_equality_elim(
 							set_definition,
-							ProofCalculus::new_equality_elim(ProofCalculus::new_beta(shifted, beta_right), new_proof, make_repeated_array_view(0u, 1)),
-							make_repeated_array_view(1u, 1));
+							ProofCalculus::new_equality_elim(ProofCalculus::new_beta(shifted, beta_right), new_proof, make_repeated_array_view(
+								/* if this is negated, we need to account for the negation symbol in the substitution index */
+								Contradiction ? 1u : 0u, 1)),
+							make_repeated_array_view(Contradiction ? 2u : 1u, 1));
 					core::free(*shifted); if (shifted->reference_count == 0) core::free(shifted);
 					core::free(*beta_right); if (beta_right->reference_count == 0) core::free(beta_right);
 					if (proof == nullptr) {
@@ -18615,7 +18651,7 @@ bool filter_constants_helper(
 					constants.remove(index);
 			}
 			/* make sure y could not be a set in `x(y)` */
-			for (unsigned int i = 0; !Hypothetical && i < constants.length; i++) {
+			for (unsigned int i = 0; !Hypothetical && !negated && i < constants.length; i++) {
 				if (constants[i].type != instance_type::ANY && constants[i].type != instance_type::CONSTANT) {
 					if (left->type == TermType::CONSTANT && T.new_constant_offset > left->constant && left->constant != (unsigned int) built_in_predicates::NUMBER)
 						constants.remove(i--);
@@ -18648,7 +18684,7 @@ bool filter_constants_helper(
 			}
 
 			/* if this is a subset statement, increment `matching_types` if the set does indeed provably contain the element */
-			if (left->type == TermType::CONSTANT && left->constant >= T.new_constant_offset) {
+			if (!negated && left->type == TermType::CONSTANT && left->constant >= T.new_constant_offset) {
 				const concept<ProofCalculus>& c = T.ground_concepts[left->constant - T.new_constant_offset];
 				Formula* set_formula = c.definitions[0]->formula->binary.right->quantifier.operand;
 
@@ -19969,7 +20005,7 @@ bool log_joint_probability_of_lambda(
 
 	unsigned int new_constant;
 	set_changes<Formula> set_diff;
-//T.print_axioms(stderr, *debug_terminal_printer);
+//T.template print_axioms<true>(stderr, *debug_terminal_printer);
 	Proof* new_proof = T.add_formula(existential, set_diff, new_constant, std::forward<Args>(add_formula_args)...);
 	free(*existential); if (existential->reference_count == 0) free(existential);
 	if (new_proof == nullptr) {
@@ -19993,7 +20029,7 @@ bool log_joint_probability_of_lambda(
 	double max_log_probability = collector.internal_collector.current_log_probability;
 	for (unsigned int t = 0; t < num_samples; t++) {
 /*fprintf(stderr, "DEBUG: t = %u\n", t);
-T.print_axioms(stderr, *debug_terminal_printer);
+T.template print_axioms<true>(stderr, *debug_terminal_printer);
 T.print_disjunction_introductions(stderr, *debug_terminal_printer);
 if (!check_consistency(T, proof_axioms, collector)) exit(0);
 if (t == 329)
@@ -20019,7 +20055,7 @@ else debug_flag = false;*/
 	if (collector.internal_collector.test_proof->reference_count == 0)
 		free(collector.internal_collector.test_proof);
 print("Best theory while answering question:\n", stdout);
-T_MAP.print_axioms(stdout, *debug_terminal_printer);
+T_MAP.template print_axioms<true>(stdout, *debug_terminal_printer);
 fprintf(stdout, "Theory log probability: %lf\n", max_log_probability);
 	return true;
 }
