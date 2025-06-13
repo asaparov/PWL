@@ -100,6 +100,18 @@ bool check_consistency(
 	return true;
 }
 
+inline void print_usage()
+{
+	fprintf(stdout, "Usage: pwl_reasoner <file with logical forms> [r] [n] [h] [N] [M]\n"
+					"  r = Number of retry attempts after failing to add LF (default: 100)\n"
+					"  n = Number of high-temp MCMC steps for each retry attempt (defualt: 10)\n"
+					"  h = Number of reheating phases after adding each LF (default: 4)\n"
+					"  N = Number of MCMC iterations per reheating phase (default: 500)\n"
+					"  M = Number of high-temp MCMC iterations between each reheating phase (default: 40)\n"
+		);
+	fflush(stdout);
+}
+
 int main(int argc, const char** argv)
 {
 #if defined(_WIN32)
@@ -113,7 +125,31 @@ set_seed(1356941742);
 
 	/* parse command-line arguments */
 	if (argc < 2) {
-		fprintf(stdout, "Usage: pwl_reasoner <file with logical forms>\n");
+		print_usage();
+		exit(EXIT_FAILURE);
+	}
+
+	unsigned int retry_attempts = 100;
+	unsigned int iterations_per_retry = 10;
+	unsigned int num_reheating_phases = 4;
+	unsigned int iterations_per_reheat = 500;
+	unsigned int reheating_iterations = 40;
+
+	/* parse the optional command-line arguments */
+	if (argc > 2 && !parse_uint(string(argv[2]), retry_attempts)) {
+		print_usage();
+		exit(EXIT_FAILURE);
+	} if (argc > 3 && !parse_uint(string(argv[3]), iterations_per_retry)) {
+		print_usage();
+		exit(EXIT_FAILURE);
+	} if (argc > 4 && !parse_uint(string(argv[4]), num_reheating_phases)) {
+		print_usage();
+		exit(EXIT_FAILURE);
+	} if (argc > 5 && !parse_uint(string(argv[5]), iterations_per_reheat)) {
+		print_usage();
+		exit(EXIT_FAILURE);
+	} if (argc > 6 && !parse_uint(string(argv[6]), reheating_iterations)) {
+		print_usage();
 		exit(EXIT_FAILURE);
 	}
 
@@ -200,12 +236,12 @@ set_seed(1356941742);
 		set_changes<hol_term> set_diff;
 		unsigned int new_constant;
 		auto* new_proof = T.add_formula(lf, set_diff, new_constant);
-		for (unsigned int j = 0; new_proof == nullptr && j < 100; j++) {
+		for (unsigned int j = 0; new_proof == nullptr && j < retry_attempts; j++) {
 			set_diff.clear();
 			null_collector collector;
-			for (unsigned int t = 0; t < 10; t++) {
+			for (unsigned int t = 0; t < iterations_per_retry; t++) {
 //fprintf(stderr, "(add_formula) j = %u, t = %u\n", j, t);
-if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
+//if (!check_consistency(T, proof_axioms, collector, i, j, t, "add_formula")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
 if (i == 13 && j == 76 && t == 2) {
@@ -248,10 +284,10 @@ debug_flag = true;
 		PriorStateType::clone(proof_axioms, proof_axioms_MAP, formula_map);
 		auto collector = make_log_probability_collector(T, proof_prior, new_proof);
 		double max_log_probability = collector.current_log_probability;
-		for (unsigned int j = 0; j < 4; j++) {
-			for (unsigned int t = 0; t < 500; t++) {
+		for (unsigned int j = 0; j < num_reheating_phases; j++) {
+			for (unsigned int t = 0; t < iterations_per_reheat; t++) {
 //fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
+//if (!check_consistency(T, proof_axioms, collector, i, j, t, "intermediate MCMC")) exit(EXIT_FAILURE);
 /*T.template print_axioms<true>(stdout, *debug_terminal_printer);
 T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
 if (i == 10 && j == 0 && t == 4) {
@@ -270,10 +306,10 @@ debug_flag = false;
 				}
 			}
 
-			if (j + 1 < 4) {
-				for (unsigned int t = 0; t < 40; t++) {
+			if (j + 1 < num_reheating_phases) {
+				for (unsigned int t = 0; t < reheating_iterations; t++) {
 //fprintf(stderr, "i = %u, j = %u, t = %u\n", i, j, t);
-if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
+//if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit(EXIT_FAILURE);
 //T.template print_axioms<true>(stdout, *debug_terminal_printer);
 //T.print_disjunction_introductions(stdout, *debug_terminal_printer); fflush(stdout);
 					do_exploratory_mh_step(T, proof_prior, proof_axioms, collector, collector.test_proof, 1.0);
@@ -300,7 +336,7 @@ if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit
 		Theory& T_MAP = *((Theory*) alloca(sizeof(Theory)));
 		Theory::set_empty(T_MAP);
 		Proof* proof_MAP;
-		double log_probability_true = log_joint_probability_of_truth(T, proof_prior, proof_axioms, lfs.last(), 250, 4, 20, T_MAP, proof_MAP);
+		double log_probability_true = log_joint_probability_of_truth(T, proof_prior, proof_axioms, lfs.last(), iterations_per_reheat, num_reheating_phases, reheating_iterations, T_MAP, proof_MAP);
 		if (!Theory::is_empty(T_MAP)) {
 			print("Highest probability theory after testing whether query is true:\n", stdout);
 			T_MAP.print_axioms<true>(stdout, *debug_terminal_printer);
@@ -320,7 +356,7 @@ if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit
 			negation = hol_term::new_not(lfs.last());
 			lfs.last()->reference_count++;
 		}
-		double log_probability_false = log_joint_probability_of_truth(T, proof_prior, proof_axioms, negation, 250, 4, 20, T_MAP, proof_MAP);
+		double log_probability_false = log_joint_probability_of_truth(T, proof_prior, proof_axioms, negation, iterations_per_reheat, num_reheating_phases, reheating_iterations, T_MAP, proof_MAP);
 		free(*negation); if (negation->reference_count == 0) free(negation);
 		if (!Theory::is_empty(T_MAP)) {
 			print("Highest probability theory after testing whether query is false:\n", stdout);
@@ -344,7 +380,8 @@ if (!check_consistency(T, proof_axioms, collector, i, j, t, "exploratory")) exit
 
 	} else {
 		array_map<string, double> answers(8);
-		answer_question<false>(answers, lfs.last(), 1000, printer, T, proof_prior, proof_axioms);
+		/* TODO: add support for multiple reheating phases in `answer_question`  */
+		answer_question<false>(answers, lfs.last(), iterations_per_reheat * num_reheating_phases, printer, T, proof_prior, proof_axioms);
 		sort(answers.values, answers.keys, answers.size, default_sorter());
 		//print("Theory after attempting to answer question:\n", stdout);
 		//T.template print_axioms<true>(stdout, *debug_terminal_printer); print('\n', stdout).

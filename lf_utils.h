@@ -2526,7 +2526,7 @@ inline hol_term* apply(hol_term* src, comparative_normalizer& normalizer)
 					hol_term* other_arg1 = nullptr; hol_term* other_arg1_of = nullptr;
 					hol_term* other_arg2 = nullptr; hol_term* other_arg2_of = nullptr;
 					hol_term* other_predicate = nullptr;
-					unsigned int predicate_index, arg1_index, arg2_index;
+					unsigned int predicate_index = -1, arg1_index = -1, arg2_index = -1;
 					if (other_operand->type == hol_term_type::AND) {
 						predicate_index = other_operand->array.length;
 						arg1_index = other_operand->array.length;

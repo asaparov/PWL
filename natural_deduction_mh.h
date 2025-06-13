@@ -3242,6 +3242,7 @@ bool propose_rebind_anaphora(
 	Proof* new_proof;
 	proof_sampler<ProposalDistribution::IsExploratory> sampler;
 	set_changes<Formula> new_set_diff;
+	get_proof_disjunction_nodes(proof, sampler.old_proof);
 	unsigned int old_referent_id = T.ctx.bindings[sentence_id].indices[anaphora_id];
 	while (true) {
 		unsigned int new_referent_id = sample_uniform(anaphora_start);

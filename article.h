@@ -70,7 +70,7 @@ inline bool init(sentence<Derivation>& dst, const sentence<Derivation>& src) {
 	if (src.tokens == nullptr) {
 		dst.tokens = nullptr;
 	} else {
-		dst.tokens = (sentence_token*) malloc(max((size_t) 1, sizeof(sentence_token) * src.length));
+		dst.tokens = (sentence_token*) malloc(sizeof(sentence_token) * max((size_t) 1, src.length));
 		if (dst.tokens == NULL) {
 			fprintf(stderr, "init ERROR: Insufficient memory for sentence.tokens.\n");
 			return false;
