@@ -132,8 +132,8 @@ set_seed(1356941742);
 	unsigned int retry_attempts = 100;
 	unsigned int iterations_per_retry = 10;
 	unsigned int num_reheating_phases = 4;
-	unsigned int iterations_per_reheat = 500;
-	unsigned int reheating_iterations = 40;
+	unsigned int iterations_per_reheat = 800;
+	unsigned int reheating_iterations = 200;
 
 	/* parse the optional command-line arguments */
 	if (argc > 2 && !parse_uint(string(argv[2]), retry_attempts)) {
